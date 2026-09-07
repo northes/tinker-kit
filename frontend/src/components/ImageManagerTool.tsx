@@ -23,6 +23,7 @@ import {
   GetSSHConfigHosts,
   PushDockerImage,
   RefreshDockerImages,
+  RetryImageExport,
   StartImageExport,
   StartImageExports,
   TestImageSourceConnection,
@@ -938,6 +939,7 @@ export default function ImageManagerTool({
   }, []);
   const [tasksOpen, setTasksOpen] = useState(false);
   const [batchExportStarting, setBatchExportStarting] = useState(false);
+  const [retryingTaskID, setRetryingTaskID] = useState<string | null>(null);
   const [taskClock, setTaskClock] = useState(Date.now);
   const sourceConfigKey = JSON.stringify(source);
   const sourceIsChanging = watchSourceId !== source.id;
@@ -1822,6 +1824,23 @@ export default function ImageManagerTool({
       });
     }
   };
+  const retryExport = async (task: ImageTask) => {
+    if (retryingTaskID) return;
+    setRetryingTaskID(task.id);
+    try {
+      const result = await RetryImageExport(task.id);
+      applyTasks(result.snapshot);
+      setTasksOpen(true);
+    } catch (error) {
+      toast.add({
+        title: t('imageManagerTool.exportFailed'),
+        description: errorMessage(error) || undefined,
+        type: 'error',
+      });
+    } finally {
+      setRetryingTaskID(null);
+    }
+  };
 
   return (
     <Reveal index={0} fill active={active}>
@@ -2275,6 +2294,20 @@ export default function ImageManagerTool({
                                     }
                                   >
                                     {t('imageManagerTool.cancelTask')}
+                                  </Button>
+                                ) : null}
+                                {task.type === 'export' && task.status === 'failed' ? (
+                                  <Button
+                                    variant="ghost"
+                                    size="xs"
+                                    className="h-6 px-2 text-[11px]"
+                                    disabled={retryingTaskID !== null}
+                                    onClick={() => void retryExport(task)}
+                                  >
+                                    {retryingTaskID === task.id ? (
+                                      <Spinner data-icon="inline-start" />
+                                    ) : null}
+                                    {t('imageManagerTool.retryExport')}
                                   </Button>
                                 ) : null}
                               </div>

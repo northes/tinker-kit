@@ -196,6 +196,70 @@ func TestDockerStreamExportFinalSize(t *testing.T) {
 	}
 }
 
+func TestRetryImageExportStartsFromOriginalTarget(t *testing.T) {
+	previous := execCommandContext
+	defer func() { execCommandContext = previous }()
+	execCommandContext = func(ctx context.Context, name string, args ...string) *exec.Cmd {
+		return exec.CommandContext(ctx, "printf", "%s", "fresh-archive")
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	s := &ImageService{
+		config:    &ConfigService{cfg: normalizeConfig(Config{ImageSources: []ImageSource{{ID: "local", Kind: "local"}}})},
+		ctx:       ctx,
+		tasks:     make(map[string]*imageTaskState),
+		exportSem: make(chan struct{}, 2),
+	}
+	target := filepath.Join(t.TempDir(), "image.tar")
+	if err := os.WriteFile(target, []byte("old-archive"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	failedID := s.createImageTask(imageTaskState{ImageTask: ImageTask{
+		Type:     imageTaskTypeExport,
+		SourceID: "local",
+		ImageID:  "image:tag",
+		Path:     target,
+	}})
+	s.updateTask(failedID, func(task *imageTaskState) {
+		task.Status = imageTaskFailed
+		task.Stage = "failed"
+		task.Error = "previous failure"
+	})
+
+	result, err := s.RetryImageExport(failedID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Started != 1 {
+		t.Fatalf("重试未创建新任务: %+v", result)
+	}
+	s.exportWG.Wait()
+
+	data, err := os.ReadFile(target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != "fresh-archive" {
+		t.Fatalf("重试未从头覆盖目标文件: %q", data)
+	}
+	snapshot := s.GetImageTasks()
+	if len(snapshot.Tasks) != 2 {
+		t.Fatalf("重试任务数量 = %d，期望 2", len(snapshot.Tasks))
+	}
+	for _, task := range snapshot.Tasks {
+		if task.ID == failedID {
+			if task.Status != imageTaskFailed {
+				t.Fatalf("原失败任务状态被修改: %+v", task)
+			}
+			continue
+		}
+		if task.Status != imageTaskSuccess || task.Path != target {
+			t.Fatalf("重试任务未成功或目标路径错误: %+v", task)
+		}
+	}
+}
+
 func TestBatchExportPathsAvoidCollisions(t *testing.T) {
 	dir := t.TempDir()
 	filename := exportFilename("repo/image:tag")

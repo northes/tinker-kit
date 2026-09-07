@@ -187,6 +187,33 @@ func (s *ImageService) CancelImageTask(id string) error {
 	return nil
 }
 
+// RetryImageExport retries a failed export from the beginning using its original target path.
+func (s *ImageService) RetryImageExport(id string) (ImageExportResult, error) {
+	s.taskMu.Lock()
+	task := s.tasks[id]
+	if task == nil {
+		s.taskMu.Unlock()
+		return ImageExportResult{}, errors.New("任务不存在")
+	}
+	if task.Type != imageTaskTypeExport || task.Status != imageTaskFailed {
+		s.taskMu.Unlock()
+		return ImageExportResult{}, errors.New("任务不可重试")
+	}
+	sourceID, imageID, target, exclusive := task.SourceID, task.ImageID, task.Path, task.exclusiveTarget
+	s.taskMu.Unlock()
+	if sourceID == "" || imageID == "" || target == "" {
+		return ImageExportResult{}, errors.New("导出任务信息不完整")
+	}
+	if _, _, _, err := s.sourceSnapshot(sourceID); err != nil {
+		return ImageExportResult{}, err
+	}
+
+	s.exportQueueMu.Lock()
+	defer s.exportQueueMu.Unlock()
+	s.enqueueImageExport(sourceID, imageID, target, exclusive)
+	return ImageExportResult{Started: 1, Snapshot: s.GetImageTasks()}, nil
+}
+
 // StartImageExport opens a native save dialog and starts an asynchronous export.
 func (s *ImageService) StartImageExport(sourceID, imageID string) (ImageExportResult, error) {
 	if strings.TrimSpace(imageID) == "" {
