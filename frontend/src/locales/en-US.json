@@ -737,7 +737,7 @@
     "backgroundTasksEmpty": "No background tasks",
     "backgroundTasksCount": "Background tasks: {{count}}",
     "cancelTask": "Cancel",
-    "retryExport": "Retry from scratch",
+    "retryExport": "Retry",
     "taskStageExport": "Export tar archive",
     "taskStageDetail": "Load image details",
     "taskStageUpdate": "Update image list",

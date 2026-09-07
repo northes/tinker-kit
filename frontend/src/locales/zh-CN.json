@@ -737,7 +737,7 @@
     "backgroundTasksEmpty": "暂无后台任务",
     "backgroundTasksCount": "后台任务 {{count}}",
     "cancelTask": "取消",
-    "retryExport": "重试（从头导出）",
+    "retryExport": "重试",
     "taskStageExport": "导出 tar 包",
     "taskStageDetail": "加载镜像详情",
     "taskStageUpdate": "更新镜像列表",
