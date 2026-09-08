@@ -619,13 +619,15 @@ func (s *FileService) StartFileDownload(sourceID string, remotePaths []string) (
 	if len(remotePaths) == 1 {
 		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 		sshClient, client, statErr := s.dialSFTP(ctx, conn)
-		cancel()
 		if statErr != nil {
+			cancel()
 			return FileTaskSnapshot{}, statErr
 		}
 		info, statErr := client.Lstat(normalizedRemotePath(remotePaths[0]))
 		_ = client.Close()
 		closeSSHClient(sshClient)
+		// 本地 SSH 模式的 SFTP 进程绑定了 ctx，必须完成 Lstat 后再取消，否则会提前断开连接。
+		cancel()
 		if statErr != nil {
 			return FileTaskSnapshot{}, fmt.Errorf("读取远程项目失败: %w", statErr)
 		}
