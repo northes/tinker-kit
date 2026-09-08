@@ -13,6 +13,7 @@ import {
   Folder,
   GearSix,
   HardDrives,
+  ListDashes,
   PencilSimple,
   Plus,
   Trash,
@@ -146,17 +147,14 @@ function taskStatusLabel(status: string, t: (key: string) => string) {
   return t(keys[status] ?? 'sshFilesTool.taskUnknown');
 }
 
-function taskStatusVariant(status: string): 'default' | 'secondary' | 'destructive' | 'outline' {
+function taskStatusVariant(
+  status: string,
+): 'secondary' | 'blue' | 'success' | 'destructive' | 'outline' {
+  if (status === 'success') return 'success';
   if (status === 'failed') return 'destructive';
-  if (status === 'success') return 'outline';
   if (status === 'canceled') return 'outline';
+  if (status === 'queued' || status === 'running' || status === 'scanning') return 'blue';
   return 'secondary';
-}
-
-function taskStatusClassName(status: string) {
-  if (status === 'success') return 'border-success/30 bg-success/10 text-success';
-  if (status === 'canceled') return 'text-muted-foreground';
-  return '';
 }
 
 function errorMessage(error: unknown) {
@@ -809,6 +807,8 @@ export default function SshFilesTool({ active }: Props) {
   const activeTasks = tasks.filter(
     (task) => task.status === 'queued' || task.status === 'running' || task.status === 'scanning',
   );
+  const taskProgress =
+    activeTasks.length === 1 && activeTasks[0].total > 0 ? taskPercent(activeTasks[0]) : null;
   const calculatingSizePaths = useMemo(
     () =>
       new Set(
@@ -904,7 +904,7 @@ export default function SshFilesTool({ active }: Props) {
                 className="flex items-center gap-1.5 pb-1.5 text-[11px] text-muted-foreground"
                 aria-live="polite"
               >
-                <Spinner className="size-3 text-primary motion-reduce:animate-none" />
+                <Spinner className="size-3" />
                 {loadingSources
                   ? t('sshFilesTool.loadingSources')
                   : t('sshFilesTool.loadingDirectory')}
@@ -999,14 +999,18 @@ export default function SshFilesTool({ active }: Props) {
           className="min-h-0 flex-1 overflow-auto [scrollbar-gutter:auto]"
         >
           {loadingSources ? (
-            <div className="flex h-full flex-col items-center justify-center gap-2 p-6 text-center text-sm text-muted-foreground">
-              <Spinner className="size-7 text-primary motion-reduce:animate-none" />
-              <span>{t('sshFilesTool.loadingSources')}</span>
+            <div className="flex h-full flex-col items-center justify-center gap-2 p-6 text-center">
+              <Spinner />
+              <span className="text-sm text-muted-foreground">
+                {t('sshFilesTool.loadingSources')}
+              </span>
             </div>
           ) : loading ? (
-            <div className="flex h-full flex-col items-center justify-center gap-2 p-6 text-center text-sm text-muted-foreground">
-              <Spinner className="size-7 text-primary motion-reduce:animate-none" />
-              <span>{t('sshFilesTool.loadingDirectory')}</span>
+            <div className="flex h-full flex-col items-center justify-center gap-2 p-6 text-center">
+              <Spinner />
+              <span className="text-sm text-muted-foreground">
+                {t('sshFilesTool.loadingDirectory')}
+              </span>
               <span className="max-w-full truncate font-mono text-[11px] text-muted-foreground/70">
                 {currentPath}
               </span>
@@ -1154,7 +1158,7 @@ export default function SshFilesTool({ active }: Props) {
                       {entry.isDir ? (
                         calculatingSizePaths.has(entry.path) ? (
                           <span className="inline-flex items-center gap-1.5 text-muted-foreground">
-                            <Spinner className="size-3 motion-reduce:animate-none" />
+                            <Spinner className="size-3" />
                             {t('sshFilesTool.scanning')}
                           </span>
                         ) : sizeValues[entry.path] !== undefined ? (
@@ -1184,47 +1188,47 @@ export default function SshFilesTool({ active }: Props) {
         </div>
       </ToolLayoutContent>
       <ToolLayoutFooter>
-        <div className="flex min-h-[30px] min-w-0 items-center gap-2 border-t border-border pt-2 text-xs text-muted-foreground">
-          <span className="shrink-0">
-            {entries.length ? t('sshFilesTool.itemCount', { count: entries.length }) : ''}
-          </span>
-          <div className="ml-auto flex min-w-0 flex-wrap items-center justify-end gap-2">
+        <div className="flex items-center justify-between gap-3 border-t border-border pt-3">
+          <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-[10px] text-muted-foreground">
+            <span>
+              {entries.length ? t('sshFilesTool.itemCount', { count: entries.length }) : ''}
+            </span>
+            {activeTasks.length > 0 || tasks.length > 0 ? (
+              <button
+                type="button"
+                className="inline-flex items-center gap-2 text-left text-muted-foreground hover:text-foreground"
+                onClick={() => setTasksOpen(true)}
+                aria-label={t('sshFilesTool.tasksTitle')}
+              >
+                {activeTasks.length > 0 ? (
+                  <>
+                    <span
+                      className={`relative h-1.5 w-20 overflow-hidden rounded-full bg-muted ${taskProgress === null ? 'animate-pulse motion-reduce:animate-none' : ''}`}
+                      aria-hidden="true"
+                    >
+                      <span
+                        className="absolute inset-y-0 left-0 rounded-full bg-primary"
+                        style={{ width: `${taskProgress ?? 0}%` }}
+                      />
+                    </span>
+                    <span>{t('sshFilesTool.activeTasks', { count: activeTasks.length })}</span>
+                  </>
+                ) : (
+                  <ListDashes size={14} weight="duotone" aria-hidden="true" />
+                )}
+              </button>
+            ) : null}
+          </div>
+          <div className="flex flex-none flex-wrap items-center justify-end gap-2">
             {selected.length ? (
               <Button
                 variant="outline"
-                className="h-7 px-2.5 text-[11px]"
+                className="h-[30px] flex-none px-[11px] text-[11px]"
                 onClick={() => void downloadSelected(selected)}
               >
                 <DownloadSimple data-icon="inline-start" size={14} />
                 {t('sshFilesTool.downloadSelected', { count: selected.length })}
               </Button>
-            ) : null}
-            {activeTasks.length ? (
-              <button
-                type="button"
-                className="flex min-w-0 items-center gap-2 rounded px-2 py-1 hover:bg-accent"
-                onClick={() => setTasksOpen(true)}
-              >
-                <span className="relative h-1.5 w-20 overflow-hidden rounded-full bg-muted">
-                  {activeTasks[0] && (
-                    <span
-                      className="absolute inset-y-0 left-0 bg-primary"
-                      style={{ width: `${taskPercent(activeTasks[0]) ?? 35}%` }}
-                    />
-                  )}
-                </span>
-                <span className="truncate">
-                  {t('sshFilesTool.activeTasks', { count: activeTasks.length })}
-                </span>
-              </button>
-            ) : tasks.length ? (
-              <button
-                type="button"
-                className="rounded px-2 py-1 hover:bg-accent hover:underline"
-                onClick={() => setTasksOpen(true)}
-              >
-                {t('sshFilesTool.viewTasks')}
-              </button>
             ) : null}
           </div>
         </div>
@@ -1588,7 +1592,7 @@ export default function SshFilesTool({ active }: Props) {
                         </div>
                         {sshHostsLoading ? (
                           <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
-                            <Spinner className="size-3 motion-reduce:animate-none" />
+                            <Spinner className="size-3" />
                             {t('common.loading')}
                           </div>
                         ) : sshHostsError ? (
@@ -2069,110 +2073,104 @@ export default function SshFilesTool({ active }: Props) {
       </Dialog>
 
       <Dialog open={tasksOpen} onOpenChange={setTasksOpen}>
-        <DialogContent className="flex max-h-[min(680px,calc(100vh-32px))] w-[min(640px,calc(100vw-32px))] max-w-none flex-col gap-5 sm:max-w-none">
+        <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle className="text-base">{t('sshFilesTool.tasksTitle')}</DialogTitle>
-            <DialogDescription className="text-xs leading-5">
-              {t('sshFilesTool.tasksDesc')}
-            </DialogDescription>
+            <DialogTitle>{t('sshFilesTool.tasksTitle')}</DialogTitle>
+            <DialogDescription>{t('sshFilesTool.tasksDesc')}</DialogDescription>
           </DialogHeader>
-          <div className="min-h-0 flex-1 overflow-y-auto [padding-inline-end:var(--overlay-scrollbar-hit-size)]">
-            {tasks.length ? (
-              <div className="divide-y divide-border">
-                {tasks.map((task) => {
-                  const percent = taskPercent(task);
-                  const running = ['queued', 'running', 'scanning'].includes(task.status);
-                  const progressWidth = percent ?? (task.status === 'success' ? 100 : 35);
-                  return (
-                    <article key={task.id} className="space-y-3 py-4 first:pt-0 last:pb-0">
-                      <div className="flex items-start gap-3">
-                        <span className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground">
-                          {task.type === 'upload' ? (
-                            <UploadSimple size={15} />
-                          ) : task.type === 'download' ? (
-                            <DownloadSimple size={15} />
-                          ) : (
-                            <Folder size={15} />
-                          )}
-                        </span>
-                        <div className="min-w-0 flex-1">
-                          <div className="flex min-w-0 flex-wrap items-center gap-2">
-                            <span className="text-xs font-medium text-foreground">
-                              {taskTypeLabel(task.type, t)}
-                            </span>
-                            <Badge
-                              variant={taskStatusVariant(task.status)}
-                              className={`h-5 text-[10px] ${taskStatusClassName(task.status)}`}
-                            >
-                              {taskStatusLabel(task.status, t)}
-                            </Badge>
-                          </div>
-                          <p
-                            className="mt-1 truncate font-mono text-[10px] text-muted-foreground"
-                            title={task.current || task.target || undefined}
-                          >
-                            {task.current || task.target || '—'}
-                          </p>
-                        </div>
-                        <Button
-                          variant="ghost"
-                          size="icon-sm"
-                          className="h-7 w-7 shrink-0"
-                          disabled={!running}
-                          onClick={() => void CancelFileTask(task.id)}
-                          aria-label={t('sshFilesTool.cancelTask')}
-                        >
-                          <XCircle size={15} />
-                        </Button>
-                      </div>
-                      <div
-                        className="h-1.5 overflow-hidden rounded-full bg-muted"
-                        role="progressbar"
-                        aria-valuemin={0}
-                        aria-valuemax={100}
-                        aria-valuenow={percent ?? undefined}
-                        aria-valuetext={taskStatusLabel(task.status, t)}
-                      >
+          <div className="min-h-0 max-h-[55vh] overflow-hidden">
+            <div className="min-h-0 max-h-[55vh] overflow-x-hidden overflow-y-auto overscroll-contain [padding-inline-end:var(--overlay-scrollbar-hit-size)] [scrollbar-gutter:auto]">
+              {tasks.length ? (
+                <div>
+                  {tasks
+                    .slice()
+                    .reverse()
+                    .map((task) => {
+                      const percent = taskPercent(task);
+                      const running = ['queued', 'running', 'scanning'].includes(task.status);
+                      const progressWidth = percent ?? (task.status === 'success' ? 100 : 0);
+                      return (
                         <div
-                          className={`h-full rounded-full ${task.status === 'success' ? 'bg-success' : task.status === 'failed' ? 'bg-destructive' : 'bg-primary'}`}
-                          style={{ width: `${progressWidth}%` }}
-                        />
-                      </div>
-                      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-[10px] text-muted-foreground">
-                        <span>
-                          {percent === null
-                            ? taskStatusLabel(task.status, t)
-                            : `${percent.toFixed(0)}%`}
-                        </span>
-                        <span className="font-mono">
-                          {task.files > 0
-                            ? t('sshFilesTool.taskFiles', {
-                                done: task.doneFiles,
-                                total: task.files,
-                              })
-                            : t('sshFilesTool.taskBytes', {
-                                completed: formatBytes(task.completed),
-                                total: task.total ? formatBytes(task.total) : '—',
-                              })}
-                        </span>
-                      </div>
-                      {task.error ? (
-                        <p className="m-0 break-words text-xs text-destructive" role="alert">
-                          {task.error}
-                        </p>
-                      ) : null}
-                    </article>
-                  );
-                })}
-              </div>
-            ) : (
-              <div className="flex min-h-40 flex-col items-center justify-center gap-2 text-center">
-                <CheckCircle size={28} weight="duotone" className="text-muted-foreground" />
-                <p className="m-0 text-sm font-medium text-foreground">
+                          key={task.id}
+                          className="border-b border-border py-3 first:pt-0 last:border-b-0 last:pb-0"
+                        >
+                          <div className="min-w-0">
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="min-w-0 flex-1 truncate font-medium text-foreground">
+                                {taskTypeLabel(task.type, t)}
+                              </div>
+                              <div className="flex flex-none items-center gap-1.5">
+                                <Badge
+                                  variant={taskStatusVariant(task.status)}
+                                  className="h-5 text-[10px]"
+                                >
+                                  {taskStatusLabel(task.status, t)}
+                                </Badge>
+                                {running ? (
+                                  <Button
+                                    variant="ghost"
+                                    size="xs"
+                                    className="h-6 px-2 text-[11px]"
+                                    onClick={() => void CancelFileTask(task.id)}
+                                  >
+                                    {t('sshFilesTool.cancelTask')}
+                                  </Button>
+                                ) : null}
+                              </div>
+                            </div>
+                            <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-2 text-[10px] text-muted-foreground">
+                              <span
+                                className="min-w-0 break-all"
+                                title={task.current || task.target || undefined}
+                              >
+                                {task.current || task.target || '—'}
+                              </span>
+                            </div>
+                            <div className="mt-2 flex items-center gap-2">
+                              <div
+                                className={`h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-muted ${percent === null && running ? 'animate-pulse motion-reduce:animate-none' : ''}`}
+                                role="progressbar"
+                                aria-valuemin={0}
+                                aria-valuemax={100}
+                                aria-valuenow={percent ?? undefined}
+                                aria-valuetext={taskStatusLabel(task.status, t)}
+                              >
+                                <div
+                                  className={`h-full rounded-full ${task.status === 'success' ? 'bg-success' : task.status === 'failed' ? 'bg-destructive' : 'bg-primary'}`}
+                                  style={{ width: `${progressWidth}%` }}
+                                />
+                              </div>
+                              <span className="flex-none font-mono text-[10px] text-muted-foreground">
+                                {task.files > 0
+                                  ? t('sshFilesTool.taskFiles', {
+                                      done: task.doneFiles,
+                                      total: task.files,
+                                    })
+                                  : t('sshFilesTool.taskBytes', {
+                                      completed: formatBytes(task.completed),
+                                      total: task.total ? formatBytes(task.total) : '—',
+                                    })}
+                              </span>
+                            </div>
+                            {task.error ? (
+                              <div
+                                className="mt-1 break-all text-[10px] text-destructive"
+                                role="alert"
+                              >
+                                {task.error}
+                              </div>
+                            ) : null}
+                          </div>
+                        </div>
+                      );
+                    })}
+                </div>
+              ) : (
+                <div className="py-8 text-center text-xs text-muted-foreground">
                   {t('sshFilesTool.noTasks')}
-                </p>
-              </div>
-            )}
+                </div>
+              )}
+            </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setTasksOpen(false)}>
