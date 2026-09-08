@@ -738,7 +738,7 @@
     "batchExport": "Export selected as tar",
     "exportFailed": "Export failed",
     "backgroundTasks": "Background tasks",
-    "backgroundTasksDesc": "Shows active tasks and tasks completed, failed, or canceled in the last 24 hours. History is kept for this app session only.",
+    "backgroundTasksDesc": "Keeps tasks from the last 24 hours. Records are kept for this app session only.",
     "backgroundTasksEmpty": "No background tasks",
     "backgroundTasksCount": "Background tasks: {{count}}",
     "cancelTask": "Cancel",

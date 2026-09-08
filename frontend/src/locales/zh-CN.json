@@ -738,7 +738,7 @@
     "batchExport": "批量导出 tar",
     "exportFailed": "导出失败",
     "backgroundTasks": "后台任务",
-    "backgroundTasksDesc": "保留进行中的任务，以及最近 24 小时内成功、失败或取消的任务。记录仅在本次应用运行期间保留。",
+    "backgroundTasksDesc": "保留24小时内的任务，仅在本次应用运行期间保留",
     "backgroundTasksEmpty": "暂无后台任务",
     "backgroundTasksCount": "后台任务 {{count}}",
     "cancelTask": "取消",
