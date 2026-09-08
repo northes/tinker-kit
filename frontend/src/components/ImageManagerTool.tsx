@@ -1765,8 +1765,18 @@ export default function ImageManagerTool({
   };
   const taskStatus = (task: ImageTask) =>
     t(`imageManagerTool.taskStatus${task.status.charAt(0).toUpperCase()}${task.status.slice(1)}`);
-  const taskStatusVariant = (task: ImageTask): 'secondary' | 'destructive' | 'outline' =>
-    task.status === 'failed' ? 'destructive' : task.status === 'canceled' ? 'outline' : 'secondary';
+  const taskStatusVariant = (
+    task: ImageTask,
+  ): 'secondary' | 'blue' | 'success' | 'destructive' | 'outline' =>
+    task.status === 'success'
+      ? 'success'
+      : task.status === 'failed'
+        ? 'destructive'
+        : task.status === 'canceled'
+          ? 'outline'
+          : task.status === 'queued' || task.status === 'running'
+            ? 'blue'
+            : 'secondary';
   const taskProgressLabel = (task: ImageTask) => {
     if (task.type === 'export') {
       const completed = formatBytes(task.bytes, i18n.language) || formatBytes(0, i18n.language);
