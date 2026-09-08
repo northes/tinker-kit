@@ -748,6 +748,7 @@
     "taskStageUpdate": "更新镜像列表",
     "taskProgressCount": "{{completed}}/{{total}}",
     "taskExportProgress": "{{completed}} / {{total}}",
+    "taskExportProgressEstimated": "{{completed}} / ~{{total}}",
     "taskExportProgressUnknown": "{{completed}} / 总量未知",
     "taskStatusQueued": "排队中",
     "taskStatusRunning": "进行中",

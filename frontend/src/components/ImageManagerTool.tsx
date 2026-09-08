@@ -862,6 +862,11 @@ function imageSizeBytes(image: DockerImage) {
   return value * (unit.endsWith('i') || unit.includes('ib') ? 1024 ** exponent : 1000 ** exponent);
 }
 
+function imageExportEstimateBytes(image: DockerImage) {
+  const sizeBytes = imageSizeBytes(image);
+  return Number.isFinite(sizeBytes) && sizeBytes > 0 ? Math.round(sizeBytes) : 0;
+}
+
 function imageCreatedAtMs(value: string) {
   const date = parseDateSafe(value);
   return date ? date.getTime() : null;
@@ -1739,12 +1744,14 @@ export default function ImageManagerTool({
     (task) => task.status === 'queued' || task.status === 'running',
   );
   const taskDone = (task: ImageTask) => (task.type === 'export' ? task.bytes : task.completed);
-  const taskPercent = (task: ImageTask) =>
-    task.status === 'success'
-      ? 100
-      : task.total > 0
-        ? Math.min(100, (taskDone(task) / task.total) * 100)
-        : null;
+  const taskPercent = (task: ImageTask) => {
+    if (task.status === 'success') return 100;
+    if (task.total <= 0) return null;
+    const percent = (taskDone(task) / task.total) * 100;
+    return task.type === 'export' && task.totalEstimated
+      ? Math.min(99, percent)
+      : Math.min(100, percent);
+  };
   const taskProgress =
     activeTasks.length === 1 && activeTasks[0].total > 0 ? taskPercent(activeTasks[0]) : null;
   const taskTypeLabel = (task: ImageTask) => {
@@ -1763,6 +1770,18 @@ export default function ImageManagerTool({
   const taskProgressLabel = (task: ImageTask) => {
     if (task.type === 'export') {
       const completed = formatBytes(task.bytes, i18n.language) || formatBytes(0, i18n.language);
+      if (task.totalEstimated && task.total > 0) {
+        if (task.bytes > task.total) {
+          return t('imageManagerTool.taskExportProgress', {
+            completed,
+            total: completed,
+          });
+        }
+        return t('imageManagerTool.taskExportProgressEstimated', {
+          completed,
+          total: formatBytes(task.total, i18n.language),
+        });
+      }
       return task.total > 0 || task.status === 'success'
         ? t('imageManagerTool.taskExportProgress', {
             completed,
@@ -1776,13 +1795,13 @@ export default function ImageManagerTool({
     });
   };
   const runBatchExport = async () => {
-    const imageIDs = filteredImages
-      .filter((image) => selected.has(image.id))
-      .map((image) => image.name || image.id);
+    const selectedImages = filteredImages.filter((image) => selected.has(image.id));
+    const imageIDs = selectedImages.map((image) => image.name || image.id);
+    const estimatedSizes = selectedImages.map(imageExportEstimateBytes);
     if (imageIDs.length === 0 || batchExportStarting) return;
     setBatchExportStarting(true);
     try {
-      const result = await StartImageExports(source.id, imageIDs);
+      const result = await StartImageExports(source.id, imageIDs, estimatedSizes);
       if (result.started > 0) {
         applyTasks(result.snapshot);
         setTasksOpen(true);
@@ -1805,7 +1824,11 @@ export default function ImageManagerTool({
   };
   const runExport = async (image: DockerImage) => {
     try {
-      const result = await StartImageExport(source.id, image.name || image.id);
+      const result = await StartImageExport(
+        source.id,
+        image.name || image.id,
+        imageExportEstimateBytes(image),
+      );
       if (result.started > 0) {
         applyTasks(result.snapshot);
         setTasksOpen(true);

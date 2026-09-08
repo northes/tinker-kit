@@ -239,6 +239,7 @@ export interface ImageTask {
     "stage": string;
     "completed": number;
     "total": number;
+    "totalEstimated": boolean;
     "bytes": number;
     "error"?: string;
     "path"?: string;

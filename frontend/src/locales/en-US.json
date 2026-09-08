@@ -748,6 +748,7 @@
     "taskStageUpdate": "Update image list",
     "taskProgressCount": "{{completed}}/{{total}}",
     "taskExportProgress": "{{completed}} / {{total}}",
+    "taskExportProgressEstimated": "{{completed}} / ~{{total}}",
     "taskExportProgressUnknown": "{{completed}} / total unknown",
     "taskStatusQueued": "Queued",
     "taskStatusRunning": "Running",

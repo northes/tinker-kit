@@ -216,10 +216,12 @@ func TestRetryImageExportStartsFromOriginalTarget(t *testing.T) {
 		t.Fatal(err)
 	}
 	failedID := s.createImageTask(imageTaskState{ImageTask: ImageTask{
-		Type:     imageTaskTypeExport,
-		SourceID: "local",
-		ImageID:  "image:tag",
-		Path:     target,
+		Type:           imageTaskTypeExport,
+		SourceID:       "local",
+		ImageID:        "image:tag",
+		Path:           target,
+		Total:          123,
+		TotalEstimated: true,
 	}})
 	s.updateTask(failedID, func(task *imageTaskState) {
 		task.Status = imageTaskFailed
@@ -232,7 +234,10 @@ func TestRetryImageExportStartsFromOriginalTarget(t *testing.T) {
 		t.Fatal(err)
 	}
 	if result.Started != 1 {
-		t.Fatalf("重试未创建新任务: %+v", result)
+		t.Fatalf("重试未启动任务: %+v", result)
+	}
+	if len(result.Snapshot.Tasks) != 1 || result.Snapshot.Tasks[0].ID != failedID {
+		t.Fatalf("重试没有复用原任务: %+v", result)
 	}
 	s.exportWG.Wait()
 
@@ -244,19 +249,15 @@ func TestRetryImageExportStartsFromOriginalTarget(t *testing.T) {
 		t.Fatalf("重试未从头覆盖目标文件: %q", data)
 	}
 	snapshot := s.GetImageTasks()
-	if len(snapshot.Tasks) != 2 {
-		t.Fatalf("重试任务数量 = %d，期望 2", len(snapshot.Tasks))
+	if len(snapshot.Tasks) != 1 {
+		t.Fatalf("重试任务数量 = %d，期望 1", len(snapshot.Tasks))
 	}
-	for _, task := range snapshot.Tasks {
-		if task.ID == failedID {
-			if task.Status != imageTaskFailed {
-				t.Fatalf("原失败任务状态被修改: %+v", task)
-			}
-			continue
-		}
-		if task.Status != imageTaskSuccess || task.Path != target {
-			t.Fatalf("重试任务未成功或目标路径错误: %+v", task)
-		}
+	task := snapshot.Tasks[0]
+	if task.ID != failedID || task.Status != imageTaskSuccess || task.Path != target {
+		t.Fatalf("重试任务未复用原任务或未成功: %+v", task)
+	}
+	if task.Error != "" || task.TotalEstimated {
+		t.Fatalf("重试任务未清理失败状态或未收敛实际大小: %+v", task)
 	}
 }
 
@@ -373,7 +374,8 @@ func TestBatchExportSnapshotWithoutEvents(t *testing.T) {
 	}
 	historyID := s.newImageTask(imageTaskTypeDetail, "local", "existing:latest")
 	ids := []string{"repo/a:latest", "repo/b:latest", "repo/c:latest"}
-	result, err := s.enqueueImageExports("local", ids, t.TempDir())
+	estimates := []int64{10, 20, 30}
+	result, err := s.enqueueImageExports("local", ids, estimates, t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -382,6 +384,12 @@ func TestBatchExportSnapshotWithoutEvents(t *testing.T) {
 	}
 	if result.Snapshot.Tasks[0].ID != historyID {
 		t.Fatal("导出响应丢失了已有任务")
+	}
+	for i, id := range ids {
+		task := result.Snapshot.Tasks[i+1]
+		if task.ImageID != id || task.Total != estimates[i] || !task.TotalEstimated {
+			t.Fatalf("导出任务没有保留大小估算: %+v", task)
+		}
 	}
 	mu.Lock()
 	defer mu.Unlock()

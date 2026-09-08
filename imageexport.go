@@ -28,19 +28,20 @@ const imageTasksEventName = "image-manager:tasks"
 const imageTaskRetention = 24 * time.Hour
 
 type ImageTask struct {
-	ID        string `json:"id"`
-	Type      string `json:"type"`
-	SourceID  string `json:"sourceID"`
-	ImageID   string `json:"imageID"`
-	Status    string `json:"status"`
-	Stage     string `json:"stage"`
-	Completed int64  `json:"completed"`
-	Total     int64  `json:"total"`
-	Bytes     int64  `json:"bytes"`
-	Error     string `json:"error,omitempty"`
-	Path      string `json:"path,omitempty"`
-	CreatedAt string `json:"createdAt"`
-	UpdatedAt string `json:"updatedAt"`
+	ID             string `json:"id"`
+	Type           string `json:"type"`
+	SourceID       string `json:"sourceID"`
+	ImageID        string `json:"imageID"`
+	Status         string `json:"status"`
+	Stage          string `json:"stage"`
+	Completed      int64  `json:"completed"`
+	Total          int64  `json:"total"`
+	TotalEstimated bool   `json:"totalEstimated"`
+	Bytes          int64  `json:"bytes"`
+	Error          string `json:"error,omitempty"`
+	Path           string `json:"path,omitempty"`
+	CreatedAt      string `json:"createdAt"`
+	UpdatedAt      string `json:"updatedAt"`
 }
 
 type ImageTaskSnapshot struct {
@@ -187,7 +188,7 @@ func (s *ImageService) CancelImageTask(id string) error {
 	return nil
 }
 
-// RetryImageExport retries a failed export from the beginning using its original target path.
+// RetryImageExport 在原任务上从头重试导出，并继续使用原目标路径。
 func (s *ImageService) RetryImageExport(id string) (ImageExportResult, error) {
 	s.taskMu.Lock()
 	task := s.tasks[id]
@@ -199,7 +200,7 @@ func (s *ImageService) RetryImageExport(id string) (ImageExportResult, error) {
 		s.taskMu.Unlock()
 		return ImageExportResult{}, errors.New("任务不可重试")
 	}
-	sourceID, imageID, target, exclusive := task.SourceID, task.ImageID, task.Path, task.exclusiveTarget
+	sourceID, imageID, target := task.SourceID, task.ImageID, task.Path
 	s.taskMu.Unlock()
 	if sourceID == "" || imageID == "" || target == "" {
 		return ImageExportResult{}, errors.New("导出任务信息不完整")
@@ -210,12 +211,42 @@ func (s *ImageService) RetryImageExport(id string) (ImageExportResult, error) {
 
 	s.exportQueueMu.Lock()
 	defer s.exportQueueMu.Unlock()
-	s.enqueueImageExport(sourceID, imageID, target, exclusive)
-	return ImageExportResult{Started: 1, Snapshot: s.GetImageTasks()}, nil
+	s.taskMu.Lock()
+	task = s.tasks[id]
+	if task == nil {
+		s.taskMu.Unlock()
+		return ImageExportResult{}, errors.New("任务不存在")
+	}
+	if task.Type != imageTaskTypeExport || task.Status != imageTaskFailed {
+		s.taskMu.Unlock()
+		return ImageExportResult{}, errors.New("任务不可重试")
+	}
+	sourceID, imageID, target = task.SourceID, task.ImageID, task.Path
+	total, totalEstimated := task.Total, task.TotalEstimated
+	ctx, cancel := context.WithCancel(s.serviceContext())
+	task.Status = imageTaskQueued
+	task.Stage = imageTaskQueued
+	task.Completed = 0
+	task.Total = max(total, int64(0))
+	task.TotalEstimated = totalEstimated && total > 0
+	task.Bytes = 0
+	task.Error = ""
+	task.cancel = cancel
+	task.UpdatedAt = time.Now().UTC().Format(time.RFC3339Nano)
+	s.taskRevision++
+	snapshot := s.taskSnapshotLocked()
+	s.taskMu.Unlock()
+	s.emitEvent(imageTasksEventName, snapshot)
+	s.exportWG.Add(1)
+	go func() {
+		defer s.exportWG.Done()
+		s.runImageExport(ctx, id, sourceID, imageID, target)
+	}()
+	return ImageExportResult{Started: 1, Snapshot: snapshot}, nil
 }
 
-// StartImageExport opens a native save dialog and starts an asynchronous export.
-func (s *ImageService) StartImageExport(sourceID, imageID string) (ImageExportResult, error) {
+// StartImageExport 打开原生保存对话框，并异步导出镜像 tar 包。estimatedSize 是镜像列表提供的估算字节数。
+func (s *ImageService) StartImageExport(sourceID, imageID string, estimatedSize int64) (ImageExportResult, error) {
 	if strings.TrimSpace(imageID) == "" {
 		return ImageExportResult{}, errors.New("镜像 ID 为空")
 	}
@@ -240,12 +271,12 @@ func (s *ImageService) StartImageExport(sourceID, imageID string) (ImageExportRe
 	}
 	s.exportQueueMu.Lock()
 	defer s.exportQueueMu.Unlock()
-	s.enqueueImageExport(sourceID, imageID, path, false)
+	s.enqueueImageExport(sourceID, imageID, path, false, estimatedSize, estimatedSize > 0)
 	return ImageExportResult{Started: 1, Snapshot: s.GetImageTasks()}, nil
 }
 
-// StartImageExports 选择一次目录，为每个镜像创建独立导出任务。
-func (s *ImageService) StartImageExports(sourceID string, imageIDs []string) (ImageExportResult, error) {
+// StartImageExports 选择一次目录，为每个镜像创建独立导出任务，并传入与 imageIDs 对齐的估算大小。
+func (s *ImageService) StartImageExports(sourceID string, imageIDs []string, estimatedSizes []int64) (ImageExportResult, error) {
 	ids := make([]string, 0, len(imageIDs))
 	seen := make(map[string]bool)
 	for _, id := range imageIDs {
@@ -259,6 +290,9 @@ func (s *ImageService) StartImageExports(sourceID string, imageIDs []string) (Im
 	}
 	if len(ids) == 0 {
 		return ImageExportResult{}, errors.New("未选择镜像")
+	}
+	if len(estimatedSizes) != len(imageIDs) {
+		return ImageExportResult{}, errors.New("镜像大小估算数量不匹配")
 	}
 	if _, _, _, err := s.sourceSnapshot(sourceID); err != nil {
 		return ImageExportResult{}, err
@@ -278,10 +312,22 @@ func (s *ImageService) StartImageExports(sourceID string, imageIDs []string) (Im
 	if directory == "" {
 		return ImageExportResult{}, nil
 	}
-	return s.enqueueImageExports(sourceID, ids, directory)
+	estimates := make([]int64, 0, len(ids))
+	seen = make(map[string]bool)
+	for i, id := range imageIDs {
+		if seen[id] {
+			continue
+		}
+		seen[id] = true
+		estimates = append(estimates, estimatedSizes[i])
+	}
+	return s.enqueueImageExports(sourceID, ids, estimates, directory)
 }
 
-func (s *ImageService) enqueueImageExports(sourceID string, ids []string, directory string) (ImageExportResult, error) {
+func (s *ImageService) enqueueImageExports(sourceID string, ids []string, estimates []int64, directory string) (ImageExportResult, error) {
+	if len(estimates) != len(ids) {
+		return ImageExportResult{}, errors.New("镜像大小估算数量不匹配")
+	}
 	s.exportQueueMu.Lock()
 	defer s.exportQueueMu.Unlock()
 	reserved := make(map[string]bool)
@@ -297,7 +343,8 @@ func (s *ImageService) enqueueImageExports(sourceID string, ids []string, direct
 		return ImageExportResult{}, err
 	}
 	for i, id := range ids {
-		s.enqueueImageExport(sourceID, id, paths[i], true)
+		estimate := estimates[i]
+		s.enqueueImageExport(sourceID, id, paths[i], true, estimate, estimate > 0)
 	}
 	return ImageExportResult{Started: len(ids), Snapshot: s.GetImageTasks()}, nil
 }
@@ -331,10 +378,17 @@ func batchExportPaths(directory string, ids []string, reserved map[string]bool) 
 }
 
 // 调用方持有 exportQueueMu，避免批量任务分配到相同目标路径。
-func (s *ImageService) enqueueImageExport(sourceID, imageID, path string, exclusive bool) ImageTask {
+func (s *ImageService) enqueueImageExport(sourceID, imageID, path string, exclusive bool, total int64, totalEstimated bool) ImageTask {
 	ctx, cancel := context.WithCancel(s.serviceContext())
 	id := s.createImageTask(imageTaskState{
-		ImageTask:       ImageTask{Type: imageTaskTypeExport, SourceID: sourceID, ImageID: imageID, Path: path},
+		ImageTask: ImageTask{
+			Type:           imageTaskTypeExport,
+			SourceID:       sourceID,
+			ImageID:        imageID,
+			Path:           path,
+			Total:          max(total, int64(0)),
+			TotalEstimated: totalEstimated && total > 0,
+		},
 		cancel:          cancel,
 		exclusiveTarget: exclusive,
 	})
@@ -373,6 +427,7 @@ func (s *ImageService) commitImageExport(taskID, tmp, target string) error {
 	s.updateTask(taskID, func(task *imageTaskState) {
 		task.Bytes = info.Size()
 		task.Total = info.Size()
+		task.TotalEstimated = false
 		task.Completed = info.Size()
 	})
 	return nil
@@ -389,7 +444,11 @@ func (s *ImageService) runImageExport(ctx context.Context, taskID, sourceID, ima
 	case exportSem <- struct{}{}:
 		defer func() { <-exportSem }()
 	case <-ctx.Done():
-		s.updateTask(taskID, func(task *imageTaskState) { task.Status = imageTaskCanceled; task.Stage = "canceled" })
+		s.updateTask(taskID, func(task *imageTaskState) {
+			task.Status = imageTaskCanceled
+			task.Stage = "canceled"
+			task.cancel = nil
+		})
 		return
 	}
 	s.updateTask(taskID, func(task *imageTaskState) { task.Status = imageTaskRunning; task.Stage = "preparing" })
@@ -403,12 +462,18 @@ func (s *ImageService) runImageExport(ctx context.Context, taskID, sourceID, ima
 		}
 	}
 	if errors.Is(err, context.Canceled) {
-		s.updateTask(taskID, func(task *imageTaskState) { task.Status = imageTaskCanceled; task.Stage = "canceled"; task.Error = "" })
+		s.updateTask(taskID, func(task *imageTaskState) {
+			task.Status = imageTaskCanceled
+			task.Stage = "canceled"
+			task.Error = ""
+			task.cancel = nil
+		})
 	} else if err != nil {
 		s.updateTask(taskID, func(task *imageTaskState) {
 			task.Status = imageTaskFailed
 			task.Stage = "failed"
 			task.Error = err.Error()
+			task.cancel = nil
 		})
 	} else {
 		s.updateTask(taskID, func(task *imageTaskState) {
@@ -416,13 +481,9 @@ func (s *ImageService) runImageExport(ctx context.Context, taskID, sourceID, ima
 			task.Stage = "done"
 			task.Completed = task.Total
 			task.Path = target
+			task.cancel = nil
 		})
 	}
-	s.taskMu.Lock()
-	if task := s.tasks[taskID]; task != nil && task.cancel != nil {
-		task.cancel = nil
-	}
-	s.taskMu.Unlock()
 }
 
 type progressWriter struct {
@@ -581,6 +642,7 @@ func (s *ImageService) exportRegistryOCI(ctx context.Context, taskID string, sou
 	total += int64(len(ociData) + len(indexData))
 	s.updateTask(taskID, func(task *imageTaskState) {
 		task.Total = total
+		task.TotalEstimated = false
 		task.Completed = 0
 		task.Bytes = 0
 		task.Stage = "writing"
