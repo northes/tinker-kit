@@ -21,6 +21,8 @@ export interface Config {
     "jsonAutoFormatOnFillMigrated": boolean;
     "dockerCLIPath": string;
     "imageSources": ImageSource[] | null;
+    "sshConnections": SSHConnection[] | null;
+    "fileSources": FileSource[] | null;
 }
 
 export interface DockerDeleteFailure {
@@ -135,6 +137,38 @@ export interface DockerStatus {
     "error": string;
 }
 
+/**
+ * FileSource 是 SSH 文件管理中的可浏览源；同一连接可被多个源引用。
+ */
+export interface FileSource {
+    "id": string;
+    "name": string;
+    "sshConnectionID": string;
+    "defaultPath": string;
+}
+
+export interface FileTask {
+    "id": string;
+    "type": string;
+    "sourceID": string;
+    "status": string;
+    "stage": string;
+    "current"?: string;
+    "target"?: string;
+    "completed": number;
+    "total": number;
+    "files": number;
+    "doneFiles": number;
+    "error"?: string;
+    "createdAt": string;
+    "updatedAt": string;
+}
+
+export interface FileTaskSnapshot {
+    "revision": number;
+    "tasks": FileTask[] | null;
+}
+
 export interface HistoryContent {
     "input": string;
     "output": string;
@@ -243,11 +277,37 @@ export interface RegistryPlatform {
     "variant": string;
 }
 
+export interface RemoteFileEntry {
+    "name": string;
+    "path": string;
+    "isDir": boolean;
+    "isSymlink": boolean;
+    "size": number;
+    "modifiedAt": string;
+}
+
 /**
  * SSHConfigHost 是 ~/.ssh/config 中可以直接交给系统 ssh 的 Host 别名。
  */
 export interface SSHConfigHost {
     "alias": string;
+}
+
+/**
+ * SSHConnection 是文件工具复用的 SSH 连接配置。文件源只引用 ID，避免重复保存凭据。
+ */
+export interface SSHConnection {
+    "id": string;
+    "name": string;
+    "mode": string;
+    "alias": string;
+    "host": string;
+    "port": number;
+    "username": string;
+    "password": string;
+    "privateKey": string;
+    "privateKeyPath": string;
+    "keyPassphrase": string;
 }
 
 export interface SidebarToolConfig {

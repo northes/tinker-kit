@@ -68,6 +68,7 @@ import {
   HardDrives,
   Image as ImageIcon,
   LinkSimple,
+  FolderSimple,
   SidebarSimple,
   TextAa,
   TextT,
@@ -188,6 +189,7 @@ const defaultSettings: Settings = {
     { id: 'jwt', enabled: true },
     { id: 'url', enabled: true },
     { id: 'image-manager', enabled: true },
+    { id: 'ssh-files', enabled: true },
   ],
   themeMode: 'dark',
   lightTheme: 'default-light',
@@ -228,6 +230,8 @@ const defaultSettings: Settings = {
       registryPassword: '',
     },
   ],
+  sshConnections: [],
+  fileSources: [],
 };
 const JsonTool = lazy(() => import('./components/JsonTool'));
 const TimeTool = lazy(() => import('./components/TimeTool'));
@@ -239,6 +243,7 @@ const UrlTool = lazy(() => import('./components/UrlTool'));
 const ImageTool = lazy(() => import('./components/ImageTool'));
 const ImageManagerTool = lazy(() => import('./components/ImageManagerTool'));
 const ImageManagerDetailPage = lazy(() => import('./components/ImageManagerDetailPage'));
+const SshFilesTool = lazy(() => import('./components/SshFilesTool'));
 const SettingsPage = lazy(() => import('./components/SettingsPage'));
 const HistoryPage = lazy(() => import('./components/HistoryPage'));
 const tools: ToolDefinition[] = [
@@ -304,6 +309,13 @@ const tools: ToolDefinition[] = [
     descriptionKey: 'tools.image-manager.description',
     icon: HardDrives,
     keywords: 'docker image manager ssh container 镜像 管理 容器 推送 删除',
+  },
+  {
+    id: 'ssh-files' as const,
+    nameKey: 'tools.ssh-files.name',
+    descriptionKey: 'tools.ssh-files.description',
+    icon: FolderSimple,
+    keywords: 'ssh sftp files upload download explorer 文件 上传 下载 目录',
   },
 ];
 const paletteItems: PaletteItem[] = [
@@ -394,6 +406,14 @@ const paletteItems: PaletteItem[] = [
     icon: HardDrives,
     keywords: 'docker image manager ssh 镜像 管理 容器 打开工具',
     page: 'image-manager',
+  },
+  {
+    id: 'open:ssh-files',
+    labelKey: 'commands.openSshFiles',
+    groupKey: 'groups.tools',
+    icon: FolderSimple,
+    keywords: 'ssh sftp files upload download 文件 上传 下载 目录 打开工具',
+    page: 'ssh-files',
   },
   {
     id: 'paste',
@@ -1861,6 +1881,15 @@ function AppShell() {
                   />
                 </Suspense>
               ) : null}
+            </div>
+            <div
+              className={`tool-slot h-full min-h-0 overflow-hidden${page === 'ssh-files' ? '' : ' is-hidden absolute inset-0 invisible pointer-events-none'}`}
+            >
+              {visited.has('ssh-files') && (
+                <Suspense fallback={null}>
+                  <SshFilesTool active={page === 'ssh-files'} />
+                </Suspense>
+              )}
             </div>
             <div
               className={`tool-slot h-full min-h-0 overflow-hidden${page === 'settings' ? '' : ' is-hidden absolute inset-0 invisible pointer-events-none'}`}

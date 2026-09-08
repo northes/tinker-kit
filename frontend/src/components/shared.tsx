@@ -5,7 +5,16 @@ import { Popover, PopoverContent, PopoverTrigger } from './ui/popover';
 import { BracketsCurly, CaretDown, Check } from '@phosphor-icons/react';
 
 export type ToolId =
-  'json' | 'time' | 'text' | 'base64' | 'diff' | 'jwt' | 'url' | 'image' | 'image-manager';
+  | 'json'
+  | 'time'
+  | 'text'
+  | 'base64'
+  | 'diff'
+  | 'jwt'
+  | 'url'
+  | 'image'
+  | 'image-manager'
+  | 'ssh-files';
 export type PendingAction = {
   tool: ToolId;
   action: string;

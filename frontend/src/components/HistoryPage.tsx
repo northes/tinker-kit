@@ -22,6 +22,7 @@ import {
   GitDiff,
   Hash,
   HardDrives,
+  FolderSimple,
   Image as ImageIcon,
   Key,
   LinkSimple,
@@ -59,6 +60,7 @@ export function toHistoryItem(item: StoredHistoryItem): HistoryItem | null {
     item.tool === 'url' ||
     item.tool === 'image' ||
     item.tool === 'image-manager'
+    || item.tool === 'ssh-files'
     ? { ...item, tool: item.tool, detail: normalizeHistoryDetail(item.detail) }
     : null;
 }
@@ -97,6 +99,8 @@ export function HistoryIcon({ tool }: { tool: ToolId }) {
     <ImageIcon weight="duotone" />
   ) : tool === 'image-manager' ? (
     <HardDrives weight="duotone" />
+  ) : tool === 'ssh-files' ? (
+    <FolderSimple weight="duotone" />
   ) : (
     <TextAa weight="duotone" />
   );
@@ -153,7 +157,7 @@ function endOfDayMs(date: Date) {
   return end.getTime();
 }
 const historyTools: Array<{ id: ToolId; nameKey: string }> = (
-  ['json', 'time', 'text', 'base64', 'diff', 'jwt', 'url', 'image', 'image-manager'] as const
+  ['json', 'time', 'text', 'base64', 'diff', 'jwt', 'url', 'image', 'image-manager', 'ssh-files'] as const
 ).map((id) => ({ id, nameKey: `tools.${id}.name` }));
 
 export default function HistoryPage({

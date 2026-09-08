@@ -92,7 +92,7 @@ func main() {
 	logService := NewLogService()
 	systemInfoService := NewSystemInfoService()
 	updateService := NewUpdateService(currentVersion)
-	fileService := NewFileService()
+	fileService := NewFileService(cfgService)
 	imageService := NewImageService(cfgService)
 	dockService := dock.New()
 	isQuitting := false
@@ -118,6 +118,9 @@ func main() {
 	imageService.setEventEmitter(func(name string, data any) {
 		_ = app.Event.Emit(name, data)
 	})
+	fileService.setEventEmitter(func(name string, data any) {
+		_ = app.Event.Emit(name, data)
+	})
 
 	gh, err := githubprovider.New(githubprovider.Config{
 		Repository:    "northes/dev-utils",
@@ -139,6 +142,7 @@ func main() {
 	updateService.start(app.Updater, cfgService.Get().AutoCheckUpdates)
 	app.OnShutdown(updateService.stopScheduler)
 	app.OnShutdown(imageService.shutdown)
+	app.OnShutdown(fileService.cleanup)
 
 	window := app.Window.NewWithOptions(application.WebviewWindowOptions{
 		Name:             appName,
@@ -151,6 +155,7 @@ func main() {
 		MinWidth:         640,
 		MinHeight:        440,
 		DisableResize:    false,
+		EnableFileDrop:   true,
 		BackgroundColour: application.NewRGB(17, 17, 19),
 		URL:              "/",
 		Mac: application.MacWindow{
@@ -167,6 +172,12 @@ func main() {
 				AllowsBackForwardNavigationGestures: application.Enabled,
 			},
 		},
+	})
+	window.OnWindowEvent(events.Common.WindowFilesDropped, func(event *application.WindowEvent) {
+		_ = app.Event.Emit("files-dropped", map[string]any{
+			"files":   event.Context().DroppedFiles(),
+			"details": event.Context().DropTargetDetails(),
+		})
 	})
 	log.Printf("[startup] window created; WebKit back-forward gestures enabled")
 	window.Show()

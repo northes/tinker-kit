@@ -36,6 +36,8 @@ type Config struct {
 	JsonAutoFormatOnFillMigrated bool                `json:"jsonAutoFormatOnFillMigrated"`
 	DockerCLIPath                string              `json:"dockerCLIPath"`
 	ImageSources                 []ImageSource       `json:"imageSources"`
+	SSHConnections               []SSHConnection     `json:"sshConnections"`
+	FileSources                  []FileSource        `json:"fileSources"`
 }
 
 type SidebarToolConfig struct {
@@ -43,7 +45,7 @@ type SidebarToolConfig struct {
 	Enabled bool   `json:"enabled"`
 }
 
-var defaultSidebarToolIDs = []string{"json", "time", "text", "base64", "diff", "jwt", "url", "image-manager"}
+var defaultSidebarToolIDs = []string{"json", "time", "text", "base64", "diff", "jwt", "url", "image-manager", "ssh-files"}
 
 type ImageSource struct {
 	ID                string `json:"id"`
@@ -59,6 +61,29 @@ type ImageSource struct {
 	RegistryURL       string `json:"registryURL"`
 	RegistryUsername  string `json:"registryUsername"`
 	RegistryPassword  string `json:"registryPassword"`
+}
+
+// SSHConnection 是文件工具复用的 SSH 连接配置。文件源只引用 ID，避免重复保存凭据。
+type SSHConnection struct {
+	ID             string `json:"id"`
+	Name           string `json:"name"`
+	Mode           string `json:"mode"`
+	Alias          string `json:"alias"`
+	Host           string `json:"host"`
+	Port           int    `json:"port"`
+	Username       string `json:"username"`
+	Password       string `json:"password"`
+	PrivateKey     string `json:"privateKey"`
+	PrivateKeyPath string `json:"privateKeyPath"`
+	KeyPassphrase  string `json:"keyPassphrase"`
+}
+
+// FileSource 是 SSH 文件管理中的可浏览源；同一连接可被多个源引用。
+type FileSource struct {
+	ID              string `json:"id"`
+	Name            string `json:"name"`
+	SSHConnectionID string `json:"sshConnectionID"`
+	DefaultPath     string `json:"defaultPath"`
 }
 
 const localImageSourceID = "local"
@@ -107,7 +132,7 @@ type historyStored struct {
 }
 
 func defaultConfig() Config {
-	return Config{TrayMatchEnabled: true, TrayMatchTools: []string{"json", "time", "text", "base64", "diff", "jwt", "url"}, AutoOverwrite: true, AutoCheckUpdates: true, Language: "zh-CN", SidebarMode: "full", SidebarTools: defaultSidebarTools(), ThemeMode: "dark", LightTheme: "default-light", DarkTheme: "default-dark", DiffClipboardTargetMode: "alternate", CodeEditorFontSize: 16, TimeResultOrder: []string{"local", "dateTime", "dateOnly", "timeOnly", "zonedIso8601", "rfc3339", "utc", "compact", "underscore", "unixSeconds", "unixMilliseconds", "unixNanoseconds"}, JsonAutoFormatOnFill: true, JsonAutoFormatOnFillMigrated: true, ImageSources: defaultImageSources()}
+	return Config{TrayMatchEnabled: true, TrayMatchTools: []string{"json", "time", "text", "base64", "diff", "jwt", "url"}, AutoOverwrite: true, AutoCheckUpdates: true, Language: "zh-CN", SidebarMode: "full", SidebarTools: defaultSidebarTools(), ThemeMode: "dark", LightTheme: "default-light", DarkTheme: "default-dark", DiffClipboardTargetMode: "alternate", CodeEditorFontSize: 16, TimeResultOrder: []string{"local", "dateTime", "dateOnly", "timeOnly", "zonedIso8601", "rfc3339", "utc", "compact", "underscore", "unixSeconds", "unixMilliseconds", "unixNanoseconds"}, JsonAutoFormatOnFill: true, JsonAutoFormatOnFillMigrated: true, ImageSources: defaultImageSources(), SSHConnections: []SSHConnection{}, FileSources: []FileSource{}}
 }
 
 func normalizeThemeID(theme string, defaultID string, legacyID string) string {
@@ -426,6 +451,12 @@ func normalizeDockerCLIPath(path string) string {
 func normalizeConfig(cfg Config) Config {
 	cfg.DockerCLIPath = normalizeDockerCLIPath(cfg.DockerCLIPath)
 	cfg.ImageSources = normalizeImageSources(cfg.ImageSources)
+	if cfg.SSHConnections == nil {
+		cfg.SSHConnections = []SSHConnection{}
+	}
+	if cfg.FileSources == nil {
+		cfg.FileSources = []FileSource{}
+	}
 	validSidebarTool := make(map[string]bool, len(defaultSidebarToolIDs))
 	for _, id := range defaultSidebarToolIDs {
 		validSidebarTool[id] = true
