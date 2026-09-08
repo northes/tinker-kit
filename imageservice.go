@@ -514,9 +514,9 @@ func runAuthenticatedSSH(ctx context.Context, source ImageSource, cliPath string
 	if user == "" {
 		return nil, errors.New("SSH 用户名为空")
 	}
-	authMethods := make([]ssh.AuthMethod, 0, 2)
+	authMethods := make([]ssh.AuthMethod, 0, 3)
 	if source.SSHPassword != "" {
-		authMethods = append(authMethods, ssh.Password(source.SSHPassword))
+		authMethods = append(authMethods, passwordAuthMethods(source.SSHPassword)...)
 	}
 	keyData := source.SSHPrivateKey
 	if keyData == "" && source.SSHPrivateKeyPath != "" {
@@ -547,39 +547,13 @@ func runAuthenticatedSSH(ctx context.Context, source ImageSource, cliPath string
 	}
 	config := &ssh.ClientConfig{User: user, Auth: authMethods, HostKeyCallback: hostKeyCallback, Timeout: imageCommandTimeout}
 	address := net.JoinHostPort(host, strconv.Itoa(port))
-	netConn, err := (&net.Dialer{}).DialContext(ctx, "tcp", address)
+	client, err := dialSSHClient(ctx, address, config)
 	if err == nil {
-		handshake := make(chan struct {
-			conn     ssh.Conn
-			channels <-chan ssh.NewChannel
-			requests <-chan *ssh.Request
-			err      error
-		}, 1)
-		go func() {
-			clientConn, channels, requests, handshakeErr := ssh.NewClientConn(netConn, address, config)
-			handshake <- struct {
-				conn     ssh.Conn
-				channels <-chan ssh.NewChannel
-				requests <-chan *ssh.Request
-				err      error
-			}{clientConn, channels, requests, handshakeErr}
-		}()
-		select {
-		case result := <-handshake:
-			if result.err == nil {
-				client := ssh.NewClient(result.conn, result.channels, result.requests)
-				defer client.Close()
-				return runSSHCommand(ctx, client, cliPath, dockerArgs...)
-			}
-			err = result.err
-		case <-ctx.Done():
-			_ = netConn.Close()
-			return nil, ctx.Err()
-		}
-		_ = netConn.Close()
+		defer client.Close()
+		return runSSHCommand(ctx, client, cliPath, dockerArgs...)
 	}
-	if err != nil {
-		return nil, errors.New("连接 SSH 主机失败")
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
 	}
 	return nil, errors.New("连接 SSH 主机失败")
 }
@@ -600,9 +574,9 @@ func runAuthenticatedSSHStream(ctx context.Context, source ImageSource, cliPath 
 	if user == "" {
 		return errors.New("SSH 用户名为空")
 	}
-	authMethods := make([]ssh.AuthMethod, 0, 2)
+	authMethods := make([]ssh.AuthMethod, 0, 3)
 	if source.SSHPassword != "" {
-		authMethods = append(authMethods, ssh.Password(source.SSHPassword))
+		authMethods = append(authMethods, passwordAuthMethods(source.SSHPassword)...)
 	}
 	keyData := source.SSHPrivateKey
 	if keyData == "" && source.SSHPrivateKeyPath != "" {
@@ -633,37 +607,15 @@ func runAuthenticatedSSHStream(ctx context.Context, source ImageSource, cliPath 
 	}
 	config := &ssh.ClientConfig{User: user, Auth: authMethods, HostKeyCallback: hostKeyCallback, Timeout: imageCommandTimeout}
 	address := net.JoinHostPort(host, strconv.Itoa(port))
-	netConn, err := (&net.Dialer{}).DialContext(ctx, "tcp", address)
+	client, err := dialSSHClient(ctx, address, config)
 	if err != nil {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
 		return errors.New("连接 SSH 主机失败")
 	}
-	defer netConn.Close()
-	handshake := make(chan struct {
-		conn     ssh.Conn
-		channels <-chan ssh.NewChannel
-		requests <-chan *ssh.Request
-		err      error
-	}, 1)
-	go func() {
-		conn, channels, requests, handshakeErr := ssh.NewClientConn(netConn, address, config)
-		handshake <- struct {
-			conn     ssh.Conn
-			channels <-chan ssh.NewChannel
-			requests <-chan *ssh.Request
-			err      error
-		}{conn, channels, requests, handshakeErr}
-	}()
-	select {
-	case result := <-handshake:
-		if result.err != nil {
-			return errors.New("连接 SSH 主机失败")
-		}
-		client := ssh.NewClient(result.conn, result.channels, result.requests)
-		defer client.Close()
-		return runSSHCommandToWriter(ctx, client, cliPath, dst, dockerArgs...)
-	case <-ctx.Done():
-		return ctx.Err()
-	}
+	defer client.Close()
+	return runSSHCommandToWriter(ctx, client, cliPath, dst, dockerArgs...)
 }
 
 func runSSHCommand(ctx context.Context, client *ssh.Client, cliPath string, dockerArgs ...string) ([]byte, error) {

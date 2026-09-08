@@ -309,9 +309,9 @@ func remoteChild(parent, name string) string {
 }
 
 func (s *FileService) authMethods(conn SSHConnection) ([]ssh.AuthMethod, error) {
-	methods := make([]ssh.AuthMethod, 0, 2)
+	methods := make([]ssh.AuthMethod, 0, 3)
 	if conn.Password != "" {
-		methods = append(methods, ssh.Password(conn.Password))
+		methods = append(methods, passwordAuthMethods(conn.Password)...)
 	}
 	keyData := conn.PrivateKey
 	var err error
@@ -400,40 +400,13 @@ func (s *FileService) dialSFTP(ctx context.Context, conn SSHConnection) (*ssh.Cl
 	}
 	address := net.JoinHostPort(host, fmt.Sprintf("%d", port))
 	sshConfig := &ssh.ClientConfig{User: conn.Username, Auth: auth, HostKeyCallback: hostKeyCallback, Timeout: 15 * time.Second}
-	dialer := &net.Dialer{}
-	netConn, err := dialer.DialContext(ctx, "tcp", address)
+	client, err := dialSSHClient(ctx, address, sshConfig)
 	if err != nil {
-		return nil, nil, fmt.Errorf("连接 SSH 主机失败: %w", err)
-	}
-	handshake := make(chan struct {
-		client *ssh.Client
-		err    error
-	}, 1)
-	go func() {
-		clientConn, channels, requests, handshakeErr := ssh.NewClientConn(netConn, address, sshConfig)
-		if handshakeErr != nil {
-			handshake <- struct {
-				client *ssh.Client
-				err    error
-			}{err: handshakeErr}
-			return
+		var dialErr *sshDialError
+		if errors.As(err, &dialErr) || ctx.Err() != nil {
+			return nil, nil, err
 		}
-		handshake <- struct {
-			client *ssh.Client
-			err    error
-		}{client: ssh.NewClient(clientConn, channels, requests)}
-	}()
-	var client *ssh.Client
-	select {
-	case result := <-handshake:
-		if result.err != nil {
-			_ = netConn.Close()
-			return nil, nil, errors.New("SSH 认证失败")
-		}
-		client = result.client
-	case <-ctx.Done():
-		_ = netConn.Close()
-		return nil, nil, ctx.Err()
+		return nil, nil, errors.New("SSH 认证失败")
 	}
 	sftpClient, err := sftp.NewClient(client)
 	if err != nil {

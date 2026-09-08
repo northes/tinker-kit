@@ -6,6 +6,9 @@ import (
 	"path/filepath"
 	"reflect"
 	"testing"
+
+	"golang.org/x/crypto/ssh"
+	"golang.org/x/crypto/ssh/knownhosts"
 )
 
 func TestNormalizedRemotePath(t *testing.T) {
@@ -54,6 +57,50 @@ func TestNewSystemSFTPCommandUsesSSHSubsystem(t *testing.T) {
 	cmd := newSystemSFTPCommand(context.Background(), "dev-box")
 	if got, want := cmd.Args, []string{"ssh", "-o", "BatchMode=yes", "-o", "RequestTTY=no", "-s", "dev-box", "sftp"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("系统 SSH SFTP 参数 = %#v, want %#v", got, want)
+	}
+}
+
+func TestPasswordAuthMethodsAnswerKeyboardInteractivePasswordPrompt(t *testing.T) {
+	methods, err := (&FileService{}).authMethods(SSHConnection{Password: "secret"})
+	if err != nil {
+		t.Fatalf("构造密码认证方式失败: %v", err)
+	}
+	if len(methods) != 2 {
+		t.Fatalf("密码认证应包含 password 与 keyboard-interactive，实际有 %d 个", len(methods))
+	}
+	challenge, ok := methods[1].(ssh.KeyboardInteractiveChallenge)
+	if !ok {
+		t.Fatalf("第二个认证方式不是 keyboard-interactive: %T", methods[1])
+	}
+	answers, err := challenge("", "", []string{"Password:", "Verification code:"}, []bool{false, true})
+	if err != nil {
+		t.Fatalf("键盘交互认证回调失败: %v", err)
+	}
+	if want := []string{"secret", ""}; !reflect.DeepEqual(answers, want) {
+		t.Fatalf("键盘交互认证回答 = %#v, want %#v", answers, want)
+	}
+}
+
+type testSSHPublicKey string
+
+func (key testSSHPublicKey) Type() string {
+	return string(key)
+}
+
+func (key testSSHPublicKey) Marshal() []byte {
+	return []byte(key)
+}
+
+func (key testSSHPublicKey) Verify([]byte, *ssh.Signature) error {
+	return nil
+}
+
+func TestSSHHostKeyAlgorithmsFollowKnownRSAKeyType(t *testing.T) {
+	algorithms := sshHostKeyAlgorithmsForKnownKeys([]knownhosts.KnownKey{
+		{Key: testSSHPublicKey(ssh.KeyAlgoRSA)},
+	})
+	if want := []string{ssh.KeyAlgoRSASHA256, ssh.KeyAlgoRSASHA512, ssh.KeyAlgoRSA}; !reflect.DeepEqual(algorithms, want) {
+		t.Fatalf("RSA 主机密钥算法 = %#v, want %#v", algorithms, want)
 	}
 }
 
