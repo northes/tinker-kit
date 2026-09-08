@@ -18,7 +18,7 @@ user-invocable: false
 ## 组件与文案
 
 - React 组件、`App.tsx`、命令面板、历史记录和设置页使用 `useTranslation()` 或 `t()`。
-- 新增文案时先定义稳定的 key，再同步更新 `zh-CN.json` 和 `en-US.json`。
+- 新增或修改用户可见文案时先定义稳定的 key，再同步更新 `zh-CN.json` 和 `en-US.json`；不得只修改单一语言资源。
 - 命令面板的 `labelKey` 复用实际界面按钮文案；只有切换型命令才使用独立的 `commands.toggleXxx` key。
 - locale key 按领域组织，例如 `tools.<id>`、`<tool>Tool.*`、`commands.*`、`settings.*`；不要为同一文案建立重复 key。
 - 翻译缺失应在资源层修复，不在组件中增加英文、中文或默认字符串兜底分支。
@@ -32,4 +32,4 @@ user-invocable: false
 ## 静态检查
 
 - 搜索新增代码中的硬编码用户可见字符串，确认已迁到 locale；允许日志、错误类型、协议值和内部 ID 保持代码常量。
-- 检查中英文资源的 key 结构一致。
+- 检查中英文资源的 key 结构一致；文案变更时确认对应 key 在两种语言资源中均已更新。
