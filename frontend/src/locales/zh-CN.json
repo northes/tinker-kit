@@ -1121,6 +1121,7 @@
     "taskConflict": "等待确认",
     "taskSuccess": "已完成",
     "taskFailed": "失败",
+    "taskFailedToast": "{{operation}}失败",
     "taskCanceled": "已取消",
     "taskUnknown": "未知状态",
     "taskFiles": "{{done}} / {{total}} 个项目",

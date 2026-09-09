@@ -1121,6 +1121,7 @@
     "taskConflict": "Needs confirmation",
     "taskSuccess": "Completed",
     "taskFailed": "Failed",
+    "taskFailedToast": "{{operation}} failed",
     "taskCanceled": "Canceled",
     "taskUnknown": "Unknown status",
     "taskFiles": "{{done}} / {{total}} items",

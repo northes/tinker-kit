@@ -316,6 +316,7 @@ export default function SshFilesTool({ active }: Props) {
   const [dragPreparing, setDragPreparing] = useState('');
   const refreshedUploadTasks = useRef(new Set<string>());
   const refreshedOperationTasks = useRef(new Set<string>());
+  const notifiedTaskFailures = useRef(new Set<string>());
   const handledConflictTasks = useRef(new Set<string>());
   const taskRevisionRef = useRef(0);
   const directoryRequestRef = useRef(0);
@@ -488,6 +489,21 @@ export default function SshFilesTool({ active }: Props) {
       void loadDirectory(sourceID, currentPath, showHidden);
     }
   }, [active, currentPath, loadDirectory, showHidden, sourceID, tasks]);
+
+  useEffect(() => {
+    if (!active) return;
+    for (const task of tasks) {
+      if (task.status !== 'failed' || notifiedTaskFailures.current.has(task.id)) continue;
+      notifiedTaskFailures.current.add(task.id);
+      toast.add({
+        title: t('sshFilesTool.taskFailedToast', {
+          operation: taskTypeLabel(task.type, t),
+        }),
+        description: task.error || t('sshFilesTool.taskFailed'),
+        type: 'error',
+      });
+    }
+  }, [active, t, tasks]);
 
   useEffect(() => {
     for (const task of tasks) {
