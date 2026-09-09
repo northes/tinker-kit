@@ -1020,6 +1020,18 @@
     "bodyPrefix": "Clipboard matched ",
     "bodySuffix": ". Fill it in?"
   },
+  "sshHostKeyDialog": {
+    "title": "SSH host key verification",
+    "unknownDescription": "This is the first connection to SSH host {{address}}.",
+    "changedDescription": "The SSH host key for {{address}} does not match the saved record.",
+    "knownFingerprints": "Saved fingerprint(s)",
+    "currentFingerprint": "Current fingerprint",
+    "verifyHint": "A server rebuild can change its fingerprint, but this may also indicate a man-in-the-middle attack. Verify that the current fingerprint belongs to the trusted server before continuing.",
+    "trust": "Trust and save",
+    "update": "Update and save",
+    "cancel": "Cancel",
+    "responseFailed": "Host key confirmation failed"
+  },
   "clearHistoryDialog": {
     "title": "Clear history?",
     "body": "This will delete all local history and cannot be undone.",

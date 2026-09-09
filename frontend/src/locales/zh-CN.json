@@ -1020,6 +1020,18 @@
     "confirm": "填入",
     "cancel": "取消"
   },
+  "sshHostKeyDialog": {
+    "title": "SSH 主机指纹确认",
+    "unknownDescription": "首次连接 SSH 主机 {{address}}。",
+    "changedDescription": "SSH 主机 {{address}} 的指纹与已保存记录不一致。",
+    "knownFingerprints": "已保存指纹",
+    "currentFingerprint": "当前指纹",
+    "verifyHint": "服务器重装可能导致指纹变化，也可能表示存在中间人攻击。请先确认当前指纹来自可信服务器。",
+    "trust": "信任并保存",
+    "update": "更新并保存",
+    "cancel": "取消",
+    "responseFailed": "主机指纹确认失败"
+  },
   "clearHistoryDialog": {
     "title": "清空历史记录？",
     "body": "此操作将删除本机所有历史记录，无法撤销。",

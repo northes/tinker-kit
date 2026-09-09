@@ -553,7 +553,7 @@ func (s *ImageService) exportDockerTar(ctx context.Context, taskID string, sourc
 
 func (s *ImageService) streamDockerCommand(ctx context.Context, source ImageSource, cliPath string, args []string, dst io.Writer) error {
 	if source.Kind == "ssh" && (source.SSHPassword != "" || source.SSHPrivateKey != "" || source.SSHPrivateKeyPath != "") {
-		return runAuthenticatedSSHStream(ctx, source, cliPath, dst, args...)
+		return runAuthenticatedSSHStream(ctx, source, cliPath, s.sshLanguage(), dst, args...)
 	}
 	name, commandArgs, err := buildImageCommand(source, cliPath, args...)
 	if err != nil {

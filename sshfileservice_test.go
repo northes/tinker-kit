@@ -2,9 +2,13 @@ package main
 
 import (
 	"context"
+	"crypto/ed25519"
+	"crypto/rand"
+	"errors"
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 
 	"golang.org/x/crypto/ssh"
@@ -101,6 +105,72 @@ func TestSSHHostKeyAlgorithmsFollowKnownRSAKeyType(t *testing.T) {
 	})
 	if want := []string{ssh.KeyAlgoRSASHA256, ssh.KeyAlgoRSASHA512, ssh.KeyAlgoRSA}; !reflect.DeepEqual(algorithms, want) {
 		t.Fatalf("RSA 主机密钥算法 = %#v, want %#v", algorithms, want)
+	}
+}
+
+func TestSSHKnownHostStoreTrustsAndReplacesHostKey(t *testing.T) {
+	keyPair := func() ssh.PublicKey {
+		_, private, err := ed25519.GenerateKey(rand.Reader)
+		if err != nil {
+			t.Fatalf("生成测试主机密钥失败: %v", err)
+		}
+		key, err := ssh.NewPublicKey(private.Public())
+		if err != nil {
+			t.Fatalf("构造测试主机公钥失败: %v", err)
+		}
+		return key
+	}
+	firstKey, secondKey := keyPair(), keyPair()
+	store := &sshKnownHostStore{
+		path: filepath.Join(t.TempDir(), "known_hosts"),
+		prompt: func(_ string, _ string, _ ssh.PublicKey, _ []knownhosts.KnownKey) bool {
+			return true
+		},
+	}
+	callback, err := store.callback("zh-CN")
+	if err != nil {
+		t.Fatalf("创建应用 known_hosts 回调失败: %v", err)
+	}
+	host := sshHostAddress("example.test:22")
+	err = callback(string(host), host, firstKey)
+	var firstError *sshHostKeyError
+	if !errors.As(err, &firstError) || len(firstError.want) != 0 {
+		t.Fatalf("首次连接应返回未知主机挑战，实际错误: %v", err)
+	}
+	if accepted, err := store.confirm(context.Background(), firstError); err != nil || !accepted {
+		t.Fatalf("接受未知主机失败: accepted=%t err=%v", accepted, err)
+	}
+	callback, err = store.callback("zh-CN")
+	if err != nil {
+		t.Fatalf("重新加载应用 known_hosts 失败: %v", err)
+	}
+	if err := callback(string(host), host, firstKey); err != nil {
+		t.Fatalf("已信任的主机密钥不应失败: %v", err)
+	}
+
+	err = callback(string(host), host, secondKey)
+	var changedError *sshHostKeyError
+	if !errors.As(err, &changedError) || len(changedError.want) != 1 {
+		t.Fatalf("密钥变更应返回变更挑战，实际错误: %v", err)
+	}
+	if accepted, err := store.confirm(context.Background(), changedError); err != nil || !accepted {
+		t.Fatalf("更新主机密钥失败: accepted=%t err=%v", accepted, err)
+	}
+	content, err := os.ReadFile(store.path)
+	if err != nil {
+		t.Fatalf("读取应用 known_hosts 失败: %v", err)
+	}
+	firstLine := knownhosts.Line([]string{string(host)}, firstKey)
+	secondLine := knownhosts.Line([]string{string(host)}, secondKey)
+	if strings.Contains(string(content), firstLine) || !strings.Contains(string(content), secondLine) {
+		t.Fatalf("更新后 known_hosts 未替换旧指纹: %s", content)
+	}
+	callback, err = store.callback("zh-CN")
+	if err != nil {
+		t.Fatalf("再次加载应用 known_hosts 失败: %v", err)
+	}
+	if err := callback(string(host), host, secondKey); err != nil {
+		t.Fatalf("更新后的主机密钥不应失败: %v", err)
 	}
 }
 

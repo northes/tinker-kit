@@ -108,6 +108,32 @@ func dialSSHClient(ctx context.Context, address string, config *ssh.ClientConfig
 		return client, nil
 	}
 
+	var hostKeyErr *sshHostKeyError
+	if errors.As(err, &hostKeyErr) {
+		if len(hostKeyErr.want) > 0 {
+			// 服务端可能在多个已知主机密钥中选中了另一个算法；只用 known_hosts
+			// 已确认的密钥类型重试，不能因此放宽主机指纹校验。
+			knownAlgorithms := sshHostKeyAlgorithmsForKnownKeys(hostKeyErr.want)
+			if len(knownAlgorithms) > 0 {
+				retryConfig := *config
+				retryConfig.HostKeyAlgorithms = knownAlgorithms
+				client, retryErr := dialSSHClientOnce(ctx, address, &retryConfig)
+				if retryErr == nil {
+					return client, nil
+				}
+				if errors.As(retryErr, &hostKeyErr) {
+					return retrySSHClientAfterHostKeyPrompt(ctx, address, config, hostKeyErr)
+				}
+				var algorithmErr *ssh.AlgorithmNegotiationError
+				if errors.As(retryErr, &algorithmErr) && algorithmErr.What == "host key" {
+					return retrySSHClientAfterHostKeyPrompt(ctx, address, config, hostKeyErr)
+				}
+				return nil, retryErr
+			}
+		}
+		return retrySSHClientAfterHostKeyPrompt(ctx, address, config, hostKeyErr)
+	}
+
 	var keyErr *knownhosts.KeyError
 	if !errors.As(err, &keyErr) || len(keyErr.Want) == 0 {
 		return nil, err
@@ -120,6 +146,29 @@ func dialSSHClient(ctx context.Context, address string, config *ssh.ClientConfig
 	}
 	retryConfig := *config
 	retryConfig.HostKeyAlgorithms = knownAlgorithms
+	return dialSSHClientOnce(ctx, address, &retryConfig)
+}
+
+func retrySSHClientAfterHostKeyPrompt(
+	ctx context.Context,
+	address string,
+	config *ssh.ClientConfig,
+	hostKeyErr *sshHostKeyError,
+) (*ssh.Client, error) {
+	accepted, err := hostKeyErr.store.confirm(ctx, hostKeyErr)
+	if err != nil {
+		return nil, err
+	}
+	if !accepted {
+		return nil, hostKeyErr
+	}
+	hostKeyCallback, err := hostKeyErr.store.callback(hostKeyErr.language)
+	if err != nil {
+		return nil, err
+	}
+	retryConfig := *config
+	retryConfig.HostKeyCallback = hostKeyCallback
+	retryConfig.HostKeyAlgorithms = sshHostKeyAlgorithms()
 	return dialSSHClientOnce(ctx, address, &retryConfig)
 }
 

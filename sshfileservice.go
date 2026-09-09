@@ -19,7 +19,6 @@ import (
 	"github.com/pkg/sftp"
 	"github.com/wailsapp/wails/v3/pkg/application"
 	"golang.org/x/crypto/ssh"
-	"golang.org/x/crypto/ssh/knownhosts"
 )
 
 const (
@@ -385,13 +384,9 @@ func (s *FileService) dialSFTP(ctx context.Context, conn SSHConnection) (*ssh.Cl
 	if err != nil {
 		return nil, nil, err
 	}
-	home, err := os.UserHomeDir()
+	hostKeyCallback, err := newAppSSHHostKeyCallback(s.configSnapshot().Language)
 	if err != nil {
-		return nil, nil, errors.New("获取 SSH 主目录失败")
-	}
-	hostKeyCallback, err := knownhosts.New(filepath.Join(home, ".ssh", "known_hosts"))
-	if err != nil {
-		return nil, nil, errors.New("读取 SSH known_hosts 失败")
+		return nil, nil, fmt.Errorf("读取应用 SSH known_hosts 失败: %w", err)
 	}
 	host := strings.TrimPrefix(strings.TrimSuffix(conn.Host, "]"), "[")
 	port := conn.Port
@@ -405,6 +400,10 @@ func (s *FileService) dialSFTP(ctx context.Context, conn SSHConnection) (*ssh.Cl
 		var dialErr *sshDialError
 		if errors.As(err, &dialErr) || ctx.Err() != nil {
 			return nil, nil, err
+		}
+		var hostKeyErr *sshHostKeyError
+		if errors.As(err, &hostKeyErr) {
+			return nil, nil, hostKeyErr
 		}
 		return nil, nil, errors.New("SSH 认证失败")
 	}

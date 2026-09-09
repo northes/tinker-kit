@@ -93,6 +93,7 @@ import {
   ClearHistory,
   Get as GetConfig,
   GetHistoryContent,
+  ResolveSSHHostKeyPrompt,
   Save as SaveConfig,
 } from '../bindings/changeme/configservice';
 import { Log as LogFrontend } from '../bindings/changeme/logservice';
@@ -113,6 +114,37 @@ type ImageSourceSaveRequest = {
   reject: (reason?: unknown) => void;
 };
 type SidebarMode = 'full' | 'icon' | 'hidden';
+type SSHHostKeyPrompt = {
+  id: string;
+  address: string;
+  fingerprint: string;
+  knownFingerprints: string[];
+  changed: boolean;
+};
+
+function parseSSHHostKeyPrompt(value: unknown): SSHHostKeyPrompt | null {
+  if (!value || typeof value !== 'object') return null;
+  const prompt = value as Record<string, unknown>;
+  if (
+    typeof prompt.id !== 'string' ||
+    typeof prompt.address !== 'string' ||
+    typeof prompt.fingerprint !== 'string' ||
+    !prompt.id ||
+    !prompt.address ||
+    !prompt.fingerprint
+  )
+    return null;
+  return {
+    id: prompt.id,
+    address: prompt.address,
+    fingerprint: prompt.fingerprint,
+    knownFingerprints: Array.isArray(prompt.knownFingerprints)
+      ? prompt.knownFingerprints.filter((item): item is string => typeof item === 'string')
+      : [],
+    changed: prompt.changed === true,
+  };
+}
+
 function normalizedImageSource(source: NonNullable<Settings['imageSources']>[number]) {
   const value = source as unknown as Record<string, unknown>;
   const kind = String(value.kind ?? '').trim();
@@ -1110,6 +1142,8 @@ function AppShell() {
   const [settings, setSettings] = useState<Settings>(defaultSettings);
   const [sidebarManaging, setSidebarManaging] = useState(false);
   const [historyRevision, setHistoryRevision] = useState(0);
+  const [sshHostKeyPrompt, setSSHHostKeyPrompt] = useState<SSHHostKeyPrompt | null>(null);
+  const sshHostKeyPromptResponseRef = useRef<string | null>(null);
   const [systemDark, setSystemDark] = useState(
     () =>
       typeof window !== 'undefined' && window.matchMedia('(prefers-color-scheme: dark)').matches,
@@ -1174,7 +1208,35 @@ function AppShell() {
     routerNavigate(`${IMAGE_MANAGER_DETAIL_PATH}?${params.toString()}`);
     dismissOverlays();
   };
+  const respondSSHHostKeyPrompt = (accepted: boolean) => {
+    const prompt = sshHostKeyPrompt;
+    if (!prompt || sshHostKeyPromptResponseRef.current === prompt.id) return;
+    sshHostKeyPromptResponseRef.current = prompt.id;
+    setSSHHostKeyPrompt(null);
+    void ResolveSSHHostKeyPrompt(prompt.id, accepted)
+      .catch((error) => {
+        logFrontend(`[ssh] host key prompt response failed: ${String(error)}`);
+        toast.add({
+          title: t('sshHostKeyDialog.responseFailed'),
+          description: String(error),
+          type: 'error',
+        });
+      })
+      .finally(() => {
+        if (sshHostKeyPromptResponseRef.current === prompt.id) {
+          sshHostKeyPromptResponseRef.current = null;
+        }
+      });
+  };
   const navigate = navigatePage;
+  useEffect(() => {
+    const off = Events.On('ssh:host-key', (event) => {
+      const prompt = parseSSHHostKeyPrompt(event.data);
+      if (!prompt) return;
+      setSSHHostKeyPrompt((current) => current ?? prompt);
+    });
+    return () => off();
+  }, []);
   useEffect(() => {
     const next = pageFromLocation(location.pathname, location.search);
     logFrontend(
@@ -1934,6 +1996,60 @@ function AppShell() {
           page={sidebarPage}
         />
       </div>
+      <AlertDialog
+        open={sshHostKeyPrompt !== null}
+        onOpenChange={(open) => {
+          if (!open) respondSSHHostKeyPrompt(false);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t('sshHostKeyDialog.title')}</AlertDialogTitle>
+            {sshHostKeyPrompt ? (
+              <AlertDialogDescription render={<div />} className="space-y-3 text-left">
+                <p className="m-0">
+                  {t(
+                    sshHostKeyPrompt.changed
+                      ? 'sshHostKeyDialog.changedDescription'
+                      : 'sshHostKeyDialog.unknownDescription',
+                    { address: sshHostKeyPrompt.address },
+                  )}
+                </p>
+                {sshHostKeyPrompt.knownFingerprints.length > 0 ? (
+                  <div className="grid gap-1.5">
+                    <span className="text-xs font-medium text-foreground">
+                      {t('sshHostKeyDialog.knownFingerprints')}
+                    </span>
+                    {sshHostKeyPrompt.knownFingerprints.map((fingerprint) => (
+                      <code
+                        key={fingerprint}
+                        className="break-all rounded-md border bg-muted/30 px-2 py-1 text-xs"
+                      >
+                        {fingerprint}
+                      </code>
+                    ))}
+                  </div>
+                ) : null}
+                <div className="grid gap-1.5">
+                  <span className="text-xs font-medium text-foreground">
+                    {t('sshHostKeyDialog.currentFingerprint')}
+                  </span>
+                  <code className="break-all rounded-md border bg-muted/30 px-2 py-1 text-xs">
+                    {sshHostKeyPrompt.fingerprint}
+                  </code>
+                </div>
+                <p className="m-0 text-xs">{t('sshHostKeyDialog.verifyHint')}</p>
+              </AlertDialogDescription>
+            ) : null}
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t('sshHostKeyDialog.cancel')}</AlertDialogCancel>
+            <AlertDialogAction onClick={() => respondSSHHostKeyPrompt(true)}>
+              {t(sshHostKeyPrompt?.changed ? 'sshHostKeyDialog.update' : 'sshHostKeyDialog.trust')}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
       <AlertDialog
         open={matchDialog !== null}
         onOpenChange={(open) => {

@@ -28,7 +28,6 @@ import (
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/google/go-containerregistry/pkg/v1/types"
 	"golang.org/x/crypto/ssh"
-	"golang.org/x/crypto/ssh/knownhosts"
 )
 
 const (
@@ -485,7 +484,7 @@ func (s *ImageService) runDockerSnapshot(source ImageSource, cliPath string, arg
 
 func (s *ImageService) runDockerSnapshotContext(ctx context.Context, source ImageSource, cliPath string, args []string) ([]byte, error) {
 	if source.Kind == "ssh" && (source.SSHPassword != "" || source.SSHPrivateKey != "" || source.SSHPrivateKeyPath != "") {
-		return runAuthenticatedSSH(ctx, source, cliPath, args...)
+		return runAuthenticatedSSH(ctx, source, cliPath, s.sshLanguage(), args...)
 	}
 	name, commandArgs, err := buildImageCommand(source, cliPath, args...)
 	if err != nil {
@@ -498,14 +497,26 @@ func (s *ImageService) runDockerSnapshotContext(ctx context.Context, source Imag
 	return runner(ctx, name, commandArgs...)
 }
 
-func runAuthenticatedSSH(ctx context.Context, source ImageSource, cliPath string, dockerArgs ...string) ([]byte, error) {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return nil, errors.New("获取 SSH 主目录失败")
+func (s *ImageService) sshLanguage() string {
+	if s == nil || s.config == nil {
+		return "zh-CN"
 	}
-	hostKeyCallback, err := knownhosts.New(filepath.Join(home, ".ssh", "known_hosts"))
+	if s.config.Get().Language == "en-US" {
+		return "en-US"
+	}
+	return "zh-CN"
+}
+
+func runAuthenticatedSSH(
+	ctx context.Context,
+	source ImageSource,
+	cliPath string,
+	language string,
+	dockerArgs ...string,
+) ([]byte, error) {
+	hostKeyCallback, err := newAppSSHHostKeyCallback(language)
 	if err != nil {
-		return nil, errors.New("读取 SSH known_hosts 失败")
+		return nil, fmt.Errorf("读取应用 SSH known_hosts 失败: %w", err)
 	}
 	user := source.SSHUsername
 	if user == "" {
@@ -555,17 +566,24 @@ func runAuthenticatedSSH(ctx context.Context, source ImageSource, cliPath string
 	if ctx.Err() != nil {
 		return nil, ctx.Err()
 	}
+	var hostKeyErr *sshHostKeyError
+	if errors.As(err, &hostKeyErr) {
+		return nil, hostKeyErr
+	}
 	return nil, errors.New("连接 SSH 主机失败")
 }
 
-func runAuthenticatedSSHStream(ctx context.Context, source ImageSource, cliPath string, dst io.Writer, dockerArgs ...string) error {
-	home, err := os.UserHomeDir()
+func runAuthenticatedSSHStream(
+	ctx context.Context,
+	source ImageSource,
+	cliPath string,
+	language string,
+	dst io.Writer,
+	dockerArgs ...string,
+) error {
+	hostKeyCallback, err := newAppSSHHostKeyCallback(language)
 	if err != nil {
-		return errors.New("获取 SSH 主目录失败")
-	}
-	hostKeyCallback, err := knownhosts.New(filepath.Join(home, ".ssh", "known_hosts"))
-	if err != nil {
-		return errors.New("读取 SSH known_hosts 失败")
+		return fmt.Errorf("读取应用 SSH known_hosts 失败: %w", err)
 	}
 	user := source.SSHUsername
 	if user == "" {
@@ -611,6 +629,10 @@ func runAuthenticatedSSHStream(ctx context.Context, source ImageSource, cliPath 
 	if err != nil {
 		if ctx.Err() != nil {
 			return ctx.Err()
+		}
+		var hostKeyErr *sshHostKeyError
+		if errors.As(err, &hostKeyErr) {
+			return hostKeyErr
 		}
 		return errors.New("连接 SSH 主机失败")
 	}

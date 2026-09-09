@@ -645,6 +645,11 @@ func NewConfigService() *ConfigService {
 func (s *ConfigService) ServiceName() string { return "ConfigService" }
 func (s *ConfigService) GetAppName() string  { return appName }
 func (s *ConfigService) Get() Config         { s.mu.Lock(); defer s.mu.Unlock(); return s.cfg }
+
+// ResolveSSHHostKeyPrompt 响应前端显示的 SSH 主机指纹确认。
+func (s *ConfigService) ResolveSSHHostKeyPrompt(promptID string, accepted bool) error {
+	return resolveSSHHostKeyPrompt(promptID, accepted)
+}
 func (s *ConfigService) setOnChange(callback func(Config)) {
 	s.mu.Lock()
 	s.onChange = callback
