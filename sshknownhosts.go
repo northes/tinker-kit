@@ -4,12 +4,14 @@ import (
 	"bytes"
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 	"errors"
 	"fmt"
 	"net"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
@@ -46,6 +48,22 @@ type sshHostKeyPrompt struct {
 	Fingerprint       string   `json:"fingerprint"`
 	KnownFingerprints []string `json:"knownFingerprints,omitempty"`
 	Changed           bool     `json:"changed"`
+}
+
+// SSHKnownHost 是应用内 known_hosts 中的一条可管理记录。
+type SSHKnownHost struct {
+	ID          string `json:"id"`
+	Hosts       string `json:"hosts"`
+	KeyType     string `json:"keyType"`
+	PublicKey   string `json:"publicKey"`
+	Fingerprint string `json:"fingerprint"`
+	Comment     string `json:"comment,omitempty"`
+	Marker      string `json:"marker,omitempty"`
+}
+
+type sshKnownHostRecord struct {
+	line  int
+	entry SSHKnownHost
 }
 
 var pendingSSHHostKeyPrompts = struct {
@@ -141,6 +159,213 @@ func sshHostKeyFingerprints(keys []knownhosts.KnownKey) []string {
 		result = append(result, fingerprint)
 	}
 	return result
+}
+
+func (s *sshKnownHostStore) list() ([]SSHKnownHost, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	records, _, err := s.recordsLocked()
+	if err != nil {
+		return nil, err
+	}
+	result := make([]SSHKnownHost, 0, len(records))
+	for _, record := range records {
+		result = append(result, record.entry)
+	}
+	return result, nil
+}
+
+func (s *sshKnownHostStore) update(entry SSHKnownHost) (SSHKnownHost, error) {
+	if strings.TrimSpace(entry.ID) == "" {
+		return SSHKnownHost{}, errors.New("SSH 主机指纹记录 ID 不能为空")
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	records, lines, err := s.recordsLocked()
+	if err != nil {
+		return SSHKnownHost{}, err
+	}
+	var record *sshKnownHostRecord
+	for index := range records {
+		if records[index].entry.ID == entry.ID {
+			record = &records[index]
+			break
+		}
+	}
+	if record == nil {
+		return SSHKnownHost{}, errors.New("SSH 主机指纹记录已变更，请刷新后重试")
+	}
+	line, err := formatSSHKnownHostLine(entry, record.entry.Marker)
+	if err != nil {
+		return SSHKnownHost{}, err
+	}
+	lines[record.line-1] = line
+	if err := writeConfigAtomically(s.path, []byte(strings.Join(lines, "\n"))); err != nil {
+		return SSHKnownHost{}, err
+	}
+	updated, _, err := parseSSHKnownHostLine(line)
+	if err != nil {
+		return SSHKnownHost{}, err
+	}
+	updated.ID = sshKnownHostID(record.line, line)
+	return updated, nil
+}
+
+func (s *sshKnownHostStore) delete(id string) error {
+	if strings.TrimSpace(id) == "" {
+		return errors.New("SSH 主机指纹记录 ID 不能为空")
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	records, lines, err := s.recordsLocked()
+	if err != nil {
+		return err
+	}
+	line := 0
+	for _, record := range records {
+		if record.entry.ID == id {
+			line = record.line
+			break
+		}
+	}
+	if line == 0 {
+		return errors.New("SSH 主机指纹记录已变更，请刷新后重试")
+	}
+	lines = append(lines[:line-1], lines[line:]...)
+	return writeConfigAtomically(s.path, []byte(strings.Join(lines, "\n")))
+}
+
+func (s *sshKnownHostStore) recordsLocked() ([]sshKnownHostRecord, []string, error) {
+	if err := s.ensureFileLocked(); err != nil {
+		return nil, nil, err
+	}
+	data, err := os.ReadFile(s.path)
+	if err != nil {
+		return nil, nil, err
+	}
+	if _, err := knownhosts.New(s.path); err != nil {
+		return nil, nil, err
+	}
+	lines := strings.Split(string(data), "\n")
+	records := make([]sshKnownHostRecord, 0, len(lines))
+	for index, line := range lines {
+		entry, ok, err := parseSSHKnownHostLine(line)
+		if err != nil {
+			return nil, nil, fmt.Errorf("应用 SSH known_hosts 第 %d 行无效: %w", index+1, err)
+		}
+		if !ok {
+			continue
+		}
+		entry.ID = sshKnownHostID(index+1, strings.TrimSpace(line))
+		records = append(records, sshKnownHostRecord{line: index + 1, entry: entry})
+	}
+	return records, lines, nil
+}
+
+func parseSSHKnownHostLine(line string) (SSHKnownHost, bool, error) {
+	raw := strings.TrimSpace(line)
+	if raw == "" || strings.HasPrefix(raw, "#") {
+		return SSHKnownHost{}, false, nil
+	}
+	fields := strings.Fields(raw)
+	if len(fields) < 3 {
+		return SSHKnownHost{}, false, errors.New("缺少主机、公钥类型或公钥")
+	}
+	offset := 0
+	marker := ""
+	if strings.HasPrefix(fields[0], "@") {
+		marker = fields[0]
+		offset++
+	}
+	if len(fields) < offset+3 {
+		return SSHKnownHost{}, false, errors.New("缺少主机、公钥类型或公钥")
+	}
+	hosts := fields[offset]
+	if !validConfigValue(hosts, 4096) {
+		return SSHKnownHost{}, false, errors.New("主机匹配项无效")
+	}
+	authorizedKey := strings.Join(fields[offset+1:], " ")
+	key, comment, options, rest, err := ssh.ParseAuthorizedKey([]byte(authorizedKey))
+	if err != nil {
+		return SSHKnownHost{}, false, fmt.Errorf("公钥无效: %w", err)
+	}
+	if len(options) > 0 || strings.TrimSpace(string(rest)) != "" {
+		return SSHKnownHost{}, false, errors.New("公钥格式无效")
+	}
+	return SSHKnownHost{
+		Hosts:       hosts,
+		KeyType:     key.Type(),
+		PublicKey:   strings.TrimSpace(string(ssh.MarshalAuthorizedKey(key))),
+		Fingerprint: ssh.FingerprintSHA256(key),
+		Comment:     strings.TrimSpace(comment),
+		Marker:      marker,
+	}, true, nil
+}
+
+func formatSSHKnownHostLine(entry SSHKnownHost, marker string) (string, error) {
+	hosts := strings.TrimSpace(entry.Hosts)
+	if !validConfigValue(hosts, 4096) {
+		return "", errors.New("主机匹配项无效")
+	}
+	publicKey := strings.TrimSpace(entry.PublicKey)
+	if publicKey == "" {
+		return "", errors.New("公钥不能为空")
+	}
+	key, _, options, rest, err := ssh.ParseAuthorizedKey([]byte(publicKey))
+	if err != nil {
+		return "", fmt.Errorf("公钥无效: %w", err)
+	}
+	if len(options) > 0 || strings.TrimSpace(string(rest)) != "" {
+		return "", errors.New("公钥格式无效")
+	}
+	comment := strings.TrimSpace(entry.Comment)
+	if comment != "" && !validTextValue(comment, 4096) {
+		return "", errors.New("备注无效")
+	}
+	if marker != "" && marker != "@cert-authority" && marker != "@revoked" {
+		return "", errors.New("known_hosts 标记无效")
+	}
+	parts := make([]string, 0, 4)
+	if marker != "" {
+		parts = append(parts, marker)
+	}
+	parts = append(parts, hosts, strings.TrimSpace(string(ssh.MarshalAuthorizedKey(key))))
+	if comment != "" {
+		parts = append(parts, comment)
+	}
+	line := strings.Join(parts, " ")
+	if err := validateSSHKnownHostLine(line); err != nil {
+		return "", err
+	}
+	return line, nil
+}
+
+func validateSSHKnownHostLine(line string) error {
+	file, err := os.CreateTemp("", ".devutils-known-host-*")
+	if err != nil {
+		return err
+	}
+	path := file.Name()
+	defer func() {
+		_ = file.Close()
+		_ = os.Remove(path)
+	}()
+	if err := file.Chmod(0o600); err != nil {
+		return err
+	}
+	if _, err := file.WriteString(line + "\n"); err != nil {
+		return err
+	}
+	if err := file.Close(); err != nil {
+		return err
+	}
+	_, err = knownhosts.New(path)
+	return err
+}
+
+func sshKnownHostID(line int, raw string) string {
+	digest := sha256.Sum256([]byte(fmt.Sprintf("%d:%s", line, raw)))
+	return hex.EncodeToString(digest[:])
 }
 
 func (s *sshKnownHostStore) callback(language string) (ssh.HostKeyCallback, error) {

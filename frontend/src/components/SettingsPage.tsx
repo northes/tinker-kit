@@ -1,6 +1,7 @@
 import {
   cloneElement,
   isValidElement,
+  useCallback,
   useEffect,
   useId,
   useRef,
@@ -21,8 +22,18 @@ import {
   AlertDialogTitle,
 } from './ui/alert-dialog';
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from './ui/dialog';
+import {
   ArrowSquareOut,
   ArrowsClockwise,
+  Key,
+  PencilSimple,
   Power,
   SidebarSimple,
   Trash,
@@ -30,7 +41,12 @@ import {
 import { Application, Browser } from '@wailsio/runtime';
 import { useTranslation } from 'react-i18next';
 import i18n, { SUPPORTED_LANGUAGES } from '../i18n';
-import type { Config as Settings } from '../../bindings/changeme/models';
+import type { Config as Settings, SSHKnownHost } from '../../bindings/changeme/models';
+import {
+  DeleteSSHKnownHost,
+  GetSSHKnownHosts,
+  UpdateSSHKnownHost,
+} from '../../bindings/changeme/configservice';
 import { CheckForUpdates, GetCurrentVersion } from '../../bindings/changeme/updateservice';
 import { ClearHistoryDialog } from './HistoryPage';
 import {
@@ -44,6 +60,10 @@ import { toast } from './ui/toast';
 import { GITHUB_REPO_URL } from '../repositoryUrl';
 import { THEME_MODE_OPTIONS, type ThemeMode } from '../theme';
 import { cn } from '@/lib/utils';
+import { Input } from './ui/input';
+import { Label } from './ui/label';
+import { Spinner } from './ui/spinner';
+import { Textarea } from './ui/textarea';
 
 const TRAY_MATCH_DEFAULT_TOOLS: readonly ToolId[] = [
   'json',
@@ -252,6 +272,343 @@ function ChoiceGroup<T extends string | number>({
   );
 }
 
+function settingsErrorMessage(error: unknown) {
+  if (error instanceof Error && error.message) return error.message;
+  if (typeof error === 'string' && error) return error;
+  if (error && typeof error === 'object') {
+    const value = error as { message?: unknown; error?: unknown };
+    if (typeof value.message === 'string' && value.message) return value.message;
+    if (typeof value.error === 'string' && value.error) return value.error;
+  }
+  return '';
+}
+
+function SSHKnownHostsDialog({
+  open,
+  onOpenChange,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}) {
+  const { t } = useTranslation();
+  const [entries, setEntries] = useState<SSHKnownHost[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [editing, setEditing] = useState<SSHKnownHost | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<SSHKnownHost | null>(null);
+  const [deleteError, setDeleteError] = useState('');
+  const [deleting, setDeleting] = useState(false);
+  const hostsID = useId();
+  const publicKeyID = useId();
+  const commentID = useId();
+  const loadRequestRef = useRef(0);
+  const reload = useCallback(() => {
+    const requestID = loadRequestRef.current + 1;
+    loadRequestRef.current = requestID;
+    setLoading(true);
+    setError('');
+    void GetSSHKnownHosts()
+      .then((next) => {
+        if (requestID === loadRequestRef.current) setEntries(next ?? []);
+      })
+      .catch((reason) => {
+        if (requestID === loadRequestRef.current) {
+          setError(settingsErrorMessage(reason) || t('settings.sshKnownHostsLoadFailed'));
+        }
+      })
+      .finally(() => {
+        if (requestID === loadRequestRef.current) setLoading(false);
+      });
+  }, [t]);
+
+  useEffect(() => {
+    if (!open) {
+      loadRequestRef.current += 1;
+      setLoading(false);
+      setEditing(null);
+      setDeleteTarget(null);
+      setDeleteError('');
+      setError('');
+      return;
+    }
+    reload();
+  }, [open, reload]);
+
+  const handleOpenChange = (next: boolean) => {
+    if (!next && (saving || deleting)) return;
+    if (!next) {
+      setEditing(null);
+      setDeleteTarget(null);
+      setDeleteError('');
+      setError('');
+    }
+    onOpenChange(next);
+  };
+  const save = async () => {
+    if (!editing || saving) return;
+    const targetID = editing.id;
+    setSaving(true);
+    setError('');
+    try {
+      const updated = await UpdateSSHKnownHost(editing);
+      setEntries((current) => current.map((entry) => (entry.id === targetID ? updated : entry)));
+      setEditing(null);
+    } catch (reason) {
+      setError(settingsErrorMessage(reason) || t('settings.sshKnownHostsSaveFailed'));
+    } finally {
+      setSaving(false);
+    }
+  };
+  const confirmDelete = async () => {
+    const target = deleteTarget;
+    if (!target || deleting) return;
+    setDeleting(true);
+    setDeleteError('');
+    try {
+      await DeleteSSHKnownHost(target.id);
+      setDeleteTarget(null);
+      reload();
+    } catch (reason) {
+      setDeleteError(settingsErrorMessage(reason) || t('settings.sshKnownHostsDeleteFailed'));
+    } finally {
+      setDeleting(false);
+    }
+  };
+  const canSave = Boolean(editing?.hosts.trim() && editing.publicKey.trim());
+
+  return (
+    <>
+      <Dialog open={open} onOpenChange={handleOpenChange}>
+        <DialogContent className="flex max-h-[min(720px,calc(100dvh-32px))] w-[min(640px,calc(100vw-32px))] max-w-none flex-col gap-0 overflow-hidden p-0 sm:max-w-none">
+          <DialogHeader className="flex-none border-b border-border px-6 py-5">
+            <DialogTitle className="text-base">
+              {t(editing ? 'settings.sshKnownHostsEditTitle' : 'settings.sshKnownHostsTitle')}
+            </DialogTitle>
+            <DialogDescription className="text-xs leading-5">
+              {t(editing ? 'settings.sshKnownHostsEditDesc' : 'settings.sshKnownHostsDialogDesc')}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="min-h-0 flex-1 overflow-y-auto border-b border-border px-6 py-5 [padding-inline-end:var(--overlay-scrollbar-hit-size)]">
+            {editing ? (
+              <div className="grid gap-4">
+                {error ? (
+                  <p className="m-0 text-xs text-destructive" role="alert">
+                    {error}
+                  </p>
+                ) : null}
+                <div className="grid gap-1.5">
+                  <Label htmlFor={hostsID}>{t('settings.sshKnownHostsHosts')}</Label>
+                  <Input
+                    id={hostsID}
+                    value={editing.hosts}
+                    disabled={saving}
+                    onChange={(event) => {
+                      setError('');
+                      setEditing((current) =>
+                        current ? { ...current, hosts: event.target.value } : current,
+                      );
+                    }}
+                  />
+                  <p className="m-0 text-[10px] leading-4 text-muted-foreground">
+                    {t('settings.sshKnownHostsHostsHint')}
+                  </p>
+                </div>
+                <div className="grid gap-1.5">
+                  <Label htmlFor={publicKeyID}>{t('settings.sshKnownHostsPublicKey')}</Label>
+                  <Textarea
+                    id={publicKeyID}
+                    className="min-h-28 font-mono text-xs"
+                    value={editing.publicKey}
+                    disabled={saving}
+                    onChange={(event) => {
+                      setError('');
+                      setEditing((current) =>
+                        current ? { ...current, publicKey: event.target.value } : current,
+                      );
+                    }}
+                  />
+                </div>
+                <div className="grid gap-1.5">
+                  <span className="text-xs font-medium text-foreground">
+                    {t('settings.sshKnownHostsFingerprint')}
+                  </span>
+                  <code className="break-all rounded-md border bg-muted/30 px-2 py-1 text-xs">
+                    {editing.fingerprint}
+                  </code>
+                  <p className="m-0 text-[10px] leading-4 text-muted-foreground">
+                    {t('settings.sshKnownHostsFingerprintHint')}
+                  </p>
+                </div>
+                <div className="grid gap-1.5">
+                  <Label htmlFor={commentID}>{t('settings.sshKnownHostsComment')}</Label>
+                  <Input
+                    id={commentID}
+                    value={editing.comment}
+                    disabled={saving}
+                    onChange={(event) => {
+                      setError('');
+                      setEditing((current) =>
+                        current ? { ...current, comment: event.target.value } : current,
+                      );
+                    }}
+                  />
+                </div>
+              </div>
+            ) : loading ? (
+              <div className="flex min-h-32 flex-col items-center justify-center gap-2 text-center text-sm text-muted-foreground">
+                <Spinner className="size-6 text-primary motion-reduce:animate-none" />
+                <span>{t('settings.sshKnownHostsLoading')}</span>
+              </div>
+            ) : error ? (
+              <div className="flex min-h-32 flex-col items-center justify-center gap-3 text-center">
+                <p className="m-0 text-xs text-destructive" role="alert">
+                  {error}
+                </p>
+                <Button variant="outline" size="sm" onClick={reload}>
+                  <ArrowsClockwise data-icon="inline-start" weight="duotone" />
+                  {t('settings.sshKnownHostsRetry')}
+                </Button>
+              </div>
+            ) : entries.length === 0 ? (
+              <div className="flex min-h-32 flex-col items-center justify-center gap-1.5 text-center">
+                <p className="m-0 text-sm font-medium text-foreground">
+                  {t('settings.sshKnownHostsEmpty')}
+                </p>
+                <p className="m-0 text-xs leading-5 text-muted-foreground">
+                  {t('settings.sshKnownHostsEmptyHint')}
+                </p>
+              </div>
+            ) : (
+              <div className="divide-y divide-border">
+                {entries.map((entry) => (
+                  <div
+                    key={entry.id}
+                    className="flex min-w-0 items-start gap-3 py-3 first:pt-0 last:pb-0 max-[560px]:flex-col"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+                        <code className="min-w-0 break-all text-xs font-medium text-foreground">
+                          {entry.hosts}
+                        </code>
+                        <span className="rounded border border-border px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                          {entry.keyType}
+                        </span>
+                        {entry.marker ? (
+                          <span className="rounded border border-border px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                            {entry.marker}
+                          </span>
+                        ) : null}
+                      </div>
+                      <code className="mt-1 block break-all text-[10px] text-muted-foreground">
+                        {entry.fingerprint}
+                      </code>
+                      {entry.comment ? (
+                        <p className="m-0 mt-1 break-words text-[10px] leading-4 text-muted-foreground">
+                          {entry.comment}
+                        </p>
+                      ) : null}
+                    </div>
+                    <div className="flex shrink-0 flex-wrap justify-end gap-1 max-[560px]:w-full">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 px-2 text-[11px]"
+                        onClick={() => {
+                          setError('');
+                          setEditing({ ...entry });
+                        }}
+                      >
+                        <PencilSimple data-icon="inline-start" weight="duotone" />
+                        {t('settings.sshKnownHostsEdit')}
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 px-2 text-[11px] text-destructive hover:text-destructive"
+                        onClick={() => {
+                          setDeleteError('');
+                          setDeleteTarget(entry);
+                        }}
+                      >
+                        <Trash data-icon="inline-start" weight="duotone" />
+                        {t('settings.sshKnownHostsDelete')}
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+          <DialogFooter className="mx-0 mb-0 flex-none rounded-b-xl px-6 py-4">
+            {editing ? (
+              <>
+                <Button
+                  variant="outline"
+                  disabled={saving}
+                  onClick={() => {
+                    setError('');
+                    setEditing(null);
+                  }}
+                >
+                  {t('common.cancel')}
+                </Button>
+                <Button disabled={saving || !canSave} onClick={() => void save()}>
+                  {saving ? <Spinner data-icon="inline-start" /> : null}
+                  {t('common.save')}
+                </Button>
+              </>
+            ) : (
+              <Button variant="outline" onClick={() => handleOpenChange(false)}>
+                {t('common.close')}
+              </Button>
+            )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      <AlertDialog
+        open={deleteTarget !== null}
+        onOpenChange={(next) => {
+          if (!next && !deleting) {
+            setDeleteTarget(null);
+            setDeleteError('');
+          }
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t('settings.sshKnownHostsDeleteTitle')}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {deleteTarget
+                ? t('settings.sshKnownHostsDeleteDesc', { hosts: deleteTarget.hosts })
+                : null}
+              {deleteError ? (
+                <span className="mt-2 block text-xs text-destructive" role="alert">
+                  {deleteError}
+                </span>
+              ) : null}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleting}>{t('common.cancel')}</AlertDialogCancel>
+            <AlertDialogAction
+              variant="destructive"
+              disabled={deleting}
+              onClick={(event) => {
+                event.preventDefault();
+                void confirmDelete();
+              }}
+            >
+              {deleting ? <Spinner data-icon="inline-start" /> : null}
+              {t('settings.sshKnownHostsDeleteConfirm')}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
+  );
+}
+
 function trayMatchToolSet(toolIds: string[] | null | undefined) {
   return new Set((toolIds ?? TRAY_MATCH_DEFAULT_TOOLS) as ToolId[]);
 }
@@ -281,6 +638,7 @@ export default function SettingsPage({
   const [checking, setChecking] = useState(false);
   const [quitting, setQuitting] = useState(false);
   const [version, setVersion] = useState('');
+  const [sshKnownHostsOpen, setSSHKnownHostsOpen] = useState(false);
   const trayMatchMinHintId = useId();
   useEffect(() => {
     void GetCurrentVersion().then(setVersion);
@@ -538,6 +896,17 @@ export default function SettingsPage({
               </Setting>
             </div>
           </SettingsGroup>
+          <SettingsGroup title={t('settings.ssh')} subtitle={t('settings.sshSubtitle')}>
+            <Setting
+              label={t('settings.sshKnownHosts')}
+              description={t('settings.sshKnownHostsDesc')}
+            >
+              <Button variant="outline" onClick={() => setSSHKnownHostsOpen(true)}>
+                <Key data-icon="inline-start" weight="duotone" />
+                {t('settings.manageSSHKnownHosts')}
+              </Button>
+            </Setting>
+          </SettingsGroup>
           <SettingsGroup title={t('settings.privacy')} subtitle={t('settings.privacySubtitle')}>
             <Setting label={t('settings.history')} description={t('settings.historyDesc')}>
               <Button variant="destructive" onClick={() => setConfirmClear(true)}>
@@ -572,6 +941,7 @@ export default function SettingsPage({
         onClose={() => setConfirmClear(false)}
         onConfirm={clearHistory}
       />
+      <SSHKnownHostsDialog open={sshKnownHostsOpen} onOpenChange={setSSHKnownHostsOpen} />
       <AlertDialog
         open={confirmQuit}
         onOpenChange={(open) => {

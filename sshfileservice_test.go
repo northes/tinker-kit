@@ -174,6 +174,72 @@ func TestSSHKnownHostStoreTrustsAndReplacesHostKey(t *testing.T) {
 	}
 }
 
+func TestSSHKnownHostStoreManagesExistingEntries(t *testing.T) {
+	_, private, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatalf("生成测试主机密钥失败: %v", err)
+	}
+	key, err := ssh.NewPublicKey(private.Public())
+	if err != nil {
+		t.Fatalf("构造测试主机公钥失败: %v", err)
+	}
+	_, secondPrivate, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatalf("生成第二个测试主机密钥失败: %v", err)
+	}
+	secondKey, err := ssh.NewPublicKey(secondPrivate.Public())
+	if err != nil {
+		t.Fatalf("构造第二个测试主机公钥失败: %v", err)
+	}
+	store := &sshKnownHostStore{path: filepath.Join(t.TempDir(), "known_hosts")}
+	data := []byte(
+		knownhosts.Line([]string{"example.test:2222"}, key) + " first\n" +
+			knownhosts.Line([]string{"other.test:22"}, secondKey) + "\n",
+	)
+	if err := os.WriteFile(store.path, data, 0o600); err != nil {
+		t.Fatalf("写入测试 known_hosts 失败: %v", err)
+	}
+	entries, err := store.list()
+	if err != nil {
+		t.Fatalf("读取应用 known_hosts 记录失败: %v", err)
+	}
+	if len(entries) != 2 || entries[0].Hosts != "[example.test]:2222" ||
+		entries[0].KeyType != ssh.KeyAlgoED25519 || entries[0].Comment != "first" {
+		t.Fatalf("解析应用 known_hosts 记录异常: %#v", entries)
+	}
+	updated := entries[0]
+	updated.Hosts = "[updated.test]:2222"
+	updated.Comment = "updated"
+	normalized, err := store.update(updated)
+	if err != nil {
+		t.Fatalf("更新应用 known_hosts 记录失败: %v", err)
+	}
+	if normalized.Hosts != "[updated.test]:2222" || normalized.Comment != "updated" ||
+		normalized.Fingerprint != entries[0].Fingerprint {
+		t.Fatalf("规范化后的 SSH 主机记录异常: %#v", normalized)
+	}
+	entries, err = store.list()
+	if err != nil {
+		t.Fatalf("更新后读取应用 known_hosts 记录失败: %v", err)
+	}
+	if len(entries) != 2 || entries[0].ID != normalized.ID {
+		t.Fatalf("更新后的应用 known_hosts 记录异常: %#v", entries)
+	}
+	if err := store.delete(normalized.ID); err != nil {
+		t.Fatalf("删除应用 known_hosts 记录失败: %v", err)
+	}
+	entries, err = store.list()
+	if err != nil {
+		t.Fatalf("删除后读取应用 known_hosts 记录失败: %v", err)
+	}
+	if len(entries) != 1 || entries[0].Hosts != "other.test" {
+		t.Fatalf("删除后的应用 known_hosts 记录异常: %#v", entries)
+	}
+	if _, err := store.update(SSHKnownHost{Hosts: "new.test", PublicKey: entries[0].PublicKey}); err == nil {
+		t.Fatal("没有记录 ID 时不应创建新的 known_hosts 记录")
+	}
+}
+
 func TestValidateSSHFileConfigRejectsDanglingSource(t *testing.T) {
 	err := validateSSHFileConfig(
 		[]SSHConnection{{ID: "prod", Name: "生产", Host: "example.com", Username: "deploy", Password: "secret"}},

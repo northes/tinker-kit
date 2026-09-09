@@ -311,6 +311,19 @@ export interface SSHConnection {
     "keyPassphrase": string;
 }
 
+/**
+ * SSHKnownHost 是应用内 known_hosts 中的一条可管理记录。
+ */
+export interface SSHKnownHost {
+    "id": string;
+    "hosts": string;
+    "keyType": string;
+    "publicKey": string;
+    "fingerprint": string;
+    "comment"?: string;
+    "marker"?: string;
+}
+
 export interface SidebarToolConfig {
     "id": string;
     "enabled": boolean;

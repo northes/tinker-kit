@@ -650,6 +650,22 @@ func (s *ConfigService) Get() Config         { s.mu.Lock(); defer s.mu.Unlock();
 func (s *ConfigService) ResolveSSHHostKeyPrompt(promptID string, accepted bool) error {
 	return resolveSSHHostKeyPrompt(promptID, accepted)
 }
+
+// GetSSHKnownHosts 返回应用内保存的 SSH 主机指纹记录。
+func (s *ConfigService) GetSSHKnownHosts() ([]SSHKnownHost, error) {
+	return applicationSSHKnownHostStore().list()
+}
+
+// UpdateSSHKnownHost 更新应用内保存的 SSH 主机指纹记录。
+func (s *ConfigService) UpdateSSHKnownHost(entry SSHKnownHost) (SSHKnownHost, error) {
+	return applicationSSHKnownHostStore().update(entry)
+}
+
+// DeleteSSHKnownHost 删除应用内保存的 SSH 主机指纹记录。
+func (s *ConfigService) DeleteSSHKnownHost(id string) error {
+	return applicationSSHKnownHostStore().delete(id)
+}
+
 func (s *ConfigService) setOnChange(callback func(Config)) {
 	s.mu.Lock()
 	s.onChange = callback
