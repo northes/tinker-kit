@@ -1,7 +1,10 @@
 package main
 
 import (
+	"archive/tar"
+	"archive/zip"
 	"bytes"
+	"compress/gzip"
 	"context"
 	"errors"
 	"fmt"
@@ -31,6 +34,15 @@ const (
 	fileTaskFailed       = "failed"
 	fileTaskCanceled     = "canceled"
 	fileTasksEventName   = "ssh-files:tasks"
+)
+
+const (
+	remoteFileOperationCopy     = "copy"
+	remoteFileOperationMove     = "move"
+	remoteFileOperationRename   = "rename"
+	remoteFileOperationDelete   = "delete"
+	remoteFileOperationExtract  = "extract"
+	remoteFileOperationCompress = "compress"
 )
 
 type RemoteFileEntry struct {
@@ -476,6 +488,232 @@ func (s *FileService) TestSSHFileConnection(connection SSHConnection, defaultPat
 	return nil
 }
 
+func normalizeRemotePaths(values []string) []string {
+	result := make([]string, 0, len(values))
+	seen := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		if strings.TrimSpace(value) == "" {
+			continue
+		}
+		normalized := normalizedRemotePath(value)
+		if _, ok := seen[normalized]; ok {
+			continue
+		}
+		seen[normalized] = struct{}{}
+		result = append(result, normalized)
+	}
+	return result
+}
+
+func isRemoteNotFound(err error) bool {
+	if err == nil {
+		return false
+	}
+	if os.IsNotExist(err) || errors.Is(err, os.ErrNotExist) {
+		return true
+	}
+	return strings.Contains(strings.ToLower(err.Error()), "no such file")
+}
+
+func remotePathExists(client *sftp.Client, remotePath string) (bool, error) {
+	_, err := client.Lstat(remotePath)
+	if err == nil {
+		return true, nil
+	}
+	if isRemoteNotFound(err) {
+		return false, nil
+	}
+	return false, err
+}
+
+func ensureRemotePathAbsent(client *sftp.Client, remotePath string) error {
+	exists, err := remotePathExists(client, remotePath)
+	if err != nil {
+		return err
+	}
+	if exists {
+		return fmt.Errorf("目标已存在: %s", remotePath)
+	}
+	return nil
+}
+
+func ensureRemoteDirectory(client *sftp.Client, remotePath string) error {
+	remotePath = normalizedRemotePath(remotePath)
+	info, err := client.Lstat(remotePath)
+	if err == nil {
+		if !info.IsDir() {
+			return fmt.Errorf("目标不是目录: %s", remotePath)
+		}
+		return nil
+	}
+	if !isRemoteNotFound(err) {
+		return err
+	}
+	if err := client.MkdirAll(remotePath); err != nil {
+		return fmt.Errorf("创建远程目录失败: %w", err)
+	}
+	return nil
+}
+
+func remotePathContains(parent, child string) bool {
+	parent, child = normalizedRemotePath(parent), normalizedRemotePath(child)
+	if parent == "/" {
+		return child != "/"
+	}
+	return child == parent || strings.HasPrefix(child, parent+"/")
+}
+
+// OperateRemoteFiles 在远程文件源上执行文件管理操作。
+// copy、move 和 extract 的 target 是目录；rename 的 target 是完整的新路径；
+// compress 的 target 是压缩文件完整路径；delete 忽略 target。
+func (s *FileService) OperateRemoteFiles(sourceID, operation string, remotePaths []string, target string) error {
+	operation = strings.TrimSpace(operation)
+	switch operation {
+	case remoteFileOperationCopy, remoteFileOperationMove, remoteFileOperationRename,
+		remoteFileOperationDelete, remoteFileOperationExtract, remoteFileOperationCompress:
+	default:
+		return fmt.Errorf("不支持的文件操作: %s", operation)
+	}
+	paths := normalizeRemotePaths(remotePaths)
+	if len(paths) == 0 {
+		return errors.New("未选择远程项目")
+	}
+	if operation == remoteFileOperationRename && len(paths) != 1 {
+		return errors.New("重命名一次只能处理一个项目")
+	}
+	if operation == remoteFileOperationDelete {
+		for _, remotePath := range paths {
+			if remotePath == "/" {
+				return errors.New("不能删除远程根目录")
+			}
+		}
+	}
+	if operation == remoteFileOperationCompress {
+		target = normalizedRemotePath(target)
+		if target == "/" {
+			return errors.New("压缩文件路径无效")
+		}
+		if remoteArchiveFormatForPath(target) == "" {
+			return errors.New("压缩文件必须使用 .zip、.tar 或 .tar.gz 扩展名")
+		}
+	}
+	if operation == remoteFileOperationRename {
+		target = normalizedRemotePath(target)
+		if target == "/" {
+			return errors.New("重命名目标无效")
+		}
+	}
+	if operation == remoteFileOperationCopy || operation == remoteFileOperationMove ||
+		operation == remoteFileOperationExtract {
+		target = normalizedRemotePath(target)
+	}
+
+	_, conn, err := s.sourceSnapshot(sourceID)
+	if err != nil {
+		return err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
+	defer cancel()
+	sshClient, client, err := s.dialSFTP(ctx, conn)
+	if err != nil {
+		return err
+	}
+	defer closeSSHClient(sshClient)
+	defer client.Close()
+
+	switch operation {
+	case remoteFileOperationCopy:
+		if err := ensureRemoteDirectory(client, target); err != nil {
+			return err
+		}
+		for _, remotePath := range paths {
+			info, err := client.Lstat(remotePath)
+			if err != nil {
+				return fmt.Errorf("读取远程项目失败: %w", err)
+			}
+			if info.IsDir() && remotePathContains(remotePath, target) {
+				return fmt.Errorf("不能将目录复制到自身或子目录: %s", remotePath)
+			}
+			destination := remoteChild(target, path.Base(remotePath))
+			if err := ensureRemotePathAbsent(client, destination); err != nil {
+				return err
+			}
+			if err := copyRemotePath(ctx, client, remotePath, destination); err != nil {
+				return fmt.Errorf("复制远程项目失败: %w", err)
+			}
+		}
+	case remoteFileOperationMove:
+		if err := ensureRemoteDirectory(client, target); err != nil {
+			return err
+		}
+		for _, remotePath := range paths {
+			info, err := client.Lstat(remotePath)
+			if err != nil {
+				return fmt.Errorf("读取远程项目失败: %w", err)
+			}
+			if info.IsDir() && remotePathContains(remotePath, target) {
+				return fmt.Errorf("不能将目录移动到自身或子目录: %s", remotePath)
+			}
+			destination := remoteChild(target, path.Base(remotePath))
+			if destination == remotePath {
+				continue
+			}
+			if err := ensureRemotePathAbsent(client, destination); err != nil {
+				return err
+			}
+			if err := client.Rename(remotePath, destination); err != nil {
+				return fmt.Errorf("移动远程项目失败: %w", err)
+			}
+		}
+	case remoteFileOperationRename:
+		remotePath := paths[0]
+		if remotePath == "/" || remotePathContains(remotePath, target) {
+			return errors.New("重命名目标无效")
+		}
+		if err := ensureRemotePathAbsent(client, target); err != nil {
+			return err
+		}
+		if err := client.Rename(remotePath, target); err != nil {
+			return fmt.Errorf("重命名远程项目失败: %w", err)
+		}
+	case remoteFileOperationDelete:
+		for _, remotePath := range paths {
+			if err := client.RemoveAll(remotePath); err != nil {
+				return fmt.Errorf("删除远程项目失败: %w", err)
+			}
+		}
+	case remoteFileOperationCompress:
+		if err := ensureRemotePathAbsent(client, target); err != nil {
+			return err
+		}
+		if err := ensureRemoteDirectory(client, path.Dir(target)); err != nil {
+			return err
+		}
+		for _, remotePath := range paths {
+			info, err := client.Lstat(remotePath)
+			if err != nil {
+				return fmt.Errorf("读取远程项目失败: %w", err)
+			}
+			if remotePath == target || (info.IsDir() && remotePathContains(remotePath, target)) {
+				return fmt.Errorf("压缩目标不能位于待压缩目录中: %s", target)
+			}
+		}
+		if err := createRemoteArchive(ctx, client, paths, target); err != nil {
+			return fmt.Errorf("压缩远程项目失败: %w", err)
+		}
+	case remoteFileOperationExtract:
+		if err := ensureRemoteDirectory(client, target); err != nil {
+			return err
+		}
+		for _, remotePath := range paths {
+			if err := s.extractRemoteArchive(ctx, client, remotePath, target); err != nil {
+				return fmt.Errorf("解压远程项目失败: %w", err)
+			}
+		}
+	}
+	return nil
+}
+
 func localTree(ctx context.Context, paths []string) (int64, int, error) {
 	var total int64
 	files := 0
@@ -510,6 +748,597 @@ func localTree(ctx context.Context, paths []string) (int64, int, error) {
 		}
 	}
 	return total, files, nil
+}
+
+func copyWithContext(ctx context.Context, dst io.Writer, src io.Reader) error {
+	buf := make([]byte, 256*1024)
+	for {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		n, readErr := src.Read(buf)
+		if n > 0 {
+			written, writeErr := dst.Write(buf[:n])
+			if writeErr != nil {
+				return writeErr
+			}
+			if written != n {
+				return io.ErrShortWrite
+			}
+		}
+		if errors.Is(readErr, io.EOF) {
+			return nil
+		}
+		if readErr != nil {
+			return readErr
+		}
+	}
+}
+
+func copyRemoteFile(ctx context.Context, client *sftp.Client, source, target string) error {
+	input, err := client.Open(source)
+	if err != nil {
+		return err
+	}
+	output, err := client.OpenFile(target, os.O_WRONLY|os.O_CREATE|os.O_TRUNC)
+	if err != nil {
+		_ = input.Close()
+		return err
+	}
+	copyErr := copyWithContext(ctx, output, input)
+	outputErr := output.Close()
+	inputErr := input.Close()
+	if copyErr != nil {
+		return copyErr
+	}
+	if outputErr != nil {
+		return outputErr
+	}
+	return inputErr
+}
+
+func copyRemotePath(ctx context.Context, client *sftp.Client, source, target string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	info, err := client.Lstat(source)
+	if err != nil {
+		return err
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		return fmt.Errorf("不支持复制符号链接: %s", source)
+	}
+	if info.IsDir() {
+		if err := client.MkdirAll(target); err != nil {
+			return err
+		}
+		entries, err := client.ReadDir(source)
+		if err != nil {
+			return err
+		}
+		for _, entry := range entries {
+			if err := copyRemotePath(
+				ctx,
+				client,
+				remoteChild(source, entry.Name()),
+				remoteChild(target, entry.Name()),
+			); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	if !info.Mode().IsRegular() {
+		return nil
+	}
+	return copyRemoteFile(ctx, client, source, target)
+}
+
+func remoteArchiveFormatForPath(remotePath string) string {
+	lower := strings.ToLower(remotePath)
+	switch {
+	case strings.HasSuffix(lower, ".zip"):
+		return "zip"
+	case strings.HasSuffix(lower, ".tar"):
+		return "tar"
+	case strings.HasSuffix(lower, ".tar.gz"), strings.HasSuffix(lower, ".tgz"):
+		return "tar.gz"
+	default:
+		return ""
+	}
+}
+
+func archiveEntryName(value string) string {
+	value = strings.ReplaceAll(value, "\\", "/")
+	value = path.Clean(value)
+	if value == "." {
+		return ""
+	}
+	return strings.TrimPrefix(value, "./")
+}
+
+func writeRemoteFileToArchive(ctx context.Context, client *sftp.Client, remotePath string, dst io.Writer) error {
+	input, err := client.Open(remotePath)
+	if err != nil {
+		return err
+	}
+	copyErr := copyWithContext(ctx, dst, input)
+	closeErr := input.Close()
+	if copyErr != nil {
+		return copyErr
+	}
+	return closeErr
+}
+
+func addRemoteToTar(
+	ctx context.Context,
+	client *sftp.Client,
+	remotePath, relativePath string,
+	writer *tar.Writer,
+) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	info, err := client.Lstat(remotePath)
+	if err != nil {
+		return err
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		return fmt.Errorf("不支持压缩符号链接: %s", remotePath)
+	}
+	name := archiveEntryName(relativePath)
+	if name == "" {
+		return errors.New("压缩项目名称无效")
+	}
+	header, err := tar.FileInfoHeader(info, "")
+	if err != nil {
+		return err
+	}
+	header.Name = name
+	if info.IsDir() && !strings.HasSuffix(header.Name, "/") {
+		header.Name += "/"
+	}
+	if err := writer.WriteHeader(header); err != nil {
+		return err
+	}
+	if !info.IsDir() {
+		return writeRemoteFileToArchive(ctx, client, remotePath, writer)
+	}
+	entries, err := client.ReadDir(remotePath)
+	if err != nil {
+		return err
+	}
+	for _, entry := range entries {
+		if err := addRemoteToTar(
+			ctx,
+			client,
+			remoteChild(remotePath, entry.Name()),
+			path.Join(name, entry.Name()),
+			writer,
+		); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func addRemoteToZip(
+	ctx context.Context,
+	client *sftp.Client,
+	remotePath, relativePath string,
+	writer *zip.Writer,
+) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	info, err := client.Lstat(remotePath)
+	if err != nil {
+		return err
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		return fmt.Errorf("不支持压缩符号链接: %s", remotePath)
+	}
+	name := archiveEntryName(relativePath)
+	if name == "" {
+		return errors.New("压缩项目名称无效")
+	}
+	header, err := zip.FileInfoHeader(info)
+	if err != nil {
+		return err
+	}
+	header.Name = name
+	if info.IsDir() && !strings.HasSuffix(header.Name, "/") {
+		header.Name += "/"
+	}
+	header.SetMode(info.Mode())
+	entry, err := writer.CreateHeader(header)
+	if err != nil {
+		return err
+	}
+	if !info.IsDir() {
+		return writeRemoteFileToArchive(ctx, client, remotePath, entry)
+	}
+	entries, err := client.ReadDir(remotePath)
+	if err != nil {
+		return err
+	}
+	for _, child := range entries {
+		if err := addRemoteToZip(
+			ctx,
+			client,
+			remoteChild(remotePath, child.Name()),
+			path.Join(name, child.Name()),
+			writer,
+		); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func uploadLocalFileToRemote(ctx context.Context, client *sftp.Client, localPath, remotePath string) error {
+	input, err := os.Open(localPath)
+	if err != nil {
+		return err
+	}
+	output, err := client.OpenFile(remotePath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC)
+	if err != nil {
+		_ = input.Close()
+		return err
+	}
+	copyErr := copyWithContext(ctx, output, input)
+	outputErr := output.Close()
+	inputErr := input.Close()
+	if copyErr != nil {
+		return copyErr
+	}
+	if outputErr != nil {
+		return outputErr
+	}
+	return inputErr
+}
+
+func createRemoteArchive(
+	ctx context.Context,
+	client *sftp.Client,
+	remotePaths []string,
+	target string,
+) error {
+	format := remoteArchiveFormatForPath(target)
+	if format == "" {
+		return errors.New("压缩文件格式不受支持")
+	}
+	archiveFile, err := os.CreateTemp("", "devutils-ssh-compress-*")
+	if err != nil {
+		return err
+	}
+	localPath := archiveFile.Name()
+	defer os.Remove(localPath)
+	defer archiveFile.Close()
+
+	var archiveErr error
+	switch format {
+	case "zip":
+		writer := zip.NewWriter(archiveFile)
+		for _, remotePath := range remotePaths {
+			if archiveErr != nil {
+				break
+			}
+			archiveErr = addRemoteToZip(ctx, client, remotePath, path.Base(remotePath), writer)
+		}
+		closeErr := writer.Close()
+		if archiveErr == nil {
+			archiveErr = closeErr
+		}
+	case "tar":
+		writer := tar.NewWriter(archiveFile)
+		for _, remotePath := range remotePaths {
+			if archiveErr != nil {
+				break
+			}
+			archiveErr = addRemoteToTar(ctx, client, remotePath, path.Base(remotePath), writer)
+		}
+		closeErr := writer.Close()
+		if archiveErr == nil {
+			archiveErr = closeErr
+		}
+	case "tar.gz":
+		gzipWriter := gzip.NewWriter(archiveFile)
+		tarWriter := tar.NewWriter(gzipWriter)
+		for _, remotePath := range remotePaths {
+			if archiveErr != nil {
+				break
+			}
+			archiveErr = addRemoteToTar(ctx, client, remotePath, path.Base(remotePath), tarWriter)
+		}
+		tarCloseErr := tarWriter.Close()
+		gzipCloseErr := gzipWriter.Close()
+		if archiveErr == nil {
+			archiveErr = tarCloseErr
+		}
+		if archiveErr == nil {
+			archiveErr = gzipCloseErr
+		}
+	}
+	if archiveErr != nil {
+		return archiveErr
+	}
+	if err := archiveFile.Sync(); err != nil {
+		return err
+	}
+	if err := archiveFile.Close(); err != nil {
+		return err
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	return uploadLocalFileToRemote(ctx, client, localPath, target)
+}
+
+func downloadRemoteFileToLocal(
+	ctx context.Context,
+	client *sftp.Client,
+	remotePath string,
+) (string, error) {
+	input, err := client.Open(remotePath)
+	if err != nil {
+		return "", err
+	}
+	output, err := os.CreateTemp("", "devutils-ssh-extract-*")
+	if err != nil {
+		_ = input.Close()
+		return "", err
+	}
+	localPath := output.Name()
+	copyErr := copyWithContext(ctx, output, input)
+	outputErr := output.Close()
+	inputErr := input.Close()
+	if copyErr != nil {
+		_ = os.Remove(localPath)
+		return "", copyErr
+	}
+	if outputErr != nil {
+		_ = os.Remove(localPath)
+		return "", outputErr
+	}
+	if inputErr != nil {
+		_ = os.Remove(localPath)
+		return "", inputErr
+	}
+	return localPath, nil
+}
+
+func safeArchiveRelativePath(value string) (string, error) {
+	value = strings.ReplaceAll(value, "\\", "/")
+	if strings.TrimSpace(value) == "" {
+		return "", nil
+	}
+	if strings.HasPrefix(value, "/") {
+		return "", fmt.Errorf("压缩包包含绝对路径: %s", value)
+	}
+	cleaned := path.Clean(value)
+	first := strings.Split(cleaned, "/")[0]
+	if cleaned == "." || cleaned == ".." || strings.HasPrefix(cleaned, "../") ||
+		strings.Contains(first, ":") {
+		return "", fmt.Errorf("压缩包包含不安全路径: %s", value)
+	}
+	return cleaned, nil
+}
+
+func safeArchiveDestination(root, relativePath string) (string, error) {
+	destination := filepath.Join(root, filepath.FromSlash(relativePath))
+	relative, err := filepath.Rel(root, destination)
+	if err != nil || relative == ".." ||
+		strings.HasPrefix(relative, ".."+string(os.PathSeparator)) ||
+		filepath.IsAbs(relative) {
+		return "", fmt.Errorf("压缩包包含不安全路径: %s", relativePath)
+	}
+	return destination, nil
+}
+
+func extractZipArchive(ctx context.Context, archivePath, destinationRoot string) error {
+	reader, err := zip.OpenReader(archivePath)
+	if err != nil {
+		return err
+	}
+	defer reader.Close()
+	for _, item := range reader.File {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		relativePath, err := safeArchiveRelativePath(item.Name)
+		if err != nil {
+			return err
+		}
+		if relativePath == "" {
+			continue
+		}
+		destination, err := safeArchiveDestination(destinationRoot, relativePath)
+		if err != nil {
+			return err
+		}
+		if item.FileInfo().IsDir() || strings.HasSuffix(item.Name, "/") {
+			if err := os.MkdirAll(destination, 0o755); err != nil {
+				return err
+			}
+			continue
+		}
+		if item.Mode()&os.ModeSymlink != 0 {
+			return fmt.Errorf("不支持解压符号链接: %s", item.Name)
+		}
+		if err := os.MkdirAll(filepath.Dir(destination), 0o755); err != nil {
+			return err
+		}
+		input, err := item.Open()
+		if err != nil {
+			return err
+		}
+		mode := item.Mode().Perm()
+		if mode == 0 {
+			mode = 0o644
+		}
+		output, err := os.OpenFile(destination, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, mode)
+		if err != nil {
+			_ = input.Close()
+			return err
+		}
+		copyErr := copyWithContext(ctx, output, input)
+		outputErr := output.Close()
+		inputErr := input.Close()
+		if copyErr != nil {
+			return copyErr
+		}
+		if outputErr != nil {
+			return outputErr
+		}
+		if inputErr != nil {
+			return inputErr
+		}
+	}
+	return nil
+}
+
+func extractTarArchive(ctx context.Context, archivePath, destinationRoot, format string) error {
+	input, err := os.Open(archivePath)
+	if err != nil {
+		return err
+	}
+	defer input.Close()
+	var reader io.Reader = input
+	var gzipReader *gzip.Reader
+	if format == "tar.gz" {
+		gzipReader, err = gzip.NewReader(input)
+		if err != nil {
+			return err
+		}
+		defer gzipReader.Close()
+		reader = gzipReader
+	}
+	tarReader := tar.NewReader(reader)
+	for {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		header, err := tarReader.Next()
+		if errors.Is(err, io.EOF) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		relativePath, err := safeArchiveRelativePath(header.Name)
+		if err != nil {
+			return err
+		}
+		if relativePath == "" {
+			continue
+		}
+		destination, err := safeArchiveDestination(destinationRoot, relativePath)
+		if err != nil {
+			return err
+		}
+		switch header.Typeflag {
+		case tar.TypeDir:
+			if err := os.MkdirAll(destination, 0o755); err != nil {
+				return err
+			}
+		case tar.TypeReg, tar.TypeRegA:
+			if err := os.MkdirAll(filepath.Dir(destination), 0o755); err != nil {
+				return err
+			}
+			mode := os.FileMode(header.Mode).Perm()
+			if mode == 0 {
+				mode = 0o644
+			}
+			output, err := os.OpenFile(destination, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, mode)
+			if err != nil {
+				return err
+			}
+			copyErr := copyWithContext(ctx, output, tarReader)
+			outputErr := output.Close()
+			if copyErr != nil {
+				return copyErr
+			}
+			if outputErr != nil {
+				return outputErr
+			}
+		case tar.TypeSymlink, tar.TypeLink:
+			return fmt.Errorf("不支持解压链接: %s", header.Name)
+		}
+	}
+}
+
+func extractArchive(ctx context.Context, archivePath, destinationRoot, format string) error {
+	switch format {
+	case "zip":
+		return extractZipArchive(ctx, archivePath, destinationRoot)
+	case "tar", "tar.gz":
+		return extractTarArchive(ctx, archivePath, destinationRoot, format)
+	default:
+		return errors.New("压缩文件格式不受支持")
+	}
+}
+
+func (s *FileService) uploadLocalDirectoryContents(
+	ctx context.Context,
+	client *sftp.Client,
+	localRoot, remoteRoot string,
+) error {
+	entries, err := os.ReadDir(localRoot)
+	if err != nil {
+		return err
+	}
+	var done int64
+	doneFiles := 0
+	for _, entry := range entries {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if err := s.uploadLocalPath(
+			ctx,
+			client,
+			filepath.Join(localRoot, entry.Name()),
+			remoteRoot,
+			"",
+			&done,
+			&doneFiles,
+		); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *FileService) extractRemoteArchive(
+	ctx context.Context,
+	client *sftp.Client,
+	remotePath, remoteTarget string,
+) error {
+	format := remoteArchiveFormatForPath(remotePath)
+	if format == "" {
+		return fmt.Errorf("不支持解压该文件格式: %s", remotePath)
+	}
+	info, err := client.Lstat(remotePath)
+	if err != nil {
+		return err
+	}
+	if info.IsDir() {
+		return fmt.Errorf("不能解压目录: %s", remotePath)
+	}
+	localArchive, err := downloadRemoteFileToLocal(ctx, client, remotePath)
+	if err != nil {
+		return err
+	}
+	defer os.Remove(localArchive)
+	localRoot, err := os.MkdirTemp("", "devutils-ssh-extract-dir-*")
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(localRoot)
+	if err := extractArchive(ctx, localArchive, localRoot, format); err != nil {
+		return err
+	}
+	return s.uploadLocalDirectoryContents(ctx, client, localRoot, remoteTarget)
 }
 
 func (s *FileService) StartFileUpload(sourceID string, localPaths []string, remotePath string) (FileTaskSnapshot, error) {

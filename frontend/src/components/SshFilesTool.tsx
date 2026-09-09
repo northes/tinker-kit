@@ -2,13 +2,17 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Dialogs, Events } from '@wailsio/runtime';
 import { useTranslation } from 'react-i18next';
 import {
+  Archive,
   ArrowClockwise,
   ArrowUpRight,
+  ArrowsLeftRight,
   CaretLeft,
   CaretRight,
   CheckCircle,
+  Copy,
   DownloadSimple,
   File,
+  FileArchive,
   Folder,
   GearSix,
   HardDrives,
@@ -37,6 +41,14 @@ import { Label } from './ui/label';
 import { Switch } from './ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuGroup,
+  ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuTrigger,
+} from './ui/context-menu';
+import {
   Dialog,
   DialogContent,
   DialogDescription,
@@ -44,6 +56,14 @@ import {
   DialogHeader,
   DialogTitle,
 } from './ui/dialog';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from './ui/dropdown-menu';
 import { Input } from './ui/input';
 import { Spinner } from './ui/spinner';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
@@ -70,6 +90,7 @@ import {
   GetFileTasks,
   GetSSHConnections,
   ListRemoteFiles,
+  OperateRemoteFiles,
   PrepareFileForDrag,
   SaveSSHFileConfig,
   StartFileDownload,
@@ -108,6 +129,22 @@ function normalizeRemotePath(value: string) {
     segments.push(segment);
   }
   return `/${segments.join('/')}`;
+}
+
+function remoteParent(value: string) {
+  const normalized = normalizeRemotePath(value);
+  const index = normalized.lastIndexOf('/');
+  return index <= 0 ? '/' : normalized.slice(0, index);
+}
+
+function isArchivePath(value: string) {
+  const lower = value.toLowerCase();
+  return (
+    lower.endsWith('.zip') ||
+    lower.endsWith('.tar') ||
+    lower.endsWith('.tar.gz') ||
+    lower.endsWith('.tgz')
+  );
 }
 
 function formatBytes(value: number) {
@@ -175,6 +212,13 @@ type ManageConfirm =
   | { type: 'discardNavigate'; target: 'list' }
   | { type: 'discardManage' }
   | null;
+type RemoteFileOperation = 'copy' | 'move' | 'rename' | 'delete' | 'extract' | 'compress';
+type InputRemoteFileOperation = Exclude<RemoteFileOperation, 'delete'>;
+type OperationDialogState = {
+  operation: InputRemoteFileOperation;
+  paths: string[];
+  value: string;
+} | null;
 
 export default function SshFilesTool({ active }: Props) {
   const { t } = useTranslation();
@@ -219,6 +263,10 @@ export default function SshFilesTool({ active }: Props) {
   const [uploadError, setUploadError] = useState('');
   const [uploadStarting, setUploadStarting] = useState(false);
   const [allowOverwrite, setAllowOverwrite] = useState(false);
+  const [operationDialog, setOperationDialog] = useState<OperationDialogState>(null);
+  const [deletePaths, setDeletePaths] = useState<string[] | null>(null);
+  const [operationError, setOperationError] = useState('');
+  const [operationRunning, setOperationRunning] = useState(false);
   const [dragReady, setDragReady] = useState<{ remote: string; local: string } | null>(null);
   const [dragPreparing, setDragPreparing] = useState('');
   const refreshedUploadTasks = useRef(new Set<string>());
@@ -402,6 +450,88 @@ export default function SshFilesTool({ active }: Props) {
       return;
     }
     setCurrentPath(normalizedPath);
+  };
+
+  const operationPathsFor = (entryPath: string) =>
+    selected.includes(entryPath) ? selected : [entryPath];
+
+  const requestFileOperation = (operation: RemoteFileOperation, paths: string[]) => {
+    const normalizedPaths = Array.from(new Set(paths.map(normalizeRemotePath)));
+    if (!normalizedPaths.length) return;
+    if (operation === 'rename' && normalizedPaths.length !== 1) return;
+    setSelected(normalizedPaths);
+    setOperationError('');
+    if (operation === 'delete') {
+      setDeletePaths(normalizedPaths);
+      return;
+    }
+    const value =
+      operation === 'rename'
+        ? basename(normalizedPaths[0])
+        : operation === 'compress'
+          ? normalizeRemotePath(
+              `${currentPath}/${normalizedPaths.length === 1 ? `${basename(normalizedPaths[0])}.tar.gz` : 'archive.tar.gz'}`,
+            )
+          : currentPath;
+    setOperationDialog({ operation, paths: normalizedPaths, value });
+  };
+
+  const runRemoteOperation = async (
+    operation: RemoteFileOperation,
+    paths: string[],
+    target: string,
+  ) => {
+    if (!sourceID || operationRunning) return false;
+    setOperationRunning(true);
+    setOperationError('');
+    try {
+      await OperateRemoteFiles(sourceID, operation, paths, target);
+      setSelected([]);
+      await loadDirectory(sourceID, currentPath, showHidden);
+      toast.add({
+        title: t('sshFilesTool.operationSucceeded', {
+          operation: t(`sshFilesTool.${operation}`),
+        }),
+        type: 'success',
+      });
+      return true;
+    } catch (reason) {
+      setOperationError(errorMessage(reason));
+      return false;
+    } finally {
+      setOperationRunning(false);
+    }
+  };
+
+  const executeOperationDialog = async () => {
+    if (!operationDialog || operationRunning) return;
+    const current = operationDialog;
+    const value = current.value.trim();
+    if (!value) {
+      setOperationError(t('sshFilesTool.operationTargetRequired'));
+      return;
+    }
+    let target = normalizeRemotePath(value);
+    if (current.operation === 'rename') {
+      if (value === '.' || value === '..' || /[\\/]/.test(value)) {
+        setOperationError(t('sshFilesTool.renameNameInvalid'));
+        return;
+      }
+      target = normalizeRemotePath(`${remoteParent(current.paths[0])}/${value}`);
+    } else if (current.operation === 'compress' && !isArchivePath(target)) {
+      setOperationError(t('sshFilesTool.archiveExtensionRequired'));
+      return;
+    }
+    if (await runRemoteOperation(current.operation, current.paths, target)) {
+      setOperationDialog(null);
+    }
+  };
+
+  const executeDelete = async () => {
+    if (!deletePaths || operationRunning) return;
+    if (await runRemoteOperation('delete', deletePaths, '')) {
+      setDeletePaths(null);
+    }
   };
 
   const selectUploadPaths = async () => {
@@ -879,17 +1009,6 @@ export default function SshFilesTool({ active }: Props) {
               />
               {t('sshFilesTool.showHidden')}
             </label>
-            {isLoading ? (
-              <span
-                className="flex items-center gap-1.5 pb-1.5 text-[11px] text-muted-foreground"
-                aria-live="polite"
-              >
-                <Spinner className="size-3" />
-                {loadingSources
-                  ? t('sshFilesTool.loadingSources')
-                  : t('sshFilesTool.loadingDirectory')}
-              </span>
-            ) : null}
           </div>
         }
         right={
@@ -1065,45 +1184,57 @@ export default function SshFilesTool({ active }: Props) {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {entries.map((entry) => (
-                  <TableRow
-                    key={entry.path}
-                    draggable
-                    aria-busy={dragPreparing === entry.path}
-                    data-state={selected.includes(entry.path) ? 'selected' : undefined}
-                    className="group border-border/60"
-                    onPointerDown={(event) => {
-                      const target = event.target as HTMLElement;
-                      if (!target.closest('button, input')) prepareDrag(entry);
-                    }}
-                    onDragStart={(event) => {
-                      event.dataTransfer.effectAllowed = 'copy';
-                      const local = readyDragPath?.remote === entry.path ? readyDragPath.local : '';
-                      if (!local) {
-                        event.preventDefault();
-                        toast.add({
-                          title: t('sshFilesTool.dragPreparing'),
-                          type: 'info',
-                        });
-                        return;
-                      }
-                      const uri = new URL(`file://${local}`).href;
-                      event.dataTransfer.setData('text/uri-list', `${uri}\r\n`);
-                      event.dataTransfer.setData(
-                        'DownloadURL',
-                        `application/octet-stream:${entry.name}:${uri}`,
-                      );
-                      event.dataTransfer.setData('text/plain', local);
-                      event.dataTransfer.setData(
-                        'application/x-devutils-remote-file',
-                        JSON.stringify({ sourceID, path: entry.path }),
-                      );
-                    }}
-                    onDragEnd={() => {
-                      setDragReady(null);
-                      setDragPreparing('');
-                    }}
-                  >
+                {entries.map((entry) => {
+                  const operationPaths = operationPathsFor(entry.path);
+                  const archiveSelection = operationPaths.every(isArchivePath);
+                  return (
+                    <ContextMenu key={entry.path}>
+                      <ContextMenuTrigger
+                        render={
+                          <TableRow
+                            draggable
+                            aria-busy={dragPreparing === entry.path}
+                            data-state={selected.includes(entry.path) ? 'selected' : undefined}
+                            className="group border-border/60"
+                            onContextMenu={() => {
+                              if (!selected.includes(entry.path)) setSelected([entry.path]);
+                            }}
+                            onPointerDown={(event) => {
+                              if (event.button !== 0) return;
+                              const target = event.target as HTMLElement;
+                              if (!target.closest('button, input')) prepareDrag(entry);
+                            }}
+                            onDragStart={(event) => {
+                              event.dataTransfer.effectAllowed = 'copy';
+                              const local =
+                                readyDragPath?.remote === entry.path ? readyDragPath.local : '';
+                              if (!local) {
+                                event.preventDefault();
+                                toast.add({
+                                  title: t('sshFilesTool.dragPreparing'),
+                                  type: 'info',
+                                });
+                                return;
+                              }
+                              const uri = new URL(`file://${local}`).href;
+                              event.dataTransfer.setData('text/uri-list', `${uri}\r\n`);
+                              event.dataTransfer.setData(
+                                'DownloadURL',
+                                `application/octet-stream:${entry.name}:${uri}`,
+                              );
+                              event.dataTransfer.setData('text/plain', local);
+                              event.dataTransfer.setData(
+                                'application/x-devutils-remote-file',
+                                JSON.stringify({ sourceID, path: entry.path }),
+                              );
+                            }}
+                            onDragEnd={() => {
+                              setDragReady(null);
+                              setDragPreparing('');
+                            }}
+                          />
+                        }
+                      >
                     <TableCell className="w-10 px-3 py-2">
                       <Checkbox
                         checked={selected.includes(entry.path)}
@@ -1167,8 +1298,67 @@ export default function SshFilesTool({ active }: Props) {
                     <TableCell className="w-44 py-2 text-muted-foreground">
                       {entry.modifiedAt ? new Date(entry.modifiedAt).toLocaleString() : '—'}
                     </TableCell>
-                  </TableRow>
-                ))}
+                      </ContextMenuTrigger>
+                      <ContextMenuContent className="min-w-44">
+                        <ContextMenuGroup>
+                          <ContextMenuItem
+                            disabled={operationRunning}
+                            onClick={() => requestFileOperation('copy', operationPaths)}
+                          >
+                            <Copy size={14} weight="duotone" aria-hidden="true" />
+                            {t('sshFilesTool.copy')}
+                          </ContextMenuItem>
+                          <ContextMenuItem
+                            disabled={operationRunning}
+                            onClick={() => requestFileOperation('move', operationPaths)}
+                          >
+                            <ArrowsLeftRight size={14} weight="duotone" aria-hidden="true" />
+                            {t('sshFilesTool.move')}
+                          </ContextMenuItem>
+                          <ContextMenuItem
+                            disabled={operationRunning || operationPaths.length !== 1}
+                            onClick={() => requestFileOperation('rename', operationPaths)}
+                          >
+                            <PencilSimple size={14} weight="duotone" aria-hidden="true" />
+                            {t('sshFilesTool.rename')}
+                          </ContextMenuItem>
+                          <ContextMenuItem
+                            variant="destructive"
+                            disabled={operationRunning}
+                            onClick={() => requestFileOperation('delete', operationPaths)}
+                          >
+                            <Trash size={14} weight="duotone" aria-hidden="true" />
+                            {t('sshFilesTool.delete')}
+                          </ContextMenuItem>
+                        </ContextMenuGroup>
+                        <ContextMenuSeparator />
+                        <ContextMenuGroup>
+                          <ContextMenuItem
+                            disabled={operationRunning || !archiveSelection}
+                            onClick={() => requestFileOperation('extract', operationPaths)}
+                          >
+                            <FileArchive size={14} weight="duotone" aria-hidden="true" />
+                            {t('sshFilesTool.extract')}
+                          </ContextMenuItem>
+                          <ContextMenuItem
+                            disabled={operationRunning}
+                            onClick={() => requestFileOperation('compress', operationPaths)}
+                          >
+                            <Archive size={14} weight="duotone" aria-hidden="true" />
+                            {t('sshFilesTool.compress')}
+                          </ContextMenuItem>
+                          <ContextMenuItem
+                            disabled={operationRunning}
+                            onClick={() => void downloadSelected(operationPaths)}
+                          >
+                            <DownloadSimple size={14} weight="duotone" aria-hidden="true" />
+                            {t('sshFilesTool.download')}
+                          </ContextMenuItem>
+                        </ContextMenuGroup>
+                      </ContextMenuContent>
+                    </ContextMenu>
+                  );
+                })}
               </TableBody>
             </Table>
           )}
@@ -1208,14 +1398,68 @@ export default function SshFilesTool({ active }: Props) {
           </div>
           <div className="flex flex-none flex-wrap items-center justify-end gap-2">
             {selected.length ? (
-              <Button
-                variant="outline"
-                className="h-[30px] flex-none px-[11px] text-[11px]"
-                onClick={() => void downloadSelected(selected)}
-              >
-                <DownloadSimple data-icon="inline-start" size={14} />
-                {t('sshFilesTool.downloadSelected', { count: selected.length })}
-              </Button>
+              <DropdownMenu>
+                <DropdownMenuTrigger
+                  render={
+                    <Button
+                      variant="outline"
+                      className="h-[30px] flex-none px-[11px] text-[11px]"
+                      disabled={operationRunning}
+                    />
+                  }
+                >
+                  <ListDashes data-icon="inline-start" size={14} />
+                  {t('sshFilesTool.batchActions')}
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="min-w-44">
+                  <DropdownMenuGroup>
+                    <DropdownMenuItem
+                      disabled={operationRunning}
+                      onClick={() => requestFileOperation('copy', selected)}
+                    >
+                      <Copy size={14} weight="duotone" aria-hidden="true" />
+                      {t('sshFilesTool.copy')}
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      disabled={operationRunning}
+                      onClick={() => requestFileOperation('move', selected)}
+                    >
+                      <ArrowsLeftRight size={14} weight="duotone" aria-hidden="true" />
+                      {t('sshFilesTool.move')}
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      disabled={operationRunning || !selected.every(isArchivePath)}
+                      onClick={() => requestFileOperation('extract', selected)}
+                    >
+                      <FileArchive size={14} weight="duotone" aria-hidden="true" />
+                      {t('sshFilesTool.extract')}
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      disabled={operationRunning}
+                      onClick={() => requestFileOperation('compress', selected)}
+                    >
+                      <Archive size={14} weight="duotone" aria-hidden="true" />
+                      {t('sshFilesTool.compress')}
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      disabled={operationRunning}
+                      onClick={() => void downloadSelected(selected)}
+                    >
+                      <DownloadSimple size={14} weight="duotone" aria-hidden="true" />
+                      {t('sshFilesTool.download')}
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem
+                      variant="destructive"
+                      disabled={operationRunning}
+                      onClick={() => requestFileOperation('delete', selected)}
+                    >
+                      <Trash size={14} weight="duotone" aria-hidden="true" />
+                      {t('sshFilesTool.delete')}
+                    </DropdownMenuItem>
+                  </DropdownMenuGroup>
+                </DropdownMenuContent>
+              </DropdownMenu>
             ) : null}
           </div>
         </div>
@@ -2059,6 +2303,119 @@ export default function SshFilesTool({ active }: Props) {
         </DialogContent>
       </Dialog>
 
+      <Dialog
+        open={operationDialog !== null}
+        onOpenChange={(open) => {
+          if (!open && !operationRunning) {
+            setOperationDialog(null);
+            setOperationError('');
+          }
+        }}
+      >
+        <DialogContent className="flex w-[min(520px,calc(100vw-32px))] max-w-none flex-col gap-5 sm:max-w-none">
+          <DialogHeader>
+            <DialogTitle className="text-base">
+              {operationDialog ? t(`sshFilesTool.${operationDialog.operation}Title`) : ''}
+            </DialogTitle>
+            <DialogDescription className="text-xs leading-5">
+              {t('sshFilesTool.operationDesc', { count: operationDialog?.paths.length ?? 0 })}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4">
+            <div className="grid gap-1.5">
+              <Label htmlFor="ssh-file-operation-target" className="text-xs text-muted-foreground">
+                {operationDialog?.operation === 'rename'
+                  ? t('sshFilesTool.newName')
+                  : operationDialog?.operation === 'compress'
+                    ? t('sshFilesTool.archivePath')
+                    : t('sshFilesTool.targetDirectory')}
+              </Label>
+              <Input
+                id="ssh-file-operation-target"
+                value={operationDialog?.value ?? ''}
+                onChange={(event) =>
+                  setOperationDialog((current) =>
+                    current ? { ...current, value: event.target.value } : current,
+                  )
+                }
+                className="font-mono text-xs"
+                disabled={operationRunning}
+              />
+              <p className="m-0 text-[10px] leading-4 text-muted-foreground">
+                {operationDialog?.operation === 'compress'
+                  ? t('sshFilesTool.archivePathHint')
+                  : operationDialog?.operation === 'rename'
+                    ? t('sshFilesTool.renameNameHint')
+                    : t('sshFilesTool.targetDirectoryHint')}
+              </p>
+            </div>
+            {operationError ? (
+              <div
+                className="flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive"
+                role="alert"
+              >
+                <XCircle className="mt-0.5 size-4 shrink-0" />
+                <span className="min-w-0 break-words">
+                  {t('sshFilesTool.operationFailed')}: {operationError}
+                </span>
+              </div>
+            ) : null}
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              disabled={operationRunning}
+              onClick={() => setOperationDialog(null)}
+            >
+              {t('common.cancel')}
+            </Button>
+            <Button disabled={operationRunning || operationDialog === null} onClick={() => void executeOperationDialog()}>
+              {operationRunning ? (
+                <Spinner data-icon="inline-start" />
+              ) : (
+                <CheckCircle data-icon="inline-start" size={14} />
+              )}
+              {t('sshFilesTool.applyOperation')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      <AlertDialog
+        open={deletePaths !== null}
+        onOpenChange={(open) => {
+          if (!open && !operationRunning) {
+            setDeletePaths(null);
+            setOperationError('');
+          }
+        }}
+      >
+        <AlertDialogContent className="min-w-0 max-w-[calc(100vw-32px)] sm:max-w-md">
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t('sshFilesTool.deleteTitle')}</AlertDialogTitle>
+            <AlertDialogDescription className="grid gap-2 text-xs leading-5">
+              <span>
+                {t('sshFilesTool.deleteDesc', { count: deletePaths?.length ?? 0 })}
+              </span>
+              {operationError ? (
+                <span className="break-words text-destructive" role="alert">
+                  {t('sshFilesTool.operationFailed')}: {operationError}
+                </span>
+              ) : null}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={operationRunning}>{t('common.cancel')}</AlertDialogCancel>
+            <AlertDialogAction
+              variant="destructive"
+              disabled={operationRunning || deletePaths === null}
+              onClick={() => void executeDelete()}
+            >
+              {operationRunning ? <Spinner data-icon="inline-start" /> : null}
+              {t('sshFilesTool.deleteAction')}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
       <Dialog open={tasksOpen} onOpenChange={setTasksOpen}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
