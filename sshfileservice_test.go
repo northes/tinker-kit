@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
@@ -29,6 +30,34 @@ func TestNormalizedRemotePath(t *testing.T) {
 		if got := normalizedRemotePath(test.input); got != test.want {
 			t.Errorf("normalizedRemotePath(%q) = %q, want %q", test.input, got, test.want)
 		}
+	}
+}
+
+func TestCopyWithProgressReportsWrittenBytes(t *testing.T) {
+	source := strings.Repeat("x", 256*1024+7)
+	var output bytes.Buffer
+	var completed int64
+	updates := 0
+	err := copyWithProgress(
+		context.Background(),
+		&output,
+		strings.NewReader(source),
+		func(delta int64) {
+			completed += delta
+			updates++
+		},
+	)
+	if err != nil {
+		t.Fatalf("带进度复制失败: %v", err)
+	}
+	if output.String() != source {
+		t.Fatal("带进度复制输出内容不一致")
+	}
+	if completed != int64(len(source)) {
+		t.Fatalf("已复制字节数 = %d, want %d", completed, len(source))
+	}
+	if updates < 2 {
+		t.Fatalf("大文件应产生多次进度更新，实际 %d 次", updates)
 	}
 }
 
@@ -90,6 +119,38 @@ func TestRemoteTransferCommandQuotesPaths(t *testing.T) {
 	}
 	if got, want := remoteTransferCommand(remoteFileOperationMove, "/source", "/target"), "mv '/source' '/target'"; got != want {
 		t.Fatalf("远程移动命令 = %q, want %q", got, want)
+	}
+}
+
+func TestCancelFileTaskMarksConflictAsCanceled(t *testing.T) {
+	service := &FileService{}
+	ctx, cancel := context.WithCancel(context.Background())
+	id := service.createFileTask(
+		FileTask{
+			Type:      remoteFileOperationCopy,
+			SourceID:  "source",
+			Target:    "/target",
+			Paths:     []string{"/source/item"},
+			Conflicts: []string{"/target/item"},
+		},
+		ctx,
+		cancel,
+	)
+	service.taskMu.Lock()
+	service.tasks[id].Status, service.tasks[id].Stage = fileTaskConflict, fileTaskConflict
+	service.taskMu.Unlock()
+
+	if err := service.CancelFileTask(id); err != nil {
+		t.Fatalf("取消冲突任务失败: %v", err)
+	}
+	task := service.GetFileTasks().Tasks[0]
+	if task.Status != fileTaskCanceled || task.Stage != fileTaskCanceled {
+		t.Fatalf("冲突任务未标记为已取消: %#v", task)
+	}
+	select {
+	case <-ctx.Done():
+	default:
+		t.Fatal("取消冲突任务未取消任务上下文")
 	}
 }
 

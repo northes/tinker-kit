@@ -155,6 +155,8 @@ export interface FileTask {
     "stage": string;
     "current"?: string;
     "target"?: string;
+    "paths"?: string[] | null;
+    "conflicts"?: string[] | null;
     "completed": number;
     "total": number;
     "files": number;

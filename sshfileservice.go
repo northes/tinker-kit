@@ -27,22 +27,27 @@ const (
 	fileTaskTypeUpload   = "upload"
 	fileTaskTypeDownload = "download"
 	fileTaskTypeSize     = "size"
+	fileTaskTypeCopy     = "copy"
+	fileTaskTypeMove     = "move"
+	fileTaskTypeExtract  = "extract"
+	fileTaskTypeCompress = "compress"
 	fileTaskQueued       = "queued"
 	fileTaskScanning     = "scanning"
 	fileTaskRunning      = "running"
 	fileTaskSuccess      = "success"
 	fileTaskFailed       = "failed"
 	fileTaskCanceled     = "canceled"
+	fileTaskConflict     = "conflict"
 	fileTasksEventName   = "ssh-files:tasks"
 )
 
 const (
-	remoteFileOperationCopy     = "copy"
-	remoteFileOperationMove     = "move"
+	remoteFileOperationCopy     = fileTaskTypeCopy
+	remoteFileOperationMove     = fileTaskTypeMove
 	remoteFileOperationRename   = "rename"
 	remoteFileOperationDelete   = "delete"
-	remoteFileOperationExtract  = "extract"
-	remoteFileOperationCompress = "compress"
+	remoteFileOperationExtract  = fileTaskTypeExtract
+	remoteFileOperationCompress = fileTaskTypeCompress
 )
 
 const (
@@ -65,20 +70,22 @@ type RemoteFileOperationResult struct {
 }
 
 type FileTask struct {
-	ID        string `json:"id"`
-	Type      string `json:"type"`
-	SourceID  string `json:"sourceID"`
-	Status    string `json:"status"`
-	Stage     string `json:"stage"`
-	Current   string `json:"current,omitempty"`
-	Target    string `json:"target,omitempty"`
-	Completed int64  `json:"completed"`
-	Total     int64  `json:"total"`
-	Files     int    `json:"files"`
-	DoneFiles int    `json:"doneFiles"`
-	Error     string `json:"error,omitempty"`
-	CreatedAt string `json:"createdAt"`
-	UpdatedAt string `json:"updatedAt"`
+	ID        string   `json:"id"`
+	Type      string   `json:"type"`
+	SourceID  string   `json:"sourceID"`
+	Status    string   `json:"status"`
+	Stage     string   `json:"stage"`
+	Current   string   `json:"current,omitempty"`
+	Target    string   `json:"target,omitempty"`
+	Paths     []string `json:"paths,omitempty"`
+	Conflicts []string `json:"conflicts,omitempty"`
+	Completed int64    `json:"completed"`
+	Total     int64    `json:"total"`
+	Files     int      `json:"files"`
+	DoneFiles int      `json:"doneFiles"`
+	Error     string   `json:"error,omitempty"`
+	CreatedAt string   `json:"createdAt"`
+	UpdatedAt string   `json:"updatedAt"`
 }
 
 type FileTaskSnapshot struct {
@@ -86,9 +93,19 @@ type FileTaskSnapshot struct {
 	Tasks    []FileTask `json:"tasks"`
 }
 
+type remoteFileOperationProgress struct {
+	completed int64
+	total     int64
+	files     int
+	doneFiles int
+	current   string
+}
+
 type fileTaskState struct {
 	FileTask
-	cancel context.CancelFunc
+	ctx             context.Context
+	cancel          context.CancelFunc
+	operationPolicy string
 }
 
 // cleanupSSHDragTemps 清理上次进程遗留的跨应用拖出临时文件。
@@ -131,13 +148,20 @@ func (s *FileService) taskSnapshotLocked() FileTaskSnapshot {
 	tasks := make([]FileTask, 0, len(s.taskOrder))
 	for _, id := range s.taskOrder {
 		if task := s.tasks[id]; task != nil {
-			tasks = append(tasks, task.FileTask)
+			snapshot := task.FileTask
+			snapshot.Paths = append([]string(nil), task.Paths...)
+			snapshot.Conflicts = append([]string(nil), task.Conflicts...)
+			tasks = append(tasks, snapshot)
 		}
 	}
 	return FileTaskSnapshot{Revision: s.taskRevision, Tasks: tasks}
 }
 
-func (s *FileService) createFileTask(task FileTask, cancel context.CancelFunc) string {
+func (s *FileService) createFileTask(
+	task FileTask,
+	ctx context.Context,
+	cancel context.CancelFunc,
+) string {
 	now := time.Now().UTC().Format(time.RFC3339Nano)
 	task.ID = fmt.Sprintf("ssh-file-task-%d", time.Now().UnixNano())
 	task.Status, task.Stage = fileTaskQueued, fileTaskQueued
@@ -146,7 +170,7 @@ func (s *FileService) createFileTask(task FileTask, cancel context.CancelFunc) s
 	if s.tasks == nil {
 		s.tasks = map[string]*fileTaskState{}
 	}
-	s.tasks[task.ID] = &fileTaskState{FileTask: task, cancel: cancel}
+	s.tasks[task.ID] = &fileTaskState{FileTask: task, ctx: ctx, cancel: cancel}
 	s.taskOrder = append(s.taskOrder, task.ID)
 	s.taskRevision++
 	snapshot := s.taskSnapshotLocked()
@@ -177,6 +201,8 @@ func (s *FileService) GetFileTasks() FileTaskSnapshot {
 }
 
 func (s *FileService) CancelFileTask(id string) error {
+	var snapshot FileTaskSnapshot
+	immediate := false
 	s.taskMu.Lock()
 	task := s.tasks[id]
 	if task == nil {
@@ -186,7 +212,21 @@ func (s *FileService) CancelFileTask(id string) error {
 	if task.cancel != nil {
 		task.cancel()
 	}
+	if task.Status == fileTaskConflict {
+		task.Status, task.Stage = fileTaskCanceled, fileTaskCanceled
+		task.Conflicts = nil
+		task.Error = ""
+		task.ctx = nil
+		task.cancel = nil
+		task.UpdatedAt = time.Now().UTC().Format(time.RFC3339Nano)
+		s.taskRevision++
+		snapshot = s.taskSnapshotLocked()
+		immediate = true
+	}
 	s.taskMu.Unlock()
+	if immediate {
+		s.emitTasks(snapshot)
+	}
 	return nil
 }
 
@@ -834,6 +874,18 @@ func (s *FileService) OperateRemoteFiles(
 	remotePaths []string,
 	target, conflictPolicy string,
 ) (RemoteFileOperationResult, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
+	defer cancel()
+	return s.operateRemoteFiles(ctx, sourceID, operation, remotePaths, target, conflictPolicy, nil)
+}
+
+func (s *FileService) operateRemoteFiles(
+	ctx context.Context,
+	sourceID, operation string,
+	remotePaths []string,
+	target, conflictPolicy string,
+	onProgress func(remoteFileOperationProgress),
+) (RemoteFileOperationResult, error) {
 	var result RemoteFileOperationResult
 	operation = strings.TrimSpace(operation)
 	switch operation {
@@ -891,8 +943,6 @@ func (s *FileService) OperateRemoteFiles(
 	if err != nil {
 		return result, err
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
-	defer cancel()
 	sshClient, client, err := s.dialSFTP(ctx, conn)
 	if err != nil {
 		return result, err
@@ -913,8 +963,16 @@ func (s *FileService) OperateRemoteFiles(
 		}
 		timestamp := time.Now().Unix()
 		reserved := make(map[string]struct{}, len(items))
+		doneFiles := 0
 		for _, item := range items {
 			if item.noOp {
+				doneFiles++
+				if onProgress != nil {
+					onProgress(remoteFileOperationProgress{
+						doneFiles: doneFiles,
+						current:   item.source,
+					})
+				}
 				continue
 			}
 			destination, err := resolveRemoteTransferDestination(
@@ -951,6 +1009,13 @@ func (s *FileService) OperateRemoteFiles(
 				}
 				return result, fmt.Errorf("移动远程项目失败: %w", err)
 			}
+			doneFiles++
+			if onProgress != nil {
+				onProgress(remoteFileOperationProgress{
+					doneFiles: doneFiles,
+					current:   destination,
+				})
+			}
 		}
 	case remoteFileOperationRename:
 		remotePath := paths[0]
@@ -985,20 +1050,241 @@ func (s *FileService) OperateRemoteFiles(
 				return result, fmt.Errorf("压缩目标不能位于待压缩目录中: %s", target)
 			}
 		}
-		if err := createRemoteArchive(ctx, client, paths, target); err != nil {
+		stats, err := collectRemoteArchiveStats(ctx, client, paths)
+		if err != nil {
+			return result, fmt.Errorf("统计待压缩项目失败: %w", err)
+		}
+		if onProgress != nil {
+			onProgress(remoteFileOperationProgress{
+				total:   stats.total,
+				files:   stats.files,
+				current: target,
+			})
+		}
+		if err := createRemoteArchive(
+			ctx,
+			client,
+			paths,
+			target,
+			stats.total,
+			stats.files,
+			onProgress,
+		); err != nil {
 			return result, fmt.Errorf("压缩远程项目失败: %w", err)
 		}
 	case remoteFileOperationExtract:
 		if err := ensureRemoteDirectory(client, target); err != nil {
 			return result, err
 		}
+		var completed, total int64
+		files, doneFiles := 0, 0
 		for _, remotePath := range paths {
-			if err := s.extractRemoteArchive(ctx, client, remotePath, target); err != nil {
+			baseCompleted, baseTotal := completed, total
+			baseFiles, baseDoneFiles := files, doneFiles
+			summary, err := s.extractRemoteArchive(
+				ctx,
+				client,
+				remotePath,
+				target,
+				func(progress remoteFileOperationProgress) {
+					if onProgress == nil {
+						return
+					}
+					onProgress(remoteFileOperationProgress{
+						completed: baseCompleted + progress.completed,
+						total:     baseTotal + progress.total,
+						files:     baseFiles + progress.files,
+						doneFiles: baseDoneFiles + progress.doneFiles,
+						current:   progress.current,
+					})
+				},
+			)
+			if err != nil {
 				return result, fmt.Errorf("解压远程项目失败: %w", err)
 			}
+			completed += summary.total
+			total += summary.total
+			files += summary.files
+			doneFiles += summary.files
 		}
 	}
 	return result, nil
+}
+
+func isBackgroundRemoteFileOperation(operation string) bool {
+	switch operation {
+	case remoteFileOperationCopy, remoteFileOperationMove,
+		remoteFileOperationExtract, remoteFileOperationCompress:
+		return true
+	default:
+		return false
+	}
+}
+
+// StartRemoteFileOperation 将复制、移动、压缩或解压提交到后台任务。
+func (s *FileService) StartRemoteFileOperation(
+	sourceID, operation string,
+	remotePaths []string,
+	target, conflictPolicy string,
+) (FileTaskSnapshot, error) {
+	operation = strings.TrimSpace(operation)
+	if !isBackgroundRemoteFileOperation(operation) {
+		return FileTaskSnapshot{}, fmt.Errorf("不支持后台执行的文件操作: %s", operation)
+	}
+	paths := normalizeRemotePaths(remotePaths)
+	if len(paths) == 0 {
+		return FileTaskSnapshot{}, errors.New("未选择远程项目")
+	}
+	if operation == remoteFileOperationCopy || operation == remoteFileOperationMove {
+		switch strings.TrimSpace(conflictPolicy) {
+		case "":
+			conflictPolicy = remoteFileConflictAsk
+		case remoteFileConflictAsk, remoteFileConflictOverwrite, remoteFileConflictKeepBoth:
+		default:
+			return FileTaskSnapshot{}, fmt.Errorf("不支持的冲突处理方式: %s", conflictPolicy)
+		}
+	} else {
+		conflictPolicy = ""
+	}
+	target = normalizedRemotePath(target)
+	if _, _, err := s.sourceSnapshot(sourceID); err != nil {
+		return FileTaskSnapshot{}, err
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
+	id := s.createFileTask(
+		FileTask{
+			Type:     operation,
+			SourceID: sourceID,
+			Current:  target,
+			Target:   target,
+			Paths:    paths,
+			Files:    len(paths),
+		},
+		ctx,
+		cancel,
+	)
+	s.taskMu.Lock()
+	if task := s.tasks[id]; task != nil {
+		task.operationPolicy = conflictPolicy
+	}
+	s.taskMu.Unlock()
+	go s.runRemoteFileOperationTask(ctx, id)
+	return s.GetFileTasks(), nil
+}
+
+// ResolveRemoteFileTask 为等待冲突处理的后台复制或移动任务选择处理方式。
+func (s *FileService) ResolveRemoteFileTask(id, conflictPolicy string) (FileTaskSnapshot, error) {
+	switch strings.TrimSpace(conflictPolicy) {
+	case remoteFileConflictOverwrite, remoteFileConflictKeepBoth:
+	default:
+		return FileTaskSnapshot{}, errors.New("未确认远程文件冲突处理方式")
+	}
+
+	s.taskMu.Lock()
+	task := s.tasks[id]
+	if task == nil {
+		s.taskMu.Unlock()
+		return FileTaskSnapshot{}, errors.New("文件任务不存在")
+	}
+	if (task.Type != remoteFileOperationCopy && task.Type != remoteFileOperationMove) ||
+		task.Status != fileTaskConflict {
+		s.taskMu.Unlock()
+		return FileTaskSnapshot{}, errors.New("文件任务不在等待冲突处理")
+	}
+	if task.ctx == nil || task.cancel == nil || task.ctx.Err() != nil {
+		s.taskMu.Unlock()
+		return FileTaskSnapshot{}, errors.New("文件任务已结束")
+	}
+	task.operationPolicy = conflictPolicy
+	task.Status, task.Stage = fileTaskQueued, fileTaskQueued
+	task.Current = task.Target
+	task.Conflicts = nil
+	task.Error = ""
+	task.UpdatedAt = time.Now().UTC().Format(time.RFC3339Nano)
+	s.taskRevision++
+	snapshot := s.taskSnapshotLocked()
+	ctx := task.ctx
+	s.taskMu.Unlock()
+	s.emitTasks(snapshot)
+	go s.runRemoteFileOperationTask(ctx, id)
+	return snapshot, nil
+}
+
+func (s *FileService) remoteFileTaskInput(
+	id string,
+) (sourceID, operation string, paths []string, target, conflictPolicy string, ok bool) {
+	s.taskMu.Lock()
+	defer s.taskMu.Unlock()
+	task := s.tasks[id]
+	if task == nil {
+		return "", "", nil, "", "", false
+	}
+	return task.SourceID, task.Type, append([]string(nil), task.Paths...),
+		task.Target, task.operationPolicy, true
+}
+
+func (s *FileService) runRemoteFileOperationTask(ctx context.Context, taskID string) {
+	sourceID, operation, paths, target, conflictPolicy, ok := s.remoteFileTaskInput(taskID)
+	if !ok {
+		return
+	}
+	s.updateFileTask(taskID, func(task *fileTaskState) {
+		task.Status, task.Stage, task.Current = fileTaskScanning, "preparing", target
+	})
+	onProgress := func(progress remoteFileOperationProgress) {
+		s.updateFileTask(taskID, func(task *fileTaskState) {
+			task.Status, task.Stage = fileTaskRunning, "working"
+			if progress.total > 0 {
+				task.Completed, task.Total = progress.completed, progress.total
+			}
+			if progress.files > 0 {
+				task.Files = progress.files
+			}
+			task.DoneFiles, task.Current = progress.doneFiles, progress.current
+		})
+	}
+	result, err := s.operateRemoteFiles(
+		ctx,
+		sourceID,
+		operation,
+		paths,
+		target,
+		conflictPolicy,
+		onProgress,
+	)
+	if err != nil {
+		s.finishFileTask(taskID, err)
+		return
+	}
+	if err := ctx.Err(); err != nil {
+		s.finishFileTask(taskID, err)
+		return
+	}
+	if len(result.Conflicts) > 0 {
+		s.updateFileTask(taskID, func(task *fileTaskState) {
+			task.Status, task.Stage = fileTaskConflict, fileTaskConflict
+			task.Current = target
+			task.Conflicts = append([]string(nil), result.Conflicts...)
+		})
+		return
+	}
+	s.updateFileTask(taskID, func(task *fileTaskState) {
+		task.Status, task.Stage = fileTaskSuccess, "done"
+		task.Completed = task.Total
+		if task.Files > 0 {
+			task.DoneFiles = task.Files
+		} else {
+			task.DoneFiles = len(paths)
+		}
+		task.Current = ""
+		task.Conflicts = nil
+		if task.cancel != nil {
+			task.cancel()
+		}
+		task.ctx = nil
+		task.cancel = nil
+	})
 }
 
 func localTree(ctx context.Context, paths []string) (int64, int, error) {
@@ -1037,7 +1323,88 @@ func localTree(ctx context.Context, paths []string) (int64, int, error) {
 	return total, files, nil
 }
 
-func copyWithContext(ctx context.Context, dst io.Writer, src io.Reader) error {
+func addProgressBytes(values ...int64) (int64, error) {
+	const maxInt64 = int64(^uint64(0) >> 1)
+	var total int64
+	for _, value := range values {
+		if value < 0 || total > maxInt64-value {
+			return 0, errors.New("文件大小超出可统计范围")
+		}
+		total += value
+	}
+	return total, nil
+}
+
+type remoteArchiveStats struct {
+	total int64
+	files int
+}
+
+func collectRemoteArchivePath(
+	ctx context.Context,
+	client *sftp.Client,
+	remotePath string,
+	stats *remoteArchiveStats,
+) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	info, err := client.Lstat(remotePath)
+	if err != nil {
+		return err
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		return fmt.Errorf("不支持压缩符号链接: %s", remotePath)
+	}
+	if !info.IsDir() {
+		if info.Size() < 0 {
+			return fmt.Errorf("远程文件大小无效: %s", remotePath)
+		}
+		total, err := addProgressBytes(stats.total, info.Size())
+		if err != nil {
+			return err
+		}
+		stats.total = total
+		stats.files++
+		return nil
+	}
+	entries, err := client.ReadDir(remotePath)
+	if err != nil {
+		return err
+	}
+	for _, entry := range entries {
+		if err := collectRemoteArchivePath(
+			ctx,
+			client,
+			remoteChild(remotePath, entry.Name()),
+			stats,
+		); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func collectRemoteArchiveStats(
+	ctx context.Context,
+	client *sftp.Client,
+	remotePaths []string,
+) (remoteArchiveStats, error) {
+	var stats remoteArchiveStats
+	for _, remotePath := range remotePaths {
+		if err := collectRemoteArchivePath(ctx, client, remotePath, &stats); err != nil {
+			return remoteArchiveStats{}, err
+		}
+	}
+	return stats, nil
+}
+
+func copyWithProgress(
+	ctx context.Context,
+	dst io.Writer,
+	src io.Reader,
+	onBytes func(int64),
+) error {
 	buf := make([]byte, 256*1024)
 	for {
 		if err := ctx.Err(); err != nil {
@@ -1052,6 +1419,9 @@ func copyWithContext(ctx context.Context, dst io.Writer, src io.Reader) error {
 			if written != n {
 				return io.ErrShortWrite
 			}
+			if onBytes != nil {
+				onBytes(int64(written))
+			}
 		}
 		if errors.Is(readErr, io.EOF) {
 			return nil
@@ -1060,6 +1430,10 @@ func copyWithContext(ctx context.Context, dst io.Writer, src io.Reader) error {
 			return readErr
 		}
 	}
+}
+
+func copyWithContext(ctx context.Context, dst io.Writer, src io.Reader) error {
+	return copyWithProgress(ctx, dst, src, nil)
 }
 
 func remoteArchiveFormatForPath(remotePath string) string {
@@ -1085,17 +1459,34 @@ func archiveEntryName(value string) string {
 	return strings.TrimPrefix(value, "./")
 }
 
-func writeRemoteFileToArchive(ctx context.Context, client *sftp.Client, remotePath string, dst io.Writer) error {
+func writeRemoteFileToArchive(
+	ctx context.Context,
+	client *sftp.Client,
+	remotePath string,
+	dst io.Writer,
+	onBytes func(int64, string),
+	onFileComplete func(string),
+) error {
 	input, err := client.Open(remotePath)
 	if err != nil {
 		return err
 	}
-	copyErr := copyWithContext(ctx, dst, input)
+	copyErr := copyWithProgress(ctx, dst, input, func(delta int64) {
+		if onBytes != nil {
+			onBytes(delta, remotePath)
+		}
+	})
 	closeErr := input.Close()
 	if copyErr != nil {
 		return copyErr
 	}
-	return closeErr
+	if closeErr != nil {
+		return closeErr
+	}
+	if onFileComplete != nil {
+		onFileComplete(remotePath)
+	}
+	return nil
 }
 
 func addRemoteToTar(
@@ -1103,6 +1494,8 @@ func addRemoteToTar(
 	client *sftp.Client,
 	remotePath, relativePath string,
 	writer *tar.Writer,
+	onBytes func(int64, string),
+	onFileComplete func(string),
 ) error {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -1130,7 +1523,7 @@ func addRemoteToTar(
 		return err
 	}
 	if !info.IsDir() {
-		return writeRemoteFileToArchive(ctx, client, remotePath, writer)
+		return writeRemoteFileToArchive(ctx, client, remotePath, writer, onBytes, onFileComplete)
 	}
 	entries, err := client.ReadDir(remotePath)
 	if err != nil {
@@ -1143,6 +1536,8 @@ func addRemoteToTar(
 			remoteChild(remotePath, entry.Name()),
 			path.Join(name, entry.Name()),
 			writer,
+			onBytes,
+			onFileComplete,
 		); err != nil {
 			return err
 		}
@@ -1155,6 +1550,8 @@ func addRemoteToZip(
 	client *sftp.Client,
 	remotePath, relativePath string,
 	writer *zip.Writer,
+	onBytes func(int64, string),
+	onFileComplete func(string),
 ) error {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -1184,7 +1581,7 @@ func addRemoteToZip(
 		return err
 	}
 	if !info.IsDir() {
-		return writeRemoteFileToArchive(ctx, client, remotePath, entry)
+		return writeRemoteFileToArchive(ctx, client, remotePath, entry, onBytes, onFileComplete)
 	}
 	entries, err := client.ReadDir(remotePath)
 	if err != nil {
@@ -1197,6 +1594,8 @@ func addRemoteToZip(
 			remoteChild(remotePath, child.Name()),
 			path.Join(name, child.Name()),
 			writer,
+			onBytes,
+			onFileComplete,
 		); err != nil {
 			return err
 		}
@@ -1204,7 +1603,12 @@ func addRemoteToZip(
 	return nil
 }
 
-func uploadLocalFileToRemote(ctx context.Context, client *sftp.Client, localPath, remotePath string) error {
+func uploadLocalFileToRemote(
+	ctx context.Context,
+	client *sftp.Client,
+	localPath, remotePath string,
+	onBytes func(int64),
+) error {
 	input, err := os.Open(localPath)
 	if err != nil {
 		return err
@@ -1214,7 +1618,7 @@ func uploadLocalFileToRemote(ctx context.Context, client *sftp.Client, localPath
 		_ = input.Close()
 		return err
 	}
-	copyErr := copyWithContext(ctx, output, input)
+	copyErr := copyWithProgress(ctx, output, input, onBytes)
 	outputErr := output.Close()
 	inputErr := input.Close()
 	if copyErr != nil {
@@ -1231,6 +1635,9 @@ func createRemoteArchive(
 	client *sftp.Client,
 	remotePaths []string,
 	target string,
+	sourceTotal int64,
+	sourceFiles int,
+	onProgress func(remoteFileOperationProgress),
 ) error {
 	format := remoteArchiveFormatForPath(target)
 	if format == "" {
@@ -1244,6 +1651,27 @@ func createRemoteArchive(
 	defer os.Remove(localPath)
 	defer archiveFile.Close()
 
+	sourceCompleted, doneFiles := int64(0), 0
+	report := func(completed int64, current string) {
+		if onProgress != nil {
+			onProgress(remoteFileOperationProgress{
+				completed: completed,
+				total:     sourceTotal,
+				files:     sourceFiles,
+				doneFiles: doneFiles,
+				current:   current,
+			})
+		}
+	}
+	onBytes := func(delta int64, current string) {
+		sourceCompleted += delta
+		report(sourceCompleted, current)
+	}
+	onFileComplete := func(current string) {
+		doneFiles++
+		report(sourceCompleted, current)
+	}
+
 	var archiveErr error
 	switch format {
 	case "zip":
@@ -1252,7 +1680,15 @@ func createRemoteArchive(
 			if archiveErr != nil {
 				break
 			}
-			archiveErr = addRemoteToZip(ctx, client, remotePath, path.Base(remotePath), writer)
+			archiveErr = addRemoteToZip(
+				ctx,
+				client,
+				remotePath,
+				path.Base(remotePath),
+				writer,
+				onBytes,
+				onFileComplete,
+			)
 		}
 		closeErr := writer.Close()
 		if archiveErr == nil {
@@ -1264,7 +1700,15 @@ func createRemoteArchive(
 			if archiveErr != nil {
 				break
 			}
-			archiveErr = addRemoteToTar(ctx, client, remotePath, path.Base(remotePath), writer)
+			archiveErr = addRemoteToTar(
+				ctx,
+				client,
+				remotePath,
+				path.Base(remotePath),
+				writer,
+				onBytes,
+				onFileComplete,
+			)
 		}
 		closeErr := writer.Close()
 		if archiveErr == nil {
@@ -1277,7 +1721,15 @@ func createRemoteArchive(
 			if archiveErr != nil {
 				break
 			}
-			archiveErr = addRemoteToTar(ctx, client, remotePath, path.Base(remotePath), tarWriter)
+			archiveErr = addRemoteToTar(
+				ctx,
+				client,
+				remotePath,
+				path.Base(remotePath),
+				tarWriter,
+				onBytes,
+				onFileComplete,
+			)
 		}
 		tarCloseErr := tarWriter.Close()
 		gzipCloseErr := gzipWriter.Close()
@@ -1300,7 +1752,26 @@ func createRemoteArchive(
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	return uploadLocalFileToRemote(ctx, client, localPath, target)
+	if onProgress != nil {
+		// 压缩进度按源文件字节计数，归档生成后的上传不重复折算。
+		onProgress(remoteFileOperationProgress{
+			completed: sourceCompleted,
+			total:     sourceTotal,
+			files:     sourceFiles,
+			doneFiles: doneFiles,
+			current:   target,
+		})
+	}
+	if err := uploadLocalFileToRemote(
+		ctx,
+		client,
+		localPath,
+		target,
+		nil,
+	); err != nil {
+		return err
+	}
+	return nil
 }
 
 func downloadRemoteFileToLocal(
@@ -1364,12 +1835,126 @@ func safeArchiveDestination(root, relativePath string) (string, error) {
 	return destination, nil
 }
 
-func extractZipArchive(ctx context.Context, archivePath, destinationRoot string) error {
+type remoteArchiveTaskStats struct {
+	total int64
+	files int
+}
+
+func inspectZipArchive(ctx context.Context, archivePath string) (remoteArchiveTaskStats, error) {
+	reader, err := zip.OpenReader(archivePath)
+	if err != nil {
+		return remoteArchiveTaskStats{}, err
+	}
+	defer reader.Close()
+	var stats remoteArchiveTaskStats
+	for _, item := range reader.File {
+		if err := ctx.Err(); err != nil {
+			return remoteArchiveTaskStats{}, err
+		}
+		relativePath, err := safeArchiveRelativePath(item.Name)
+		if err != nil {
+			return remoteArchiveTaskStats{}, err
+		}
+		if relativePath == "" {
+			continue
+		}
+		if item.FileInfo().IsDir() || strings.HasSuffix(item.Name, "/") {
+			continue
+		}
+		if item.Mode()&os.ModeSymlink != 0 {
+			return remoteArchiveTaskStats{}, fmt.Errorf("不支持解压符号链接: %s", item.Name)
+		}
+		if item.UncompressedSize64 > uint64(^uint64(0)>>1) {
+			return remoteArchiveTaskStats{}, errors.New("压缩包文件大小超出可统计范围")
+		}
+		total, err := addProgressBytes(stats.total, int64(item.UncompressedSize64))
+		if err != nil {
+			return remoteArchiveTaskStats{}, err
+		}
+		stats.total = total
+		stats.files++
+	}
+	return stats, nil
+}
+
+func inspectTarArchive(ctx context.Context, archivePath, format string) (remoteArchiveTaskStats, error) {
+	input, err := os.Open(archivePath)
+	if err != nil {
+		return remoteArchiveTaskStats{}, err
+	}
+	defer input.Close()
+	var reader io.Reader = input
+	var gzipReader *gzip.Reader
+	if format == "tar.gz" {
+		gzipReader, err = gzip.NewReader(input)
+		if err != nil {
+			return remoteArchiveTaskStats{}, err
+		}
+		defer gzipReader.Close()
+		reader = gzipReader
+	}
+	tarReader := tar.NewReader(reader)
+	var stats remoteArchiveTaskStats
+	for {
+		if err := ctx.Err(); err != nil {
+			return remoteArchiveTaskStats{}, err
+		}
+		header, err := tarReader.Next()
+		if errors.Is(err, io.EOF) {
+			return stats, nil
+		}
+		if err != nil {
+			return remoteArchiveTaskStats{}, err
+		}
+		relativePath, err := safeArchiveRelativePath(header.Name)
+		if err != nil {
+			return remoteArchiveTaskStats{}, err
+		}
+		if relativePath == "" {
+			continue
+		}
+		switch header.Typeflag {
+		case tar.TypeDir:
+			continue
+		case tar.TypeReg, tar.TypeRegA:
+			if header.Size < 0 {
+				return remoteArchiveTaskStats{}, fmt.Errorf("压缩包文件大小无效: %s", header.Name)
+			}
+			total, err := addProgressBytes(stats.total, header.Size)
+			if err != nil {
+				return remoteArchiveTaskStats{}, err
+			}
+			stats.total = total
+			stats.files++
+		case tar.TypeSymlink, tar.TypeLink:
+			return remoteArchiveTaskStats{}, fmt.Errorf("不支持解压链接: %s", header.Name)
+		}
+	}
+}
+
+func inspectArchive(ctx context.Context, archivePath, format string) (remoteArchiveTaskStats, error) {
+	switch format {
+	case "zip":
+		return inspectZipArchive(ctx, archivePath)
+	case "tar", "tar.gz":
+		return inspectTarArchive(ctx, archivePath, format)
+	default:
+		return remoteArchiveTaskStats{}, errors.New("压缩文件格式不受支持")
+	}
+}
+
+func extractZipArchive(
+	ctx context.Context,
+	archivePath, destinationRoot string,
+	onProgress func(int64, int, string),
+) error {
 	reader, err := zip.OpenReader(archivePath)
 	if err != nil {
 		return err
 	}
 	defer reader.Close()
+	var completed int64
+	doneFiles := 0
 	for _, item := range reader.File {
 		if err := ctx.Err(); err != nil {
 			return err
@@ -1410,7 +1995,12 @@ func extractZipArchive(ctx context.Context, archivePath, destinationRoot string)
 			_ = input.Close()
 			return err
 		}
-		copyErr := copyWithContext(ctx, output, input)
+		copyErr := copyWithProgress(ctx, output, input, func(delta int64) {
+			completed += delta
+			if onProgress != nil {
+				onProgress(completed, doneFiles, item.Name)
+			}
+		})
 		outputErr := output.Close()
 		inputErr := input.Close()
 		if copyErr != nil {
@@ -1422,11 +2012,19 @@ func extractZipArchive(ctx context.Context, archivePath, destinationRoot string)
 		if inputErr != nil {
 			return inputErr
 		}
+		doneFiles++
+		if onProgress != nil {
+			onProgress(completed, doneFiles, item.Name)
+		}
 	}
 	return nil
 }
 
-func extractTarArchive(ctx context.Context, archivePath, destinationRoot, format string) error {
+func extractTarArchive(
+	ctx context.Context,
+	archivePath, destinationRoot, format string,
+	onProgress func(int64, int, string),
+) error {
 	input, err := os.Open(archivePath)
 	if err != nil {
 		return err
@@ -1443,6 +2041,8 @@ func extractTarArchive(ctx context.Context, archivePath, destinationRoot, format
 		reader = gzipReader
 	}
 	tarReader := tar.NewReader(reader)
+	var completed int64
+	doneFiles := 0
 	for {
 		if err := ctx.Err(); err != nil {
 			return err
@@ -1482,7 +2082,12 @@ func extractTarArchive(ctx context.Context, archivePath, destinationRoot, format
 			if err != nil {
 				return err
 			}
-			copyErr := copyWithContext(ctx, output, tarReader)
+			copyErr := copyWithProgress(ctx, output, tarReader, func(delta int64) {
+				completed += delta
+				if onProgress != nil {
+					onProgress(completed, doneFiles, header.Name)
+				}
+			})
 			outputErr := output.Close()
 			if copyErr != nil {
 				return copyErr
@@ -1490,18 +2095,26 @@ func extractTarArchive(ctx context.Context, archivePath, destinationRoot, format
 			if outputErr != nil {
 				return outputErr
 			}
+			doneFiles++
+			if onProgress != nil {
+				onProgress(completed, doneFiles, header.Name)
+			}
 		case tar.TypeSymlink, tar.TypeLink:
 			return fmt.Errorf("不支持解压链接: %s", header.Name)
 		}
 	}
 }
 
-func extractArchive(ctx context.Context, archivePath, destinationRoot, format string) error {
+func extractArchive(
+	ctx context.Context,
+	archivePath, destinationRoot, format string,
+	onProgress func(int64, int, string),
+) error {
 	switch format {
 	case "zip":
-		return extractZipArchive(ctx, archivePath, destinationRoot)
+		return extractZipArchive(ctx, archivePath, destinationRoot, onProgress)
 	case "tar", "tar.gz":
-		return extractTarArchive(ctx, archivePath, destinationRoot, format)
+		return extractTarArchive(ctx, archivePath, destinationRoot, format, onProgress)
 	default:
 		return errors.New("压缩文件格式不受支持")
 	}
@@ -1511,6 +2124,7 @@ func (s *FileService) uploadLocalDirectoryContents(
 	ctx context.Context,
 	client *sftp.Client,
 	localRoot, remoteRoot string,
+	onProgress func(int64, int, string),
 ) error {
 	entries, err := os.ReadDir(localRoot)
 	if err != nil {
@@ -1530,6 +2144,7 @@ func (s *FileService) uploadLocalDirectoryContents(
 			"",
 			&done,
 			&doneFiles,
+			onProgress,
 		); err != nil {
 			return err
 		}
@@ -1541,32 +2156,95 @@ func (s *FileService) extractRemoteArchive(
 	ctx context.Context,
 	client *sftp.Client,
 	remotePath, remoteTarget string,
-) error {
+	onProgress func(remoteFileOperationProgress),
+) (remoteArchiveTaskStats, error) {
 	format := remoteArchiveFormatForPath(remotePath)
 	if format == "" {
-		return fmt.Errorf("不支持解压该文件格式: %s", remotePath)
+		return remoteArchiveTaskStats{}, fmt.Errorf("不支持解压该文件格式: %s", remotePath)
 	}
 	info, err := client.Lstat(remotePath)
 	if err != nil {
-		return err
+		return remoteArchiveTaskStats{}, err
 	}
 	if info.IsDir() {
-		return fmt.Errorf("不能解压目录: %s", remotePath)
+		return remoteArchiveTaskStats{}, fmt.Errorf("不能解压目录: %s", remotePath)
+	}
+	if info.Size() < 0 {
+		return remoteArchiveTaskStats{}, fmt.Errorf("远程压缩文件大小无效: %s", remotePath)
+	}
+	if onProgress != nil {
+		onProgress(remoteFileOperationProgress{
+			current: remotePath,
+		})
 	}
 	localArchive, err := downloadRemoteFileToLocal(ctx, client, remotePath)
 	if err != nil {
-		return err
+		return remoteArchiveTaskStats{}, err
 	}
 	defer os.Remove(localArchive)
+	stats, err := inspectArchive(ctx, localArchive, format)
+	if err != nil {
+		return remoteArchiveTaskStats{}, err
+	}
+	if onProgress != nil {
+		// 解压进度按最终内容计数，本地临时解包和回传是同一批文件，不重复累计。
+		onProgress(remoteFileOperationProgress{
+			total:   stats.total,
+			files:   stats.files,
+			current: remotePath,
+		})
+	}
 	localRoot, err := os.MkdirTemp("", "devutils-ssh-extract-dir-*")
 	if err != nil {
-		return err
+		return remoteArchiveTaskStats{}, err
 	}
 	defer os.RemoveAll(localRoot)
-	if err := extractArchive(ctx, localArchive, localRoot, format); err != nil {
-		return err
+	if err := extractArchive(
+		ctx,
+		localArchive,
+		localRoot,
+		format,
+		func(completed int64, doneFiles int, current string) {
+			if onProgress != nil {
+				if completed > stats.total {
+					completed = stats.total
+				}
+				onProgress(remoteFileOperationProgress{
+					completed: completed / 2,
+					total:     stats.total,
+					files:     stats.files,
+					doneFiles: doneFiles,
+					current:   path.Join(remoteTarget, current),
+				})
+			}
+		},
+	); err != nil {
+		return remoteArchiveTaskStats{}, err
 	}
-	return s.uploadLocalDirectoryContents(ctx, client, localRoot, remoteTarget)
+	if err := s.uploadLocalDirectoryContents(
+		ctx,
+		client,
+		localRoot,
+		remoteTarget,
+		func(uploaded int64, _ int, current string) {
+			if onProgress != nil {
+				logicalCompleted := stats.total/2 + uploaded/2
+				if uploaded >= stats.total {
+					logicalCompleted = stats.total
+				}
+				onProgress(remoteFileOperationProgress{
+					completed: logicalCompleted,
+					total:     stats.total,
+					files:     stats.files,
+					doneFiles: stats.files,
+					current:   current,
+				})
+			}
+		},
+	); err != nil {
+		return remoteArchiveTaskStats{}, err
+	}
+	return remoteArchiveTaskStats{total: stats.total, files: stats.files}, nil
 }
 
 func (s *FileService) StartFileUpload(sourceID string, localPaths []string, remotePath string) (FileTaskSnapshot, error) {
@@ -1579,7 +2257,11 @@ func (s *FileService) StartFileUpload(sourceID string, localPaths []string, remo
 	}
 	remotePath = normalizedRemotePath(remotePath)
 	ctx, cancel := context.WithCancel(context.Background())
-	id := s.createFileTask(FileTask{Type: fileTaskTypeUpload, SourceID: sourceID, Target: remotePath}, cancel)
+	id := s.createFileTask(
+		FileTask{Type: fileTaskTypeUpload, SourceID: sourceID, Target: remotePath},
+		ctx,
+		cancel,
+	)
 	go s.runFileUpload(ctx, id, src, localPaths, remotePath)
 	return s.GetFileTasks(), nil
 }
@@ -1639,7 +2321,11 @@ func (s *FileService) StartFileDownload(sourceID string, remotePaths []string) (
 		return s.GetFileTasks(), nil
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	id := s.createFileTask(FileTask{Type: fileTaskTypeDownload, SourceID: sourceID, Target: target, Files: len(remotePaths)}, cancel)
+	id := s.createFileTask(
+		FileTask{Type: fileTaskTypeDownload, SourceID: sourceID, Target: target, Files: len(remotePaths)},
+		ctx,
+		cancel,
+	)
 	go s.runFileDownload(ctx, id, sourceID, remotePaths, target)
 	return s.GetFileTasks(), nil
 }
@@ -1739,7 +2425,7 @@ func (s *FileService) runFileUpload(ctx context.Context, taskID string, source F
 	var done int64
 	doneFiles := 0
 	for _, localRoot := range localPaths {
-		if err = s.uploadLocalPath(ctx, client, localRoot, remoteRoot, taskID, &done, &doneFiles); err != nil {
+		if err = s.uploadLocalPath(ctx, client, localRoot, remoteRoot, taskID, &done, &doneFiles, nil); err != nil {
 			s.finishFileTask(taskID, err)
 			return
 		}
@@ -1750,7 +2436,14 @@ func (s *FileService) runFileUpload(ctx context.Context, taskID string, source F
 	})
 }
 
-func (s *FileService) uploadLocalPath(ctx context.Context, client *sftp.Client, localRoot, remoteRoot, taskID string, done *int64, doneFiles *int) error {
+func (s *FileService) uploadLocalPath(
+	ctx context.Context,
+	client *sftp.Client,
+	localRoot, remoteRoot, taskID string,
+	done *int64,
+	doneFiles *int,
+	onProgress func(int64, int, string),
+) error {
 	info, err := os.Lstat(localRoot)
 	if err != nil {
 		return err
@@ -1787,13 +2480,20 @@ func (s *FileService) uploadLocalPath(ctx context.Context, client *sftp.Client, 
 			if !item.Mode().IsRegular() {
 				return nil
 			}
-			return s.uploadLocalFile(ctx, client, localPath, remote, taskID, done, doneFiles)
+			return s.uploadLocalFile(ctx, client, localPath, remote, taskID, done, doneFiles, onProgress)
 		})
 	}
-	return s.uploadLocalFile(ctx, client, localRoot, base, taskID, done, doneFiles)
+	return s.uploadLocalFile(ctx, client, localRoot, base, taskID, done, doneFiles, onProgress)
 }
 
-func (s *FileService) uploadLocalFile(ctx context.Context, client *sftp.Client, localPath, remotePath, taskID string, done *int64, doneFiles *int) error {
+func (s *FileService) uploadLocalFile(
+	ctx context.Context,
+	client *sftp.Client,
+	localPath, remotePath, taskID string,
+	done *int64,
+	doneFiles *int,
+	onProgress func(int64, int, string),
+) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -1819,6 +2519,9 @@ func (s *FileService) uploadLocalFile(ctx context.Context, client *sftp.Client, 
 			}
 			*done += int64(n)
 			s.updateFileTask(taskID, func(task *fileTaskState) { task.Completed = *done; task.Current = localPath })
+			if onProgress != nil {
+				onProgress(*done, *doneFiles, remotePath)
+			}
 		}
 		if errors.Is(readErr, io.EOF) {
 			break
@@ -1829,6 +2532,9 @@ func (s *FileService) uploadLocalFile(ctx context.Context, client *sftp.Client, 
 	}
 	*doneFiles++
 	s.updateFileTask(taskID, func(task *fileTaskState) { task.DoneFiles = *doneFiles })
+	if onProgress != nil {
+		onProgress(*done, *doneFiles, remotePath)
+	}
 	return nil
 }
 
@@ -1972,11 +2678,21 @@ func (s *FileService) finishFileTask(taskID string, err error) {
 		s.updateFileTask(taskID, func(task *fileTaskState) {
 			task.Status, task.Stage = fileTaskCanceled, fileTaskCanceled
 			task.Error = ""
+			if task.cancel != nil {
+				task.cancel()
+			}
+			task.ctx = nil
+			task.cancel = nil
 		})
 		return
 	}
 	s.updateFileTask(taskID, func(task *fileTaskState) {
 		task.Status, task.Stage, task.Error = fileTaskFailed, fileTaskFailed, err.Error()
+		if task.cancel != nil {
+			task.cancel()
+		}
+		task.ctx = nil
+		task.cancel = nil
 	})
 }
 
@@ -1985,7 +2701,11 @@ func (s *FileService) CalculateRemoteSize(sourceID, remotePath string) (FileTask
 		return FileTaskSnapshot{}, err
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	id := s.createFileTask(FileTask{Type: fileTaskTypeSize, SourceID: sourceID, Target: normalizedRemotePath(remotePath)}, cancel)
+	id := s.createFileTask(
+		FileTask{Type: fileTaskTypeSize, SourceID: sourceID, Target: normalizedRemotePath(remotePath)},
+		ctx,
+		cancel,
+	)
 	go s.runSizeTask(ctx, id, sourceID, normalizedRemotePath(remotePath))
 	return s.GetFileTasks(), nil
 }

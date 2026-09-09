@@ -94,8 +94,10 @@ import {
   ListRemoteFiles,
   OperateRemoteFiles,
   PrepareFileForDrag,
+  ResolveRemoteFileTask,
   SaveSSHFileConfig,
   StartFileDownload,
+  StartRemoteFileOperation,
   StartFileUpload,
   TestSSHFileConnection,
 } from '../../bindings/changeme/fileservice';
@@ -149,6 +151,18 @@ function isArchivePath(value: string) {
   );
 }
 
+function archiveStem(value: string) {
+  const name = basename(value);
+  const lower = name.toLowerCase();
+  for (const extension of ['.tar.gz', '.tgz', '.zip', '.tar']) {
+    if (lower.endsWith(extension)) {
+      const stem = name.slice(0, -extension.length);
+      return stem || name;
+    }
+  }
+  return name;
+}
+
 function formatBytes(value: number) {
   if (!Number.isFinite(value) || value < 0) return '—';
   if (value < 1024) return `${value} B`;
@@ -167,9 +181,17 @@ function taskPercent(task: FileTask) {
   return Math.max(0, Math.min(100, (task.completed / task.total) * 100));
 }
 
+function taskUsesByteProgress(task: FileTask) {
+  return task.type === 'compress' || task.type === 'extract';
+}
+
 function taskTypeLabel(type: string, t: (key: string) => string) {
   if (type === 'upload') return t('sshFilesTool.upload');
   if (type === 'download') return t('sshFilesTool.download');
+  if (type === 'copy') return t('sshFilesTool.copy');
+  if (type === 'move') return t('sshFilesTool.move');
+  if (type === 'extract') return t('sshFilesTool.extract');
+  if (type === 'compress') return t('sshFilesTool.compress');
   return t('sshFilesTool.calculate');
 }
 
@@ -178,6 +200,7 @@ function taskStatusLabel(status: string, t: (key: string) => string) {
     queued: 'sshFilesTool.taskQueued',
     running: 'sshFilesTool.taskRunning',
     scanning: 'sshFilesTool.taskScanning',
+    conflict: 'sshFilesTool.taskConflict',
     success: 'sshFilesTool.taskSuccess',
     failed: 'sshFilesTool.taskFailed',
     canceled: 'sshFilesTool.taskCanceled',
@@ -191,6 +214,7 @@ function taskStatusVariant(
   if (status === 'success') return 'success';
   if (status === 'failed') return 'destructive';
   if (status === 'canceled') return 'outline';
+  if (status === 'conflict') return 'outline';
   if (status === 'queued' || status === 'running' || status === 'scanning') return 'blue';
   return 'secondary';
 }
@@ -223,6 +247,7 @@ type OperationDialogState = {
   value: string;
 } | null;
 type OperationConflictState = {
+  taskID: string;
   operation: TransferOperation;
   paths: string[];
   target: string;
@@ -231,6 +256,7 @@ type OperationConflictState = {
 } | null;
 type RemoteOperationRunResult =
   | { status: 'completed' }
+  | { status: 'started' }
   | { status: 'conflict'; paths: string[] }
   | { status: 'failed' };
 
@@ -289,6 +315,9 @@ export default function SshFilesTool({ active }: Props) {
   const [dragReady, setDragReady] = useState<{ remote: string; local: string } | null>(null);
   const [dragPreparing, setDragPreparing] = useState('');
   const refreshedUploadTasks = useRef(new Set<string>());
+  const refreshedOperationTasks = useRef(new Set<string>());
+  const handledConflictTasks = useRef(new Set<string>());
+  const taskRevisionRef = useRef(0);
   const directoryRequestRef = useRef(0);
   const sourceIDRef = useRef(sourceID);
   const currentPathRef = useRef(currentPath);
@@ -320,6 +349,8 @@ export default function SshFilesTool({ active }: Props) {
   }, [currentPath]);
 
   const applyTaskSnapshot = useCallback((snapshot: FileTaskSnapshot) => {
+    if (snapshot.revision < taskRevisionRef.current) return;
+    taskRevisionRef.current = snapshot.revision;
     const nextTasks = snapshot.tasks ?? [];
     setTasks(nextTasks);
     setSizeValues((current) => {
@@ -458,6 +489,57 @@ export default function SshFilesTool({ active }: Props) {
     }
   }, [active, currentPath, loadDirectory, showHidden, sourceID, tasks]);
 
+  useEffect(() => {
+    for (const task of tasks) {
+      if (task.status !== 'conflict') {
+        handledConflictTasks.current.delete(task.id);
+      }
+    }
+    if (!active || !sourceID || operationConflict) return;
+    const conflictTask = tasks.find(
+      (task) =>
+        task.sourceID === sourceID &&
+        (task.type === 'copy' || task.type === 'move') &&
+        task.status === 'conflict' &&
+        task.paths?.length &&
+        task.conflicts?.length &&
+        !handledConflictTasks.current.has(task.id),
+    );
+    if (!conflictTask) return;
+    handledConflictTasks.current.add(conflictTask.id);
+    setOperationError('');
+    setOperationConflict({
+      taskID: conflictTask.id,
+      operation: conflictTask.type === 'copy' ? 'copy' : 'move',
+      paths: conflictTask.paths ?? [],
+      target: conflictTask.target ?? '/',
+      value: conflictTask.target ?? '/',
+      conflicts: conflictTask.conflicts ?? [],
+    });
+  }, [active, operationConflict, sourceID, tasks]);
+
+  useEffect(() => {
+    if (!active || !sourceID) return;
+    for (const task of tasks) {
+      if (
+        task.sourceID !== sourceID ||
+        task.status !== 'success' ||
+        !['copy', 'move', 'extract', 'compress'].includes(task.type) ||
+        refreshedOperationTasks.current.has(task.id)
+      ) {
+        continue;
+      }
+      refreshedOperationTasks.current.add(task.id);
+      void loadDirectory(sourceID, currentPath, showHidden);
+      toast.add({
+        title: t('sshFilesTool.operationSucceeded', {
+          operation: t(`sshFilesTool.${task.type}`),
+        }),
+        type: 'success',
+      });
+    }
+  }, [active, currentPath, loadDirectory, showHidden, sourceID, t, tasks]);
+
   const navigate = (nextPath: string) => {
     const normalizedPath = normalizeRemotePath(nextPath);
     setEntries([]);
@@ -535,6 +617,12 @@ export default function SshFilesTool({ active }: Props) {
           ? normalizeRemotePath(
               `${currentPath}/${normalizedPaths.length === 1 ? `${basename(normalizedPaths[0])}.tar.gz` : 'archive.tar.gz'}`,
             )
+          : operation === 'extract'
+            ? normalizedPaths.length === 1
+              ? normalizeRemotePath(
+                  `${remoteParent(normalizedPaths[0])}/${archiveStem(normalizedPaths[0])}`,
+                )
+              : currentPath
           : currentPath;
     setOperationDialog({ operation, paths: normalizedPaths, value });
   };
@@ -549,6 +637,18 @@ export default function SshFilesTool({ active }: Props) {
     setOperationRunning(true);
     setOperationError('');
     try {
+      if (['copy', 'move', 'extract', 'compress'].includes(operation)) {
+        const snapshot = await StartRemoteFileOperation(
+          sourceID,
+          operation,
+          paths,
+          target,
+          conflictPolicy,
+        );
+        applyTaskSnapshot(snapshot);
+        setSelected([]);
+        return { status: 'started' };
+      }
       const result = await OperateRemoteFiles(
         sourceID,
         operation,
@@ -595,24 +695,8 @@ export default function SshFilesTool({ active }: Props) {
       setOperationError(t('sshFilesTool.archiveExtensionRequired'));
       return;
     }
-    const transferOperation =
-      current.operation === 'copy' || current.operation === 'move' ? current.operation : null;
-    const result = await runRemoteOperation(
-      current.operation,
-      current.paths,
-      target,
-      transferOperation ? 'ask' : '',
-    );
-    if (result.status === 'conflict' && transferOperation) {
-      setOperationDialog(null);
-      setOperationConflict({
-        operation: transferOperation,
-        paths: current.paths,
-        target,
-        value: current.value,
-        conflicts: result.paths,
-      });
-    } else if (result.status === 'completed') {
+    const result = await runRemoteOperation(current.operation, current.paths, target);
+    if (result.status === 'completed' || result.status === 'started') {
       setOperationDialog(null);
     }
   };
@@ -629,21 +713,28 @@ export default function SshFilesTool({ active }: Props) {
     });
   };
 
+  const cancelOperationConflict = () => {
+    if (!operationConflict) return;
+    void CancelFileTask(operationConflict.taskID).catch((reason) => {
+      setOperationError(errorMessage(reason));
+    });
+    restoreOperationDialog();
+  };
+
   const resolveOperationConflict = async (conflictPolicy: 'overwrite' | 'keep-both') => {
     if (!operationConflict || operationRunning) return;
     const current = operationConflict;
-    const result = await runRemoteOperation(
-      current.operation,
-      current.paths,
-      current.target,
-      conflictPolicy,
-    );
-    if (result.status === 'completed') {
+    setOperationRunning(true);
+    setOperationError('');
+    try {
+      const snapshot = await ResolveRemoteFileTask(current.taskID, conflictPolicy);
+      applyTaskSnapshot(snapshot);
+      setSelected([]);
       setOperationConflict(null);
-    } else if (result.status === 'conflict') {
-      setOperationConflict((previous) =>
-        previous ? { ...previous, conflicts: result.paths } : previous,
-      );
+    } catch (reason) {
+      setOperationError(errorMessage(reason));
+    } finally {
+      setOperationRunning(false);
     }
   };
 
@@ -2611,7 +2702,7 @@ export default function SshFilesTool({ active }: Props) {
       <AlertDialog
         open={operationConflict !== null}
         onOpenChange={(open) => {
-          if (!open && !operationRunning) restoreOperationDialog();
+          if (!open && !operationRunning) cancelOperationConflict();
         }}
       >
         <AlertDialogContent className="min-w-0 max-w-[calc(100vw-32px)] sm:max-w-md">
@@ -2783,7 +2874,12 @@ export default function SshFilesTool({ active }: Props) {
                                 />
                               </div>
                               <span className="flex-none font-mono text-[10px] text-muted-foreground">
-                                {task.files > 0
+                                {taskUsesByteProgress(task)
+                                  ? t('sshFilesTool.taskBytes', {
+                                      completed: formatBytes(task.completed),
+                                      total: task.total ? formatBytes(task.total) : '—',
+                                    })
+                                  : task.files > 0
                                   ? t('sshFilesTool.taskFiles', {
                                       done: task.doneFiles,
                                       total: task.files,
