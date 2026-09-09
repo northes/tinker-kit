@@ -64,6 +64,7 @@ type RemoteFileEntry struct {
 	IsSymlink  bool   `json:"isSymlink"`
 	Size       int64  `json:"size"`
 	ModifiedAt string `json:"modifiedAt"`
+	CreatedAt  string `json:"createdAt"`
 }
 
 type RemoteFileOperationResult struct {
@@ -601,6 +602,51 @@ func runRemoteCommand(
 	return err
 }
 
+func remoteCreationTimesCommand(remotePaths []string) string {
+	quotedPaths := make([]string, len(remotePaths))
+	for index, remotePath := range remotePaths {
+		quotedPaths[index] = shellQuote(remotePath)
+	}
+	return "for item in " + strings.Join(quotedPaths, " ") +
+		`; do stat -c %W -- "$item" 2>/dev/null || stat -f %B "$item" 2>/dev/null || printf '0\n'; done`
+}
+
+func parseRemoteCreationTimes(output []byte, count int) []string {
+	createdAt := make([]string, count)
+	for index, value := range strings.Fields(string(output)) {
+		if index >= count {
+			break
+		}
+		seconds, err := strconv.ParseInt(value, 10, 64)
+		if err != nil || seconds <= 0 {
+			continue
+		}
+		createdAt[index] = time.Unix(seconds, 0).UTC().Format(time.RFC3339)
+	}
+	return createdAt
+}
+
+func remoteCreationTimes(
+	ctx context.Context,
+	conn SSHConnection,
+	sshClient *ssh.Client,
+	remotePaths []string,
+) ([]string, error) {
+	createdAt := make([]string, len(remotePaths))
+	if len(remotePaths) == 0 {
+		return createdAt, nil
+	}
+	output, err := runRemoteCommandOutput(ctx, conn, sshClient, remoteCreationTimesCommand(remotePaths))
+	if err != nil {
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		// 创建时间是可选元数据，远程 stat 不可用时仍返回目录列表。
+		return createdAt, nil
+	}
+	return parseRemoteCreationTimes(output, len(remotePaths)), nil
+}
+
 func (s *FileService) dialSFTP(ctx context.Context, conn SSHConnection) (*ssh.Client, *sftp.Client, error) {
 	if conn.Mode == "local" {
 		alias := strings.TrimSpace(conn.Alias)
@@ -686,18 +732,38 @@ func (s *FileService) ListRemoteFiles(sourceID, currentPath string, showHidden b
 	if err != nil {
 		return nil, fmt.Errorf("读取远程目录失败: %w", err)
 	}
-	result := make([]RemoteFileEntry, 0, len(entries))
+	visibleEntries := make([]os.FileInfo, 0, len(entries))
 	for _, entry := range entries {
 		if !showHidden && strings.HasPrefix(entry.Name(), ".") {
 			continue
 		}
+		visibleEntries = append(visibleEntries, entry)
+	}
+	remotePaths := make([]string, len(visibleEntries))
+	for index, entry := range visibleEntries {
+		remotePaths[index] = remoteChild(remotePath, entry.Name())
+	}
+	createdAt, err := remoteCreationTimes(ctx, conn, sshClient, remotePaths)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]RemoteFileEntry, 0, len(visibleEntries))
+	for index, entry := range visibleEntries {
 		mode := entry.Mode()
-		result = append(result, RemoteFileEntry{Name: entry.Name(), Path: remoteChild(remotePath, entry.Name()), IsDir: mode.IsDir(), IsSymlink: mode&os.ModeSymlink != 0, Size: func() int64 {
-			if mode.IsRegular() {
-				return entry.Size()
-			}
-			return 0
-		}(), ModifiedAt: entry.ModTime().UTC().Format(time.RFC3339)})
+		result = append(result, RemoteFileEntry{
+			Name:      entry.Name(),
+			Path:      remotePaths[index],
+			IsDir:     mode.IsDir(),
+			IsSymlink: mode&os.ModeSymlink != 0,
+			Size: func() int64 {
+				if mode.IsRegular() {
+					return entry.Size()
+				}
+				return 0
+			}(),
+			ModifiedAt: entry.ModTime().UTC().Format(time.RFC3339),
+			CreatedAt:  createdAt[index],
+		})
 	}
 	sort.SliceStable(result, func(i, j int) bool {
 		if result[i].IsDir != result[j].IsDir {

@@ -977,6 +977,7 @@
     "symbolicLink": "Symbolic link",
     "size": "Size",
     "modified": "Modified",
+    "created": "Created",
     "calculate": "Calculate",
     "selectAll": "Select current directory",
     "downloadSelected": "Download {{count}} items",

@@ -11,6 +11,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/knownhosts"
@@ -29,6 +30,32 @@ func TestNormalizedRemotePath(t *testing.T) {
 	for _, test := range tests {
 		if got := normalizedRemotePath(test.input); got != test.want {
 			t.Errorf("normalizedRemotePath(%q) = %q, want %q", test.input, got, test.want)
+		}
+	}
+}
+
+func TestRemoteCreationTimesCommandQuotesPaths(t *testing.T) {
+	command := remoteCreationTimesCommand([]string{"/remote/O'Brien", "/target/file"})
+	if !strings.Contains(command, `'/remote/O'"'"'Brien'`) {
+		t.Fatalf("远程路径未正确转义: %s", command)
+	}
+	if !strings.Contains(command, `stat -c %W -- "$item"`) {
+		t.Fatalf("缺少 GNU stat 创建时间探测: %s", command)
+	}
+	if !strings.Contains(command, `stat -f %B "$item"`) {
+		t.Fatalf("缺少 BSD stat 创建时间探测: %s", command)
+	}
+}
+
+func TestParseRemoteCreationTimes(t *testing.T) {
+	got := parseRemoteCreationTimes([]byte("1700000000\n0\n-1\ninvalid\n"), 4)
+	want := time.Unix(1700000000, 0).UTC().Format(time.RFC3339)
+	if got[0] != want {
+		t.Fatalf("创建时间解析结果 = %q, want %q", got[0], want)
+	}
+	for index, value := range got[1:] {
+		if value != "" {
+			t.Errorf("第 %d 个不可用创建时间应为空，实际为 %q", index+1, value)
 		}
 	}
 }

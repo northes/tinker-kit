@@ -6,8 +6,10 @@ import {
   ArrowClockwise,
   ArrowUpRight,
   ArrowsLeftRight,
+  CaretDown,
   CaretLeft,
   CaretRight,
+  CaretUp,
   CheckCircle,
   Copy,
   DownloadSimple,
@@ -176,6 +178,17 @@ function formatBytes(value: number) {
   return `${amount.toFixed(amount >= 10 ? 0 : 1)} ${units[index]}`;
 }
 
+function timestampMillis(value: string) {
+  if (!value) return null;
+  const timestamp = Date.parse(value);
+  return Number.isFinite(timestamp) ? timestamp : null;
+}
+
+function formatRemoteTimestamp(value: string, locale: string) {
+  const timestamp = timestampMillis(value);
+  return timestamp === null ? '—' : new Date(timestamp).toLocaleString(locale);
+}
+
 function taskPercent(task: FileTask) {
   if (!task.total || task.total <= 0) return null;
   return Math.max(0, Math.min(100, (task.completed / task.total) * 100));
@@ -259,15 +272,19 @@ type RemoteOperationRunResult =
   | { status: 'started' }
   | { status: 'conflict'; paths: string[] }
   | { status: 'failed' };
+type FileSortKey = 'name' | 'size' | 'modifiedAt' | 'createdAt';
+type SortDirection = 'asc' | 'desc';
 
 export default function SshFilesTool({ active }: Props) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [connections, setConnections] = useState<SSHConnection[]>([]);
   const [sources, setSources] = useState<FileSource[]>([]);
   const [sourceID, setSourceID] = useState('');
   const [currentPath, setCurrentPath] = useState('/');
   const [pathInput, setPathInput] = useState('/');
   const [entries, setEntries] = useState<RemoteFileEntry[]>([]);
+  const [sortKey, setSortKey] = useState<FileSortKey>('name');
+  const [sortDirection, setSortDirection] = useState<SortDirection>('asc');
   const [sizeValues, setSizeValues] = useState<Record<string, number>>({});
   const [showHidden, setShowHidden] = useState(false);
   const [selected, setSelected] = useState<string[]>([]);
@@ -1145,6 +1162,40 @@ export default function SshFilesTool({ active }: Props) {
   const activeTasks = tasks.filter(
     (task) => task.status === 'queued' || task.status === 'running' || task.status === 'scanning',
   );
+  const sortedEntries = useMemo(() => {
+    const direction = sortDirection === 'asc' ? 1 : -1;
+    return [...entries].sort((left, right) => {
+      if (left.isDir !== right.isDir) return left.isDir ? -1 : 1;
+
+      if (sortKey === 'name') {
+        return (
+          left.name.localeCompare(right.name, i18n.language, {
+            sensitivity: 'base',
+            numeric: true,
+          }) * direction
+        );
+      }
+
+      const leftValue =
+        sortKey === 'size'
+          ? left.isDir
+            ? (sizeValues[left.path] ?? null)
+            : left.size
+          : timestampMillis(sortKey === 'modifiedAt' ? left.modifiedAt : left.createdAt);
+      const rightValue =
+        sortKey === 'size'
+          ? right.isDir
+            ? (sizeValues[right.path] ?? null)
+            : right.size
+          : timestampMillis(sortKey === 'modifiedAt' ? right.modifiedAt : right.createdAt);
+
+      if (leftValue === null || rightValue === null) {
+        if (leftValue === rightValue) return 0;
+        return leftValue === null ? 1 : -1;
+      }
+      return (leftValue - rightValue) * direction;
+    });
+  }, [entries, i18n.language, sizeValues, sortDirection, sortKey]);
   const taskProgress =
     activeTasks.length === 1 && activeTasks[0].total > 0 ? taskPercent(activeTasks[0]) : null;
   const calculatingSizePaths = useMemo(
@@ -1195,6 +1246,49 @@ export default function SshFilesTool({ active }: Props) {
     item.mode === 'local'
       ? item.alias || t('sshFilesTool.localSSH')
       : `${item.username}@${item.host}:${item.port}`;
+  const changeSort = (nextKey: FileSortKey) => {
+    if (sortKey === nextKey) {
+      setSortDirection((direction) => (direction === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setSortKey(nextKey);
+      setSortDirection('asc');
+    }
+  };
+  const sortLabel = (key: FileSortKey) => {
+    if (key === 'name') return t('sshFilesTool.name');
+    if (key === 'size') return t('sshFilesTool.size');
+    if (key === 'modifiedAt') return t('sshFilesTool.modified');
+    return t('sshFilesTool.created');
+  };
+  const sortableHeader = (key: FileSortKey, label: string) => {
+    const activeSort = sortKey === key;
+    const directionLabel = activeSort
+      ? sortDirection === 'asc'
+        ? t('imageManagerTool.sortAscending')
+        : t('imageManagerTool.sortDescending')
+      : t('imageManagerTool.sortNotActive');
+    return (
+      <Button
+        variant="ghost"
+        size="sm"
+        className="-ml-2 h-7 px-2 text-[10px] font-medium"
+        aria-label={t('imageManagerTool.sortBy', {
+          column: sortLabel(key),
+          direction: directionLabel,
+        })}
+        onClick={() => changeSort(key)}
+      >
+        {label}
+        {activeSort ? (
+          sortDirection === 'asc' ? (
+            <CaretUp data-icon="inline-end" aria-hidden="true" />
+          ) : (
+            <CaretDown data-icon="inline-end" aria-hidden="true" />
+          )
+        ) : null}
+      </Button>
+    );
+  };
 
   return (
     <ToolLayout>
@@ -1392,7 +1486,7 @@ export default function SshFilesTool({ active }: Props) {
               </div>
             </div>
           ) : (
-            <Table className="min-w-[680px] text-xs" containerClassName="overflow-visible">
+            <Table className="min-w-[840px] text-xs" containerClassName="overflow-visible">
               <TableHeader className="sticky top-0 z-10 bg-background">
                 <TableRow className="hover:bg-transparent">
                   <TableHead className="w-10 px-3 text-[10px] text-muted-foreground">
@@ -1405,19 +1499,58 @@ export default function SshFilesTool({ active }: Props) {
                       aria-label={t('sshFilesTool.selectAll')}
                     />
                   </TableHead>
-                  <TableHead className="min-w-[280px] text-[10px] text-muted-foreground">
-                    {t('sshFilesTool.name')}
+                  <TableHead
+                    className="min-w-[280px] text-[10px] text-muted-foreground"
+                    aria-sort={
+                      sortKey === 'name'
+                        ? sortDirection === 'asc'
+                          ? 'ascending'
+                          : 'descending'
+                        : 'none'
+                    }
+                  >
+                    {sortableHeader('name', t('sshFilesTool.name'))}
                   </TableHead>
-                  <TableHead className="w-32 text-[10px] text-muted-foreground">
-                    {t('sshFilesTool.size')}
+                  <TableHead
+                    className="w-32 text-[10px] text-muted-foreground"
+                    aria-sort={
+                      sortKey === 'size'
+                        ? sortDirection === 'asc'
+                          ? 'ascending'
+                          : 'descending'
+                        : 'none'
+                    }
+                  >
+                    {sortableHeader('size', t('sshFilesTool.size'))}
                   </TableHead>
-                  <TableHead className="w-44 text-[10px] text-muted-foreground">
-                    {t('sshFilesTool.modified')}
+                  <TableHead
+                    className="w-44 text-[10px] text-muted-foreground"
+                    aria-sort={
+                      sortKey === 'modifiedAt'
+                        ? sortDirection === 'asc'
+                          ? 'ascending'
+                          : 'descending'
+                        : 'none'
+                    }
+                  >
+                    {sortableHeader('modifiedAt', t('sshFilesTool.modified'))}
+                  </TableHead>
+                  <TableHead
+                    className="w-44 text-[10px] text-muted-foreground"
+                    aria-sort={
+                      sortKey === 'createdAt'
+                        ? sortDirection === 'asc'
+                          ? 'ascending'
+                          : 'descending'
+                        : 'none'
+                    }
+                  >
+                    {sortableHeader('createdAt', t('sshFilesTool.created'))}
                   </TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {entries.map((entry) => {
+                {sortedEntries.map((entry) => {
                   const operationPaths = operationPathsFor(entry.path);
                   const archiveSelection = operationPaths.every(isArchivePath);
                   return (
@@ -1529,7 +1662,10 @@ export default function SshFilesTool({ active }: Props) {
                       )}
                     </TableCell>
                     <TableCell className="w-44 py-2 text-muted-foreground">
-                      {entry.modifiedAt ? new Date(entry.modifiedAt).toLocaleString() : '—'}
+                      {formatRemoteTimestamp(entry.modifiedAt, i18n.language)}
+                    </TableCell>
+                    <TableCell className="w-44 py-2 text-muted-foreground">
+                      {formatRemoteTimestamp(entry.createdAt, i18n.language)}
                     </TableCell>
                       </ContextMenuTrigger>
                       <ContextMenuContent className="min-w-44">

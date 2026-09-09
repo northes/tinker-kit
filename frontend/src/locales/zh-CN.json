@@ -977,6 +977,7 @@
     "symbolicLink": "符号链接",
     "size": "大小",
     "modified": "修改时间",
+    "created": "创建时间",
     "calculate": "计算",
     "selectAll": "全选当前目录",
     "downloadSelected": "下载 {{count}} 项",

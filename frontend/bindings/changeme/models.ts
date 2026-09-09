@@ -287,6 +287,7 @@ export interface RemoteFileEntry {
     "isSymlink": boolean;
     "size": number;
     "modifiedAt": string;
+    "createdAt": string;
 }
 
 export interface RemoteFileOperationResult {
