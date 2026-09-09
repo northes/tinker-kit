@@ -55,6 +55,7 @@ import {
   ToolLayoutHeader,
   ToolLayoutToolbar,
 } from './shared';
+import { useFileDragOver } from './FileDropEmpty';
 import type {
   FileSource,
   FileTask,
@@ -237,6 +238,9 @@ export default function SshFilesTool({ active }: Props) {
   });
 
   const source = sources.find((item) => item.id === sourceID) ?? null;
+  const fileDrag = useFileDragOver({
+    enabled: active && Boolean(sourceID) && !loadingSources && !loading,
+  });
   const breadcrumbs = useMemo(() => {
     const parts = currentPath.split('/').filter(Boolean);
     return [
@@ -310,6 +314,15 @@ export default function SshFilesTool({ active }: Props) {
     currentPathRef.current = currentPath;
   }, [currentPath, sourceID]);
 
+  const openUploadDialog = useCallback((paths: string[], target: string) => {
+    if (!paths.length) return;
+    setUploadPaths(paths);
+    setUploadTarget(target);
+    setUploadError('');
+    setAllowOverwrite(false);
+    setUploadOpen(true);
+  }, []);
+
   useEffect(() => {
     if (!active) return;
     void loadSources().catch((reason) => setError(errorMessage(reason)));
@@ -330,17 +343,22 @@ export default function SshFilesTool({ active }: Props) {
       };
       const currentSourceID = sourceIDRef.current;
       const currentRemotePath = currentPathRef.current;
-      if (data.details?.id !== 'ssh-files-drop-zone' || !currentSourceID || !data.files?.length)
+      const paths = data.files ?? [];
+      if (
+        data.details?.id !== 'ssh-files-drop-zone' ||
+        !currentSourceID ||
+        !paths.length ||
+        loadingSources ||
+        loading
+      )
         return;
-      void StartFileUpload(currentSourceID, data.files, currentRemotePath)
-        .then(applyTaskSnapshot)
-        .catch((reason) => setError(errorMessage(reason)));
+      openUploadDialog(paths, currentRemotePath);
     });
     return () => {
       offTasks();
       offDrop();
     };
-  }, [active, applyTaskSnapshot]);
+  }, [active, applyTaskSnapshot, loading, loadingSources, openUploadDialog]);
 
   useEffect(() => {
     if (!active || !source) return;
@@ -396,13 +414,7 @@ export default function SshFilesTool({ active }: Props) {
         AllowsMultipleSelection: true,
       });
       const paths = Array.isArray(result) ? result : result ? [result] : [];
-      if (paths.length) {
-        setUploadPaths(paths);
-        setUploadTarget(currentPath);
-        setUploadError('');
-        setAllowOverwrite(false);
-        setUploadOpen(true);
-      }
+      openUploadDialog(paths, currentPath);
     } catch (reason) {
       setError(errorMessage(reason));
     }
@@ -954,9 +966,25 @@ export default function SshFilesTool({ active }: Props) {
         <div
           id="ssh-files-drop-zone"
           data-file-drop-target
+          data-over={fileDrag.over ? 'true' : undefined}
           aria-busy={isLoading}
-          className="min-h-0 flex-1 overflow-auto [scrollbar-gutter:auto]"
+          {...fileDrag.dragProps}
+          className="group/file-drop relative min-h-0 flex-1 overflow-auto [scrollbar-gutter:auto]"
         >
+          {fileDrag.over ? (
+            <span className="sr-only" role="status">
+              {t('fileDrop.release')}
+            </span>
+          ) : null}
+          <div
+            aria-hidden="true"
+            className="pointer-events-none absolute inset-2 z-20 flex items-center justify-center rounded-lg border border-dashed border-primary bg-primary/10 px-4 py-3 text-primary opacity-0 group-data-[over=true]/file-drop:opacity-100 group-[.file-drop-target-active]/file-drop:opacity-100"
+          >
+            <span className="flex items-center gap-2 text-xs font-medium">
+              <UploadSimple size={16} weight="duotone" />
+              {t('fileDrop.release')}
+            </span>
+          </div>
           {loadingSources ? (
             <div className="flex h-full flex-col items-center justify-center gap-2 p-6 text-center">
               <Spinner />
