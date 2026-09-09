@@ -11,7 +11,6 @@ import (
 	"os/exec"
 	"path"
 	"path/filepath"
-	"runtime"
 	"sort"
 	"strings"
 	"time"
@@ -475,36 +474,6 @@ func (s *FileService) TestSSHFileConnection(connection SSHConnection, defaultPat
 		return fmt.Errorf("默认路径不可访问: %w", err)
 	}
 	return nil
-}
-
-// GetClipboardFilePaths 读取 macOS 剪贴板中的文件 URL，用于 Finder 复制后的粘贴上传。
-// 文本剪贴板不会被解释为本地路径，其他平台返回空列表。
-func (s *FileService) GetClipboardFilePaths() []string {
-	if runtime.GOOS != "darwin" {
-		return []string{}
-	}
-	script := `try
-set resultText to ""
-set copiedFiles to (the clipboard as «class furl»)
-if class of copiedFiles is not list then set copiedFiles to {copiedFiles}
-repeat with copiedFile in copiedFiles
-set resultText to resultText & (POSIX path of copiedFile) & linefeed
-end repeat
-return resultText
-on error
-return ""
-end try`
-	output, err := exec.Command("osascript", "-e", script).Output()
-	if err != nil {
-		return []string{}
-	}
-	paths := make([]string, 0)
-	for _, value := range strings.Split(string(output), "\n") {
-		if value = strings.TrimSpace(value); value != "" {
-			paths = append(paths, value)
-		}
-	}
-	return paths
 }
 
 func localTree(ctx context.Context, paths []string) (int64, int, error) {

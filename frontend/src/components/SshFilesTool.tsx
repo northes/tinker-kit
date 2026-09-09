@@ -7,7 +7,6 @@ import {
   CaretLeft,
   CaretRight,
   CheckCircle,
-  ClipboardText,
   DownloadSimple,
   File,
   Folder,
@@ -66,7 +65,6 @@ import type {
 import {
   CalculateRemoteSize,
   CancelFileTask,
-  GetClipboardFilePaths,
   GetFileSources,
   GetFileTasks,
   GetSSHConnections,
@@ -409,36 +407,6 @@ export default function SshFilesTool({ active }: Props) {
       setError(errorMessage(reason));
     }
   };
-
-  const pasteUpload = async () => {
-    try {
-      const paths = await GetClipboardFilePaths();
-      if (!paths?.length) {
-        toast.add({ title: t('sshFilesTool.clipboardEmpty'), type: 'warning' });
-        return;
-      }
-      setUploadPaths(paths);
-      setUploadTarget(currentPath);
-      setUploadError('');
-      setAllowOverwrite(false);
-      setUploadOpen(true);
-    } catch (reason) {
-      setError(errorMessage(reason));
-    }
-  };
-
-  useEffect(() => {
-    if (!active) return;
-    const onPasteShortcut = (event: KeyboardEvent) => {
-      if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== 'v') return;
-      const target = event.target as HTMLElement | null;
-      if (target?.closest('input, textarea, [contenteditable="true"]')) return;
-      event.preventDefault();
-      void pasteUpload();
-    };
-    window.addEventListener('keydown', onPasteShortcut);
-    return () => window.removeEventListener('keydown', onPasteShortcut);
-  }, [active, currentPath, sourceID]);
 
   const confirmUpload = async () => {
     if (!sourceID || uploadPaths.length === 0 || uploadStarting || !allowOverwrite) return;
@@ -922,15 +890,6 @@ export default function SshFilesTool({ active }: Props) {
             >
               <UploadSimple data-icon="inline-start" size={14} />
               {t('sshFilesTool.upload')}
-            </Button>
-            <Button
-              variant="outline"
-              className="h-[30px] flex-none px-[11px] text-[11px]"
-              disabled={!sourceID || isLoading}
-              onClick={() => void pasteUpload()}
-            >
-              <ClipboardText data-icon="inline-start" size={14} />
-              {t('sshFilesTool.pasteUpload')}
             </Button>
             <Button
               variant="ghost"
