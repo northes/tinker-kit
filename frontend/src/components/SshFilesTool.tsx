@@ -1558,71 +1558,71 @@ export default function SshFilesTool({ active }: Props) {
               </button>
             ) : null}
           </div>
-          <div className="flex flex-none flex-wrap items-center justify-end gap-2">
-            {selected.length ? (
-              <DropdownMenu>
-                <DropdownMenuTrigger
-                  render={
-                    <Button
-                      variant="outline"
-                      className="h-[30px] flex-none px-[11px] text-[11px]"
-                      disabled={operationRunning}
-                    />
-                  }
-                >
-                  <ListDashes data-icon="inline-start" size={14} />
-                  {t('sshFilesTool.batchActions')}
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="min-w-44">
-                  <DropdownMenuGroup>
-                    <DropdownMenuItem
-                      disabled={operationRunning}
-                      onClick={() => requestFileOperation('copy', selected)}
-                    >
-                      <Copy size={14} weight="duotone" aria-hidden="true" />
-                      {t('sshFilesTool.copy')}
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      disabled={operationRunning}
-                      onClick={() => requestFileOperation('move', selected)}
-                    >
-                      <ArrowsLeftRight size={14} weight="duotone" aria-hidden="true" />
-                      {t('sshFilesTool.move')}
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      disabled={operationRunning || !selected.every(isArchivePath)}
-                      onClick={() => requestFileOperation('extract', selected)}
-                    >
-                      <FileArchive size={14} weight="duotone" aria-hidden="true" />
-                      {t('sshFilesTool.extract')}
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      disabled={operationRunning}
-                      onClick={() => requestFileOperation('compress', selected)}
-                    >
-                      <Archive size={14} weight="duotone" aria-hidden="true" />
-                      {t('sshFilesTool.compress')}
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      disabled={operationRunning}
-                      onClick={() => void downloadSelected(selected)}
-                    >
-                      <DownloadSimple size={14} weight="duotone" aria-hidden="true" />
-                      {t('sshFilesTool.download')}
-                    </DropdownMenuItem>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem
-                      variant="destructive"
-                      disabled={operationRunning}
-                      onClick={() => requestFileOperation('delete', selected)}
-                    >
-                      <Trash size={14} weight="duotone" aria-hidden="true" />
-                      {t('sshFilesTool.delete')}
-                    </DropdownMenuItem>
-                  </DropdownMenuGroup>
-                </DropdownMenuContent>
-              </DropdownMenu>
-            ) : null}
+          <div className="flex min-h-[30px] flex-none flex-wrap items-center justify-end gap-2">
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                render={
+                  <Button
+                    variant="outline"
+                    className={`h-[30px] flex-none px-[11px] text-[11px]${selected.length ? '' : ' invisible pointer-events-none'}`}
+                    disabled={operationRunning || selected.length === 0}
+                    aria-hidden={selected.length === 0}
+                    tabIndex={selected.length > 0 ? 0 : -1}
+                  />
+                }
+              >
+                <ListDashes data-icon="inline-start" size={14} />
+                {t('sshFilesTool.batchActions')}
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="min-w-44">
+                <DropdownMenuGroup>
+                  <DropdownMenuItem
+                    disabled={operationRunning}
+                    onClick={() => requestFileOperation('copy', selected)}
+                  >
+                    <Copy size={14} weight="duotone" aria-hidden="true" />
+                    {t('sshFilesTool.copy')}
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    disabled={operationRunning}
+                    onClick={() => requestFileOperation('move', selected)}
+                  >
+                    <ArrowsLeftRight size={14} weight="duotone" aria-hidden="true" />
+                    {t('sshFilesTool.move')}
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    disabled={operationRunning || !selected.every(isArchivePath)}
+                    onClick={() => requestFileOperation('extract', selected)}
+                  >
+                    <FileArchive size={14} weight="duotone" aria-hidden="true" />
+                    {t('sshFilesTool.extract')}
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    disabled={operationRunning}
+                    onClick={() => requestFileOperation('compress', selected)}
+                  >
+                    <Archive size={14} weight="duotone" aria-hidden="true" />
+                    {t('sshFilesTool.compress')}
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    disabled={operationRunning}
+                    onClick={() => void downloadSelected(selected)}
+                  >
+                    <DownloadSimple size={14} weight="duotone" aria-hidden="true" />
+                    {t('sshFilesTool.download')}
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    variant="destructive"
+                    disabled={operationRunning}
+                    onClick={() => requestFileOperation('delete', selected)}
+                  >
+                    <Trash size={14} weight="duotone" aria-hidden="true" />
+                    {t('sshFilesTool.delete')}
+                  </DropdownMenuItem>
+                </DropdownMenuGroup>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         </div>
       </ToolLayoutFooter>
