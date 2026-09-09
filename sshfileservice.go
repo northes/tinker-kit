@@ -244,7 +244,11 @@ func copySSHConnections(items []SSHConnection) []SSHConnection {
 	return append([]SSHConnection(nil), items...)
 }
 func copyFileSources(items []FileSource) []FileSource {
-	return append([]FileSource(nil), items...)
+	copied := append([]FileSource(nil), items...)
+	for index := range copied {
+		copied[index].FavoritePaths = append([]string(nil), items[index].FavoritePaths...)
+	}
+	return copied
 }
 
 func (s *FileService) GetSSHConnections() []SSHConnection {

@@ -20,8 +20,10 @@ import {
   GearSix,
   HardDrives,
   ListDashes,
+  MagnifyingGlass,
   PencilSimple,
   Plus,
+  Star,
   Trash,
   UploadSimple,
   Warning,
@@ -64,6 +66,7 @@ import {
   DropdownMenuContent,
   DropdownMenuGroup,
   DropdownMenuItem,
+  DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from './ui/dropdown-menu';
@@ -282,6 +285,7 @@ export default function SshFilesTool({ active }: Props) {
   const [sourceID, setSourceID] = useState('');
   const [currentPath, setCurrentPath] = useState('/');
   const [pathInput, setPathInput] = useState('/');
+  const [pathEditing, setPathEditing] = useState(false);
   const [entries, setEntries] = useState<RemoteFileEntry[]>([]);
   const [sortKey, setSortKey] = useState<FileSortKey>('name');
   const [sortDirection, setSortDirection] = useState<SortDirection>('asc');
@@ -313,6 +317,7 @@ export default function SshFilesTool({ active }: Props) {
     name: '',
     sshConnectionID: '',
     defaultPath: '/',
+    favoritePaths: [],
   });
   const [uploadPaths, setUploadPaths] = useState<string[]>([]);
   const [uploadOpen, setUploadOpen] = useState(false);
@@ -329,6 +334,7 @@ export default function SshFilesTool({ active }: Props) {
   const [createFolderName, setCreateFolderName] = useState('');
   const [createFolderError, setCreateFolderError] = useState('');
   const [creatingFolder, setCreatingFolder] = useState(false);
+  const [favoritesSaving, setFavoritesSaving] = useState(false);
   const [dragReady, setDragReady] = useState<{ remote: string; local: string } | null>(null);
   const [dragPreparing, setDragPreparing] = useState('');
   const refreshedUploadTasks = useRef(new Set<string>());
@@ -349,9 +355,12 @@ export default function SshFilesTool({ active }: Props) {
     name: '',
     sshConnectionID: '',
     defaultPath: '/',
+    favoritePaths: [],
   });
 
   const source = sources.find((item) => item.id === sourceID) ?? null;
+  const favoritePaths = source?.favoritePaths ?? [];
+  const isCurrentPathFavorite = favoritePaths.includes(currentPath);
   const fileDrag = useFileDragOver({
     enabled: active && Boolean(sourceID) && !loadingSources && !loading,
   });
@@ -575,6 +584,7 @@ export default function SshFilesTool({ active }: Props) {
 
   const navigate = (nextPath: string) => {
     const normalizedPath = normalizeRemotePath(nextPath);
+    setPathEditing(false);
     setEntries([]);
     setSelected([]);
     setError('');
@@ -596,6 +606,38 @@ export default function SshFilesTool({ active }: Props) {
       toast.add({ title: t('sshFilesTool.pathCopied'), type: 'success' });
     } catch {
       toast.add({ title: t('sshFilesTool.copyPathFailed'), type: 'error' });
+    }
+  };
+
+  const toggleFavorite = async () => {
+    if (!sourceID || !source || favoritesSaving) return;
+    const nextFavoritePaths = isCurrentPathFavorite
+      ? favoritePaths.filter((pathValue) => pathValue !== currentPath)
+      : [...favoritePaths, currentPath];
+    const nextSources = sources.map((item) =>
+      item.id === sourceID ? { ...item, favoritePaths: nextFavoritePaths } : item,
+    );
+    setFavoritesSaving(true);
+    try {
+      await SaveSSHFileConfig(connections, nextSources);
+      setSources(nextSources);
+      setSourceDraft((current) =>
+        current.id === sourceID ? { ...current, favoritePaths: nextFavoritePaths } : current,
+      );
+      toast.add({
+        title: t(
+          isCurrentPathFavorite ? 'sshFilesTool.favoriteRemoved' : 'sshFilesTool.favoriteAdded',
+        ),
+        type: 'success',
+      });
+    } catch (reason) {
+      toast.add({
+        title: t('sshFilesTool.favoriteSaveFailed'),
+        description: errorMessage(reason),
+        type: 'error',
+      });
+    } finally {
+      setFavoritesSaving(false);
     }
   };
 
@@ -827,7 +869,13 @@ export default function SshFilesTool({ active }: Props) {
     const nextConnection = activeConnection ? { ...activeConnection } : { ...emptyConnection };
     const nextSource = activeSource
       ? { ...activeSource }
-      : { id: '', name: '', sshConnectionID: activeConnection?.id ?? '', defaultPath: '/' };
+      : {
+          id: '',
+          name: '',
+          sshConnectionID: activeConnection?.id ?? '',
+          defaultPath: '/',
+          favoritePaths: [],
+        };
     manageBaselineRef.current = {
       connections: connections.map((item) => ({ ...item })),
       sources: sources.map((item) => ({ ...item })),
@@ -868,7 +916,7 @@ export default function SshFilesTool({ active }: Props) {
     setManageTab('connection');
     setManageEditor('connection');
     setConnectionDraft(draft);
-    setSourceDraft({ id: '', name: '', sshConnectionID: '', defaultPath: '/' });
+    setSourceDraft({ id: '', name: '', sshConnectionID: '', defaultPath: '/', favoritePaths: [] });
     setManageFeedback(null);
   };
   const startNewFileSource = (connectionID = connectionDraft.id || connections[0]?.id || '') => {
@@ -877,6 +925,7 @@ export default function SshFilesTool({ active }: Props) {
       name: '',
       sshConnectionID: connectionID,
       defaultPath: '/',
+      favoritePaths: [],
     };
     manageNewSourceBaselineRef.current = { ...draft };
     setManageView('source');
@@ -912,7 +961,13 @@ export default function SshFilesTool({ active }: Props) {
     setSourceDraft(
       nextSources[0]
         ? { ...nextSources[0] }
-        : { id: '', name: '', sshConnectionID: nextConnections[0]?.id ?? '', defaultPath: '/' },
+        : {
+            id: '',
+            name: '',
+            sshConnectionID: nextConnections[0]?.id ?? '',
+            defaultPath: '/',
+            favoritePaths: [],
+          },
     );
     setManageView('list');
     setManageTab('connection');
@@ -926,7 +981,13 @@ export default function SshFilesTool({ active }: Props) {
     setSourceDraft(
       nextSource
         ? { ...nextSource }
-        : { id: '', name: '', sshConnectionID: connectionDraft.id || connections[0]?.id || '', defaultPath: '/' },
+        : {
+            id: '',
+            name: '',
+            sshConnectionID: connectionDraft.id || connections[0]?.id || '',
+            defaultPath: '/',
+            favoritePaths: [],
+          },
     );
     setManageView('list');
     setManageTab('source');
@@ -995,14 +1056,26 @@ export default function SshFilesTool({ active }: Props) {
     setSourceDraft(
       nextSource
         ? { ...nextSource }
-        : { id: '', name: '', sshConnectionID: nextConnection?.id ?? '', defaultPath: '/' },
+        : {
+            id: '',
+            name: '',
+            sshConnectionID: nextConnection?.id ?? '',
+            defaultPath: '/',
+            favoritePaths: [],
+          },
     );
     manageNewConnectionBaselineRef.current = nextConnection
       ? { ...nextConnection }
       : { ...emptyConnection };
     manageNewSourceBaselineRef.current = nextSource
       ? { ...nextSource }
-      : { id: '', name: '', sshConnectionID: nextConnection?.id ?? '', defaultPath: '/' };
+      : {
+          id: '',
+          name: '',
+          sshConnectionID: nextConnection?.id ?? '',
+          defaultPath: '/',
+          favoritePaths: [],
+        };
     setManageView('list');
     setManageTab('source');
     setManageEditor(nextSource ? 'source' : 'connection');
@@ -1308,6 +1381,7 @@ export default function SshFilesTool({ active }: Props) {
                     setSelected([]);
                     setError('');
                     setLoading(true);
+                    setPathEditing(false);
                     setSourceID(value);
                     setCurrentPath('/');
                   }
@@ -1335,6 +1409,19 @@ export default function SshFilesTool({ active }: Props) {
         }
         right={
           <div className="flex min-w-0 flex-wrap items-center gap-2 max-[700px]:w-full max-[700px]:justify-end">
+            <div className="relative w-[min(28vw,260px)] min-w-[180px] max-[700px]:order-last max-[700px]:w-full">
+              <MagnifyingGlass
+                size={14}
+                aria-hidden="true"
+                className="pointer-events-none absolute top-1/2 left-2.5 -translate-y-1/2 text-muted-foreground"
+              />
+              <Input
+                disabled
+                placeholder={t('sshFilesTool.searchPlaceholder')}
+                aria-label={t('sshFilesTool.search')}
+                className="h-[30px] w-full bg-muted/20 pl-8 text-[11px]"
+              />
+            </div>
             <Button
               variant="default"
               className="h-[30px] flex-none px-[11px] text-[11px]"
@@ -1360,39 +1447,151 @@ export default function SshFilesTool({ active }: Props) {
           className="flex min-h-10 min-w-0 items-center gap-1 border-y border-border bg-muted/20 px-2 text-xs"
           aria-label={t('sshFilesTool.path')}
         >
-          <div className="flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto py-1">
-            {breadcrumbs.map((crumb, index) => (
-              <span key={crumb.path} className="flex items-center whitespace-nowrap">
-                <button
-                  type="button"
-                  className={`rounded px-1.5 py-1 hover:bg-accent hover:text-foreground ${index === breadcrumbs.length - 1 ? 'font-medium text-foreground' : 'text-muted-foreground'}`}
-                  disabled={isLoading}
-                  aria-current={index === breadcrumbs.length - 1 ? 'page' : undefined}
-                  onClick={() => navigate(crumb.path)}
-                >
-                  {crumb.label}
-                </button>
-                {index < breadcrumbs.length - 1 ? (
-                  <CaretRight size={12} className="mx-0.5 shrink-0 text-muted-foreground/50" />
-                ) : null}
-              </span>
-            ))}
-          </div>
-          <form
-            className="flex w-[min(32vw,280px)] min-w-[160px] flex-none items-center border-l border-border pl-2 max-[700px]:w-[min(42vw,240px)]"
-            onSubmit={(event) => {
-              event.preventDefault();
-              navigate(pathInput);
-            }}
-          >
-            <Input
-              value={pathInput}
-              onChange={(event) => setPathInput(event.target.value)}
-              disabled={isLoading}
-              aria-label={t('sshFilesTool.pathInput')}
-              className="h-7 border-0 bg-transparent px-1 font-mono text-xs shadow-none focus-visible:ring-0"
-            />
-          </form>
+          {pathEditing ? (
+            <form
+              className="flex min-w-0 flex-1 items-center gap-1"
+              onSubmit={(event) => {
+                event.preventDefault();
+                navigate(pathInput);
+              }}
+            >
+              <Input
+                autoFocus
+                value={pathInput}
+                onChange={(event) => setPathInput(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key !== 'Escape') return;
+                  event.preventDefault();
+                  setPathInput(currentPath);
+                  setPathEditing(false);
+                }}
+                disabled={!sourceID || isLoading}
+                aria-label={t('sshFilesTool.pathInput')}
+                className="h-7 min-w-0 flex-1 border-0 bg-transparent px-1 font-mono text-xs shadow-none focus-visible:ring-0"
+              />
+              <Button
+                type="submit"
+                variant="ghost"
+                size="icon-sm"
+                className="h-7 w-7 flex-none"
+                disabled={!sourceID || isLoading}
+                aria-label={t('sshFilesTool.navigatePath')}
+              >
+                <CheckCircle size={14} />
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                className="h-7 w-7 flex-none"
+                disabled={isLoading}
+                aria-label={t('common.cancel')}
+                onClick={() => {
+                  setPathInput(currentPath);
+                  setPathEditing(false);
+                }}
+              >
+                <XCircle size={14} />
+              </Button>
+            </form>
+          ) : (
+            <>
+              <div className="flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto py-1">
+                {breadcrumbs.map((crumb, index) => (
+                  <span key={crumb.path} className="flex items-center whitespace-nowrap">
+                    <button
+                      type="button"
+                      className={`rounded px-1.5 py-1 hover:bg-accent hover:text-foreground ${index === breadcrumbs.length - 1 ? 'font-medium text-foreground' : 'text-muted-foreground'}`}
+                      disabled={!sourceID || isLoading}
+                      aria-current={index === breadcrumbs.length - 1 ? 'page' : undefined}
+                      onClick={() => navigate(crumb.path)}
+                    >
+                      {crumb.label}
+                    </button>
+                    {index < breadcrumbs.length - 1 ? (
+                      <CaretRight size={12} className="mx-0.5 shrink-0 text-muted-foreground/50" />
+                    ) : null}
+                  </span>
+                ))}
+              </div>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                className="h-7 w-7 flex-none"
+                disabled={!sourceID || isLoading}
+                aria-label={t('sshFilesTool.editPath')}
+                onClick={() => {
+                  setPathInput(currentPath);
+                  setPathEditing(true);
+                }}
+              >
+                <PencilSimple size={14} />
+              </Button>
+            </>
+          )}
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              render={
+                <Button
+                  variant={isCurrentPathFavorite ? 'secondary' : 'ghost'}
+                  size="sm"
+                  className="h-7 flex-none px-2 text-[11px]"
+                  disabled={!sourceID || isLoading || favoritesSaving}
+                  aria-label={t('sshFilesTool.favorites')}
+                />
+              }
+            >
+              {favoritesSaving ? (
+                <Spinner className="size-3" />
+              ) : (
+                <Star
+                  size={14}
+                  weight={isCurrentPathFavorite ? 'fill' : 'duotone'}
+                  aria-hidden="true"
+                />
+              )}
+              <span>{t('sshFilesTool.favorites')}</span>
+              <CaretDown data-icon="inline-end" aria-hidden="true" />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-72 max-w-[calc(100vw-32px)]">
+              <DropdownMenuGroup>
+                <DropdownMenuLabel>{t('sshFilesTool.favorites')}</DropdownMenuLabel>
+                {favoritePaths.length ? (
+                  favoritePaths.map((favoritePath) => (
+                    <DropdownMenuItem
+                      key={favoritePath}
+                      onClick={() => navigate(favoritePath)}
+                    >
+                      <Star size={14} weight="duotone" aria-hidden="true" />
+                      <span className="min-w-0 truncate" title={favoritePath}>
+                        {favoritePath}
+                      </span>
+                    </DropdownMenuItem>
+                  ))
+                ) : (
+                  <DropdownMenuItem disabled>
+                    {t('sshFilesTool.noFavorites')}
+                  </DropdownMenuItem>
+                )}
+              </DropdownMenuGroup>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                disabled={!sourceID || isLoading || favoritesSaving}
+                onClick={() => void toggleFavorite()}
+              >
+                <Star
+                  size={14}
+                  weight={isCurrentPathFavorite ? 'fill' : 'duotone'}
+                  aria-hidden="true"
+                />
+                {t(
+                  isCurrentPathFavorite
+                    ? 'sshFilesTool.removeFavorite'
+                    : 'sshFilesTool.addFavorite',
+                )}
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
           <Button
             variant="ghost"
             size="icon-sm"

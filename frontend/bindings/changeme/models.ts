@@ -145,6 +145,7 @@ export interface FileSource {
     "name": string;
     "sshConnectionID": string;
     "defaultPath": string;
+    "favoritePaths"?: string[] | null;
 }
 
 export interface FileTask {

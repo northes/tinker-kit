@@ -80,10 +80,11 @@ type SSHConnection struct {
 
 // FileSource 是 SSH 文件管理中的可浏览源；同一连接可被多个源引用。
 type FileSource struct {
-	ID              string `json:"id"`
-	Name            string `json:"name"`
-	SSHConnectionID string `json:"sshConnectionID"`
-	DefaultPath     string `json:"defaultPath"`
+	ID              string   `json:"id"`
+	Name            string   `json:"name"`
+	SSHConnectionID string   `json:"sshConnectionID"`
+	DefaultPath     string   `json:"defaultPath"`
+	FavoritePaths   []string `json:"favoritePaths,omitempty"`
 }
 
 const localImageSourceID = "local"
@@ -448,6 +449,28 @@ func normalizeDockerCLIPath(path string) string {
 	return path
 }
 
+func normalizeFavoritePaths(paths []string) []string {
+	const maxFavoritePaths = 128
+	normalized := make([]string, 0, min(len(paths), maxFavoritePaths))
+	seen := make(map[string]struct{}, len(paths))
+	for _, favoritePath := range paths {
+		favoritePath = strings.TrimSpace(favoritePath)
+		if favoritePath == "" || !validPathValue(favoritePath, 4096) {
+			continue
+		}
+		favoritePath = normalizedRemotePath(favoritePath)
+		if _, ok := seen[favoritePath]; ok {
+			continue
+		}
+		seen[favoritePath] = struct{}{}
+		normalized = append(normalized, favoritePath)
+		if len(normalized) == maxFavoritePaths {
+			break
+		}
+	}
+	return normalized
+}
+
 func normalizeConfig(cfg Config) Config {
 	cfg.DockerCLIPath = normalizeDockerCLIPath(cfg.DockerCLIPath)
 	cfg.ImageSources = normalizeImageSources(cfg.ImageSources)
@@ -456,6 +479,9 @@ func normalizeConfig(cfg Config) Config {
 	}
 	if cfg.FileSources == nil {
 		cfg.FileSources = []FileSource{}
+	}
+	for index := range cfg.FileSources {
+		cfg.FileSources[index].FavoritePaths = normalizeFavoritePaths(cfg.FileSources[index].FavoritePaths)
 	}
 	validSidebarTool := make(map[string]bool, len(defaultSidebarToolIDs))
 	for _, id := range defaultSidebarToolIDs {

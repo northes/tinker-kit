@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -69,6 +70,19 @@ func TestNormalizeConfigTheme(t *testing.T) {
 				t.Fatalf("主题规范化结果为 %#v，期望 %#v", got, test.want)
 			}
 		})
+	}
+}
+
+func TestNormalizeConfigFavoritePaths(t *testing.T) {
+	cfg := normalizeConfig(Config{
+		FileSources: []FileSource{{
+			FavoritePaths: []string{" /srv/app/../logs ", "/srv/logs", "", "bad\x00path"},
+		}},
+	})
+	got := cfg.FileSources[0].FavoritePaths
+	want := []string{"/srv/logs"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("收藏路径规范化结果为 %#v，期望 %#v", got, want)
 	}
 }
 
