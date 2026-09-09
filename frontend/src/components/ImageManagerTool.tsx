@@ -1,4 +1,4 @@
-import { useCallback, useDeferredValue, useEffect, useId, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { CancelError, Events } from '@wailsio/runtime';
 import {
@@ -96,7 +96,6 @@ const LOCAL_SOURCE = {
   kind: 'local',
   sshHost: '',
 } as unknown as ImageSource;
-const IMAGE_SEARCH_DEBOUNCE_MS = 120;
 const IMAGE_TASK_RETENTION_MS = 24 * 60 * 60 * 1000;
 
 type SourceKind = 'local' | 'ssh' | 'registry';
@@ -416,21 +415,16 @@ function ImageSearchField({
   label,
   placeholder,
   value,
-  onChange,
+  onSearch,
 }: {
   id: string;
   label: string;
   placeholder: string;
   value: string;
-  onChange: (value: string) => void;
+  onSearch: (value: string) => void;
 }) {
+  const labelId = useId();
   const [draft, setDraft] = useState(value);
-
-  useEffect(() => {
-    if (draft === value) return;
-    const timer = window.setTimeout(() => onChange(draft), IMAGE_SEARCH_DEBOUNCE_MS);
-    return () => window.clearTimeout(timer);
-  }, [draft, onChange, value]);
 
   useEffect(() => {
     setDraft(value);
@@ -438,7 +432,7 @@ function ImageSearchField({
 
   return (
     <div className="flex min-w-0 flex-col gap-1 text-[10px] font-medium text-muted-foreground max-[700px]:w-full">
-      <Label htmlFor={id}>{label}</Label>
+      <span id={labelId}>{label}</span>
       <div className="relative flex w-[220px] max-w-full items-center max-[700px]:w-full">
         <MagnifyingGlass
           size={14}
@@ -448,8 +442,14 @@ function ImageSearchField({
         />
         <Input
           id={id}
+          aria-labelledby={labelId}
           value={draft}
           onChange={(event) => setDraft(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter' && !event.nativeEvent.isComposing) {
+              onSearch(draft);
+            }
+          }}
           placeholder={placeholder}
           className="h-[30px] pl-8 text-[11px]"
         />
@@ -930,7 +930,6 @@ export default function ImageManagerTool({
   const [search, setSearch] = useState('');
   const [sortKey, setSortKey] = useState<SortKey>('name');
   const [sortDirection, setSortDirection] = useState<SortDirection>('asc');
-  const deferredSearch = useDeferredValue(search);
   const [isUpdating, setIsUpdating] = useState(false);
   const [isInitialLoad, setIsInitialLoad] = useState(false);
   const [hasSnapshot, setHasSnapshot] = useState(false);
@@ -1177,7 +1176,7 @@ export default function ImageManagerTool({
     [displayedImages],
   );
   const filteredImages = useMemo(() => {
-    const query = deferredSearch.trim().toLocaleLowerCase();
+    const query = search.trim().toLocaleLowerCase();
     const next = query
       ? indexedImages.filter(
           (item) => item.searchId.includes(query) || item.searchName.includes(query),
@@ -1201,7 +1200,7 @@ export default function ImageManagerTool({
       return comparison * direction;
     });
     return next.map((item) => item.image);
-  }, [deferredSearch, i18n.language, indexedImages, sortDirection, sortKey]);
+  }, [i18n.language, indexedImages, search, sortDirection, sortKey]);
   const selectedCount = sourceIsChanging ? 0 : selected.size;
   const allSelected =
     filteredImages.length > 0 && filteredImages.every((image) => selected.has(image.id));
@@ -1918,7 +1917,7 @@ export default function ImageManagerTool({
                 id="image-manager-search"
                 label={t('imageManagerTool.search')}
                 value={search}
-                onChange={setSearch}
+                onSearch={setSearch}
                 placeholder={t('imageManagerTool.searchPlaceholder')}
               />
             </div>
