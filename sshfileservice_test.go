@@ -84,6 +84,15 @@ func TestNewSystemSFTPCommandUsesSSHSubsystem(t *testing.T) {
 	}
 }
 
+func TestRemoteTransferCommandQuotesPaths(t *testing.T) {
+	if got, want := remoteTransferCommand(remoteFileOperationCopy, "/remote/O'Brien", "/target/O'Brien"), `cp -a '/remote/O'"'"'Brien' '/target/O'"'"'Brien'`; got != want {
+		t.Fatalf("远程复制命令 = %q, want %q", got, want)
+	}
+	if got, want := remoteTransferCommand(remoteFileOperationMove, "/source", "/target"), "mv '/source' '/target'"; got != want {
+		t.Fatalf("远程移动命令 = %q, want %q", got, want)
+	}
+}
+
 func TestPasswordAuthMethodsAnswerKeyboardInteractivePasswordPrompt(t *testing.T) {
 	methods, err := (&FileService{}).authMethods(SSHConnection{Password: "secret"})
 	if err != nil {

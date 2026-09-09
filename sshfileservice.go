@@ -369,6 +369,73 @@ func newSystemSFTPCommand(ctx context.Context, alias string) *exec.Cmd {
 	return exec.CommandContext(ctx, "ssh", "-o", "BatchMode=yes", "-o", "RequestTTY=no", "-s", alias, "sftp")
 }
 
+func newSystemSSHCommand(ctx context.Context, alias, remoteCommand string) *exec.Cmd {
+	return exec.CommandContext(ctx, "ssh", "-o", "BatchMode=yes", "-o", "RequestTTY=no", alias, remoteCommand)
+}
+
+func remoteTransferCommand(operation, source, destination string) string {
+	command := "cp -a "
+	if operation == remoteFileOperationMove {
+		command = "mv "
+	}
+	return command + shellQuote(source) + " " + shellQuote(destination)
+}
+
+func remoteCommandError(stderr string, err error) error {
+	if err == nil {
+		return nil
+	}
+	if detail := strings.TrimSpace(stderr); detail != "" {
+		return fmt.Errorf("%s: %w", detail, err)
+	}
+	return err
+}
+
+func runRemoteCommand(
+	ctx context.Context,
+	conn SSHConnection,
+	sshClient *ssh.Client,
+	command string,
+) error {
+	if conn.Mode == "local" {
+		alias := strings.TrimSpace(conn.Alias)
+		if !validSSHHost(alias) {
+			return errors.New("本地 SSH 配置别名无效")
+		}
+		process := newSystemSSHCommand(ctx, alias, command)
+		var stderr bytes.Buffer
+		process.Stdout = io.Discard
+		process.Stderr = &stderr
+		err := process.Run()
+		if err != nil && ctx.Err() != nil {
+			return ctx.Err()
+		}
+		return remoteCommandError(stderr.String(), err)
+	}
+	if sshClient == nil {
+		return errors.New("SSH 会话尚未建立")
+	}
+	session, err := sshClient.NewSession()
+	if err != nil {
+		return err
+	}
+	defer session.Close()
+	session.Stdout = io.Discard
+	var stderr bytes.Buffer
+	session.Stderr = &stderr
+	done := make(chan error, 1)
+	go func() {
+		done <- session.Run(command)
+	}()
+	select {
+	case err := <-done:
+		return remoteCommandError(stderr.String(), err)
+	case <-ctx.Done():
+		_ = session.Close()
+		return ctx.Err()
+	}
+}
+
 func (s *FileService) dialSFTP(ctx context.Context, conn SSHConnection) (*ssh.Client, *sftp.Client, error) {
 	if conn.Mode == "local" {
 		alias := strings.TrimSpace(conn.Alias)
@@ -619,6 +686,32 @@ type remoteTransferItem struct {
 	noOp        bool
 }
 
+func validateRemoteCopyPath(client *sftp.Client, remotePath string) error {
+	info, err := client.Lstat(remotePath)
+	if err != nil {
+		return err
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		return fmt.Errorf("不支持复制符号链接: %s", remotePath)
+	}
+	if !info.IsDir() {
+		if !info.Mode().IsRegular() {
+			return fmt.Errorf("不支持复制该类型的远程项目: %s", remotePath)
+		}
+		return nil
+	}
+	entries, err := client.ReadDir(remotePath)
+	if err != nil {
+		return err
+	}
+	for _, entry := range entries {
+		if err := validateRemoteCopyPath(client, remoteChild(remotePath, entry.Name())); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func prepareRemoteTransfers(
 	client *sftp.Client,
 	operation string,
@@ -634,8 +727,10 @@ func prepareRemoteTransfers(
 		if err != nil {
 			return nil, fmt.Errorf("读取远程项目失败: %w", err)
 		}
-		if operation == remoteFileOperationCopy && info.Mode()&os.ModeSymlink != 0 {
-			return nil, fmt.Errorf("不支持复制符号链接: %s", remotePath)
+		if operation == remoteFileOperationCopy {
+			if err := validateRemoteCopyPath(client, remotePath); err != nil {
+				return nil, err
+			}
 		}
 		if info.IsDir() && remotePathContains(remotePath, target) {
 			return nil, fmt.Errorf("不能将目录复制到自身或子目录: %s", remotePath)
@@ -845,11 +940,15 @@ func (s *FileService) OperateRemoteFiles(
 					return result, fmt.Errorf("覆盖远程项目失败: %w", err)
 				}
 			}
-			if operation == remoteFileOperationCopy {
-				if err := copyRemotePath(ctx, client, item.source, destination); err != nil {
+			if err := runRemoteCommand(
+				ctx,
+				conn,
+				sshClient,
+				remoteTransferCommand(operation, item.source, destination),
+			); err != nil {
+				if operation == remoteFileOperationCopy {
 					return result, fmt.Errorf("复制远程项目失败: %w", err)
 				}
-			} else if err := client.Rename(item.source, destination); err != nil {
 				return result, fmt.Errorf("移动远程项目失败: %w", err)
 			}
 		}
@@ -961,65 +1060,6 @@ func copyWithContext(ctx context.Context, dst io.Writer, src io.Reader) error {
 			return readErr
 		}
 	}
-}
-
-func copyRemoteFile(ctx context.Context, client *sftp.Client, source, target string) error {
-	input, err := client.Open(source)
-	if err != nil {
-		return err
-	}
-	output, err := client.OpenFile(target, os.O_WRONLY|os.O_CREATE|os.O_TRUNC)
-	if err != nil {
-		_ = input.Close()
-		return err
-	}
-	copyErr := copyWithContext(ctx, output, input)
-	outputErr := output.Close()
-	inputErr := input.Close()
-	if copyErr != nil {
-		return copyErr
-	}
-	if outputErr != nil {
-		return outputErr
-	}
-	return inputErr
-}
-
-func copyRemotePath(ctx context.Context, client *sftp.Client, source, target string) error {
-	if err := ctx.Err(); err != nil {
-		return err
-	}
-	info, err := client.Lstat(source)
-	if err != nil {
-		return err
-	}
-	if info.Mode()&os.ModeSymlink != 0 {
-		return fmt.Errorf("不支持复制符号链接: %s", source)
-	}
-	if info.IsDir() {
-		if err := client.MkdirAll(target); err != nil {
-			return err
-		}
-		entries, err := client.ReadDir(source)
-		if err != nil {
-			return err
-		}
-		for _, entry := range entries {
-			if err := copyRemotePath(
-				ctx,
-				client,
-				remoteChild(source, entry.Name()),
-				remoteChild(target, entry.Name()),
-			); err != nil {
-				return err
-			}
-		}
-		return nil
-	}
-	if !info.Mode().IsRegular() {
-		return nil
-	}
-	return copyRemoteFile(ctx, client, source, target)
 }
 
 func remoteArchiveFormatForPath(remotePath string) string {
