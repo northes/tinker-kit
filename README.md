@@ -5,7 +5,7 @@
 [![简体中文](https://img.shields.io/badge/简体中文-默认-3DA639)](README.md)
 [![English](https://img.shields.io/badge/English-Read%20in%20English-0078D4)](README.en.md)
 
-DevUtils 基于 [Wails v3](https://v3.wails.io/) 构建,把日常开发调试中高频的 JSON、时间戳、文本、Base64、JWT、URL 与差异对比等小工具,集中到一个紧凑、本地运行的桌面应用里。所有数据只在你自己的设备上处理,不会上传到任何服务器。
+DevUtils 基于 [Wails v3](https://v3.wails.io/) 构建,把日常开发调试中高频的 JSON、时间戳、日期计算、文本、Base64、JWT、URL 与差异对比等小工具,集中到一个紧凑、本地运行的桌面应用里。所有数据只在你自己的设备上处理,不会上传到任何服务器。
 
 ![GitHub release](https://img.shields.io/github/v/release/northes/dev-utils?sort=semver&label=版本)
 ![license](https://img.shields.io/badge/license-MIT-3DA639)
@@ -27,7 +27,7 @@ DevUtils 基于 [Wails v3](https://v3.wails.io/) 构建,把日常开发调试中
 | 工具 | 说明 | 亮点 |
 | --- | --- | --- |
 | JSON 工作区 | 格式化、压缩、校验 | 支持带注释与尾逗号的 JSON;JSONPath 路径提取;Schema 结构面板;可编排的工作流转换 |
-| 时间转换器 | 时间戳与日期互转 | 智能解析 Unix、ISO 8601、RFC3339 及常见中英文日期;时区搜索;输出格式可拖拽排序、按需显隐 |
+| 时间转换器 | 时间戳与日期互转、日期计算 | 智能解析 Unix、ISO 8601、RFC3339 及常见中英文日期;时区搜索;日期差与日期加减;输出格式可拖拽排序、按需显隐 |
 | 文本工具集 | 测量与规范化纯文本 | 字符 / 中文字符 / 英文 / 数字 / 单词 / 标点 / 行 / 字节统计;大小写转换;修剪与压缩 |
 | Base64 编解码 | 文本、图片、文件 | 自动识别编码方向与内容类型;data URL 与图片预览;解码结果保存为文件 |
 | 差异对比 | 原文与修改后并排比较 | 按词 / 按字符高亮;折叠相同行;剪贴板交替填入两侧 |

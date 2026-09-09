@@ -24,7 +24,7 @@ DevUtils 通过桌面端、本地执行、命令面板和剪贴板联动，把�
 
 ## Capabilities and Constraints
 
-- 提供 JSON、时间、文本、Base64、JWT、URL 和差异对比工具。
+- 提供 JSON、时间（含日期计算）、文本、Base64、JWT、URL 和差异对比工具。
 - 支持命令面板、工具页导航、历史记录和剪贴板自动识别填入。
 - 纯本地运行，用户数据不得上传到远程服务。
 - 前端使用 React + TypeScript，桌面壳使用 Wails，Go 后端保持薄层职责。

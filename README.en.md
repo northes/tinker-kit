@@ -5,7 +5,7 @@
 [![English](https://img.shields.io/badge/English-Default-0078D4)](README.en.md)
 [![简体中文](https://img.shields.io/badge/简体中文-阅读中文版-3DA639)](README.md)
 
-Built with [Wails v3](https://v3.wails.io/), DevUtils gathers the small, high-frequency utilities of everyday development and debugging — JSON, timestamps, text, Base64, JWT, URL and diff comparison — into one compact desktop app that runs entirely on your machine. All data is processed only on your own device and is never uploaded to any server.
+Built with [Wails v3](https://v3.wails.io/), DevUtils gathers the small, high-frequency utilities of everyday development and debugging — JSON, timestamps, date calculations, text, Base64, JWT, URL and diff comparison — into one compact desktop app that runs entirely on your machine. All data is processed only on your own device and is never uploaded to any server.
 
 ![GitHub release](https://img.shields.io/github/v/release/northes/dev-utils?sort=semver&label=version)
 ![license](https://img.shields.io/badge/license-MIT-3DA639)
@@ -27,7 +27,7 @@ Built with [Wails v3](https://v3.wails.io/), DevUtils gathers the small, high-fr
 | Tool | Description | Highlights |
 | --- | --- | --- |
 | JSON Workspace | Format, minify, validate | Tolerant of comments and trailing commas; JSONPath extraction; schema panel; configurable pipeline transformations |
-| Time Converter | Convert between timestamps and dates | Smart parsing of Unix, ISO 8601, RFC3339 and common CN/EN date formats; timezone search; drag-to-reorder and toggle output formats |
+| Time Converter | Convert timestamps and dates, calculate dates | Smart parsing of Unix, ISO 8601, RFC3339 and common CN/EN date formats; timezone search; date differences and date arithmetic; drag-to-reorder and toggle output formats |
 | Text Toolkit | Measure and normalize plain text | Character / Chinese / English / digit / word / punctuation / line / byte counts; case conversion; trimming and compressing |
 | Base64 | Encode and decode text, images, files | Auto-detects encoding direction and content type; data URLs and image preview; save decoded files |
 | Diff Compare | Side-by-side comparison | Word/character-level highlighting; collapse unchanged lines; alternate clipboard fills |

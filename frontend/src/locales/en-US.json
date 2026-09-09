@@ -67,7 +67,7 @@
     },
     "time": {
       "name": "Time Converter",
-      "description": "Unix, UTC, RFC3339 and ISO 8601"
+      "description": "Unix, UTC, RFC3339, ISO 8601 and date calculations"
     },
     "text": {
       "name": "Text Toolkit",
@@ -288,6 +288,10 @@
   },
   "timeTool": {
     "title": "Time Converter",
+    "modes": {
+      "convert": "Convert",
+      "dateCalculator": "Date calculator"
+    },
     "input": "Input",
     "placeholder": "Timestamp or date",
     "refresh": "Insert current timestamp",
@@ -333,7 +337,44 @@
     "converted": "Convert timestamp",
     "emptyTitle": "Enter a valid time",
     "emptyHint": "e.g. 1786358400 or 2026-08-10T12:00:00Z",
-    "subtitle": "Convert dates and timestamps without guessing the format"
+    "subtitle": "Convert dates and timestamps without guessing the format",
+    "dateCalculator": {
+      "subtitle": "Measure the calendar difference between two dates, or add and subtract date parts",
+      "differenceTitle": "Difference between dates",
+      "differenceHint": "Compare two dates and times",
+      "startDate": "Start date",
+      "endDate": "End date",
+      "differenceResult": "Difference",
+      "direction": {
+        "forward": "End is after start",
+        "backward": "End is before start",
+        "same": "The dates are the same"
+      },
+      "adjustmentTitle": "Add or subtract",
+      "adjustmentHint": "Adjust a date using calendar units",
+      "baseDate": "Base date",
+      "operation": "Operation",
+      "add": "Add",
+      "subtract": "Subtract",
+      "calculatedResult": "Calculated result",
+      "copyResult": "Copy result",
+      "copyDifference": "Copy date difference",
+      "copyCalculation": "Copy date calculation",
+      "enterDates": "Enter a start and end date",
+      "enterBaseDate": "Enter a base date",
+      "invalidDate": "Enter a valid date and time",
+      "invalidDuration": "Enter whole numbers greater than or equal to zero",
+      "resultOutOfRange": "The result is outside the supported date range",
+      "formatHint": "Format: YYYY-MM-DD HH:mm:ss",
+      "units": {
+        "years": "years",
+        "months": "months",
+        "days": "days",
+        "hours": "hours",
+        "minutes": "minutes",
+        "seconds": "seconds"
+      }
+    }
   },
   "textTool": {
     "title": "Text Toolkit",

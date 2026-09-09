@@ -291,7 +291,8 @@ const tools: ToolDefinition[] = [
     nameKey: 'tools.time.name',
     descriptionKey: 'tools.time.description',
     icon: Clock,
-    keywords: 'time timestamp date unix utc rfc iso',
+    keywords:
+      'time timestamp date unix utc rfc iso duration difference add subtract calculator 时间戳 日期 时长 差异 加减 计算',
   },
   {
     id: 'text' as const,
@@ -380,7 +381,8 @@ const paletteItems: PaletteItem[] = [
     labelKey: 'commands.openTime',
     groupKey: 'groups.tools',
     icon: Clock,
-    keywords: 'time timestamp date 时间 打开工具',
+    keywords:
+      'time timestamp date duration difference calculator 时间戳 日期 时长 差异 计算 打开工具',
     page: 'time',
   },
   {
