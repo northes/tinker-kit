@@ -2874,7 +2874,11 @@ export default function SshFilesTool({ active }: Props) {
                                 />
                               </div>
                               <span className="flex-none font-mono text-[10px] text-muted-foreground">
-                                {taskUsesByteProgress(task)
+                                {task.type === 'extract' && task.total <= 0
+                                  ? t('sshFilesTool.taskExtractedUnknown', {
+                                      completed: formatBytes(task.completed),
+                                    })
+                                  : taskUsesByteProgress(task)
                                   ? t('sshFilesTool.taskBytes', {
                                       completed: formatBytes(task.completed),
                                       total: task.total ? formatBytes(task.total) : '—',

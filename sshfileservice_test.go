@@ -122,6 +122,41 @@ func TestRemoteTransferCommandQuotesPaths(t *testing.T) {
 	}
 }
 
+func TestRemoteArchiveCommandsQuotePaths(t *testing.T) {
+	archivePath, target := "/remote/O'Brien.tar.gz", "/target/O'Brien"
+	if got, want := remoteArchiveExtractCommand("tar.gz", archivePath, target), `tar -xzf '/remote/O'"'"'Brien.tar.gz' -C '/target/O'"'"'Brien'`; got != want {
+		t.Fatalf("远程解压命令 = %q, want %q", got, want)
+	}
+	probe := remoteArchiveProbeCommand("tar.gz", archivePath)
+	if !strings.Contains(probe, "tar --numeric-owner -tvzf '/remote/O'\"'\"'Brien.tar.gz'") {
+		t.Fatalf("远程解压探测命令未正确引用压缩包路径: %q", probe)
+	}
+	zipProbe := remoteArchiveProbeCommand("zip", "/remote/archive.zip")
+	if !strings.Contains(zipProbe, "unzip -l '/remote/archive.zip'") {
+		t.Fatalf("远程 ZIP 探测命令不正确: %q", zipProbe)
+	}
+}
+
+func TestParseRemoteArchiveStats(t *testing.T) {
+	stats, err := parseRemoteArchiveStats([]byte("12345\t7\n"))
+	if err != nil {
+		t.Fatalf("解析远程解压统计失败: %v", err)
+	}
+	if stats.total != 12345 || stats.files != 7 {
+		t.Fatalf("远程解压统计 = %#v, want total=12345 files=7", stats)
+	}
+	for _, output := range [][]byte{
+		[]byte(""),
+		[]byte("12345"),
+		[]byte("-1\t7"),
+		[]byte("12345\t-1"),
+	} {
+		if _, err := parseRemoteArchiveStats(output); err == nil {
+			t.Errorf("无效远程解压统计 %q 未返回错误", output)
+		}
+	}
+}
+
 func TestCancelFileTaskMarksConflictAsCanceled(t *testing.T) {
 	service := &FileService{}
 	ctx, cancel := context.WithCancel(context.Background())

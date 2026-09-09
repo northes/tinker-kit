@@ -1125,6 +1125,7 @@
     "taskUnknown": "Unknown status",
     "taskFiles": "{{done}} / {{total}} items",
     "taskBytes": "{{completed}} / {{total}}",
+    "taskExtractedUnknown": "Extracted {{completed}} / Unknown",
     "noTasks": "No tasks"
   },
   "matchDialog": {

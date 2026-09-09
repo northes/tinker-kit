@@ -1125,6 +1125,7 @@
     "taskUnknown": "未知状态",
     "taskFiles": "{{done}} / {{total}} 个项目",
     "taskBytes": "{{completed}} / {{total}}",
+    "taskExtractedUnknown": "已解压 {{completed}} / 未知",
     "noTasks": "暂无任务"
   },
   "matchDialog": {
