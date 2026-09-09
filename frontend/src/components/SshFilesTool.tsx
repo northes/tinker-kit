@@ -2674,22 +2674,26 @@ export default function SshFilesTool({ active }: Props) {
         }}
       >
         <AlertDialogContent className="min-w-0 max-w-[calc(100vw-32px)] sm:max-w-md">
-          <AlertDialogHeader>
+          <AlertDialogHeader className="w-full min-w-0">
             <AlertDialogTitle>{t('sshFilesTool.deleteTitle')}</AlertDialogTitle>
             <AlertDialogDescription
               render={<div />}
-              className="grid gap-2 text-xs leading-5"
+              className="grid w-full min-w-0 gap-2 text-xs leading-5"
             >
               <p className="m-0">
                 {t('sshFilesTool.deleteDesc', { count: deletePaths?.length ?? 0 })}
               </p>
-              <ul className="m-0 w-full max-h-40 list-none space-y-1 overflow-y-auto overscroll-contain rounded-md border border-border bg-muted/20 p-2 font-mono text-[11px]">
-                {deletePaths?.map((path) => (
-                  <li key={path} className="w-full break-all">
-                    {path}
+              <ol className="m-0 w-full max-h-40 list-none space-y-1 overflow-y-auto overscroll-contain font-mono text-[11px]">
+                {deletePaths?.map((path, index) => (
+                  <li
+                    key={`${path}-${index}`}
+                    className="flex w-full min-w-0 items-start gap-2 rounded-md border border-border/60 bg-background/60 px-2 py-1.5"
+                  >
+                    <span className="shrink-0 text-muted-foreground">{index + 1}.</span>
+                    <span className="min-w-0 flex-1 break-all">{path}</span>
                   </li>
                 ))}
-              </ul>
+              </ol>
               {operationError ? (
                 <span className="break-words text-destructive" role="alert">
                   {t('sshFilesTool.operationFailed')}: {operationError}
