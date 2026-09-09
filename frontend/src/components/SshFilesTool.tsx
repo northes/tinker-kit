@@ -14,6 +14,7 @@ import {
   File,
   FileArchive,
   Folder,
+  FolderSimplePlus,
   GearSix,
   HardDrives,
   ListDashes,
@@ -86,6 +87,7 @@ import type {
 import {
   CalculateRemoteSize,
   CancelFileTask,
+  CreateRemoteDirectory,
   GetFileSources,
   GetFileTasks,
   GetSSHConnections,
@@ -214,11 +216,23 @@ type ManageConfirm =
   | null;
 type RemoteFileOperation = 'copy' | 'move' | 'rename' | 'delete' | 'extract' | 'compress';
 type InputRemoteFileOperation = Exclude<RemoteFileOperation, 'delete'>;
+type TransferOperation = Extract<RemoteFileOperation, 'copy' | 'move'>;
 type OperationDialogState = {
   operation: InputRemoteFileOperation;
   paths: string[];
   value: string;
 } | null;
+type OperationConflictState = {
+  operation: TransferOperation;
+  paths: string[];
+  target: string;
+  value: string;
+  conflicts: string[];
+} | null;
+type RemoteOperationRunResult =
+  | { status: 'completed' }
+  | { status: 'conflict'; paths: string[] }
+  | { status: 'failed' };
 
 export default function SshFilesTool({ active }: Props) {
   const { t } = useTranslation();
@@ -264,9 +278,14 @@ export default function SshFilesTool({ active }: Props) {
   const [uploadStarting, setUploadStarting] = useState(false);
   const [allowOverwrite, setAllowOverwrite] = useState(false);
   const [operationDialog, setOperationDialog] = useState<OperationDialogState>(null);
+  const [operationConflict, setOperationConflict] = useState<OperationConflictState>(null);
   const [deletePaths, setDeletePaths] = useState<string[] | null>(null);
   const [operationError, setOperationError] = useState('');
   const [operationRunning, setOperationRunning] = useState(false);
+  const [createFolderOpen, setCreateFolderOpen] = useState(false);
+  const [createFolderName, setCreateFolderName] = useState('');
+  const [createFolderError, setCreateFolderError] = useState('');
+  const [creatingFolder, setCreatingFolder] = useState(false);
   const [dragReady, setDragReady] = useState<{ remote: string; local: string } | null>(null);
   const [dragPreparing, setDragPreparing] = useState('');
   const refreshedUploadTasks = useRef(new Set<string>());
@@ -455,6 +474,50 @@ export default function SshFilesTool({ active }: Props) {
   const operationPathsFor = (entryPath: string) =>
     selected.includes(entryPath) ? selected : [entryPath];
 
+  const copyPathToClipboard = async (pathValue: string) => {
+    try {
+      if (!navigator.clipboard) throw new Error('clipboard unavailable');
+      await navigator.clipboard.writeText(pathValue);
+      toast.add({ title: t('sshFilesTool.pathCopied'), type: 'success' });
+    } catch {
+      toast.add({ title: t('sshFilesTool.copyPathFailed'), type: 'error' });
+    }
+  };
+
+  const requestCreateFolder = () => {
+    if (!sourceID || isLoading) return;
+    setCreateFolderName('');
+    setCreateFolderError('');
+    setCreateFolderOpen(true);
+  };
+
+  const executeCreateFolder = async () => {
+    if (!sourceID || creatingFolder) return;
+    const name = createFolderName.trim();
+    if (!name) {
+      setCreateFolderError(t('sshFilesTool.folderNameRequired'));
+      return;
+    }
+    if (name === '.' || name === '..' || /[\\/]/.test(name)) {
+      setCreateFolderError(t('sshFilesTool.folderNameInvalid'));
+      return;
+    }
+    setCreatingFolder(true);
+    setCreateFolderError('');
+    try {
+      const target = normalizeRemotePath(`${currentPath}/${name}`);
+      await CreateRemoteDirectory(sourceID, target);
+      setCreateFolderOpen(false);
+      setCreateFolderName('');
+      await loadDirectory(sourceID, currentPath, showHidden);
+      toast.add({ title: t('sshFilesTool.folderCreated'), type: 'success' });
+    } catch (reason) {
+      setCreateFolderError(errorMessage(reason));
+    } finally {
+      setCreatingFolder(false);
+    }
+  };
+
   const requestFileOperation = (operation: RemoteFileOperation, paths: string[]) => {
     const normalizedPaths = Array.from(new Set(paths.map(normalizeRemotePath)));
     if (!normalizedPaths.length) return;
@@ -480,12 +543,22 @@ export default function SshFilesTool({ active }: Props) {
     operation: RemoteFileOperation,
     paths: string[],
     target: string,
-  ) => {
-    if (!sourceID || operationRunning) return false;
+    conflictPolicy = '',
+  ): Promise<RemoteOperationRunResult> => {
+    if (!sourceID || operationRunning) return { status: 'failed' };
     setOperationRunning(true);
     setOperationError('');
     try {
-      await OperateRemoteFiles(sourceID, operation, paths, target);
+      const result = await OperateRemoteFiles(
+        sourceID,
+        operation,
+        paths,
+        target,
+        conflictPolicy,
+      );
+      if (result?.conflicts?.length) {
+        return { status: 'conflict', paths: result.conflicts };
+      }
       setSelected([]);
       await loadDirectory(sourceID, currentPath, showHidden);
       toast.add({
@@ -494,10 +567,10 @@ export default function SshFilesTool({ active }: Props) {
         }),
         type: 'success',
       });
-      return true;
+      return { status: 'completed' };
     } catch (reason) {
       setOperationError(errorMessage(reason));
-      return false;
+      return { status: 'failed' };
     } finally {
       setOperationRunning(false);
     }
@@ -522,14 +595,62 @@ export default function SshFilesTool({ active }: Props) {
       setOperationError(t('sshFilesTool.archiveExtensionRequired'));
       return;
     }
-    if (await runRemoteOperation(current.operation, current.paths, target)) {
+    const transferOperation =
+      current.operation === 'copy' || current.operation === 'move' ? current.operation : null;
+    const result = await runRemoteOperation(
+      current.operation,
+      current.paths,
+      target,
+      transferOperation ? 'ask' : '',
+    );
+    if (result.status === 'conflict' && transferOperation) {
       setOperationDialog(null);
+      setOperationConflict({
+        operation: transferOperation,
+        paths: current.paths,
+        target,
+        value: current.value,
+        conflicts: result.paths,
+      });
+    } else if (result.status === 'completed') {
+      setOperationDialog(null);
+    }
+  };
+
+  const restoreOperationDialog = () => {
+    if (!operationConflict) return;
+    const current = operationConflict;
+    setOperationConflict(null);
+    setOperationError('');
+    setOperationDialog({
+      operation: current.operation,
+      paths: current.paths,
+      value: current.value,
+    });
+  };
+
+  const resolveOperationConflict = async (conflictPolicy: 'overwrite' | 'keep-both') => {
+    if (!operationConflict || operationRunning) return;
+    const current = operationConflict;
+    const result = await runRemoteOperation(
+      current.operation,
+      current.paths,
+      current.target,
+      conflictPolicy,
+    );
+    if (result.status === 'completed') {
+      setOperationConflict(null);
+    } else if (result.status === 'conflict') {
+      setOperationConflict((previous) =>
+        previous ? { ...previous, conflicts: result.paths } : previous,
+      );
     }
   };
 
   const executeDelete = async () => {
     if (!deletePaths || operationRunning) return;
-    if (await runRemoteOperation('delete', deletePaths, '')) {
+    const result = await runRemoteOperation('delete', deletePaths, '');
+    if (result.status === 'completed') {
       setDeletePaths(null);
     }
   };
@@ -1082,14 +1203,19 @@ export default function SshFilesTool({ active }: Props) {
             <ArrowClockwise size={14} />
           </Button>
         </div>
-        <div
-          id="ssh-files-drop-zone"
-          data-file-drop-target
-          data-over={fileDrag.over ? 'true' : undefined}
-          aria-busy={isLoading}
-          {...fileDrag.dragProps}
-          className="group/file-drop relative min-h-0 flex-1 overflow-auto [scrollbar-gutter:auto]"
-        >
+        <ContextMenu>
+          <ContextMenuTrigger
+            render={
+              <div
+                id="ssh-files-drop-zone"
+                data-file-drop-target
+                data-over={fileDrag.over ? 'true' : undefined}
+                aria-busy={isLoading}
+                {...fileDrag.dragProps}
+                className="group/file-drop relative min-h-0 flex-1 overflow-auto [scrollbar-gutter:auto]"
+              />
+            }
+          >
           {fileDrag.over ? (
             <span className="sr-only" role="status">
               {t('fileDrop.release')}
@@ -1303,6 +1429,23 @@ export default function SshFilesTool({ active }: Props) {
                         <ContextMenuGroup>
                           <ContextMenuItem
                             disabled={operationRunning}
+                            onClick={() => void copyPathToClipboard(currentPath)}
+                          >
+                            <Copy size={14} weight="duotone" aria-hidden="true" />
+                            {t('sshFilesTool.copyCurrentPath')}
+                          </ContextMenuItem>
+                          <ContextMenuItem
+                            disabled={operationRunning}
+                            onClick={() => void copyPathToClipboard(entry.path)}
+                          >
+                            <Copy size={14} weight="duotone" aria-hidden="true" />
+                            {t('sshFilesTool.copyProjectPath')}
+                          </ContextMenuItem>
+                        </ContextMenuGroup>
+                        <ContextMenuSeparator />
+                        <ContextMenuGroup>
+                          <ContextMenuItem
+                            disabled={operationRunning}
                             onClick={() => requestFileOperation('copy', operationPaths)}
                           >
                             <Copy size={14} weight="duotone" aria-hidden="true" />
@@ -1362,7 +1505,26 @@ export default function SshFilesTool({ active }: Props) {
               </TableBody>
             </Table>
           )}
-        </div>
+          </ContextMenuTrigger>
+          <ContextMenuContent className="min-w-44">
+            <ContextMenuGroup>
+              <ContextMenuItem
+                disabled={!sourceID || isLoading}
+                onClick={() => void copyPathToClipboard(currentPath)}
+              >
+                <Copy size={14} weight="duotone" aria-hidden="true" />
+                {t('sshFilesTool.copyCurrentPath')}
+              </ContextMenuItem>
+              <ContextMenuItem
+                disabled={!sourceID || isLoading}
+                onClick={requestCreateFolder}
+              >
+                <FolderSimplePlus size={14} weight="duotone" aria-hidden="true" />
+                {t('sshFilesTool.createFolder')}
+              </ContextMenuItem>
+            </ContextMenuGroup>
+          </ContextMenuContent>
+        </ContextMenu>
       </ToolLayoutContent>
       <ToolLayoutFooter>
         <div className="flex items-center justify-between gap-3 border-t border-border pt-3">
@@ -2304,6 +2466,72 @@ export default function SshFilesTool({ active }: Props) {
       </Dialog>
 
       <Dialog
+        open={createFolderOpen}
+        onOpenChange={(open) => {
+          if (!open && !creatingFolder) {
+            setCreateFolderOpen(false);
+            setCreateFolderError('');
+          }
+        }}
+      >
+        <DialogContent className="flex w-[min(420px,calc(100vw-32px))] max-w-none flex-col gap-5 sm:max-w-none">
+          <DialogHeader>
+            <DialogTitle className="text-base">{t('sshFilesTool.createFolderTitle')}</DialogTitle>
+            <DialogDescription className="text-xs leading-5">
+              {t('sshFilesTool.createFolderDesc', { path: currentPath })}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-1.5">
+            <Label htmlFor="ssh-create-folder-name" className="text-xs text-muted-foreground">
+              {t('sshFilesTool.folderName')}
+            </Label>
+            <Input
+              id="ssh-create-folder-name"
+              value={createFolderName}
+              onChange={(event) => setCreateFolderName(event.target.value)}
+              className="font-mono text-xs"
+              disabled={creatingFolder}
+              autoFocus
+            />
+            <p className="m-0 text-[10px] leading-4 text-muted-foreground">
+              {t('sshFilesTool.folderNameHint')}
+            </p>
+            {createFolderError ? (
+              <div
+                className="flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive"
+                role="alert"
+              >
+                <XCircle className="mt-0.5 size-4 shrink-0" />
+                <span className="min-w-0 break-words">
+                  {t('sshFilesTool.folderCreateFailed')}: {createFolderError}
+                </span>
+              </div>
+            ) : null}
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              disabled={creatingFolder}
+              onClick={() => setCreateFolderOpen(false)}
+            >
+              {t('common.cancel')}
+            </Button>
+            <Button
+              disabled={creatingFolder || !sourceID}
+              onClick={() => void executeCreateFolder()}
+            >
+              {creatingFolder ? (
+                <Spinner data-icon="inline-start" />
+              ) : (
+                <FolderSimplePlus data-icon="inline-start" size={14} />
+              )}
+              {t('sshFilesTool.createFolderAction')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
         open={operationDialog !== null}
         onOpenChange={(open) => {
           if (!open && !operationRunning) {
@@ -2381,6 +2609,62 @@ export default function SshFilesTool({ active }: Props) {
         </DialogContent>
       </Dialog>
       <AlertDialog
+        open={operationConflict !== null}
+        onOpenChange={(open) => {
+          if (!open && !operationRunning) restoreOperationDialog();
+        }}
+      >
+        <AlertDialogContent className="min-w-0 max-w-[calc(100vw-32px)] sm:max-w-md">
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t('sshFilesTool.operationConflictTitle')}</AlertDialogTitle>
+            <AlertDialogDescription
+              render={<div />}
+              className="grid gap-2 text-xs leading-5"
+            >
+              <p className="m-0">
+                {t('sshFilesTool.operationConflictDesc', {
+                  count: operationConflict?.conflicts.length ?? 0,
+                })}
+              </p>
+              <ul className="m-0 w-full max-h-40 list-none space-y-1 overflow-y-auto overscroll-contain rounded-md border border-border bg-muted/20 p-2 font-mono text-[11px]">
+                {operationConflict?.conflicts.map((path) => (
+                  <li key={path} className="w-full break-all">
+                    {path}
+                  </li>
+                ))}
+              </ul>
+              <p className="m-0 text-[10px] leading-4 text-muted-foreground">
+                {t('sshFilesTool.operationConflictKeepHint')}
+              </p>
+              {operationError ? (
+                <span className="break-words text-destructive" role="alert">
+                  {t('sshFilesTool.operationFailed')}: {operationError}
+                </span>
+              ) : null}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={operationRunning}>{t('common.cancel')}</AlertDialogCancel>
+            <Button
+              variant="outline"
+              disabled={operationRunning || operationConflict === null}
+              onClick={() => void resolveOperationConflict('keep-both')}
+            >
+              {operationRunning ? <Spinner data-icon="inline-start" /> : null}
+              {t('sshFilesTool.keepBoth')}
+            </Button>
+            <AlertDialogAction
+              variant="destructive"
+              disabled={operationRunning || operationConflict === null}
+              onClick={() => void resolveOperationConflict('overwrite')}
+            >
+              {operationRunning ? <Spinner data-icon="inline-start" /> : null}
+              {t('sshFilesTool.overwrite')}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+      <AlertDialog
         open={deletePaths !== null}
         onOpenChange={(open) => {
           if (!open && !operationRunning) {
@@ -2392,10 +2676,20 @@ export default function SshFilesTool({ active }: Props) {
         <AlertDialogContent className="min-w-0 max-w-[calc(100vw-32px)] sm:max-w-md">
           <AlertDialogHeader>
             <AlertDialogTitle>{t('sshFilesTool.deleteTitle')}</AlertDialogTitle>
-            <AlertDialogDescription className="grid gap-2 text-xs leading-5">
-              <span>
+            <AlertDialogDescription
+              render={<div />}
+              className="grid gap-2 text-xs leading-5"
+            >
+              <p className="m-0">
                 {t('sshFilesTool.deleteDesc', { count: deletePaths?.length ?? 0 })}
-              </span>
+              </p>
+              <ul className="m-0 w-full max-h-40 list-none space-y-1 overflow-y-auto overscroll-contain rounded-md border border-border bg-muted/20 p-2 font-mono text-[11px]">
+                {deletePaths?.map((path) => (
+                  <li key={path} className="w-full break-all">
+                    {path}
+                  </li>
+                ))}
+              </ul>
               {operationError ? (
                 <span className="break-words text-destructive" role="alert">
                   {t('sshFilesTool.operationFailed')}: {operationError}

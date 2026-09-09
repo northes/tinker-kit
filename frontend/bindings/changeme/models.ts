@@ -287,6 +287,10 @@ export interface RemoteFileEntry {
     "modifiedAt": string;
 }
 
+export interface RemoteFileOperationResult {
+    "conflicts"?: string[] | null;
+}
+
 /**
  * SSHConfigHost 是 ~/.ssh/config 中可以直接交给系统 ssh 的 Host 别名。
  */

@@ -32,6 +32,26 @@ func TestNormalizedRemotePath(t *testing.T) {
 	}
 }
 
+func TestRemoteCopyName(t *testing.T) {
+	tests := []struct {
+		name    string
+		isDir   bool
+		attempt int
+		want    string
+	}{
+		{name: "report.txt", want: "report_副本_1700000000.txt"},
+		{name: "archive.tar.gz", want: "archive_副本_1700000000.tar.gz"},
+		{name: "folder.name", isDir: true, want: "folder.name_副本_1700000000"},
+		{name: ".env", want: ".env_副本_1700000000"},
+		{name: "report.txt", attempt: 2, want: "report_副本_1700000000_2.txt"},
+	}
+	for _, test := range tests {
+		if got := remoteCopyName(test.name, test.isDir, 1700000000, test.attempt); got != test.want {
+			t.Errorf("remoteCopyName(%q, %t, %d) = %q, want %q", test.name, test.isDir, test.attempt, got, test.want)
+		}
+	}
+}
+
 func TestValidateSSHFileConfigAllowsSharedConnection(t *testing.T) {
 	connections := []SSHConnection{{ID: "prod", Name: "生产", Host: "example.com", Port: 22, Username: "deploy", Password: "secret"}}
 	sources := []FileSource{

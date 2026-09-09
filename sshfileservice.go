@@ -45,6 +45,12 @@ const (
 	remoteFileOperationCompress = "compress"
 )
 
+const (
+	remoteFileConflictAsk       = "ask"
+	remoteFileConflictOverwrite = "overwrite"
+	remoteFileConflictKeepBoth  = "keep-both"
+)
+
 type RemoteFileEntry struct {
 	Name       string `json:"name"`
 	Path       string `json:"path"`
@@ -52,6 +58,10 @@ type RemoteFileEntry struct {
 	IsSymlink  bool   `json:"isSymlink"`
 	Size       int64  `json:"size"`
 	ModifiedAt string `json:"modifiedAt"`
+}
+
+type RemoteFileOperationResult struct {
+	Conflicts []string `json:"conflicts,omitempty"`
 }
 
 type FileTask struct {
@@ -488,6 +498,44 @@ func (s *FileService) TestSSHFileConnection(connection SSHConnection, defaultPat
 	return nil
 }
 
+// CreateRemoteDirectory 在远程文件源的指定路径创建文件夹。
+func (s *FileService) CreateRemoteDirectory(sourceID, remotePath string) error {
+	remotePath = normalizedRemotePath(remotePath)
+	if remotePath == "/" {
+		return errors.New("文件夹路径无效")
+	}
+	_, conn, err := s.sourceSnapshot(sourceID)
+	if err != nil {
+		return err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	sshClient, client, err := s.dialSFTP(ctx, conn)
+	if err != nil {
+		return err
+	}
+	defer closeSSHClient(sshClient)
+	defer client.Close()
+
+	info, err := client.Lstat(remotePath)
+	if err == nil {
+		if info.IsDir() {
+			return errors.New("文件夹已存在")
+		}
+		return errors.New("目标路径已存在且不是文件夹")
+	}
+	if !isRemoteNotFound(err) {
+		return err
+	}
+	if err := ensureRemoteDirectory(client, path.Dir(remotePath)); err != nil {
+		return err
+	}
+	if err := client.Mkdir(remotePath); err != nil {
+		return fmt.Errorf("创建远程文件夹失败: %w", err)
+	}
+	return nil
+}
+
 func normalizeRemotePaths(values []string) []string {
 	result := make([]string, 0, len(values))
 	seen := make(map[string]struct{}, len(values))
@@ -563,44 +611,180 @@ func remotePathContains(parent, child string) bool {
 	return child == parent || strings.HasPrefix(child, parent+"/")
 }
 
+type remoteTransferItem struct {
+	source      string
+	destination string
+	info        os.FileInfo
+	exists      bool
+	noOp        bool
+}
+
+func prepareRemoteTransfers(
+	client *sftp.Client,
+	operation string,
+	remotePaths []string,
+	target string,
+) ([]remoteTransferItem, error) {
+	items := make([]remoteTransferItem, 0, len(remotePaths))
+	for _, remotePath := range remotePaths {
+		if remotePath == "/" {
+			return nil, errors.New("不能复制或移动远程根目录")
+		}
+		info, err := client.Lstat(remotePath)
+		if err != nil {
+			return nil, fmt.Errorf("读取远程项目失败: %w", err)
+		}
+		if operation == remoteFileOperationCopy && info.Mode()&os.ModeSymlink != 0 {
+			return nil, fmt.Errorf("不支持复制符号链接: %s", remotePath)
+		}
+		if info.IsDir() && remotePathContains(remotePath, target) {
+			return nil, fmt.Errorf("不能将目录复制到自身或子目录: %s", remotePath)
+		}
+		items = append(items, remoteTransferItem{source: remotePath, info: info})
+	}
+	if err := ensureRemoteDirectory(client, target); err != nil {
+		return nil, err
+	}
+	for index := range items {
+		item := &items[index]
+		item.destination = remoteChild(target, path.Base(item.source))
+		if operation == remoteFileOperationMove && item.destination == item.source {
+			item.noOp = true
+			continue
+		}
+		exists, err := remotePathExists(client, item.destination)
+		if err != nil {
+			return nil, err
+		}
+		item.exists = exists
+	}
+	return items, nil
+}
+
+func remoteTransferConflicts(items []remoteTransferItem) []string {
+	conflicts := make([]string, 0)
+	for _, item := range items {
+		if item.exists && !item.noOp {
+			conflicts = append(conflicts, item.destination)
+		}
+	}
+	return conflicts
+}
+
+func remoteCopyName(name string, isDir bool, timestamp int64, attempt int) string {
+	suffix := fmt.Sprintf("_副本_%d", timestamp)
+	if attempt > 0 {
+		suffix += fmt.Sprintf("_%d", attempt)
+	}
+	if isDir {
+		return name + suffix
+	}
+	lower := strings.ToLower(name)
+	if strings.HasSuffix(lower, ".tar.gz") {
+		index := len(name) - len(".tar.gz")
+		return name[:index] + suffix + name[index:]
+	}
+	extension := path.Ext(name)
+	if extension == "" || extension == "." ||
+		(strings.HasPrefix(name, ".") && !strings.Contains(name[1:], ".")) {
+		return name + suffix
+	}
+	return strings.TrimSuffix(name, extension) + suffix + extension
+}
+
+func resolveRemoteTransferDestination(
+	client *sftp.Client,
+	target string,
+	item remoteTransferItem,
+	conflictPolicy string,
+	timestamp int64,
+	reserved map[string]struct{},
+) (string, error) {
+	if item.noOp || !item.exists {
+		if _, ok := reserved[item.destination]; ok {
+			return "", errors.New("目标目录中存在重复项目名称")
+		}
+		return item.destination, nil
+	}
+	if conflictPolicy == remoteFileConflictOverwrite {
+		return item.destination, nil
+	}
+	if conflictPolicy != remoteFileConflictKeepBoth {
+		return "", errors.New("未确认远程文件冲突处理方式")
+	}
+	for attempt := 0; ; attempt++ {
+		candidate := remoteChild(
+			target,
+			remoteCopyName(path.Base(item.source), item.info.IsDir(), timestamp, attempt),
+		)
+		if _, ok := reserved[candidate]; ok {
+			continue
+		}
+		exists, err := remotePathExists(client, candidate)
+		if err != nil {
+			return "", err
+		}
+		if !exists {
+			return candidate, nil
+		}
+	}
+}
+
 // OperateRemoteFiles 在远程文件源上执行文件管理操作。
 // copy、move 和 extract 的 target 是目录；rename 的 target 是完整的新路径；
 // compress 的 target 是压缩文件完整路径；delete 忽略 target。
-func (s *FileService) OperateRemoteFiles(sourceID, operation string, remotePaths []string, target string) error {
+// copy 和 move 的冲突策略为 ask、overwrite 或 keep-both。
+func (s *FileService) OperateRemoteFiles(
+	sourceID, operation string,
+	remotePaths []string,
+	target, conflictPolicy string,
+) (RemoteFileOperationResult, error) {
+	var result RemoteFileOperationResult
 	operation = strings.TrimSpace(operation)
 	switch operation {
 	case remoteFileOperationCopy, remoteFileOperationMove, remoteFileOperationRename,
 		remoteFileOperationDelete, remoteFileOperationExtract, remoteFileOperationCompress:
 	default:
-		return fmt.Errorf("不支持的文件操作: %s", operation)
+		return result, fmt.Errorf("不支持的文件操作: %s", operation)
 	}
 	paths := normalizeRemotePaths(remotePaths)
 	if len(paths) == 0 {
-		return errors.New("未选择远程项目")
+		return result, errors.New("未选择远程项目")
 	}
 	if operation == remoteFileOperationRename && len(paths) != 1 {
-		return errors.New("重命名一次只能处理一个项目")
+		return result, errors.New("重命名一次只能处理一个项目")
+	}
+	if operation == remoteFileOperationCopy || operation == remoteFileOperationMove {
+		switch strings.TrimSpace(conflictPolicy) {
+		case "":
+			conflictPolicy = remoteFileConflictAsk
+		case remoteFileConflictAsk, remoteFileConflictOverwrite, remoteFileConflictKeepBoth:
+		default:
+			return result, fmt.Errorf("不支持的冲突处理方式: %s", conflictPolicy)
+		}
+	} else {
+		conflictPolicy = ""
 	}
 	if operation == remoteFileOperationDelete {
 		for _, remotePath := range paths {
 			if remotePath == "/" {
-				return errors.New("不能删除远程根目录")
+				return result, errors.New("不能删除远程根目录")
 			}
 		}
 	}
 	if operation == remoteFileOperationCompress {
 		target = normalizedRemotePath(target)
 		if target == "/" {
-			return errors.New("压缩文件路径无效")
+			return result, errors.New("压缩文件路径无效")
 		}
 		if remoteArchiveFormatForPath(target) == "" {
-			return errors.New("压缩文件必须使用 .zip、.tar 或 .tar.gz 扩展名")
+			return result, errors.New("压缩文件必须使用 .zip、.tar、.tar.gz 或 .tgz 扩展名")
 		}
 	}
 	if operation == remoteFileOperationRename {
 		target = normalizedRemotePath(target)
 		if target == "/" {
-			return errors.New("重命名目标无效")
+			return result, errors.New("重命名目标无效")
 		}
 	}
 	if operation == remoteFileOperationCopy || operation == remoteFileOperationMove ||
@@ -610,108 +794,112 @@ func (s *FileService) OperateRemoteFiles(sourceID, operation string, remotePaths
 
 	_, conn, err := s.sourceSnapshot(sourceID)
 	if err != nil {
-		return err
+		return result, err
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
 	defer cancel()
 	sshClient, client, err := s.dialSFTP(ctx, conn)
 	if err != nil {
-		return err
+		return result, err
 	}
 	defer closeSSHClient(sshClient)
 	defer client.Close()
 
 	switch operation {
-	case remoteFileOperationCopy:
-		if err := ensureRemoteDirectory(client, target); err != nil {
-			return err
+	case remoteFileOperationCopy, remoteFileOperationMove:
+		items, err := prepareRemoteTransfers(client, operation, paths, target)
+		if err != nil {
+			return result, err
 		}
-		for _, remotePath := range paths {
-			info, err := client.Lstat(remotePath)
-			if err != nil {
-				return fmt.Errorf("读取远程项目失败: %w", err)
-			}
-			if info.IsDir() && remotePathContains(remotePath, target) {
-				return fmt.Errorf("不能将目录复制到自身或子目录: %s", remotePath)
-			}
-			destination := remoteChild(target, path.Base(remotePath))
-			if err := ensureRemotePathAbsent(client, destination); err != nil {
-				return err
-			}
-			if err := copyRemotePath(ctx, client, remotePath, destination); err != nil {
-				return fmt.Errorf("复制远程项目失败: %w", err)
-			}
+		conflicts := remoteTransferConflicts(items)
+		if conflictPolicy == remoteFileConflictAsk && len(conflicts) > 0 {
+			result.Conflicts = conflicts
+			return result, nil
 		}
-	case remoteFileOperationMove:
-		if err := ensureRemoteDirectory(client, target); err != nil {
-			return err
-		}
-		for _, remotePath := range paths {
-			info, err := client.Lstat(remotePath)
-			if err != nil {
-				return fmt.Errorf("读取远程项目失败: %w", err)
-			}
-			if info.IsDir() && remotePathContains(remotePath, target) {
-				return fmt.Errorf("不能将目录移动到自身或子目录: %s", remotePath)
-			}
-			destination := remoteChild(target, path.Base(remotePath))
-			if destination == remotePath {
+		timestamp := time.Now().Unix()
+		reserved := make(map[string]struct{}, len(items))
+		for _, item := range items {
+			if item.noOp {
 				continue
 			}
-			if err := ensureRemotePathAbsent(client, destination); err != nil {
-				return err
+			destination, err := resolveRemoteTransferDestination(
+				client,
+				target,
+				item,
+				conflictPolicy,
+				timestamp,
+				reserved,
+			)
+			if err != nil {
+				return result, err
 			}
-			if err := client.Rename(remotePath, destination); err != nil {
-				return fmt.Errorf("移动远程项目失败: %w", err)
+			if _, ok := reserved[destination]; ok {
+				return result, errors.New("目标目录中存在重复项目名称")
+			}
+			reserved[destination] = struct{}{}
+			if item.exists && conflictPolicy == remoteFileConflictOverwrite {
+				if operation == remoteFileOperationCopy && destination == item.source {
+					return result, errors.New("复制目标与源相同，不能覆盖")
+				}
+				if err := client.RemoveAll(destination); err != nil {
+					return result, fmt.Errorf("覆盖远程项目失败: %w", err)
+				}
+			}
+			if operation == remoteFileOperationCopy {
+				if err := copyRemotePath(ctx, client, item.source, destination); err != nil {
+					return result, fmt.Errorf("复制远程项目失败: %w", err)
+				}
+			} else if err := client.Rename(item.source, destination); err != nil {
+				return result, fmt.Errorf("移动远程项目失败: %w", err)
 			}
 		}
 	case remoteFileOperationRename:
 		remotePath := paths[0]
 		if remotePath == "/" || remotePathContains(remotePath, target) {
-			return errors.New("重命名目标无效")
+			return result, errors.New("重命名目标无效")
 		}
 		if err := ensureRemotePathAbsent(client, target); err != nil {
-			return err
+			return result, err
 		}
 		if err := client.Rename(remotePath, target); err != nil {
-			return fmt.Errorf("重命名远程项目失败: %w", err)
+			return result, fmt.Errorf("重命名远程项目失败: %w", err)
 		}
 	case remoteFileOperationDelete:
 		for _, remotePath := range paths {
 			if err := client.RemoveAll(remotePath); err != nil {
-				return fmt.Errorf("删除远程项目失败: %w", err)
+				return result, fmt.Errorf("删除远程项目失败: %w", err)
 			}
 		}
 	case remoteFileOperationCompress:
 		if err := ensureRemotePathAbsent(client, target); err != nil {
-			return err
+			return result, err
 		}
 		if err := ensureRemoteDirectory(client, path.Dir(target)); err != nil {
-			return err
+			return result, err
 		}
 		for _, remotePath := range paths {
 			info, err := client.Lstat(remotePath)
 			if err != nil {
-				return fmt.Errorf("读取远程项目失败: %w", err)
+				return result, fmt.Errorf("读取远程项目失败: %w", err)
 			}
 			if remotePath == target || (info.IsDir() && remotePathContains(remotePath, target)) {
-				return fmt.Errorf("压缩目标不能位于待压缩目录中: %s", target)
+				return result, fmt.Errorf("压缩目标不能位于待压缩目录中: %s", target)
 			}
 		}
 		if err := createRemoteArchive(ctx, client, paths, target); err != nil {
-			return fmt.Errorf("压缩远程项目失败: %w", err)
+			return result, fmt.Errorf("压缩远程项目失败: %w", err)
 		}
 	case remoteFileOperationExtract:
 		if err := ensureRemoteDirectory(client, target); err != nil {
-			return err
+			return result, err
 		}
 		for _, remotePath := range paths {
 			if err := s.extractRemoteArchive(ctx, client, remotePath, target); err != nil {
-				return fmt.Errorf("解压远程项目失败: %w", err)
+				return result, fmt.Errorf("解压远程项目失败: %w", err)
 			}
 		}
 	}
-	return nil
+	return result, nil
 }
 
 func localTree(ctx context.Context, paths []string) (int64, int, error) {
