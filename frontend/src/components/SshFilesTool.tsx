@@ -1672,17 +1672,10 @@ export default function SshFilesTool({ active }: Props) {
                         <ContextMenuGroup>
                           <ContextMenuItem
                             disabled={operationRunning}
-                            onClick={() => void copyPathToClipboard(currentPath)}
-                          >
-                            <Copy size={14} weight="duotone" aria-hidden="true" />
-                            {t('sshFilesTool.copyCurrentPath')}
-                          </ContextMenuItem>
-                          <ContextMenuItem
-                            disabled={operationRunning}
                             onClick={() => void copyPathToClipboard(entry.path)}
                           >
                             <Copy size={14} weight="duotone" aria-hidden="true" />
-                            {t('sshFilesTool.copyProjectPath')}
+                            {t('sshFilesTool.copyPath')}
                           </ContextMenuItem>
                         </ContextMenuGroup>
                         <ContextMenuSeparator />
@@ -1756,7 +1749,7 @@ export default function SshFilesTool({ active }: Props) {
                 onClick={() => void copyPathToClipboard(currentPath)}
               >
                 <Copy size={14} weight="duotone" aria-hidden="true" />
-                {t('sshFilesTool.copyCurrentPath')}
+                {t('sshFilesTool.copyPath')}
               </ContextMenuItem>
               <ContextMenuItem
                 disabled={!sourceID || isLoading}
