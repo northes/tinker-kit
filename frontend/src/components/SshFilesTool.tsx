@@ -15,8 +15,39 @@ import {
   DownloadSimple,
   File,
   FileArchive,
+  FileAudio,
+  FileC,
+  FileCode,
+  FileCpp,
+  FileCSharp,
+  FileCss,
+  FileCsv,
+  FileDoc,
+  FileHtml,
+  FileImage,
+  FileIni,
+  FileJpg,
+  FileJs,
+  FileJsx,
+  FileMd,
+  FilePdf,
+  FilePng,
+  FilePpt,
+  FilePy,
+  FileRs,
+  FileSql,
+  FileSvg,
+  FileText,
+  FileTs,
+  FileTsx,
+  FileTxt,
+  FileVideo,
+  FileVue,
+  FileXls,
+  FileZip,
   Folder,
   FolderSimplePlus,
+  FolderStar,
   GearSix,
   HardDrives,
   ListDashes,
@@ -28,6 +59,7 @@ import {
   UploadSimple,
   Warning,
   XCircle,
+  type Icon,
 } from '@phosphor-icons/react';
 import { Badge } from './ui/badge';
 import { Button } from './ui/button';
@@ -145,6 +177,197 @@ function remoteParent(value: string) {
   const normalized = normalizeRemotePath(value);
   const index = normalized.lastIndexOf('/');
   return index <= 0 ? '/' : normalized.slice(0, index);
+}
+
+const archiveFileExtensions = new Set([
+  '7z',
+  'apk',
+  'arj',
+  'bz',
+  'bz2',
+  'cab',
+  'cpio',
+  'deb',
+  'dmg',
+  'ear',
+  'gz',
+  'gzip',
+  'iso',
+  'jar',
+  'lz',
+  'lz4',
+  'lzma',
+  'rar',
+  'rpm',
+  'tar',
+  'tbz',
+  'tbz2',
+  'tgz',
+  'txz',
+  'war',
+  'xz',
+  'z',
+  'zipx',
+  'zst',
+]);
+
+const imageFileExtensions = new Set([
+  'avif',
+  'bmp',
+  'gif',
+  'heic',
+  'heif',
+  'ico',
+  'jif',
+  'jfif',
+  'jpe',
+  'raw',
+  'tif',
+  'tiff',
+  'webp',
+]);
+
+const videoFileExtensions = new Set([
+  '3gp',
+  'avi',
+  'flv',
+  'm2ts',
+  'm4v',
+  'mkv',
+  'mov',
+  'mp4',
+  'mpeg',
+  'mpg',
+  'mxf',
+  'ogv',
+  'webm',
+  'wmv',
+]);
+
+const audioFileExtensions = new Set([
+  'aac',
+  'aiff',
+  'alac',
+  'amr',
+  'flac',
+  'm4a',
+  'm4b',
+  'mid',
+  'midi',
+  'mp3',
+  'oga',
+  'ogg',
+  'opus',
+  'wav',
+  'wma',
+]);
+
+const codeFileExtensions = new Set([
+  'astro',
+  'bash',
+  'dart',
+  'ex',
+  'exs',
+  'fish',
+  'go',
+  'graphql',
+  'h',
+  'hpp',
+  'java',
+  'json',
+  'jl',
+  'kt',
+  'kts',
+  'less',
+  'lua',
+  'm',
+  'mm',
+  'php',
+  'pl',
+  'proto',
+  'r',
+  'rb',
+  'scss',
+  'sh',
+  'swift',
+  'toml',
+  'xml',
+  'yaml',
+  'yml',
+  'zsh',
+]);
+
+const textFileExtensions = new Set([
+  'cfg',
+  'conf',
+  'diff',
+  'env',
+  'log',
+  'patch',
+  'properties',
+  'rtf',
+  'srt',
+]);
+
+const fileIconsByExtension = new Map<string, Icon>([
+  ['c', FileC],
+  ['cc', FileCpp],
+  ['cjs', FileJs],
+  ['cpp', FileCpp],
+  ['cs', FileCSharp],
+  ['css', FileCss],
+  ['csv', FileCsv],
+  ['doc', FileDoc],
+  ['docx', FileDoc],
+  ['hh', FileCpp],
+  ['h', FileC],
+  ['htm', FileHtml],
+  ['html', FileHtml],
+  ['ini', FileIni],
+  ['jpeg', FileJpg],
+  ['jpg', FileJpg],
+  ['js', FileJs],
+  ['jsx', FileJsx],
+  ['md', FileMd],
+  ['markdown', FileMd],
+  ['mjs', FileJs],
+  ['mts', FileTs],
+  ['cts', FileTs],
+  ['pdf', FilePdf],
+  ['png', FilePng],
+  ['ppt', FilePpt],
+  ['pptx', FilePpt],
+  ['py', FilePy],
+  ['rs', FileRs],
+  ['sql', FileSql],
+  ['svg', FileSvg],
+  ['ts', FileTs],
+  ['tsx', FileTsx],
+  ['txt', FileTxt],
+  ['text', FileTxt],
+  ['vue', FileVue],
+  ['xls', FileXls],
+  ['xlsx', FileXls],
+]);
+
+function remoteFileExtension(path: string) {
+  const name = basename(path).toLowerCase();
+  const index = name.lastIndexOf('.');
+  return index > 0 ? name.slice(index + 1) : '';
+}
+
+function remoteFileIcon(path: string): Icon {
+  const extension = remoteFileExtension(path);
+  if (extension === 'zip') return FileZip;
+  const extensionIcon = fileIconsByExtension.get(extension);
+  if (extensionIcon) return extensionIcon;
+  if (archiveFileExtensions.has(extension)) return FileArchive;
+  if (imageFileExtensions.has(extension)) return FileImage;
+  if (videoFileExtensions.has(extension)) return FileVideo;
+  if (audioFileExtensions.has(extension)) return FileAudio;
+  if (codeFileExtensions.has(extension)) return FileCode;
+  if (textFileExtensions.has(extension)) return FileText;
+  return File;
 }
 
 function isArchivePath(value: string) {
@@ -1965,6 +2188,11 @@ export default function SshFilesTool({ active }: Props) {
                   const operationPaths = operationPathsFor(entry.path);
                   const archiveSelection = operationPaths.every(isArchivePath);
                   const parentPath = searchActive ? remoteParent(entry.path) : '';
+                  const EntryIcon = entry.isDir
+                    ? favoritePaths.includes(entry.path)
+                      ? FolderStar
+                      : Folder
+                    : remoteFileIcon(entry.path);
                   return (
                     <ContextMenu key={entry.path}>
                       <ContextMenuTrigger
@@ -2038,19 +2266,11 @@ export default function SshFilesTool({ active }: Props) {
                               : void downloadSelected([entry.path])
                           }
                         >
-                          {entry.isDir ? (
-                            <Folder
-                              size={16}
-                              weight="duotone"
-                              className="shrink-0 text-muted-foreground"
-                            />
-                          ) : (
-                            <File
-                              size={16}
-                              weight="duotone"
-                              className="shrink-0 text-muted-foreground"
-                            />
-                          )}
+                          <EntryIcon
+                            size={16}
+                            weight="duotone"
+                            className="shrink-0 text-muted-foreground"
+                          />
                           <span className="min-w-0 truncate">{entry.name}</span>
                           {entry.isSymlink ? (
                             <ArrowUpRight
