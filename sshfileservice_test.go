@@ -34,6 +34,58 @@ func TestNormalizedRemotePath(t *testing.T) {
 	}
 }
 
+func TestRemoteSearchFilenameCommandUsesFDAndFindFallback(t *testing.T) {
+	command := remoteSearchCommand(
+		"needle's",
+		"/srv/app",
+		remoteFileSearchName,
+		remoteFileSearchScopeCurrent,
+		false,
+	)
+	for _, expected := range []string{
+		"command -v fd",
+		"fd --absolute-path --ignore-case --fixed-strings --no-ignore --print0 --min-depth 1 --max-depth 1",
+		`'needle'"'"'s'`,
+		"for item in '/srv/app'/*; do if [ -e \"$item\" ]",
+		"-print0",
+	} {
+		if !strings.Contains(command, expected) {
+			t.Fatalf("文件名搜索命令缺少 %q: %s", expected, command)
+		}
+	}
+}
+
+func TestRemoteSearchContentCommandUsesRGAndGrepFallback(t *testing.T) {
+	command := remoteSearchCommand(
+		"needle",
+		"/srv/app",
+		remoteFileSearchContent,
+		remoteFileSearchScopeRecursive,
+		true,
+	)
+	for _, expected := range []string{
+		"command -v rg",
+		"rg --files-with-matches --null --fixed-strings --ignore-case --no-ignore --hidden",
+		"grep -lIZ -i -F",
+		"find '/srv/app' ! -path '/srv/app' -type f",
+	} {
+		if !strings.Contains(command, expected) {
+			t.Fatalf("文件内容搜索命令缺少 %q: %s", expected, command)
+		}
+	}
+	if strings.Contains(command, "--max-depth 1") {
+		t.Fatal("递归内容搜索不应限制最大深度")
+	}
+}
+
+func TestParseRemoteSearchPathsUsesNulSeparators(t *testing.T) {
+	got := parseRemoteSearchPaths([]byte("/srv/app/a\x00/srv/app/a\x00/srv/app/b\nname\x00"))
+	want := []string{"/srv/app/a", "/srv/app/b\nname"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("解析远程搜索路径 = %#v, want %#v", got, want)
+	}
+}
+
 func TestRemoteCreationTimesCommandQuotesPaths(t *testing.T) {
 	command := remoteCreationTimesCommand([]string{"/remote/O'Brien", "/target/file"})
 	if !strings.Contains(command, `'/remote/O'"'"'Brien'`) {

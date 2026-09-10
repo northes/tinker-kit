@@ -101,6 +101,7 @@ import {
   PrepareFileForDrag,
   ResolveRemoteFileTask,
   SaveSSHFileConfig,
+  SearchRemoteFiles,
   StartFileDownload,
   StartRemoteFileOperation,
   StartFileUpload,
@@ -277,6 +278,8 @@ type RemoteOperationRunResult =
   | { status: 'failed' };
 type FileSortKey = 'name' | 'size' | 'modifiedAt' | 'createdAt';
 type SortDirection = 'asc' | 'desc';
+type RemoteSearchMode = 'name' | 'content';
+type RemoteSearchScope = 'current' | 'recursive';
 
 export default function SshFilesTool({ active }: Props) {
   const { t, i18n } = useTranslation();
@@ -286,6 +289,12 @@ export default function SshFilesTool({ active }: Props) {
   const [currentPath, setCurrentPath] = useState('/');
   const [pathInput, setPathInput] = useState('/');
   const [pathEditing, setPathEditing] = useState(false);
+  const [searchInput, setSearchInput] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchMode, setSearchMode] = useState<RemoteSearchMode>('name');
+  const [searchScope, setSearchScope] = useState<RemoteSearchScope>('current');
+  const [searchActive, setSearchActive] = useState(false);
+  const [searching, setSearching] = useState(false);
   const [entries, setEntries] = useState<RemoteFileEntry[]>([]);
   const [sortKey, setSortKey] = useState<FileSortKey>('name');
   const [sortDirection, setSortDirection] = useState<SortDirection>('asc');
@@ -343,6 +352,7 @@ export default function SshFilesTool({ active }: Props) {
   const handledConflictTasks = useRef(new Set<string>());
   const taskRevisionRef = useRef(0);
   const directoryRequestRef = useRef(0);
+  const searchRequestRef = useRef(0);
   const sourceIDRef = useRef(sourceID);
   const currentPathRef = useRef(currentPath);
   const manageBaselineRef = useRef<{ connections: SSHConnection[]; sources: FileSource[] }>({
@@ -362,7 +372,7 @@ export default function SshFilesTool({ active }: Props) {
   const favoritePaths = source?.favoritePaths ?? [];
   const isCurrentPathFavorite = favoritePaths.includes(currentPath);
   const fileDrag = useFileDragOver({
-    enabled: active && Boolean(sourceID) && !loadingSources && !loading,
+    enabled: active && Boolean(sourceID) && !loadingSources && !loading && !searching,
   });
   const breadcrumbs = useMemo(() => {
     const parts = currentPath.split('/').filter(Boolean);
@@ -434,6 +444,69 @@ export default function SshFilesTool({ active }: Props) {
     }
   }, []);
 
+  const resetSearchState = useCallback(() => {
+    searchRequestRef.current++;
+    setSearchInput('');
+    setSearchQuery('');
+    setSearchActive(false);
+    setSearching(false);
+  }, []);
+
+  const executeSearch = async (queryValue = searchInput) => {
+    if (!sourceID || searching) return;
+    const query = queryValue.trim();
+    if (!query) {
+      resetSearchState();
+      if (sourceID) await loadDirectory(sourceID, currentPath, showHidden);
+      return;
+    }
+
+    const requestID = ++searchRequestRef.current;
+    directoryRequestRef.current++;
+    setSearchInput(query);
+    setSearchQuery(query);
+    setSearchActive(true);
+    setSearching(true);
+    setLoading(true);
+    setError('');
+    setEntries([]);
+    setSelected([]);
+    try {
+      const result = await SearchRemoteFiles(
+        sourceID,
+        currentPath,
+        query,
+        searchMode,
+        searchScope,
+        showHidden,
+      );
+      if (requestID !== searchRequestRef.current) return;
+      setEntries(result ?? []);
+    } catch (reason) {
+      if (requestID !== searchRequestRef.current) return;
+      setEntries([]);
+      setError(errorMessage(reason));
+    } finally {
+      if (requestID === searchRequestRef.current) {
+        setLoading(false);
+        setSearching(false);
+      }
+    }
+  };
+
+  const clearSearch = () => {
+    const shouldReload = searchActive || Boolean(searchQuery);
+    resetSearchState();
+    if (shouldReload && sourceID) {
+      void loadDirectory(sourceID, currentPath, showHidden);
+    } else if (shouldReload) {
+      setEntries([]);
+      setSelected([]);
+      setError('');
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
     sourceIDRef.current = sourceID;
     currentPathRef.current = currentPath;
@@ -450,8 +523,9 @@ export default function SshFilesTool({ active }: Props) {
 
   useEffect(() => {
     if (!active) return;
+    resetSearchState();
     void loadSources().catch((reason) => setError(errorMessage(reason)));
-  }, [active, loadSources]);
+  }, [active, loadSources, resetSearchState]);
 
   useEffect(() => {
     if (!active) return;
@@ -474,7 +548,8 @@ export default function SshFilesTool({ active }: Props) {
         !currentSourceID ||
         !paths.length ||
         loadingSources ||
-        loading
+        loading ||
+        searching
       )
         return;
       openUploadDialog(paths, currentRemotePath);
@@ -483,7 +558,7 @@ export default function SshFilesTool({ active }: Props) {
       offTasks();
       offDrop();
     };
-  }, [active, applyTaskSnapshot, loading, loadingSources, openUploadDialog]);
+  }, [active, applyTaskSnapshot, loading, loadingSources, openUploadDialog, searching]);
 
   useEffect(() => {
     if (!active || !source) return;
@@ -512,9 +587,10 @@ export default function SshFilesTool({ active }: Props) {
         continue;
       }
       refreshedUploadTasks.current.add(task.id);
+      resetSearchState();
       void loadDirectory(sourceID, currentPath, showHidden);
     }
-  }, [active, currentPath, loadDirectory, showHidden, sourceID, tasks]);
+  }, [active, currentPath, loadDirectory, resetSearchState, showHidden, sourceID, tasks]);
 
   useEffect(() => {
     if (!active) return;
@@ -572,6 +648,7 @@ export default function SshFilesTool({ active }: Props) {
         continue;
       }
       refreshedOperationTasks.current.add(task.id);
+      resetSearchState();
       void loadDirectory(sourceID, currentPath, showHidden);
       toast.add({
         title: t('sshFilesTool.operationSucceeded', {
@@ -580,10 +657,11 @@ export default function SshFilesTool({ active }: Props) {
         type: 'success',
       });
     }
-  }, [active, currentPath, loadDirectory, showHidden, sourceID, t, tasks]);
+  }, [active, currentPath, loadDirectory, resetSearchState, showHidden, sourceID, t, tasks]);
 
   const navigate = (nextPath: string) => {
     const normalizedPath = normalizeRemotePath(nextPath);
+    resetSearchState();
     setPathEditing(false);
     setEntries([]);
     setSelected([]);
@@ -620,6 +698,7 @@ export default function SshFilesTool({ active }: Props) {
     setFavoritesSaving(true);
     try {
       await SaveSSHFileConfig(connections, nextSources);
+      resetSearchState();
       setSources(nextSources);
       setSourceDraft((current) =>
         current.id === sourceID ? { ...current, favoritePaths: nextFavoritePaths } : current,
@@ -666,6 +745,7 @@ export default function SshFilesTool({ active }: Props) {
       await CreateRemoteDirectory(sourceID, target);
       setCreateFolderOpen(false);
       setCreateFolderName('');
+      resetSearchState();
       await loadDirectory(sourceID, currentPath, showHidden);
       toast.add({ title: t('sshFilesTool.folderCreated'), type: 'success' });
     } catch (reason) {
@@ -734,6 +814,7 @@ export default function SshFilesTool({ active }: Props) {
       if (result?.conflicts?.length) {
         return { status: 'conflict', paths: result.conflicts };
       }
+      resetSearchState();
       setSelected([]);
       await loadDirectory(sourceID, currentPath, showHidden);
       toast.add({
@@ -1156,6 +1237,7 @@ export default function SshFilesTool({ active }: Props) {
     setManageFeedback(null);
     try {
       await SaveSSHFileConfig(nextConnections, nextSources);
+      resetSearchState();
       setConnections(nextConnections);
       setSources(nextSources);
       manageBaselineRef.current = {
@@ -1295,7 +1377,15 @@ export default function SshFilesTool({ active }: Props) {
       {item.name}
     </SelectItem>
   ));
-  const isLoading = loadingSources || loading;
+  const isLoading = loadingSources || loading || searching;
+  const searchModeLabel = t(
+    searchMode === 'name' ? 'sshFilesTool.searchByName' : 'sshFilesTool.searchByContent',
+  );
+  const searchScopeLabel = t(
+    searchScope === 'current'
+      ? 'sshFilesTool.searchCurrentDirectory'
+      : 'sshFilesTool.searchFromCurrentDirectory',
+  );
   const connectionReady = Boolean(
     connectionDraft.name.trim() &&
     (connectionDraft.mode === 'local'
@@ -1377,6 +1467,7 @@ export default function SshFilesTool({ active }: Props) {
                 disabled={isLoading}
                 onValueChange={(value) => {
                   if (value !== null) {
+                    resetSearchState();
                     setEntries([]);
                     setSelected([]);
                     setError('');
@@ -1401,7 +1492,10 @@ export default function SshFilesTool({ active }: Props) {
                 size="sm"
                 checked={showHidden}
                 disabled={isLoading}
-                onCheckedChange={setShowHidden}
+                onCheckedChange={(checked) => {
+                  if (searchActive) resetSearchState();
+                  setShowHidden(checked);
+                }}
               />
               {t('sshFilesTool.showHidden')}
             </label>
@@ -1409,19 +1503,112 @@ export default function SshFilesTool({ active }: Props) {
         }
         right={
           <div className="flex min-w-0 flex-wrap items-center gap-2 max-[700px]:w-full max-[700px]:justify-end">
-            <div className="relative w-[min(28vw,260px)] min-w-[180px] max-[700px]:order-last max-[700px]:w-full">
+            <form
+              className="relative w-[min(28vw,260px)] min-w-[180px] max-[700px]:order-last max-[700px]:w-full"
+              onSubmit={(event) => {
+                event.preventDefault();
+                void executeSearch();
+              }}
+            >
               <MagnifyingGlass
                 size={14}
                 aria-hidden="true"
                 className="pointer-events-none absolute top-1/2 left-2.5 -translate-y-1/2 text-muted-foreground"
               />
               <Input
-                disabled
+                value={searchInput}
+                onChange={(event) => setSearchInput(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Escape') {
+                    event.preventDefault();
+                    clearSearch();
+                    return;
+                  }
+                  if (event.key === 'Enter' && event.nativeEvent.isComposing) {
+                    event.preventDefault();
+                  }
+                }}
+                disabled={!sourceID || isLoading}
                 placeholder={t('sshFilesTool.searchPlaceholder')}
                 aria-label={t('sshFilesTool.search')}
-                className="h-[30px] w-full bg-muted/20 pl-8 text-[11px]"
+                className="h-[30px] w-full bg-muted/20 pl-8 pr-8 text-[11px]"
               />
-            </div>
+              {searchInput ? (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon-sm"
+                  className="absolute top-1/2 right-0.5 h-7 w-7 -translate-y-1/2"
+                  disabled={!sourceID || isLoading}
+                  aria-label={t('sshFilesTool.clearSearch')}
+                  onClick={clearSearch}
+                >
+                  <XCircle size={14} />
+                </Button>
+              ) : null}
+            </form>
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                render={
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-[30px] max-w-[190px] flex-none px-2 text-[10px]"
+                    disabled={!sourceID || isLoading}
+                    aria-label={t('sshFilesTool.searchOptions')}
+                  />
+                }
+              >
+                <span className="truncate">
+                  {t('sshFilesTool.searchOptionsSummary', {
+                    mode: searchModeLabel,
+                    scope: searchScopeLabel,
+                  })}
+                </span>
+                <CaretDown data-icon="inline-end" aria-hidden="true" />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-64">
+                <DropdownMenuGroup>
+                  <DropdownMenuLabel>{t('sshFilesTool.searchMode')}</DropdownMenuLabel>
+                  <DropdownMenuItem onClick={() => setSearchMode('name')}>
+                    <CheckCircle
+                      size={14}
+                      className={searchMode === 'name' ? 'text-primary' : 'invisible'}
+                      aria-hidden="true"
+                    />
+                    {t('sshFilesTool.searchByName')}
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => setSearchMode('content')}>
+                    <CheckCircle
+                      size={14}
+                      className={searchMode === 'content' ? 'text-primary' : 'invisible'}
+                      aria-hidden="true"
+                    />
+                    {t('sshFilesTool.searchByContent')}
+                  </DropdownMenuItem>
+                </DropdownMenuGroup>
+                <DropdownMenuSeparator />
+                <DropdownMenuGroup>
+                  <DropdownMenuLabel>{t('sshFilesTool.searchScope')}</DropdownMenuLabel>
+                  <DropdownMenuItem onClick={() => setSearchScope('current')}>
+                    <CheckCircle
+                      size={14}
+                      className={searchScope === 'current' ? 'text-primary' : 'invisible'}
+                      aria-hidden="true"
+                    />
+                    {t('sshFilesTool.searchCurrentDirectory')}
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => setSearchScope('recursive')}>
+                    <CheckCircle
+                      size={14}
+                      className={searchScope === 'recursive' ? 'text-primary' : 'invisible'}
+                      aria-hidden="true"
+                    />
+                    {t('sshFilesTool.searchFromCurrentDirectory')}
+                  </DropdownMenuItem>
+                </DropdownMenuGroup>
+              </DropdownMenuContent>
+            </DropdownMenu>
             <Button
               variant="default"
               className="h-[30px] flex-none px-[11px] text-[11px]"
@@ -1447,6 +1634,11 @@ export default function SshFilesTool({ active }: Props) {
           className="flex min-h-10 min-w-0 items-center gap-1 border-y border-border bg-muted/20 px-2 text-xs"
           aria-label={t('sshFilesTool.path')}
         >
+          {searchActive ? (
+            <Badge variant="secondary" className="h-6 flex-none px-2 text-[10px]">
+              {t('sshFilesTool.searchResults')}
+            </Badge>
+          ) : null}
           {pathEditing ? (
             <form
               className="flex min-w-0 flex-1 items-center gap-1"
@@ -1597,7 +1789,11 @@ export default function SshFilesTool({ active }: Props) {
             size="icon-sm"
             className="h-7 w-7 flex-none"
             disabled={!sourceID || isLoading}
-            onClick={() => void loadDirectory(sourceID, currentPath, showHidden)}
+            onClick={() =>
+              searchActive && searchQuery
+                ? void executeSearch(searchQuery)
+                : void loadDirectory(sourceID, currentPath, showHidden)
+            }
             aria-label={t('sshFilesTool.refresh')}
           >
             <ArrowClockwise size={14} />
@@ -1641,7 +1837,7 @@ export default function SshFilesTool({ active }: Props) {
             <div className="flex h-full flex-col items-center justify-center gap-2 p-6 text-center">
               <Spinner />
               <span className="text-sm text-muted-foreground">
-                {t('sshFilesTool.loadingDirectory')}
+                {searching ? t('sshFilesTool.searching') : t('sshFilesTool.loadingDirectory')}
               </span>
               <span className="max-w-full truncate font-mono text-[11px] text-muted-foreground/70">
                 {currentPath}
@@ -1662,13 +1858,17 @@ export default function SshFilesTool({ active }: Props) {
             <div className="flex h-full flex-col items-center justify-center gap-2 p-6 text-center">
               <XCircle size={30} weight="duotone" className="text-destructive" />
               <div className="text-sm font-medium text-foreground">
-                {t('sshFilesTool.loadFailed')}
+                {t(searchActive ? 'sshFilesTool.searchFailed' : 'sshFilesTool.loadFailed')}
               </div>
               <div className="max-w-lg break-words text-xs text-muted-foreground">{error}</div>
               <Button
                 variant="outline"
                 className="mt-1 h-8 text-xs"
-                onClick={() => void loadDirectory(sourceID, currentPath, showHidden)}
+                onClick={() =>
+                  searchActive && searchQuery
+                    ? void executeSearch(searchQuery)
+                    : void loadDirectory(sourceID, currentPath, showHidden)
+                }
               >
                 <ArrowClockwise data-icon="inline-start" size={14} />
                 {t('sshFilesTool.refresh')}
@@ -1676,12 +1876,20 @@ export default function SshFilesTool({ active }: Props) {
             </div>
           ) : entries.length === 0 ? (
             <div className="flex h-full flex-col items-center justify-center gap-2 p-6 text-center">
-              <Folder size={30} weight="duotone" className="text-muted-foreground" />
+              {searchActive ? (
+                <MagnifyingGlass size={30} weight="duotone" className="text-muted-foreground" />
+              ) : (
+                <Folder size={30} weight="duotone" className="text-muted-foreground" />
+              )}
               <div className="text-sm font-medium text-foreground">
-                {t('sshFilesTool.directoryEmpty')}
+                {t(searchActive ? 'sshFilesTool.searchNoResults' : 'sshFilesTool.directoryEmpty')}
               </div>
               <div className="max-w-sm text-xs text-muted-foreground">
-                {t('sshFilesTool.directoryEmptyHint')}
+                {t(
+                  searchActive
+                    ? 'sshFilesTool.searchNoResultsHint'
+                    : 'sshFilesTool.directoryEmptyHint',
+                )}
               </div>
             </div>
           ) : (
@@ -1695,7 +1903,11 @@ export default function SshFilesTool({ active }: Props) {
                       onCheckedChange={(checked) =>
                         setSelected(checked === true ? entries.map((item) => item.path) : [])
                       }
-                      aria-label={t('sshFilesTool.selectAll')}
+                      aria-label={t(
+                        searchActive
+                          ? 'sshFilesTool.selectAllSearchResults'
+                          : 'sshFilesTool.selectAll',
+                      )}
                     />
                   </TableHead>
                   <TableHead
@@ -1752,6 +1964,7 @@ export default function SshFilesTool({ active }: Props) {
                 {sortedEntries.map((entry) => {
                   const operationPaths = operationPathsFor(entry.path);
                   const archiveSelection = operationPaths.every(isArchivePath);
+                  const parentPath = searchActive ? remoteParent(entry.path) : '';
                   return (
                     <ContextMenu key={entry.path}>
                       <ContextMenuTrigger
@@ -1814,28 +2027,50 @@ export default function SshFilesTool({ active }: Props) {
                       />
                     </TableCell>
                     <TableCell className="min-w-[280px] max-w-0 py-2">
-                      <button
-                        type="button"
-                        className="flex min-w-0 max-w-full items-center gap-2 text-left text-foreground hover:underline"
-                        title={entry.path}
-                        onClick={() =>
-                          entry.isDir ? navigate(entry.path) : void downloadSelected([entry.path])
-                        }
-                      >
-                        {entry.isDir ? (
-                          <Folder size={16} weight="duotone" className="text-muted-foreground" />
-                        ) : (
-                          <File size={16} weight="duotone" className="text-muted-foreground" />
-                        )}
-                        <span className="truncate">{entry.name}</span>
-                        {entry.isSymlink ? (
-                          <ArrowUpRight
-                            size={11}
-                            aria-label={t('sshFilesTool.symbolicLink')}
-                            className="shrink-0 text-muted-foreground"
-                          />
+                      <div className="min-w-0 max-w-full">
+                        <button
+                          type="button"
+                          className="flex w-full min-w-0 max-w-full items-center gap-2 text-left text-foreground hover:underline"
+                          title={entry.path}
+                          onClick={() =>
+                            entry.isDir
+                              ? navigate(entry.path)
+                              : void downloadSelected([entry.path])
+                          }
+                        >
+                          {entry.isDir ? (
+                            <Folder
+                              size={16}
+                              weight="duotone"
+                              className="shrink-0 text-muted-foreground"
+                            />
+                          ) : (
+                            <File
+                              size={16}
+                              weight="duotone"
+                              className="shrink-0 text-muted-foreground"
+                            />
+                          )}
+                          <span className="min-w-0 truncate">{entry.name}</span>
+                          {entry.isSymlink ? (
+                            <ArrowUpRight
+                              size={11}
+                              aria-label={t('sshFilesTool.symbolicLink')}
+                              className="shrink-0 text-muted-foreground"
+                            />
+                          ) : null}
+                        </button>
+                        {parentPath ? (
+                          <button
+                            type="button"
+                            className="block w-full min-w-0 max-w-full truncate text-left text-[10px] text-muted-foreground hover:text-foreground hover:underline"
+                            title={parentPath}
+                            onClick={() => navigate(parentPath)}
+                          >
+                            {parentPath}
+                          </button>
                         ) : null}
-                      </button>
+                      </div>
                     </TableCell>
                     <TableCell className="w-32 py-2 text-muted-foreground">
                       {entry.isDir ? (
@@ -1965,7 +2200,11 @@ export default function SshFilesTool({ active }: Props) {
         <div className="flex items-center justify-between gap-3 border-t border-border pt-3">
           <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-[10px] text-muted-foreground">
             <span>
-              {entries.length ? t('sshFilesTool.itemCount', { count: entries.length }) : ''}
+              {searchActive
+                ? t('sshFilesTool.searchResultCount', { count: entries.length })
+                : entries.length
+                  ? t('sshFilesTool.itemCount', { count: entries.length })
+                  : ''}
             </span>
             {activeTasks.length > 0 || tasks.length > 0 ? (
               <button
