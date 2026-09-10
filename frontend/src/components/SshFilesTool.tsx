@@ -468,6 +468,16 @@ function errorMessage(error: unknown) {
   return String(error);
 }
 
+function isRemotePathNotFound(error: unknown) {
+  const message = errorMessage(error).toLowerCase();
+  return (
+    message.includes('no such file') ||
+    /(?:file|directory|path).*(?:does not exist|not found)/.test(message) ||
+    message.includes('不存在') ||
+    message.includes('找不到')
+  );
+}
+
 type Props = { active: boolean };
 type ManageView = 'list' | 'connection' | 'source';
 type ManageTab = 'source' | 'connection';
@@ -503,6 +513,7 @@ type FileSortKey = 'name' | 'size' | 'modifiedAt' | 'createdAt';
 type SortDirection = 'asc' | 'desc';
 type RemoteSearchMode = 'name' | 'content';
 type RemoteSearchScope = 'current' | 'recursive';
+type MissingFavoritePath = { sourceID: string; path: string };
 
 export default function SshFilesTool({ active }: Props) {
   const { t, i18n } = useTranslation();
@@ -567,6 +578,7 @@ export default function SshFilesTool({ active }: Props) {
   const [createFolderError, setCreateFolderError] = useState('');
   const [creatingFolder, setCreatingFolder] = useState(false);
   const [favoritesSaving, setFavoritesSaving] = useState(false);
+  const [missingFavoritePath, setMissingFavoritePath] = useState<MissingFavoritePath | null>(null);
   const [dragReady, setDragReady] = useState<{ remote: string; local: string } | null>(null);
   const [dragPreparing, setDragPreparing] = useState('');
   const refreshedUploadTasks = useRef(new Set<string>());
@@ -576,6 +588,7 @@ export default function SshFilesTool({ active }: Props) {
   const taskRevisionRef = useRef(0);
   const directoryRequestRef = useRef(0);
   const searchRequestRef = useRef(0);
+  const pendingFavoritePathRef = useRef<MissingFavoritePath | null>(null);
   const sourceIDRef = useRef(sourceID);
   const currentPathRef = useRef(currentPath);
   const manageBaselineRef = useRef<{ connections: SSHConnection[]; sources: FileSource[] }>({
@@ -643,6 +656,14 @@ export default function SshFilesTool({ active }: Props) {
 
   const loadDirectory = useCallback(async (id: string, pathValue: string, hidden: boolean) => {
     const requestID = ++directoryRequestRef.current;
+    const normalizedPath = normalizeRemotePath(pathValue);
+    const pendingFavoritePath =
+      pendingFavoritePathRef.current?.sourceID === id &&
+      pendingFavoritePathRef.current.path === normalizedPath
+        ? pendingFavoritePathRef.current
+        : null;
+    pendingFavoritePathRef.current = null;
+    setMissingFavoritePath(null);
     if (!id) {
       setEntries([]);
       setSelected([]);
@@ -655,13 +676,17 @@ export default function SshFilesTool({ active }: Props) {
     setEntries([]);
     setSelected([]);
     try {
-      const result = await ListRemoteFiles(id, pathValue, hidden);
+      const result = await ListRemoteFiles(id, normalizedPath, hidden);
       if (requestID !== directoryRequestRef.current) return;
       setEntries(result ?? []);
     } catch (reason) {
       if (requestID !== directoryRequestRef.current) return;
       setEntries([]);
-      setError(errorMessage(reason));
+      const message = errorMessage(reason);
+      setError(message);
+      if (pendingFavoritePath && isRemotePathNotFound(reason)) {
+        setMissingFavoritePath(pendingFavoritePath);
+      }
     } finally {
       if (requestID === directoryRequestRef.current) setLoading(false);
     }
@@ -882,8 +907,10 @@ export default function SshFilesTool({ active }: Props) {
     }
   }, [active, currentPath, loadDirectory, resetSearchState, showHidden, sourceID, t, tasks]);
 
-  const navigate = (nextPath: string) => {
+  const navigate = (nextPath: string, navigationSource: 'favorite' | 'normal' = 'normal') => {
     const normalizedPath = normalizeRemotePath(nextPath);
+    pendingFavoritePathRef.current =
+      navigationSource === 'favorite' && sourceID ? { sourceID, path: normalizedPath } : null;
     resetSearchState();
     setPathEditing(false);
     setEntries([]);
@@ -935,6 +962,45 @@ export default function SshFilesTool({ active }: Props) {
     } catch (reason) {
       toast.add({
         title: t('sshFilesTool.favoriteSaveFailed'),
+        description: errorMessage(reason),
+        type: 'error',
+      });
+    } finally {
+      setFavoritesSaving(false);
+    }
+  };
+
+  const removeMissingFavoritePath = async () => {
+    const pending = missingFavoritePath;
+    if (!pending || favoritesSaving) return;
+    const targetSource = sources.find((item) => item.id === pending.sourceID);
+    if (!targetSource) {
+      setMissingFavoritePath(null);
+      return;
+    }
+    const currentFavoritePaths = targetSource.favoritePaths ?? [];
+    const nextFavoritePaths = currentFavoritePaths.filter(
+      (pathValue) => pathValue !== pending.path,
+    );
+    if (nextFavoritePaths.length === currentFavoritePaths.length) {
+      setMissingFavoritePath(null);
+      return;
+    }
+    const nextSources = sources.map((item) =>
+      item.id === pending.sourceID ? { ...item, favoritePaths: nextFavoritePaths } : item,
+    );
+    setFavoritesSaving(true);
+    try {
+      await SaveSSHFileConfig(connections, nextSources);
+      setSources(nextSources);
+      setSourceDraft((current) =>
+        current.id === pending.sourceID ? { ...current, favoritePaths: nextFavoritePaths } : current,
+      );
+      setMissingFavoritePath(null);
+      toast.add({ title: t('sshFilesTool.favoritePathRemoved'), type: 'success' });
+    } catch (reason) {
+      toast.add({
+        title: t('sshFilesTool.favoritePathRemoveFailed'),
         description: errorMessage(reason),
         type: 'error',
       });
@@ -1975,7 +2041,7 @@ export default function SshFilesTool({ active }: Props) {
                   favoritePaths.map((favoritePath) => (
                     <DropdownMenuItem
                       key={favoritePath}
-                      onClick={() => navigate(favoritePath)}
+                      onClick={() => navigate(favoritePath, 'favorite')}
                     >
                       <Star size={14} weight="duotone" aria-hidden="true" />
                       <span className="min-w-0 truncate" title={favoritePath}>
@@ -3243,6 +3309,36 @@ export default function SshFilesTool({ active }: Props) {
                     : manageConfirm?.type === 'discardNavigate'
                       ? t('sshFilesTool.discardEditAction')
                     : t('sshFilesTool.discardDraftAction')}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+      <AlertDialog
+        open={missingFavoritePath !== null}
+        onOpenChange={(open) => {
+          if (!open && !favoritesSaving) setMissingFavoritePath(null);
+        }}
+      >
+        <AlertDialogContent className="min-w-0 max-w-[calc(100vw-32px)] sm:max-w-md">
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t('sshFilesTool.favoritePathMissingTitle')}</AlertDialogTitle>
+            <AlertDialogDescription className="text-xs leading-5">
+              {t('sshFilesTool.favoritePathMissingDescription', {
+                path: missingFavoritePath?.path ?? '',
+              })}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={favoritesSaving}>
+              {t('common.cancel')}
+            </AlertDialogCancel>
+            <AlertDialogAction
+              variant="destructive"
+              disabled={favoritesSaving}
+              onClick={() => void removeMissingFavoritePath()}
+            >
+              {favoritesSaving ? <Spinner data-icon="inline-start" /> : null}
+              {t('sshFilesTool.removeFavoritePath')}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
