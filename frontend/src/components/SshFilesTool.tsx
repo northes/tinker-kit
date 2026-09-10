@@ -939,25 +939,34 @@ export default function SshFilesTool({ active }: Props) {
     }
   };
 
-  const toggleFavorite = async () => {
+  const toggleFavorite = async (pathValue = currentPath) => {
     if (!sourceID || !source || favoritesSaving) return;
-    const nextFavoritePaths = isCurrentPathFavorite
-      ? favoritePaths.filter((pathValue) => pathValue !== currentPath)
-      : [...favoritePaths, currentPath];
+    const normalizedPath = normalizeRemotePath(pathValue);
+    const isFavorite = favoritePaths.includes(normalizedPath);
+    const isCurrentPath = normalizedPath === currentPath;
+    const nextFavoritePaths = isFavorite
+      ? favoritePaths.filter((favoritePath) => favoritePath !== normalizedPath)
+      : [...favoritePaths, normalizedPath];
     const nextSources = sources.map((item) =>
       item.id === sourceID ? { ...item, favoritePaths: nextFavoritePaths } : item,
     );
     setFavoritesSaving(true);
     try {
       await SaveSSHFileConfig(connections, nextSources);
-      resetSearchState();
+      if (isCurrentPath) resetSearchState();
       setSources(nextSources);
       setSourceDraft((current) =>
         current.id === sourceID ? { ...current, favoritePaths: nextFavoritePaths } : current,
       );
       toast.add({
         title: t(
-          isCurrentPathFavorite ? 'sshFilesTool.favoriteRemoved' : 'sshFilesTool.favoriteAdded',
+          isCurrentPath
+            ? isFavorite
+              ? 'sshFilesTool.favoriteRemoved'
+              : 'sshFilesTool.favoriteAdded'
+            : isFavorite
+              ? 'sshFilesTool.favoritePathRemoved'
+              : 'sshFilesTool.favoritePathAdded',
         ),
         type: 'success',
       });
@@ -2259,8 +2268,9 @@ export default function SshFilesTool({ active }: Props) {
                   const operationPaths = operationPathsFor(entry.path);
                   const archiveSelection = operationPaths.every(isArchivePath);
                   const parentPath = searchActive ? remoteParent(entry.path) : '';
+                  const isEntryFavorite = entry.isDir && favoritePaths.includes(entry.path);
                   const EntryIcon = entry.isDir
-                    ? favoritePaths.includes(entry.path)
+                    ? isEntryFavorite
                       ? FolderStar
                       : Folder
                     : remoteFileIcon(entry.path);
@@ -2402,6 +2412,23 @@ export default function SshFilesTool({ active }: Props) {
                             <Copy size={14} weight="duotone" aria-hidden="true" />
                             {t('sshFilesTool.copyPath')}
                           </ContextMenuItem>
+                          {entry.isDir ? (
+                            <ContextMenuItem
+                              disabled={favoritesSaving}
+                              onClick={() => void toggleFavorite(entry.path)}
+                            >
+                              <Star
+                                size={14}
+                                weight={isEntryFavorite ? 'fill' : 'duotone'}
+                                aria-hidden="true"
+                              />
+                              {t(
+                                isEntryFavorite
+                                  ? 'sshFilesTool.removeFavoritePath'
+                                  : 'sshFilesTool.addFavoritePath',
+                              )}
+                            </ContextMenuItem>
+                          ) : null}
                         </ContextMenuGroup>
                         <ContextMenuSeparator />
                         <ContextMenuGroup>
@@ -2482,6 +2509,21 @@ export default function SshFilesTool({ active }: Props) {
               >
                 <FolderSimplePlus size={14} weight="duotone" aria-hidden="true" />
                 {t('sshFilesTool.createFolder')}
+              </ContextMenuItem>
+              <ContextMenuItem
+                disabled={!sourceID || isLoading || favoritesSaving}
+                onClick={() => void toggleFavorite()}
+              >
+                <Star
+                  size={14}
+                  weight={isCurrentPathFavorite ? 'fill' : 'duotone'}
+                  aria-hidden="true"
+                />
+                {t(
+                  isCurrentPathFavorite
+                    ? 'sshFilesTool.removeFavoritePath'
+                    : 'sshFilesTool.addFavoritePath',
+                )}
               </ContextMenuItem>
             </ContextMenuGroup>
           </ContextMenuContent>
