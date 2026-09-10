@@ -2740,9 +2740,8 @@ export default function SshFilesTool({ active }: Props) {
                         return (
                           <div key={item.id} className="flex min-w-0 items-center gap-1 py-1">
                             <Button
-                              variant={item.id === sourceID ? 'secondary' : 'ghost'}
+                              variant="ghost"
                               className="h-auto min-w-0 flex-1 justify-start px-3 py-2 text-left"
-                              aria-current={item.id === sourceID ? 'true' : undefined}
                               onClick={() => editSource(item)}
                             >
                               <Folder data-icon="inline-start" size={16} />
@@ -2839,11 +2838,8 @@ export default function SshFilesTool({ active }: Props) {
                         return (
                           <div key={item.id} className="flex min-w-0 items-center gap-1 py-1">
                             <Button
-                              variant={source?.sshConnectionID === item.id ? 'secondary' : 'ghost'}
+                              variant="ghost"
                               className="h-auto min-w-0 flex-1 justify-start px-3 py-2 text-left"
-                              aria-current={
-                                source?.sshConnectionID === item.id ? 'true' : undefined
-                              }
                               onClick={() => editConnection(item)}
                             >
                               <HardDrives data-icon="inline-start" size={16} />
