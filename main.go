@@ -81,7 +81,7 @@ func main() {
 	log.SetFlags(log.LstdFlags | log.Lmicroseconds)
 	log.Printf("[startup] DevUtils starting on %s/%s", runtime.GOOS, runtime.GOARCH)
 	saved := loadWindowState()
-	width, height := 720, 520
+	width, height := 1100, 700
 	x, y := 0, 0
 	if saved != nil {
 		width, height = saved.W, saved.H
