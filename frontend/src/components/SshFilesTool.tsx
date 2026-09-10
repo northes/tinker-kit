@@ -513,7 +513,7 @@ type FileSortKey = 'name' | 'size' | 'modifiedAt' | 'createdAt';
 type SortDirection = 'asc' | 'desc';
 type RemoteSearchMode = 'name' | 'content';
 type RemoteSearchScope = 'current' | 'recursive';
-type MissingFavoritePath = { sourceID: string; path: string };
+type MissingFavoritePath = { sourceID: string; path: string; previousPath: string };
 
 export default function SshFilesTool({ active }: Props) {
   const { t, i18n } = useTranslation();
@@ -910,7 +910,9 @@ export default function SshFilesTool({ active }: Props) {
   const navigate = (nextPath: string, navigationSource: 'favorite' | 'normal' = 'normal') => {
     const normalizedPath = normalizeRemotePath(nextPath);
     pendingFavoritePathRef.current =
-      navigationSource === 'favorite' && sourceID ? { sourceID, path: normalizedPath } : null;
+      navigationSource === 'favorite' && sourceID
+        ? { sourceID, path: normalizedPath, previousPath: currentPath }
+        : null;
     resetSearchState();
     setPathEditing(false);
     setEntries([]);
@@ -997,6 +999,9 @@ export default function SshFilesTool({ active }: Props) {
         current.id === pending.sourceID ? { ...current, favoritePaths: nextFavoritePaths } : current,
       );
       setMissingFavoritePath(null);
+      if (sourceID === pending.sourceID && pending.previousPath !== pending.path) {
+        navigate(pending.previousPath);
+      }
       toast.add({ title: t('sshFilesTool.favoritePathRemoved'), type: 'success' });
     } catch (reason) {
       toast.add({
