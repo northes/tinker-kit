@@ -615,12 +615,18 @@ func migrateLegacyTheme(cfg Config, legacyTheme string, hasThemeMode bool) Confi
 	}
 	return cfg
 }
-func appDataDir() string {
+
+const appDataDirName = "TinkerKit"
+
+func userConfigBaseDir() string {
 	if dir, err := os.UserConfigDir(); err == nil {
-		return filepath.Join(dir, "DevUtils")
+		return dir
 	}
-	return filepath.Join(os.TempDir(), "DevUtils")
+	return os.TempDir()
 }
+
+func appDataDir() string { return filepath.Join(userConfigBaseDir(), appDataDirName) }
+
 func configPath() string     { return filepath.Join(appDataDir(), "config.json") }
 func historyPath() string    { return filepath.Join(appDataDir(), "history.json") }
 func historyDataDir() string { return filepath.Join(appDataDir(), "history-data") }
@@ -727,7 +733,7 @@ func writeConfigAtomically(path string, data []byte) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
-	tmp, err := os.CreateTemp(filepath.Dir(path), ".devutils-config-*")
+	tmp, err := os.CreateTemp(filepath.Dir(path), ".tinkerkit-config-*")
 	if err != nil {
 		return err
 	}
@@ -934,7 +940,7 @@ func (s *ConfigService) SaveBase64File(path string, data string) error {
 	if rem := len(data) % 4; rem != 0 {
 		data += strings.Repeat("=", 4-rem)
 	}
-	tmp, err := os.CreateTemp(filepath.Dir(path), ".devutils-save-*")
+	tmp, err := os.CreateTemp(filepath.Dir(path), ".tinkerkit-save-*")
 	if err != nil {
 		return err
 	}

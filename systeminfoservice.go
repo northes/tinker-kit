@@ -6,7 +6,7 @@ import (
 	"strings"
 )
 
-// SystemInfo 描述运行 DevUtils 的操作系统环境。
+// SystemInfo 描述运行 TinkerKit 的操作系统环境。
 type SystemInfo struct {
 	OS      string `json:"os"`
 	Version string `json:"version"`

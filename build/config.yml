@@ -5,11 +5,11 @@ version: '3'
 
 # This information is used to generate the build assets.
 info:
-  companyName: "DevUtils" # The name of the company
-  productName: "DevUtils" # The name of the application
-  productIdentifier: "com.devutils.app" # The unique product identifier
+  companyName: "TinkerKit" # The name of the company
+  productName: "TinkerKit" # The name of the application
+  productIdentifier: "com.tinkerkit.app" # The unique product identifier
   description: "Local-first developer utility launcher" # The application description
-  copyright: "(c) 2026, DevUtils" # Copyright text
+  copyright: "(c) 2026, TinkerKit" # Copyright text
   comments: "Local-first developer utility launcher" # Comments
   version: "0.1.0" # The application version
   # cfBundleIconName: "appicon" # The macOS icon name in Assets.car icon bundles (optional)

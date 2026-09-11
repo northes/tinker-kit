@@ -12,7 +12,7 @@ Go 层是桌面壳层和服务边界。修改这些边界前先确认现有数�
 
 - `main.go` 负责 Wails 应用启动、窗口、系统托盘、服务注册和事件广播；`configservice.go` 的 `ConfigService` 负责应用配置及历史记录服务。
 - `greetservice.go` 是未使用的模板残留，除非需求明确要求，不要把它重新接入服务列表或围绕它建立新调用链。
-- 应用配置持久化到 `os.UserConfigDir()/DevUtils/config.json`，窗口位置和大小持久化到同目录的 `window-state.json`。
+- 应用配置持久化到 `os.UserConfigDir()/TinkerKit/config.json`，窗口位置和大小持久化到同目录的 `window-state.json`。
 - 配置字段的规范化、默认值、白名单和旧配置迁移集中在 Go 层；新增字段必须考虑已有配置文件和非法值回退。
 - 当前 `go.mod` 模块名仍为模板值 `changeme`，不要因单个功能随意重命名；新增依赖使用真实 import 路径。
 

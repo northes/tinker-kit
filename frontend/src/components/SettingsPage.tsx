@@ -647,12 +647,12 @@ export default function SettingsPage({
     setSettings((current) => ({ ...current, [key]: value }));
   const checkUpdates = async () => {
     setChecking(true);
-    window.dispatchEvent(new CustomEvent('devutils:update-check', { detail: 'checking' }));
+    window.dispatchEvent(new CustomEvent('tinkerkit:update-check', { detail: 'checking' }));
     try {
       const available = await CheckForUpdates();
       if (!available) toast.add({ title: t('settings.upToDate'), type: 'success' });
       window.dispatchEvent(
-        new CustomEvent('devutils:update-check', {
+        new CustomEvent('tinkerkit:update-check', {
           detail: available ? 'available' : 'finished',
         }),
       );
@@ -662,7 +662,7 @@ export default function SettingsPage({
         description: t('settings.updateFailedDesc'),
         type: 'error',
       });
-      window.dispatchEvent(new CustomEvent('devutils:update-check', { detail: 'finished' }));
+      window.dispatchEvent(new CustomEvent('tinkerkit:update-check', { detail: 'finished' }));
     } finally {
       setChecking(false);
     }

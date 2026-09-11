@@ -9,9 +9,9 @@ import (
 
 func TestMatchGitHubUpdateAssetSelectsDarwinUniversalZip(t *testing.T) {
 	assets := []githubprovider.ReleaseAsset{
-		{Name: "DevUtils-0.2.0-darwin-universal.dmg"},
-		{Name: "DevUtils-0.2.0-darwin-arm64.zip"},
-		{Name: "DevUtils-0.2.0-darwin-universal.zip"},
+		{Name: "TinkerKit-0.2.0-darwin-universal.dmg"},
+		{Name: "TinkerKit-0.2.0-darwin-arm64.zip"},
+		{Name: "TinkerKit-0.2.0-darwin-universal.zip"},
 	}
 	got := matchGitHubUpdateAsset(updater.CheckRequest{Platform: "darwin", Arch: "arm64"}, assets)
 	if got != 2 {
@@ -20,7 +20,7 @@ func TestMatchGitHubUpdateAssetSelectsDarwinUniversalZip(t *testing.T) {
 }
 
 func TestMatchGitHubUpdateAssetRejectsInstallerOnlyRelease(t *testing.T) {
-	assets := []githubprovider.ReleaseAsset{{Name: "DevUtils-0.2.0-darwin-arm64.dmg"}}
+	assets := []githubprovider.ReleaseAsset{{Name: "TinkerKit-0.2.0-darwin-arm64.dmg"}}
 	got := matchGitHubUpdateAsset(updater.CheckRequest{Platform: "darwin", Arch: "arm64"}, assets)
 	if got != -1 {
 		t.Fatalf("只有 DMG 时不应作为应用内更新包，实际为 %d", got)
@@ -29,8 +29,8 @@ func TestMatchGitHubUpdateAssetRejectsInstallerOnlyRelease(t *testing.T) {
 
 func TestMatchGitHubUpdateAssetSelectsDarwinUniversalZipWithoutArchitectureMatch(t *testing.T) {
 	assets := []githubprovider.ReleaseAsset{
-		{Name: "DevUtils-0.2.0-darwin-universal.dmg"},
-		{Name: "DevUtils-0.2.0-darwin-universal.zip"},
+		{Name: "TinkerKit-0.2.0-darwin-universal.dmg"},
+		{Name: "TinkerKit-0.2.0-darwin-universal.zip"},
 	}
 	got := matchGitHubUpdateAsset(updater.CheckRequest{Platform: "darwin", Arch: "arm64"}, assets)
 	if got != 1 {
@@ -39,7 +39,7 @@ func TestMatchGitHubUpdateAssetSelectsDarwinUniversalZipWithoutArchitectureMatch
 }
 
 func TestMatchGitHubUpdateAssetDoesNotUseUniversalForOtherPlatforms(t *testing.T) {
-	assets := []githubprovider.ReleaseAsset{{Name: "DevUtils-0.2.0-linux-universal.zip"}}
+	assets := []githubprovider.ReleaseAsset{{Name: "TinkerKit-0.2.0-linux-universal.zip"}}
 	got := matchGitHubUpdateAsset(updater.CheckRequest{Platform: "linux", Arch: "arm64"}, assets)
 	if got != -1 {
 		t.Fatalf("非 macOS 平台不应回退到 Universal ZIP，实际为 %d", got)

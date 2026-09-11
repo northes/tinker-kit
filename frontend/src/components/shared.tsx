@@ -259,7 +259,7 @@ export function formatJsonPreserve(src: string) {
 }
 
 export const samples = {
-  json: '{"project":"DevUtils","version":1,"features":["search","clipboard","privacy"],"owner":{"team":"developer experience","active":true}}',
+  json: '{"project":"TinkerKit","version":1,"features":["search","clipboard","privacy"],"owner":{"team":"developer experience","active":true}}',
   text: '  Build tools that stay out of the way.\nShip faster, keep data local.  ',
 };
 

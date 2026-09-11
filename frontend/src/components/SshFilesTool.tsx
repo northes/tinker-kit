@@ -2311,7 +2311,7 @@ export default function SshFilesTool({ active }: Props) {
                               );
                               event.dataTransfer.setData('text/plain', local);
                               event.dataTransfer.setData(
-                                'application/x-devutils-remote-file',
+                                'application/x-tinkerkit-remote-file',
                                 JSON.stringify({ sourceID, path: entry.path }),
                               );
                             }}

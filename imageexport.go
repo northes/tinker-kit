@@ -500,7 +500,7 @@ func (w progressWriter) Write(p []byte) (int, error) {
 }
 
 func (s *ImageService) exportDockerTar(ctx context.Context, taskID string, source ImageSource, cliPath, imageID, target string) error {
-	tmp := target + ".devutils-" + taskID + ".partial"
+	tmp := target + ".tinkerkit-" + taskID + ".partial"
 	_ = os.Remove(tmp)
 	f, err := os.OpenFile(tmp, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
 	if err != nil {
@@ -647,7 +647,7 @@ func (s *ImageService) exportRegistryOCI(ctx context.Context, taskID string, sou
 		task.Bytes = 0
 		task.Stage = "writing"
 	})
-	tmp := target + ".devutils-" + taskID + ".partial"
+	tmp := target + ".tinkerkit-" + taskID + ".partial"
 	f, err := os.OpenFile(tmp, os.O_CREATE|os.O_WRONLY|os.O_EXCL, 0o600)
 	if err != nil {
 		return err

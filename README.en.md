@@ -1,13 +1,13 @@
-# DevUtils
+# TinkerKit
 
 > A local-first developer utility launcher — a compact debugging workbench that lives in the macOS menu bar and is ready whenever you are.
 
 [![English](https://img.shields.io/badge/English-Default-0078D4)](README.en.md)
 [![简体中文](https://img.shields.io/badge/简体中文-阅读中文版-3DA639)](README.md)
 
-Built with [Wails v3](https://v3.wails.io/), DevUtils gathers the small, high-frequency utilities of everyday development and debugging — JSON, timestamps, date calculations, text, Base64, JWT, URL and diff comparison — into one compact desktop app that runs entirely on your machine. All data is processed only on your own device and is never uploaded to any server.
+Built with [Wails v3](https://v3.wails.io/), TinkerKit gathers the small, high-frequency utilities of everyday development and debugging — JSON, timestamps, date calculations, text, Base64, JWT, URL and diff comparison — into one compact desktop app that runs entirely on your machine. All data is processed only on your own device and is never uploaded to any server.
 
-![GitHub release](https://img.shields.io/github/v/release/northes/dev-utils?sort=semver&label=version)
+![GitHub release](https://img.shields.io/github/v/release/northes/tinker-kit?sort=semver&label=version)
 ![license](https://img.shields.io/badge/license-MIT-3DA639)
 ![platform](https://img.shields.io/badge/platform-macOS-000000)
 ![Wails](https://img.shields.io/badge/Wails-v3%20beta-DF0D3F)
@@ -16,7 +16,7 @@ Built with [Wails v3](https://v3.wails.io/), DevUtils gathers the small, high-fr
 ## Features
 
 - **Local-first, privacy-safe** — No accounts, no telemetry, no uploads. Sensitive content such as keys, tokens and logs stays on your device; everything runs fully offline.
-- **Menu-bar resident, always on call** — Lives in the menu bar with no Dock icon; closing the window hides it to the tray. Copy anything, click the tray icon, and DevUtils auto-detects JSON / timestamps / URL / JWT / Base64 / text and jumps to the matching tool (asks for confirmation by default; enable “auto overwrite” to skip it).
+- **Menu-bar resident, always on call** — Lives in the menu bar with no Dock icon; closing the window hides it to the tray. Copy anything, click the tray icon, and TinkerKit auto-detects JSON / timestamps / URL / JWT / Base64 / text and jumps to the matching tool (asks for confirmation by default; enable “auto overwrite” to skip it).
 - **Command palette, keyboard-first** — Press `⌘K` / `Ctrl+K` to search every command with fuzzy matching, including pinyin and initial letters for Chinese, filtered by the current context. Nearly everything can be done without touching the mouse.
 - **History kept on-device** — Tool activity is recorded locally, filterable by tool and time range, with pagination, on-demand loading for large entries, and one-click restore.
 - **Simplified Chinese first, i18n-ready** — The UI defaults to Simplified Chinese with English built in, and the locale structure is easy to extend with more languages.
@@ -41,7 +41,7 @@ Built with [Wails v3](https://v3.wails.io/), DevUtils gathers the small, high-fr
 
 ## Installation
 
-Download the latest `DevUtils-<version>-darwin-universal.dmg` from [GitHub Releases](https://github.com/northes/dev-utils/releases):
+Download the latest `TinkerKit-<version>-darwin-universal.dmg` from [GitHub Releases](https://github.com/northes/tinker-kit/releases):
 
 - One Universal build covers both Apple Silicon and Intel — no need to pick an architecture;
 - In-app updates use the matching `-darwin-universal.zip` and `SHA256SUMS` checksum file, so the app can upgrade itself after install;
@@ -49,15 +49,15 @@ Download the latest `DevUtils-<version>-darwin-universal.dmg` from [GitHub Relea
 
 ## Quick Start
 
-1. After the first launch, DevUtils lives in the menu bar tray with no Dock icon.
-2. Copy a snippet of JSON, a timestamp, URL, JWT or Base64, then click the tray icon — DevUtils identifies the content type and asks whether to fill it into the matching tool (default behavior; disable tray matching or enable “auto overwrite” under “Settings → Clipboard”).
+1. After the first launch, TinkerKit lives in the menu bar tray with no Dock icon.
+2. Copy a snippet of JSON, a timestamp, URL, JWT or Base64, then click the tray icon — TinkerKit identifies the content type and asks whether to fill it into the matching tool (default behavior; disable tray matching or enable “auto overwrite” under “Settings → Clipboard”).
 3. Press `⌘K` / `Ctrl+K` in any tool to open the command palette and search for actions.
 4. Closing the window hides the app to the tray; use “Quit” in the tray menu to actually exit.
 
 ## Privacy & Data
 
 - All tools (formatting, conversion, parsing, comparison) run locally with no network requests;
-- History and settings are stored on your machine at `~/Library/Application Support/DevUtils/` and can be cleared in one click under “Settings → Privacy”;
+- History and settings are stored on your machine at `~/Library/Application Support/TinkerKit/` and can be cleared in one click under “Settings → Privacy”;
 - The only possible network request is “Check for Updates”, which queries GitHub Releases for version info.
 
 ## Development
@@ -96,7 +96,7 @@ Frontend dependencies are installed only inside `frontend/`; the frontend build 
 
 ```
 ├── main.go              # Go entrypoint: window, system tray, bound services, update scheduler
-├── configservice.go     # Config service: persists settings to ~/Library/Application Support/DevUtils/config.json
+├── configservice.go     # Config service: persists settings to ~/Library/Application Support/TinkerKit/config.json
 ├── updateservice.go     # Update polling and scheduling (Wails updater + GitHub Releases)
 ├── frontend/            # React 19 + TypeScript frontend
 │   ├── src/App.tsx      # Layout, routing, command palette, clipboard detection
@@ -127,15 +127,15 @@ git push origin v0.1.0
 
 The workflow builds a Universal package for both Apple Silicon and Intel and uploads it to a single GitHub Release:
 
-- `DevUtils-<version>-darwin-universal.dmg` — first-time installation;
-- `DevUtils-<version>-darwin-universal.zip` — in-app updates;
+- `TinkerKit-<version>-darwin-universal.dmg` — first-time installation;
+- `TinkerKit-<version>-darwin-universal.zip` — in-app updates;
 - `SHA256SUMS` — file integrity verification.
 
-Signing and notarization are optional: after configuring `APPLE_CERTIFICATE`, `APPLE_CERTIFICATE_PASSWORD`, `APPLE_SIGNING_IDENTITY`, `APPLE_ID`, `APPLE_APP_PASSWORD` and `APPLE_TEAM_ID` in the repository Secrets, the pipeline signs and notarizes automatically; otherwise an ad-hoc signed build is produced for testing only. You can also run the workflow manually from the Actions page and enter a version tag. In-app updates always read the latest GitHub Release of the public `northes/dev-utils` repository.
+Signing and notarization are optional: after configuring `APPLE_CERTIFICATE`, `APPLE_CERTIFICATE_PASSWORD`, `APPLE_SIGNING_IDENTITY`, `APPLE_ID`, `APPLE_APP_PASSWORD` and `APPLE_TEAM_ID` in the repository Secrets, the pipeline signs and notarizes automatically; otherwise an ad-hoc signed build is produced for testing only. You can also run the workflow manually from the Actions page and enter a version tag. In-app updates always read the latest GitHub Release of the public `northes/tinker-kit` repository.
 
 ## Contributing
 
-Issues and pull requests are welcome — report bugs or request features via [Issues](https://github.com/northes/dev-utils/issues), and submit code via Pull Requests:
+Issues and pull requests are welcome — report bugs or request features via [Issues](https://github.com/northes/tinker-kit/issues), and submit code via Pull Requests:
 
 - Run `npx tsc --noEmit` inside `frontend/` before submitting;
 - Keep the existing compact one-line code style (see `AGENTS.md` for details);

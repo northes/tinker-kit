@@ -41,7 +41,7 @@ export default function UpdatePill() {
         setState('checking');
       } else if (state === 'finished' && stateRef.current === 'checking') setState(null);
     };
-    window.addEventListener('devutils:update-check', onLocalCheck);
+    window.addEventListener('tinkerkit:update-check', onLocalCheck);
     (on('wails:updater:update-available', (e) => {
       if (dismissed.current) return;
       setVersion(formatVersion(payload(e)?.version));
@@ -85,7 +85,7 @@ export default function UpdatePill() {
         }
       }));
     return () => {
-      window.removeEventListener('devutils:update-check', onLocalCheck);
+      window.removeEventListener('tinkerkit:update-check', onLocalCheck);
     };
   }, [t]);
   const start = () => {

@@ -31,10 +31,7 @@ type windowState struct {
 }
 
 func windowStatePath() string {
-	if dir, err := os.UserConfigDir(); err == nil {
-		return filepath.Join(dir, "DevUtils", "window-state.json")
-	}
-	return filepath.Join(os.TempDir(), "devutils-window-state.json")
+	return filepath.Join(appDataDir(), "window-state.json")
 }
 
 func loadWindowState() *windowState {
@@ -61,7 +58,7 @@ func saveWindowState(s *windowState) {
 	_ = os.WriteFile(p, b, 0o600)
 }
 
-const appName = "DevUtils"
+const appName = "TinkerKit"
 
 var currentVersion = "0.0.0"
 
@@ -79,7 +76,7 @@ func matchGitHubUpdateAsset(req updater.CheckRequest, assets []githubprovider.Re
 
 func main() {
 	log.SetFlags(log.LstdFlags | log.Lmicroseconds)
-	log.Printf("[startup] DevUtils starting on %s/%s", runtime.GOOS, runtime.GOARCH)
+	log.Printf("[startup] TinkerKit starting on %s/%s", runtime.GOOS, runtime.GOARCH)
 	saved := loadWindowState()
 	width, height := 1100, 700
 	x, y := 0, 0
@@ -123,7 +120,7 @@ func main() {
 	})
 
 	gh, err := githubprovider.New(githubprovider.Config{
-		Repository:    "northes/dev-utils",
+		Repository:    "northes/tinker-kit",
 		ChecksumAsset: "SHA256SUMS",
 		AssetMatcher:  matchGitHubUpdateAsset,
 	})
@@ -226,9 +223,9 @@ func main() {
 	en := cfgService.Get().Language == "en-US"
 	tray := app.SystemTray.New()
 	if en {
-		tray.SetTooltip("DevUtils — local dev tools")
+		tray.SetTooltip("TinkerKit — local dev tools")
 	} else {
-		tray.SetTooltip("DevUtils — 本地开发工具")
+		tray.SetTooltip("TinkerKit — 本地开发工具")
 	}
 	macTrayIcon, err := trayAssets.ReadFile("assets/tray/tray-mac-template.png")
 	if err != nil {
@@ -248,7 +245,7 @@ func main() {
 			go dockService.ShowAppIcon()
 		}
 		// 临时提升窗口层级，确保从托盘菜单唤回时能越过当前前台窗口；
-		// 聚焦后恢复普通层级，避免 DevUtils 变成永久置顶窗口。
+		// 聚焦后恢复普通层级，避免 TinkerKit 变成永久置顶窗口。
 		window.SetAlwaysOnTop(true)
 		window.Show()
 		window.Focus()
@@ -265,7 +262,7 @@ func main() {
 
 	menu := app.Menu.New()
 	if en {
-		menu.Add("Open DevUtils").OnClick(func(_ *application.Context) { showFromTray() })
+		menu.Add("Open TinkerKit").OnClick(func(_ *application.Context) { showFromTray() })
 		menu.Add("Settings").OnClick(func(_ *application.Context) {
 			showFromTray()
 			app.Event.Emit("navigate", "settings")
@@ -273,7 +270,7 @@ func main() {
 		menu.AddSeparator()
 		menu.Add("Quit").OnClick(func(_ *application.Context) { quit() })
 	} else {
-		menu.Add("打开 DevUtils").OnClick(func(_ *application.Context) { showFromTray() })
+		menu.Add("打开 TinkerKit").OnClick(func(_ *application.Context) { showFromTray() })
 		menu.Add("设置").OnClick(func(_ *application.Context) {
 			showFromTray()
 			app.Event.Emit("navigate", "settings")

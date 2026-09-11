@@ -1315,14 +1315,14 @@ function AppShell() {
   }, [routerNavigate]);
   useEffect(() => {
     const onSchema = (event: Event) => setJsonSchemaOpen((event as CustomEvent<boolean>).detail);
-    window.addEventListener('devutils:json-schema', onSchema);
-    return () => window.removeEventListener('devutils:json-schema', onSchema);
+    window.addEventListener('tinkerkit:json-schema', onSchema);
+    return () => window.removeEventListener('tinkerkit:json-schema', onSchema);
   }, []);
   useEffect(() => {
     const onPipeline = (event: Event) =>
       setJsonPipelineOpen((event as CustomEvent<boolean>).detail);
-    window.addEventListener('devutils:json-pipeline', onPipeline);
-    return () => window.removeEventListener('devutils:json-pipeline', onPipeline);
+    window.addEventListener('tinkerkit:json-pipeline', onPipeline);
+    return () => window.removeEventListener('tinkerkit:json-pipeline', onPipeline);
   }, []);
   useEffect(() => {
     const onMouseDown = (event: MouseEvent) => {
@@ -1579,7 +1579,7 @@ function AppShell() {
       target.focus();
       document.execCommand('insertText', false, text);
       if (target.closest('.json-input-cm'))
-        window.dispatchEvent(new CustomEvent('devutils:json-after-fill'));
+        window.dispatchEvent(new CustomEvent('tinkerkit:json-after-fill'));
     });
   };
   useEffect(() => {

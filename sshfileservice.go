@@ -122,7 +122,7 @@ type fileTaskState struct {
 // cleanupSSHDragTemps 清理上次进程遗留的跨应用拖出临时文件。
 // 临时文件只用于交给 Finder 或聊天工具，不作为远程缓存保留。
 func cleanupSSHDragTemps() {
-	matches, err := filepath.Glob(filepath.Join(os.TempDir(), "devutils-ssh-drag-*"))
+	matches, err := filepath.Glob(filepath.Join(os.TempDir(), "tinkerkit-ssh-drag-*"))
 	if err != nil {
 		return
 	}
@@ -2201,7 +2201,7 @@ func createRemoteArchive(
 	if format == "" {
 		return errors.New("压缩文件格式不受支持")
 	}
-	archiveFile, err := os.CreateTemp("", "devutils-ssh-compress-*")
+	archiveFile, err := os.CreateTemp("", "tinkerkit-ssh-compress-*")
 	if err != nil {
 		return err
 	}
@@ -2493,7 +2493,7 @@ func (s *FileService) PrepareFileForDrag(sourceID, remotePath string) (string, e
 	if _, err := client.Lstat(remotePath); err != nil {
 		return "", err
 	}
-	directory, err := os.MkdirTemp("", "devutils-ssh-drag-")
+	directory, err := os.MkdirTemp("", "tinkerkit-ssh-drag-")
 	if err != nil {
 		return "", err
 	}
@@ -2767,7 +2767,7 @@ func (s *FileService) downloadRemotePath(ctx context.Context, client *sftp.Clien
 	if err := os.MkdirAll(filepath.Dir(localPath), 0o755); err != nil {
 		return err
 	}
-	tmp, err := os.CreateTemp(filepath.Dir(localPath), ".devutils-download-*")
+	tmp, err := os.CreateTemp(filepath.Dir(localPath), ".tinkerkit-download-*")
 	if err != nil {
 		return err
 	}

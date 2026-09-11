@@ -3,7 +3,7 @@
 #
 # The lines below are called `modelines`. See `:help modeline`
 
-name: "DevUtils"
+name: "TinkerKit"
 arch: ${GOARCH}
 platform: "linux"
 version: "0.1.0"
@@ -11,18 +11,18 @@ section: "default"
 priority: "extra"
 maintainer: ${GIT_COMMITTER_NAME} <${GIT_COMMITTER_EMAIL}>
 description: "Local-first developer utility launcher"
-vendor: "DevUtils"
-homepage: "https://wails.io"
+vendor: "TinkerKit"
+homepage: "https://github.com/northes/tinker-kit"
 license: "MIT"
 release: "1"
 
 contents:
-  - src: "./bin/DevUtils"
-    dst: "/usr/local/bin/DevUtils"
+  - src: "./bin/TinkerKit"
+    dst: "/usr/local/bin/TinkerKit"
   - src: "./build/appicon.png"
-    dst: "/usr/share/icons/hicolor/128x128/apps/DevUtils.png"
-  - src: "./build/linux/DevUtils.desktop"
-    dst: "/usr/share/applications/DevUtils.desktop"
+    dst: "/usr/share/icons/hicolor/128x128/apps/TinkerKit.png"
+  - src: "./build/linux/TinkerKit.desktop"
+    dst: "/usr/share/applications/TinkerKit.desktop"
 
 # Default dependencies for the GTK4 + WebKitGTK 6.0 stack (Ubuntu 24.04+ / Debian 13+)
 depends:

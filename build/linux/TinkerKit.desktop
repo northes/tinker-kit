@@ -1,13 +1,13 @@
 [Desktop Entry]
 Version=1.0
-Name=DevUtils
+Name=TinkerKit
 Comment=Local-first developer utility launcher
 # The Exec line includes %u to pass the URL to the application
-Exec=/usr/local/bin/DevUtils %u
+Exec=/usr/local/bin/TinkerKit %u
 Terminal=false
 Type=Application
-Icon=DevUtils
+Icon=TinkerKit
 Categories=Utility;
-StartupWMClass=DevUtils
+StartupWMClass=TinkerKit
 
  

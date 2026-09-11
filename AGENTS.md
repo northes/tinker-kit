@@ -23,7 +23,7 @@
 ## 全局不变量
 
 - `default-light` 和 `default-dark` 是持久化配置值，不得改名、复用或删除。
-- 设置页配置由 Go `ConfigService` 管理，前端不得写入设置 localStorage；唯一页面恢复 key 是 `devutils.lastPage`。
+- 设置页配置由 Go `ConfigService` 管理，前端不得写入设置 localStorage；唯一页面恢复 key 是 `devutils.lastPage`；应用配置目录为 `TinkerKit`。
 - `frontend/bindings/` 是 Wails 生成文件，永远不要手工编辑；Go 导出类型变化后必须重新生成 bindings。
 - 所有项目开发、构建、打包和运行任务以根目录 `Taskfile.yml` 为准，通过 `wails3 task <name>` 执行。`main.go` 嵌入 `frontend/dist`，Go 构建前必须有前端产物。
 - 不使用 Playwright、`playwright-cli`、Computer Use 或任何浏览器自动化进行测试和验证。

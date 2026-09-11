@@ -11,7 +11,7 @@ import { Button } from './ui/button';
 type FatalErrorBoundaryProps = { children: React.ReactNode };
 type FatalErrorBoundaryState = { error: Error | null };
 
-const AUTO_RELOAD_KEY = 'devutils.fatal-auto-reload';
+const AUTO_RELOAD_KEY = 'tinkerkit.fatal-auto-reload';
 
 function isChunkLoadError(error: Error) {
   return /chunk|dynamically imported module|failed to fetch/i.test(error.message);

@@ -110,8 +110,8 @@ jobs:
 
       - name: 写入应用版本
         run: |
-          /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString ${{ steps.version.outputs.version }}" bin/DevUtils.app/Contents/Info.plist
-          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion ${{ steps.version.outputs.version }}" bin/DevUtils.app/Contents/Info.plist
+          /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString ${{ steps.version.outputs.version }}" bin/TinkerKit.app/Contents/Info.plist
+          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion ${{ steps.version.outputs.version }}" bin/TinkerKit.app/Contents/Info.plist
 
       - name: 导入 Apple 签名证书
         if: ${{ env.APPLE_CERTIFICATE != '' }}
@@ -127,9 +127,9 @@ jobs:
           APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
         run: |
           if [ -n "$APPLE_SIGNING_IDENTITY" ]; then
-            codesign --force --deep --options runtime --timestamp --sign "$APPLE_SIGNING_IDENTITY" bin/DevUtils.app
+            codesign --force --deep --options runtime --timestamp --sign "$APPLE_SIGNING_IDENTITY" bin/TinkerKit.app
           else
-            codesign --force --deep --sign - bin/DevUtils.app
+            codesign --force --deep --sign - bin/TinkerKit.app
           fi
 
       - name: 公证并装订应用
@@ -139,19 +139,19 @@ jobs:
           APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
-          ditto -c -k --sequesterRsrc --keepParent bin/DevUtils.app bin/notarize.zip
+          ditto -c -k --sequesterRsrc --keepParent bin/TinkerKit.app bin/notarize.zip
           xcrun notarytool submit bin/notarize.zip --apple-id "$APPLE_ID" --password "$APPLE_APP_PASSWORD" --team-id "$APPLE_TEAM_ID" --wait
-          xcrun stapler staple bin/DevUtils.app
+          xcrun stapler staple bin/TinkerKit.app
 
       - name: 生成 ZIP 更新包与 DMG 安装包
         shell: bash
         run: |
           version="${{ steps.version.outputs.version }}"
-          zip="DevUtils-${version}-darwin-universal.zip"
-          dmg="DevUtils-${version}-darwin-universal.dmg"
-          ditto -c -k --sequesterRsrc --keepParent bin/DevUtils.app "bin/$zip"
+          zip="TinkerKit-${version}-darwin-universal.zip"
+          dmg="TinkerKit-${version}-darwin-universal.dmg"
+          ditto -c -k --sequesterRsrc --keepParent bin/TinkerKit.app "bin/$zip"
           wails3 task darwin:create:dmg
-          mv bin/DevUtils.dmg "bin/$dmg"
+          mv bin/TinkerKit.dmg "bin/$dmg"
           mkdir -p release
           mv "bin/$zip" "bin/$dmg" release/
 
@@ -213,7 +213,7 @@ jobs:
           } > release/RELEASE_NOTES.md
 
           cd release
-          sha256sum DevUtils-* > SHA256SUMS
+          sha256sum TinkerKit-* > SHA256SUMS
 
       - name: 创建或更新 Release
         uses: softprops/action-gh-release@v2
@@ -221,5 +221,5 @@ jobs:
           tag_name: ${{ steps.release.outputs.tag }}
           body_path: release/RELEASE_NOTES.md
           files: |
-            release/DevUtils-*
+            release/TinkerKit-*
             release/SHA256SUMS

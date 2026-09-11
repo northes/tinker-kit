@@ -5,10 +5,10 @@
 	"info": {
 		"0000": {
 			"ProductVersion": "0.1.0",
-			"CompanyName": "DevUtils",
+			"CompanyName": "TinkerKit",
 			"FileDescription": "Local-first developer utility launcher",
-			"LegalCopyright": "(c) 2026, DevUtils",
-			"ProductName": "DevUtils",
+			"LegalCopyright": "(c) 2026, TinkerKit",
+			"ProductName": "TinkerKit",
 			"Comments": "Local-first developer utility launcher"
 		}
 	}

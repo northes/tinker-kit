@@ -3,7 +3,7 @@ set -eu
 
 script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 root_dir=$(CDPATH= cd -- "$script_dir/../.." && pwd)
-logo_svg="$script_dir/devutils-logo.svg"
+logo_svg="$script_dir/tinkerkit-logo.svg"
 tray_svg="$script_dir/brackets-curly-duotone-white.svg"
 
 for command in rsvg-convert wails3; do

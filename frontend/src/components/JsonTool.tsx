@@ -657,10 +657,10 @@ export default function JsonTool({
     }
   };
   useEffect(() => {
-    window.dispatchEvent(new CustomEvent('devutils:json-schema', { detail: schema }));
+    window.dispatchEvent(new CustomEvent('tinkerkit:json-schema', { detail: schema }));
   }, [schema]);
   useEffect(() => {
-    window.dispatchEvent(new CustomEvent('devutils:json-pipeline', { detail: pipelineMode }));
+    window.dispatchEvent(new CustomEvent('tinkerkit:json-pipeline', { detail: pipelineMode }));
   }, [pipelineMode]);
   useEffect(() => {
     if (!schema) return;
@@ -990,8 +990,8 @@ export default function JsonTool({
       const next = tryAutoFormat(src);
       if (next !== src) setInput(next);
     };
-    window.addEventListener('devutils:json-after-fill', onFill);
-    return () => window.removeEventListener('devutils:json-after-fill', onFill);
+    window.addEventListener('tinkerkit:json-after-fill', onFill);
+    return () => window.removeEventListener('tinkerkit:json-after-fill', onFill);
   }, []);
   useEffect(() => {
     if (!schema) return;

@@ -1,6 +1,6 @@
 {
   "app": {
-    "name": "DevUtils"
+    "name": "TinkerKit"
   },
   "crash": {
     "title": "界面遇到问题",
@@ -1189,7 +1189,7 @@
     "cancel": "取消"
   },
   "quitDialog": {
-    "title": "退出 DevUtils？",
+    "title": "退出 TinkerKit？",
     "body": "应用窗口将关闭，托盘服务也会停止。本机历史和设置会保留。",
     "confirm": "退出",
     "cancel": "取消"

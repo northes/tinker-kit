@@ -3,6 +3,7 @@ plugins {
 }
 
 android {
+    // Wails beta.19 的 JNI 导出符号固定使用 com.wails.app，不能随 applicationId 改名。
     namespace 'com.wails.app'
     compileSdk 35
 
@@ -11,7 +12,7 @@ android {
     }
 
     defaultConfig {
-        applicationId "com.wails.app"
+        applicationId "com.tinkerkit.app"
         minSdk 21
         targetSdk 35
         versionCode 1

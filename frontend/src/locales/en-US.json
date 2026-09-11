@@ -1,6 +1,6 @@
 {
   "app": {
-    "name": "DevUtils"
+    "name": "TinkerKit"
   },
   "crash": {
     "title": "The interface ran into a problem",
@@ -912,7 +912,7 @@
     "quit": "Quit application",
     "quitDesc": "Close the window and quit the tray. Local history and settings are kept.",
     "quitFailed": "Could not quit the application",
-    "quitFailedDesc": "DevUtils is still running. Try again in a moment."
+    "quitFailedDesc": "TinkerKit is still running. Try again in a moment."
   },
   "history": {
     "title": "History",
@@ -1189,7 +1189,7 @@
     "cancel": "Cancel"
   },
   "quitDialog": {
-    "title": "Quit DevUtils?",
+    "title": "Quit TinkerKit?",
     "body": "The window will close and the tray service will stop. Local history and settings are kept.",
     "confirm": "Quit",
     "cancel": "Cancel"

@@ -338,7 +338,7 @@ export interface SidebarToolConfig {
 }
 
 /**
- * SystemInfo 描述运行 DevUtils 的操作系统环境。
+ * SystemInfo 描述运行 TinkerKit 的操作系统环境。
  */
 export interface SystemInfo {
     "os": string;

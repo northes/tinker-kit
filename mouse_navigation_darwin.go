@@ -8,43 +8,43 @@ package main
 
 #import <Cocoa/Cocoa.h>
 
-extern void devutilsMouseNavigationSwipeCallback(int direction, int phase);
+extern void tinkerkitMouseNavigationSwipeCallback(int direction, int phase);
 
-static id devutilsMouseNavigationMonitor = nil;
+static id tinkerkitMouseNavigationMonitor = nil;
 
-static void devutilsInstallMouseNavigationMonitorOnMain(void) {
-	if (devutilsMouseNavigationMonitor != nil) {
+static void tinkerkitInstallMouseNavigationMonitorOnMain(void) {
+	if (tinkerkitMouseNavigationMonitor != nil) {
 		return;
 	}
 
-	devutilsMouseNavigationMonitor = [NSEvent addLocalMonitorForEventsMatchingMask:NSEventMaskAny
+	tinkerkitMouseNavigationMonitor = [NSEvent addLocalMonitorForEventsMatchingMask:NSEventMaskAny
 		handler:^NSEvent *(NSEvent *event) {
 			if ([event type] != NSEventTypeSwipe) {
 				return event;
 			}
 			CGFloat deltaX = [event deltaX];
 			int direction = deltaX < 0 ? 1 : (deltaX > 0 ? 2 : 0);
-			devutilsMouseNavigationSwipeCallback(direction, (int)[event phase]);
+			tinkerkitMouseNavigationSwipeCallback(direction, (int)[event phase]);
 			return nil;
 		}];
 }
 
-static void devutilsInstallMouseNavigationMonitor(void) {
+static void tinkerkitInstallMouseNavigationMonitor(void) {
 	if ([NSThread isMainThread]) {
-		devutilsInstallMouseNavigationMonitorOnMain();
+		tinkerkitInstallMouseNavigationMonitorOnMain();
 		return;
 	}
 	dispatch_sync(dispatch_get_main_queue(), ^{
-		devutilsInstallMouseNavigationMonitorOnMain();
+		tinkerkitInstallMouseNavigationMonitorOnMain();
 	});
 }
 
-static void devutilsRemoveMouseNavigationMonitor(void) {
-	if (devutilsMouseNavigationMonitor == nil) {
+static void tinkerkitRemoveMouseNavigationMonitor(void) {
+	if (tinkerkitMouseNavigationMonitor == nil) {
 		return;
 	}
-	[NSEvent removeMonitor:devutilsMouseNavigationMonitor];
-	devutilsMouseNavigationMonitor = nil;
+	[NSEvent removeMonitor:tinkerkitMouseNavigationMonitor];
+	tinkerkitMouseNavigationMonitor = nil;
 }
 */
 import "C"
@@ -55,7 +55,7 @@ var mouseNavigationMu sync.RWMutex
 var mouseNavigationSwipeHandler func(int, int)
 
 func installMouseNavigationMonitor() {
-	C.devutilsInstallMouseNavigationMonitor()
+	C.tinkerkitInstallMouseNavigationMonitor()
 }
 
 func installMouseNavigationSwipeMonitor(handler func(int, int)) {
@@ -65,14 +65,14 @@ func installMouseNavigationSwipeMonitor(handler func(int, int)) {
 }
 
 func removeMouseNavigationMonitor() {
-	C.devutilsRemoveMouseNavigationMonitor()
+	C.tinkerkitRemoveMouseNavigationMonitor()
 	mouseNavigationMu.Lock()
 	mouseNavigationSwipeHandler = nil
 	mouseNavigationMu.Unlock()
 }
 
-//export devutilsMouseNavigationSwipeCallback
-func devutilsMouseNavigationSwipeCallback(direction C.int, phase C.int) {
+//export tinkerkitMouseNavigationSwipeCallback
+func tinkerkitMouseNavigationSwipeCallback(direction C.int, phase C.int) {
 	mouseNavigationMu.RLock()
 	handler := mouseNavigationSwipeHandler
 	mouseNavigationMu.RUnlock()

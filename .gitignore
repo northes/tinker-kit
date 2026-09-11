@@ -18,7 +18,7 @@ build/android/gen/
 *.test
 *.out
 *.prof
-dev-utils
+tinker-kit
 dist/
 tmp/
 

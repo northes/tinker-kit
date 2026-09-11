@@ -1,5 +1,5 @@
 ---
-name: DevUtils
+name: TinkerKit
 description: Quiet Instrument 风格的本地开发者操作台
 colors:
   primary-light: "oklch(0.205 0 0)"
@@ -72,7 +72,7 @@ components:
     height: "30px"
 ---
 
-# Design System: DevUtils
+# Design System: TinkerKit
 
 <!-- impeccable:design-schema 2 -->
 
@@ -80,7 +80,7 @@ components:
 
 **Creative North Star: "Quiet Instrument（静默仪器）"**
 
-DevUtils 采用 Operate 模式：它是一台长期使用的本地调试仪器，不是营销页面。界面让开发者和运维人员快速定位工具、输入数据、执行动作并读取结果，视觉表达服从扫描效率、可预测性和桌面应用习惯。
+TinkerKit 采用 Operate 模式：它是一台长期使用的本地调试仪器，不是营销页面。界面让开发者和运维人员快速定位工具、输入数据、执行动作并读取结果，视觉表达服从扫描效率、可预测性和桌面应用习惯。
 
 视觉世界保持冷静、直接和高密度。层级由稳定网格、1px 边界、明度差和克制的中性焦点建立；不使用卡片堆叠、渐变、玻璃拟态或装饰性动效。shadcn/ui 默认浅色与默认深色是仅有的两个主题，Graphite、Paper、Pine、Ink 等旧色板不再属于现行系统。
 

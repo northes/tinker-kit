@@ -341,7 +341,7 @@ func formatSSHKnownHostLine(entry SSHKnownHost, marker string) (string, error) {
 }
 
 func validateSSHKnownHostLine(line string) error {
-	file, err := os.CreateTemp("", ".devutils-known-host-*")
+	file, err := os.CreateTemp("", ".tinkerkit-known-host-*")
 	if err != nil {
 		return err
 	}

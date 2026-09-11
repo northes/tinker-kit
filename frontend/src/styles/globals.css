@@ -121,14 +121,14 @@
         center / 0 no-repeat;
       mask: url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA0MCA0MCI+PGRlZnM+PGZpbHRlciBpZD0iYmx1ciI+PGZlR2F1c3NpYW5CbHVyIHN0ZERldmlhdGlvbj0iMiIvPjwvZmlsdGVyPjwvZGVmcz48Y2lyY2xlIGN4PSIyMCIgY3k9IjIwIiByPSIxOCIgZmlsbD0id2hpdGUiIGZpbHRlcj0idXJsKCNibHVyKSIvPjwvc3ZnPg==')
         center / 0 no-repeat;
-      animation: devutils-theme-reveal 720ms both;
+      animation: tinkerkit-theme-reveal 720ms both;
     }
 
     .dark::view-transition-new(root) {
-      animation: devutils-theme-reveal 720ms both;
+      animation: tinkerkit-theme-reveal 720ms both;
     }
 
-    @keyframes devutils-theme-reveal {
+    @keyframes tinkerkit-theme-reveal {
       to {
         -webkit-mask-size: 200vmax;
         mask-size: 200vmax;

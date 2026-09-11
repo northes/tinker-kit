@@ -8,27 +8,27 @@
         AllowPromptForPassword="false">
     </Settings>
     <Installer
-        Path="dev-utils"
+        Path="TinkerKit"
         Arguments=""
-        InstallLocation="C:\Program Files\My Company\My Product">
+        InstallLocation="C:\Program Files\TinkerKit\TinkerKit">
     </Installer>
     <PackageInformation
-        PackageName="My Product"
-        PackageDisplayName="My Product"
-        PublisherName="CN=My Company"
-        PublisherDisplayName="My Company"
+        PackageName="TinkerKit"
+        PackageDisplayName="TinkerKit"
+        PublisherName="CN=TinkerKit"
+        PublisherDisplayName="TinkerKit"
         Version="0.1.0.0"
-        PackageDescription="A dev-utils application">
+        PackageDescription="TinkerKit developer utility application">
         <Capabilities>
             <Capability Name="runFullTrust" />
             
         </Capabilities>
         <Applications>
             <Application
-                Id="com.example.devutils"
-                Description="A dev-utils application"
-                DisplayName="My Product"
-                ExecutableName="dev-utils"
+                Id="com.tinkerkit.app"
+                Description="TinkerKit developer utility application"
+                DisplayName="TinkerKit"
+                ExecutableName="TinkerKit"
                 EntryPoint="Windows.FullTrustApplication">
                 
             </Application>
@@ -41,13 +41,13 @@
         </Dependencies>
         <Properties>
             <Framework>false</Framework>
-            <DisplayName>My Product</DisplayName>
-            <PublisherDisplayName>My Company</PublisherDisplayName>
-            <Description>A dev-utils application</Description>
+            <DisplayName>TinkerKit</DisplayName>
+            <PublisherDisplayName>TinkerKit</PublisherDisplayName>
+            <Description>TinkerKit developer utility application</Description>
             <Logo>Assets\AppIcon.png</Logo>
         </Properties>
     </PackageInformation>
-    <SaveLocation PackagePath="dev-utils.msix" />
+    <SaveLocation PackagePath="TinkerKit.msix" />
     <PackageIntegrity>
         <CertificatePath></CertificatePath>
     </PackageIntegrity>

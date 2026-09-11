@@ -5,19 +5,19 @@
 !include "FileFunc.nsh"
 
 !ifndef INFO_PROJECTNAME
-    !define INFO_PROJECTNAME "dev-utils"
+    !define INFO_PROJECTNAME "TinkerKit"
 !endif
 !ifndef INFO_COMPANYNAME
-    !define INFO_COMPANYNAME "DevUtils"
+    !define INFO_COMPANYNAME "TinkerKit"
 !endif
 !ifndef INFO_PRODUCTNAME
-    !define INFO_PRODUCTNAME "DevUtils"
+    !define INFO_PRODUCTNAME "TinkerKit"
 !endif
 !ifndef INFO_PRODUCTVERSION
     !define INFO_PRODUCTVERSION "0.1.0"
 !endif
 !ifndef INFO_COPYRIGHT
-    !define INFO_COPYRIGHT "(c) 2026, DevUtils"
+    !define INFO_COPYRIGHT "(c) 2026, TinkerKit"
 !endif
 !ifndef PRODUCT_EXECUTABLE
     !define PRODUCT_EXECUTABLE "${INFO_PROJECTNAME}.exe"
