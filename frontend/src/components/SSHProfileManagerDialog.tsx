@@ -11,6 +11,7 @@ import { useTranslation } from 'react-i18next';
 import {
   ArrowClockwise,
   CheckCircle,
+  DotsThreeOutlineVertical,
   DownloadSimple,
   PencilSimple,
   Plus,
@@ -47,6 +48,14 @@ import {
   DialogHeader,
   DialogTitle,
 } from './ui/dialog';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from './ui/dropdown-menu';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { Spinner } from './ui/spinner';
@@ -169,6 +178,7 @@ function SSHProfileManagerDialog({
   const { t } = useTranslation();
   const [view, setView] = useState<'list' | 'form'>('list');
   const [draft, setDraft] = useState<SSHProfile>(emptyProfile);
+  const [authMode, setAuthMode] = useState<'password' | 'key'>('password');
   const [formError, setFormError] = useState('');
   const [listError, setListError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -221,6 +231,7 @@ function SSHProfileManagerDialog({
   const startNew = () => {
     setDraft({ ...emptyProfile });
     formBaselineRef.current = { ...emptyProfile };
+    setAuthMode('password');
     setFormError('');
     setView('form');
   };
@@ -228,6 +239,9 @@ function SSHProfileManagerDialog({
   const startEdit = (profile: SSHProfile) => {
     setDraft({ ...profile });
     formBaselineRef.current = { ...profile };
+    setAuthMode(
+      profile.privateKey || profile.privateKeyPath || profile.keyPassphrase ? 'key' : 'password',
+    );
     setFormError('');
     setView('form');
   };
@@ -261,7 +275,18 @@ function SSHProfileManagerDialog({
     setBusy(true);
     setFormError('');
     try {
-      const saved = await SaveSSHProfile({ ...draft, port: Number(draft.port) || 22 });
+      // 认证方式二选一：保存时清掉未选方式留下的旧字段，避免残留数据触发另一种认证。
+      const payload: SSHProfile = { ...draft, port: Number(draft.port) || 22 };
+      if (!imported) {
+        if (authMode === 'password') {
+          payload.privateKey = '';
+          payload.privateKeyPath = '';
+          payload.keyPassphrase = '';
+        } else {
+          payload.password = '';
+        }
+      }
+      const saved = await SaveSSHProfile(payload);
       onProfilesChange(
         profiles.some((item) => item.id === saved.id)
           ? profiles.map((item) => (item.id === saved.id ? saved : item))
@@ -368,7 +393,7 @@ function SSHProfileManagerDialog({
               className="mx-6 mt-4 flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive"
               role="alert"
             >
-              <WarningCircle className="mt-0.5 size-4 shrink-0" />
+              <WarningCircle weight="duotone" className="mt-0.5 size-4 shrink-0" />
               <span className="min-w-0 break-words">{listError}</span>
             </div>
           ) : null}
@@ -377,14 +402,9 @@ function SSHProfileManagerDialog({
               <div className="grid gap-6">
                 <section className="grid gap-3">
                   <div className="flex items-center justify-between gap-3">
-                    <div>
-                      <h3 className="text-sm font-medium text-foreground">
-                        {t('sshProfiles.savedTitle')}
-                      </h3>
-                      <p className="mt-1 text-[10px] leading-4 text-muted-foreground">
-                        {t('sshProfiles.savedDescription')}
-                      </p>
-                    </div>
+                    <h3 className="text-sm font-medium text-foreground">
+                      {t('sshProfiles.savedTitle')}
+                    </h3>
                     <div className="flex shrink-0 items-center gap-1">
                       <Button
                         variant="ghost"
@@ -394,11 +414,12 @@ function SSHProfileManagerDialog({
                         aria-label={t('sshProfiles.refresh')}
                       >
                         <ArrowClockwise
+                          weight="duotone"
                           className={loading ? 'animate-spin motion-reduce:animate-none' : ''}
                         />
                       </Button>
                       <Button variant="outline" size="sm" onClick={startNew} disabled={busy}>
-                        <Plus data-icon="inline-start" />
+                        <Plus data-icon="inline-start" weight="duotone" />
                         {t('sshProfiles.add')}
                       </Button>
                     </div>
@@ -436,42 +457,60 @@ function SSHProfileManagerDialog({
                           <Button
                             variant="ghost"
                             size="icon-sm"
-                            onClick={() => void test(profile)}
-                            disabled={busy || Boolean(testingID)}
-                            aria-label={t('sshProfiles.test')}
-                          >
-                            {testingID === profile.id ? <Spinner /> : <CheckCircle />}
-                          </Button>
-                          {profileIsImported(profile) ? (
-                            <Button
-                              variant="ghost"
-                              size="icon-sm"
-                              onClick={() => void refreshImported(profile)}
-                              disabled={busy}
-                              aria-label={t('sshProfiles.updateFromLocal')}
-                            >
-                              <ArrowClockwise />
-                            </Button>
-                          ) : null}
-                          <Button
-                            variant="ghost"
-                            size="icon-sm"
                             onClick={() => startEdit(profile)}
                             disabled={busy}
                             aria-label={t('sshProfiles.edit')}
                           >
-                            <PencilSimple />
+                            <PencilSimple weight="duotone" />
                           </Button>
-                          <Button
-                            variant="ghost"
-                            size="icon-sm"
-                            className="text-muted-foreground hover:text-destructive"
-                            onClick={() => setDeleteTarget(profile)}
-                            disabled={busy}
-                            aria-label={t('sshProfiles.delete')}
-                          >
-                            <Trash />
-                          </Button>
+                          <DropdownMenu>
+                            <DropdownMenuTrigger
+                              render={
+                                <Button
+                                  variant="ghost"
+                                  size="icon-sm"
+                                  className="text-muted-foreground"
+                                  disabled={busy}
+                                  aria-label={t('sshProfiles.moreActions')}
+                                />
+                              }
+                            >
+                              <DotsThreeOutlineVertical weight="duotone" />
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end" className="min-w-48">
+                              <DropdownMenuGroup>
+                                <DropdownMenuItem
+                                  onClick={() => void test(profile)}
+                                  disabled={busy || Boolean(testingID)}
+                                >
+                                  {testingID === profile.id ? (
+                                    <Spinner data-icon="inline-start" />
+                                  ) : (
+                                    <CheckCircle data-icon="inline-start" weight="duotone" />
+                                  )}
+                                  {t('sshProfiles.test')}
+                                </DropdownMenuItem>
+                                {profileIsImported(profile) ? (
+                                  <DropdownMenuItem
+                                    onClick={() => void refreshImported(profile)}
+                                    disabled={busy}
+                                  >
+                                    <ArrowClockwise data-icon="inline-start" weight="duotone" />
+                                    {t('sshProfiles.updateFromLocal')}
+                                  </DropdownMenuItem>
+                                ) : null}
+                              </DropdownMenuGroup>
+                              <DropdownMenuSeparator />
+                              <DropdownMenuItem
+                                variant="destructive"
+                                onClick={() => setDeleteTarget(profile)}
+                                disabled={busy}
+                              >
+                                <Trash data-icon="inline-start" weight="duotone" />
+                                {t('sshProfiles.delete')}
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
                         </div>
                       ))}
                     </div>
@@ -483,14 +522,9 @@ function SSHProfileManagerDialog({
                 </section>
                 <section className="grid gap-3">
                   <div className="flex items-center justify-between gap-3">
-                    <div>
-                      <h3 className="text-sm font-medium text-foreground">
-                        {t('sshProfiles.localTitle')}
-                      </h3>
-                      <p className="mt-1 text-[10px] leading-4 text-muted-foreground">
-                        {t('sshProfiles.localDescription')}
-                      </p>
-                    </div>
+                    <h3 className="text-sm font-medium text-foreground">
+                      {t('sshProfiles.localTitle')}
+                    </h3>
                     <Button
                       variant="ghost"
                       size="icon-sm"
@@ -499,6 +533,7 @@ function SSHProfileManagerDialog({
                       aria-label={t('sshProfiles.refresh')}
                     >
                       <ArrowClockwise
+                        weight="duotone"
                         className={localLoading ? 'animate-spin motion-reduce:animate-none' : ''}
                       />
                     </Button>
@@ -534,7 +569,7 @@ function SSHProfileManagerDialog({
                                 t('sshProfiles.imported')
                               ) : (
                                 <>
-                                  <DownloadSimple data-icon="inline-start" />
+                                  <DownloadSimple data-icon="inline-start" weight="duotone" />
                                   {t('sshProfiles.import')}
                                 </>
                               )}
@@ -554,7 +589,7 @@ function SSHProfileManagerDialog({
               <div className="mx-auto grid w-full max-w-[560px] gap-5">
                 {imported ? (
                   <div className="flex items-start gap-2 rounded-md border border-border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
-                    <CheckCircle className="mt-0.5 size-4 shrink-0" />
+                    <CheckCircle weight="duotone" className="mt-0.5 size-4 shrink-0" />
                     <span>{t('sshProfiles.importedHint', { alias: draft.originAlias })}</span>
                   </div>
                 ) : null}
@@ -600,48 +635,86 @@ function SSHProfileManagerDialog({
                     />
                   </div>
                   <div className="grid gap-1.5">
-                    <Label htmlFor="ssh-profile-password">{t('sshProfiles.password')}</Label>
-                    <Input
-                      id="ssh-profile-password"
-                      type="password"
-                      value={draft.password}
-                      disabled={imported}
-                      onChange={(event) => setField('password', event.target.value)}
-                    />
+                    <span className="text-sm leading-none font-medium">
+                      {t('sshProfiles.authMethod')}
+                    </span>
+                    <div
+                      role="group"
+                      aria-label={t('sshProfiles.authMethod')}
+                      className="flex w-fit gap-1"
+                    >
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant={authMode === 'password' ? 'secondary' : 'ghost'}
+                        aria-pressed={authMode === 'password'}
+                        disabled={imported}
+                        onClick={() => setAuthMode('password')}
+                      >
+                        {t('sshProfiles.authPassword')}
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant={authMode === 'key' ? 'secondary' : 'ghost'}
+                        aria-pressed={authMode === 'key'}
+                        disabled={imported}
+                        onClick={() => setAuthMode('key')}
+                      >
+                        {t('sshProfiles.authKey')}
+                      </Button>
+                    </div>
                   </div>
-                  <div className="grid gap-1.5">
-                    <Label htmlFor="ssh-profile-private-key">{t('sshProfiles.privateKey')}</Label>
-                    <Textarea
-                      id="ssh-profile-private-key"
-                      value={draft.privateKey}
-                      disabled={imported}
-                      onChange={(event) => setField('privateKey', event.target.value)}
-                      className="min-h-24 font-mono text-xs"
-                    />
-                  </div>
-                  <div className="grid gap-1.5">
-                    <Label htmlFor="ssh-profile-private-key-path">
-                      {t('sshProfiles.privateKeyPath')}
-                    </Label>
-                    <Input
-                      id="ssh-profile-private-key-path"
-                      value={draft.privateKeyPath}
-                      disabled={imported}
-                      onChange={(event) => setField('privateKeyPath', event.target.value)}
-                    />
-                  </div>
-                  <div className="grid gap-1.5">
-                    <Label htmlFor="ssh-profile-key-passphrase">
-                      {t('sshProfiles.keyPassphrase')}
-                    </Label>
-                    <Input
-                      id="ssh-profile-key-passphrase"
-                      type="password"
-                      value={draft.keyPassphrase}
-                      disabled={imported}
-                      onChange={(event) => setField('keyPassphrase', event.target.value)}
-                    />
-                  </div>
+                  {authMode === 'password' ? (
+                    <div className="grid gap-1.5">
+                      <Label htmlFor="ssh-profile-password">{t('sshProfiles.password')}</Label>
+                      <Input
+                        id="ssh-profile-password"
+                        type="password"
+                        value={draft.password}
+                        disabled={imported}
+                        onChange={(event) => setField('password', event.target.value)}
+                      />
+                    </div>
+                  ) : (
+                    <>
+                      <div className="grid gap-1.5">
+                        <Label htmlFor="ssh-profile-private-key">
+                          {t('sshProfiles.privateKey')}
+                        </Label>
+                        <Textarea
+                          id="ssh-profile-private-key"
+                          value={draft.privateKey}
+                          disabled={imported}
+                          onChange={(event) => setField('privateKey', event.target.value)}
+                          className="min-h-24 font-mono text-xs"
+                        />
+                      </div>
+                      <div className="grid gap-1.5">
+                        <Label htmlFor="ssh-profile-private-key-path">
+                          {t('sshProfiles.privateKeyPath')}
+                        </Label>
+                        <Input
+                          id="ssh-profile-private-key-path"
+                          value={draft.privateKeyPath}
+                          disabled={imported}
+                          onChange={(event) => setField('privateKeyPath', event.target.value)}
+                        />
+                      </div>
+                      <div className="grid gap-1.5">
+                        <Label htmlFor="ssh-profile-key-passphrase">
+                          {t('sshProfiles.keyPassphrase')}
+                        </Label>
+                        <Input
+                          id="ssh-profile-key-passphrase"
+                          type="password"
+                          value={draft.keyPassphrase}
+                          disabled={imported}
+                          onChange={(event) => setField('keyPassphrase', event.target.value)}
+                        />
+                      </div>
+                    </>
+                  )}
                 </div>
                 {formError ? (
                   <p className="m-0 text-xs text-destructive" role="alert">
