@@ -32,8 +32,8 @@ body {
   overflow: hidden;
   line-height: 1.6;
 }
-/* Base UI 模态内部 backdrop 使用内联 inset:0，会盖住标题栏导致无法拖动窗口。 */
-[data-base-ui-inert] {
+/* 只偏移 Base UI 的内部遮罩；其他 inert 浮层（如 Dialog）保持原定位。 */
+[data-base-ui-inert][role='presentation'] {
   top: var(--app-titlebar-height) !important;
 }
 button,
