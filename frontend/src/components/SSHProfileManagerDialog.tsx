@@ -743,7 +743,7 @@ function SSHProfileManagerDialog({
               </div>
             )}
           </div>
-          <DialogFooter className="flex-none border-t border-border px-6 py-4">
+          <DialogFooter className="mx-0 mb-0 flex-none rounded-b-xl px-6 py-4">
             <Button
               variant="outline"
               onClick={() => (view === 'list' ? requestClose(false) : requestBack())}
