@@ -1030,6 +1030,9 @@ export default function ImageManagerTool({
   const pendingImagesRef = useRef(false);
   const pendingTasksRef = useRef<ImageTaskSnapshot | null>(null);
   const rebuildImagesRef = useRef<(() => DockerImage[]) | null>(null);
+  // 手动刷新标记：只有用户主动刷新触发的 update 任务完成才提示，
+  // 每 2 分钟的定时轮询保持静默。
+  const manualRefreshPending = useRef(false);
   const applyTasks = useCallback((snapshot: ImageTaskSnapshot) => {
     if (!activeRef.current) {
       pendingTasksRef.current = applyImageTaskSnapshot(pendingTasksRef.current, snapshot);
@@ -1081,16 +1084,73 @@ export default function ImageManagerTool({
     setLoadError('');
     setReloadNonce((value) => value + 1);
   }, [source.id, sourceProfileMissing, t]);
+  const refreshList = useCallback(() => {
+    manualRefreshPending.current = true;
+    requestWatchReload();
+  }, [requestWatchReload]);
   const restartWatch = useCallback(() => {
     setConnectionPending(true);
     setLoadError('');
     setReloadNonce((value) => value + 1);
   }, []);
 
+  // 导出与拉取在 Go 侧异步执行，前端只能从任务快照得知结果。首次快照只登记状态，
+  // 之后的终态变化才提示，避免工具重新挂载时对历史任务重复弹 toast。
+  const taskToastRevision = useRef(-1);
+  const taskToastSeeded = useRef(false);
+  const taskToastStatuses = useRef<Map<string, string>>(new Map());
+  const notifyTaskResults = useCallback(
+    (snapshot: ImageTaskSnapshot) => {
+      if (snapshot.revision <= taskToastRevision.current) return;
+      taskToastRevision.current = snapshot.revision;
+      const snapshotTasks = snapshot.tasks ?? [];
+      if (!taskToastSeeded.current) {
+        taskToastSeeded.current = true;
+        taskToastStatuses.current = new Map(
+          snapshotTasks.map((task) => [task.id, task.status] as const),
+        );
+        return;
+      }
+      const stageKeys: Record<string, string> = {
+        export: 'imageManagerTool.taskStageExport',
+        pull: 'imageManagerTool.taskStagePull',
+        update: 'imageManagerTool.taskStageUpdate',
+      };
+      const isTerminal = (status: string) =>
+        status === 'success' || status === 'failed' || status === 'canceled';
+      const nextStatuses = new Map<string, string>();
+      for (const task of snapshotTasks) {
+        nextStatuses.set(task.id, task.status);
+        if (!(task.type in stageKeys)) continue;
+        if (!isTerminal(task.status)) continue;
+        if (isTerminal(taskToastStatuses.current.get(task.id) ?? '')) continue;
+        if (task.type === 'update') {
+          // 定时轮询也会产生 update 任务；只有用户主动刷新的那一轮才提示。
+          if (!manualRefreshPending.current) continue;
+          manualRefreshPending.current = false;
+        }
+        if (task.status === 'success') {
+          toast.add({
+            title: t('imageManagerTool.taskCompleted', { task: t(stageKeys[task.type]) }),
+          });
+        } else if (task.status === 'failed') {
+          toast.add({
+            title: t('imageManagerTool.taskFailed', { task: t(stageKeys[task.type]) }),
+            description: task.error || undefined,
+            type: 'error',
+          });
+        }
+      }
+      taskToastStatuses.current = nextStatuses;
+    },
+    [t],
+  );
   useEffect(() => {
     let active = true;
     const apply = (snapshot: ImageTaskSnapshot) => {
-      if (active) applyTasks(snapshot);
+      if (!active) return;
+      notifyTaskResults(snapshot);
+      applyTasks(snapshot);
     };
     const off = Events.On('image-manager:tasks', (event) => apply(event.data as ImageTaskSnapshot));
     void GetImageTasks()
@@ -1100,7 +1160,7 @@ export default function ImageManagerTool({
       active = false;
       off();
     };
-  }, [applyTasks]);
+  }, [applyTasks, notifyTaskResults]);
 
   useEffect(() => {
     const now = Date.now();
@@ -1293,7 +1353,7 @@ export default function ImageManagerTool({
     consumed.current = pending;
     clearPending();
     if (pending.action === 'refresh') {
-      requestWatchReload();
+      refreshList();
       record(
         'image-manager',
         t('imageManagerTool.refreshed'),
@@ -1301,7 +1361,7 @@ export default function ImageManagerTool({
         source.id,
       );
     }
-  }, [clearPending, pending, record, requestWatchReload, source, t]);
+  }, [clearPending, pending, record, refreshList, source, t]);
 
   const unnamed = t('imageManagerTool.unnamed');
   const indexedRows = useMemo<IndexedImage[]>(
@@ -2209,7 +2269,7 @@ export default function ImageManagerTool({
                 className="h-[30px] min-w-[30px] flex-none px-[11px] text-[11px]"
                 disabled={busy !== null || sourceProfileMissing}
                 onClick={() => {
-                  requestWatchReload();
+                  refreshList();
                   record(
                     'image-manager',
                     t('imageManagerTool.refreshed'),
@@ -2246,7 +2306,7 @@ export default function ImageManagerTool({
                 variant="outline"
                 size="sm"
                 className="mt-2 h-[30px] px-[11px] text-[11px]"
-                onClick={requestWatchReload}
+                onClick={refreshList}
               >
                 <ArrowsClockwise data-icon="inline-start" weight="duotone" />
                 {t('imageManagerTool.refresh')}

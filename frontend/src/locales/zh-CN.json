@@ -855,6 +855,8 @@
     "taskStagePull": "拉取镜像",
     "taskStageDetail": "加载镜像详情",
     "taskStageUpdate": "更新镜像列表",
+    "taskCompleted": "{{task}}完成",
+    "taskFailed": "{{task}}失败",
     "taskProgressCount": "{{completed}}/{{total}}",
     "taskExportProgress": "{{completed}} / {{total}}",
     "taskExportProgressEstimated": "{{completed}} / ~{{total}}",

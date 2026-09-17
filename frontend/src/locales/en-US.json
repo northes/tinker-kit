@@ -855,6 +855,8 @@
     "taskStagePull": "Pull image",
     "taskStageDetail": "Load image details",
     "taskStageUpdate": "Update image list",
+    "taskCompleted": "{{task}} completed",
+    "taskFailed": "{{task}} failed",
     "taskProgressCount": "{{completed}}/{{total}}",
     "taskExportProgress": "{{completed}} / {{total}}",
     "taskExportProgressEstimated": "{{completed}} / ~{{total}}",
