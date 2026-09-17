@@ -7,7 +7,6 @@ import {
   ArrowUpRight,
   ArrowsLeftRight,
   CaretDown,
-  CaretLeft,
   CaretRight,
   CaretUp,
   CheckCircle,
@@ -76,7 +75,14 @@ import {
 } from './ui/alert-dialog';
 import { Label } from './ui/label';
 import { Switch } from './ui/switch';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectSeparator,
+  SelectTrigger,
+  SelectValue,
+} from './ui/select';
 import {
   ContextMenu,
   ContextMenuContent,
@@ -135,10 +141,13 @@ import {
   StartRemoteFileOperation,
   StartFileUpload,
 } from '../../bindings/changeme/fileservice';
+import { SSHProfileSelect } from './SSHProfileSelect';
 import { useSSHProfiles } from './SSHProfileManagerDialog';
 import { toast } from './ui/toast';
 
 type ManagedFileSource = FileSource;
+
+const MANAGE_SOURCES_VALUE = '__manage-sources__';
 
 function emptyFileSource(sshProfileID = ''): ManagedFileSource {
   return {
@@ -680,7 +689,7 @@ type CancellableCall = {
 
 export default function SshFilesTool({ active }: Props) {
   const { t, i18n } = useTranslation();
-  const { profiles, openManager } = useSSHProfiles();
+  const { profiles } = useSSHProfiles();
   const [sources, setSources] = useState<ManagedFileSource[]>([]);
   const [sourceID, setSourceID] = useState('');
   const [currentPath, setCurrentPath] = useState('');
@@ -1646,12 +1655,9 @@ export default function SshFilesTool({ active }: Props) {
   const saveManage = async () => {
     let nextSources = sources.map((item) => ({ ...item }));
     if (manageView === 'source') {
-      if (!sourceDraft.name.trim()) {
-        setManageFeedback({ type: 'error', message: t('sshFilesTool.sourceNameRequired') });
-        return;
-      }
       const profileID = sourceDraft.sshProfileID;
-      if (!profileID || !profiles.some((item) => item.id === profileID)) {
+      const profile = profiles.find((item) => item.id === profileID);
+      if (!profileID || !profile) {
         setManageFeedback({ type: 'error', message: t('sshFilesTool.sshProfileRequired') });
         return;
       }
@@ -1659,6 +1665,7 @@ export default function SshFilesTool({ active }: Props) {
         ...sourceDraft,
         id: sourceDraft.id || crypto.randomUUID(),
         sshProfileID: profileID,
+        name: sourceDraft.name.trim() || profile.name,
       };
       nextSources = nextSources.some((item) => item.id === draft.id)
         ? nextSources.map((item) => (item.id === draft.id ? draft : item))
@@ -1760,31 +1767,22 @@ export default function SshFilesTool({ active }: Props) {
       ),
     [tasks],
   );
-  const availableProfiles =
-    sourceDraft.sshProfileID && !profiles.some((item) => item.id === sourceDraft.sshProfileID)
-      ? [
-          ...profiles,
-          {
-            id: sourceDraft.sshProfileID,
-            name: t('sshFilesTool.sshProfileMissing'),
-            origin: 'manual',
-            originAlias: '',
-            host: '',
-            port: 22,
-            username: '',
-            password: '',
-            privateKey: '',
-            privateKeyPath: '',
-            keyPassphrase: '',
-            originUpdatedAt: '',
-          },
-        ]
-      : profiles;
-  const sourceOptions = sources.map((item) => (
-    <SelectItem key={item.id} value={item.id}>
-      {item.name}
-    </SelectItem>
-  ));
+  const sourceOptions = (
+    <>
+      {sources.map((item) => (
+        <SelectItem key={item.id} value={item.id}>
+          {item.name}
+        </SelectItem>
+      ))}
+      {sources.length > 0 ? <SelectSeparator /> : null}
+      <SelectItem value={MANAGE_SOURCES_VALUE}>
+        <span className="flex items-center gap-2">
+          <GearSix size={14} />
+          {t('sshFilesTool.manage')}
+        </span>
+      </SelectItem>
+    </>
+  );
   const isLoading = loadingSources || loading || searching;
   const searchModeLabel = t(
     searchMode === 'name' ? 'sshFilesTool.searchByName' : 'sshFilesTool.searchByContent',
@@ -1796,9 +1794,7 @@ export default function SshFilesTool({ active }: Props) {
   );
   const sourceProfileID = sourceDraft.sshProfileID;
   const sourceProfile = profiles.find((item) => item.id === sourceProfileID);
-  const sourceReady = Boolean(
-    sourceDraft.id && sourceDraft.name.trim() && sourceProfileID && sourceProfile,
-  );
+  const sourceReady = Boolean(sourceDraft.id && sourceProfileID && sourceProfile);
   const changeSort = (nextKey: FileSortKey) => {
     if (sortKey === nextKey) {
       setSortDirection((direction) => (direction === 'asc' ? 'desc' : 'asc'));
@@ -1856,6 +1852,10 @@ export default function SshFilesTool({ active }: Props) {
                 value={sourceID || null}
                 disabled={isLoading}
                 onValueChange={(value) => {
+                  if (value === MANAGE_SOURCES_VALUE) {
+                    openManage();
+                    return;
+                  }
                   if (value !== null) {
                     resetSearchState();
                     setEntries([]);
@@ -2012,22 +2012,6 @@ export default function SshFilesTool({ active }: Props) {
             >
               <UploadSimple data-icon="inline-start" size={14} />
               {t('sshFilesTool.upload')}
-            </Button>
-            <Button
-              variant="ghost"
-              className="h-[30px] flex-none px-[11px] text-[11px]"
-              onClick={openManage}
-            >
-              <GearSix data-icon="inline-start" size={14} />
-              {t('sshFilesTool.manage')}
-            </Button>
-            <Button
-              variant="ghost"
-              className="h-[30px] flex-none px-[11px] text-[11px]"
-              onClick={() => openManager()}
-            >
-              <GearSix data-icon="inline-start" size={14} />
-              {t('sshFilesTool.manageSSHProfiles')}
             </Button>
           </div>
         }
@@ -2291,9 +2275,6 @@ export default function SshFilesTool({ active }: Props) {
                 <Button variant="outline" className="mt-1 h-8 text-xs" onClick={openManage}>
                   {t('sshFilesTool.addSource')}
                 </Button>
-                <Button variant="ghost" className="h-8 text-xs" onClick={() => openManager()}>
-                  {t('sshFilesTool.manageSSHProfiles')}
-                </Button>
               </div>
             ) : !sourceUsable ? (
               <div className="flex h-full flex-col items-center justify-center gap-2 p-6 text-center">
@@ -2304,9 +2285,6 @@ export default function SshFilesTool({ active }: Props) {
                 <div className="max-w-sm text-xs text-muted-foreground">
                   {t('sshFilesTool.sshProfileMissingHint')}
                 </div>
-                <Button variant="outline" className="mt-1 h-8 text-xs" onClick={openManage}>
-                  {t('sshFilesTool.manageSSHProfiles')}
-                </Button>
               </div>
             ) : error ? (
               <div className="flex h-full flex-col items-center justify-center gap-2 p-6 text-center">
@@ -2758,16 +2736,6 @@ export default function SshFilesTool({ active }: Props) {
               </>
             ) : (
               <>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="-ml-2 h-7 w-fit px-2 text-[11px] text-muted-foreground"
-                  onClick={backToManageList}
-                  disabled={savingManage}
-                >
-                  <CaretLeft data-icon="inline-start" size={14} />
-                  {t('sshFilesTool.backToList')}
-                </Button>
                 <DialogTitle className="text-base">
                   {sources.some((item) => item.id === sourceDraft.id)
                     ? t('sshFilesTool.editSourceTitle')
@@ -2796,15 +2764,7 @@ export default function SshFilesTool({ active }: Props) {
           <div className="min-h-0 flex-1 overflow-y-auto border-b border-border px-6 py-5 [padding-inline-end:var(--overlay-scrollbar-hit-size)]">
             {manageView === 'list' ? (
               <div className="min-w-0 flex flex-col gap-4">
-                <div className="flex items-center justify-between gap-3">
-                  <div className="min-w-0">
-                    <h3 className="text-sm font-medium text-foreground">
-                      {t('sshFilesTool.fileSource')}
-                    </h3>
-                    <p className="mt-1 text-[10px] leading-4 text-muted-foreground">
-                      {t('sshFilesTool.sourceHint')}
-                    </p>
-                  </div>
+                <div className="flex items-center justify-end gap-3">
                   <Button
                     variant="outline"
                     size="sm"
@@ -2911,6 +2871,7 @@ export default function SshFilesTool({ active }: Props) {
                       <Input
                         id="ssh-source-name"
                         value={sourceDraft.name}
+                        placeholder={sourceProfile?.name}
                         onChange={(event) =>
                           setSourceDraft({ ...sourceDraft, name: event.target.value })
                         }
@@ -2920,54 +2881,19 @@ export default function SshFilesTool({ active }: Props) {
                       <Label htmlFor="ssh-source-profile" className="text-xs text-muted-foreground">
                         {t('sshFilesTool.selectSSHProfile')}
                       </Label>
-                      <Select
-                        items={availableProfiles.map((item) => ({
-                          value: item.id,
-                          label: item.name,
-                        }))}
-                        value={sourceDraft.sshProfileID || null}
-                        onValueChange={(value) =>
-                          setSourceDraft({
-                            ...sourceDraft,
-                            sshProfileID: value || '',
-                          })
+                      <SSHProfileSelect
+                        id="ssh-source-profile"
+                        value={sourceDraft.sshProfileID}
+                        onValueChange={(sshProfileID) =>
+                          setSourceDraft({ ...sourceDraft, sshProfileID })
                         }
-                      >
-                        <SelectTrigger id="ssh-source-profile" className="w-full">
-                          <SelectValue placeholder={t('sshFilesTool.selectSSHProfile')} />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {availableProfiles.map((item) => (
-                            <SelectItem key={item.id} value={item.id}>
-                              {item.name}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      <div className="flex items-center justify-between gap-2">
-                        <p className="m-0 text-[10px] leading-4 text-muted-foreground">
-                          {sourceProfile
-                            ? `${sourceProfile.username ? `${sourceProfile.username}@` : ''}${sourceProfile.host}:${sourceProfile.port || 22}`
-                            : t('sshFilesTool.sshProfileMissing')}
-                        </p>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="flex-none"
-                          onClick={() =>
-                            openManager({
-                              select: true,
-                              onSelect: (profile: SSHProfile) =>
-                                setSourceDraft({
-                                  ...sourceDraft,
-                                  sshProfileID: profile.id,
-                                }),
-                            })
-                          }
-                        >
-                          {t('sshFilesTool.manageSSHProfiles')}
-                        </Button>
-                      </div>
+                        placeholder={t('sshFilesTool.selectSSHProfile')}
+                      />
+                      <p className="m-0 text-[10px] leading-4 text-muted-foreground">
+                        {sourceProfile
+                          ? `${sourceProfile.username ? `${sourceProfile.username}@` : ''}${sourceProfile.host}:${sourceProfile.port || 22}`
+                          : t('sshFilesTool.sshProfileMissing')}
+                      </p>
                     </div>
                     <div className="grid gap-1.5">
                       <Label

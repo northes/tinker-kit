@@ -66,7 +66,7 @@ type SSHProfileContextValue = {
 
 const SSHProfileContext = createContext<SSHProfileContextValue | null>(null);
 
-const emptyProfile: SSHProfile = {
+export const emptyProfile: SSHProfile = {
   id: '',
   name: '',
   origin: 'manual',

@@ -98,6 +98,7 @@ import { Spinner } from './ui/spinner';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
 import { toast } from './ui/toast';
+import { SSHProfileSelect } from './SSHProfileSelect';
 import { useSSHProfiles } from './SSHProfileManagerDialog';
 
 const LOCAL_SOURCE_ID = 'local';
@@ -926,7 +927,7 @@ export default function ImageManagerTool({
   clearPending: () => void;
 }) {
   const { t, i18n } = useTranslation();
-  const { profiles, openManager } = useSSHProfiles();
+  const { profiles } = useSSHProfiles();
   const consumed = useRef<PendingAction | null>(null);
   const sourceLabelId = useId();
   const sources = useMemo(() => resolveSources(settings.imageSources), [settings.imageSources]);
@@ -1433,26 +1434,6 @@ export default function ImageManagerTool({
 
   const renderEditForm = () => {
     if (!editingSource) return null;
-    const availableSSHProfiles =
-      editingSource.sshProfileID && !profiles.some((item) => item.id === editingSource.sshProfileID)
-        ? [
-            ...profiles,
-            {
-              id: editingSource.sshProfileID,
-              name: t('imageManagerTool.sshProfileMissing'),
-              origin: 'manual',
-              originAlias: '',
-              host: '',
-              port: 22,
-              username: '',
-              password: '',
-              privateKey: '',
-              privateKeyPath: '',
-              keyPassphrase: '',
-              originUpdatedAt: '',
-            } satisfies SSHProfile,
-          ]
-        : profiles;
     return (
       <div className="flex flex-col gap-3 border-t border-border pt-3">
         <h3 className="m-0 text-sm font-medium text-foreground">
@@ -1471,50 +1452,18 @@ export default function ImageManagerTool({
             <>
               <div className="flex flex-col gap-2 sm:col-span-2">
                 <Label htmlFor="source-edit-ssh-profile">{t('imageManagerTool.sshProfile')}</Label>
-                <Select
-                  items={availableSSHProfiles.map((profile) => ({
-                    value: profile.id,
-                    label: profile.name,
-                  }))}
-                  value={editingSource.sshProfileID || null}
-                  onValueChange={(value) => updateDraft({ sshProfileID: value || '' })}
-                >
-                  <SelectTrigger id="source-edit-ssh-profile" className="w-full">
-                    <SelectValue placeholder={t('imageManagerTool.selectSSHProfile')} />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {availableSSHProfiles.map((profile) => (
-                      <SelectItem key={profile.id} value={profile.id}>
-                        {profile.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <SSHProfileSelect
+                  id="source-edit-ssh-profile"
+                  value={editingSource.sshProfileID ?? ''}
+                  onValueChange={(value) => updateDraft({ sshProfileID: value })}
+                  placeholder={t('imageManagerTool.selectSSHProfile')}
+                />
                 {editingSource.sshProfileID &&
                 !profiles.some((item) => item.id === editingSource.sshProfileID) ? (
                   <p className="m-0 text-[10px] leading-4 text-destructive" role="alert">
                     {t('imageManagerTool.sshProfileMissingHint')}
                   </p>
                 ) : null}
-                <div className="flex items-center justify-between gap-2">
-                  <p className="m-0 text-[10px] leading-4 text-muted-foreground">
-                    {t('imageManagerTool.sshProfileHint')}
-                  </p>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="flex-none"
-                    onClick={() =>
-                      openManager({
-                        select: true,
-                        onSelect: (profile: SSHProfile) =>
-                          updateDraft({ sshProfileID: profile.id }),
-                      })
-                    }
-                  >
-                    {t('imageManagerTool.manageSSHProfiles')}
-                  </Button>
-                </div>
               </div>
             </>
           ) : (
