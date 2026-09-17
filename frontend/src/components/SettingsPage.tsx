@@ -810,7 +810,7 @@ export default function SettingsPage({
           </SettingsGroup>
           <SettingsGroup title={t('settings.clipboard')} subtitle={t('settings.clipboardSubtitle')}>
             <div className="flex flex-col gap-3">
-              <div className="divide-y divide-border">
+              <div className={settingStackClass}>
                 <Setting label={t('settings.trayMatch')} description={t('settings.trayMatchDesc')}>
                   <SettingSwitch
                     selected={settings.trayMatchEnabled}
@@ -844,7 +844,7 @@ export default function SettingsPage({
                         {t('settings.trayMatchToolsDefaultDesc')}
                       </small>
                     </div>
-                    <div className="grid grid-cols-2 gap-x-5 max-[700px]:grid-cols-1">
+                    <div className="grid grid-cols-2 gap-x-5 gap-y-2.5 max-[700px]:grid-cols-1">
                       {defaultTrayTools.map(renderTrayToolSwitch)}
                     </div>
                   </div>
@@ -858,7 +858,7 @@ export default function SettingsPage({
                           {t('settings.trayMatchToolsExtraDesc')}
                         </small>
                       </div>
-                      <div className="grid grid-cols-2 gap-x-5 max-[700px]:grid-cols-1">
+                      <div className="grid grid-cols-2 gap-x-5 gap-y-2.5 max-[700px]:grid-cols-1">
                         {extraTrayTools.map(renderTrayToolSwitch)}
                       </div>
                     </div>
@@ -899,21 +899,26 @@ export default function SettingsPage({
             </div>
           </SettingsGroup>
           <SettingsGroup title={t('settings.ssh')} subtitle={t('settings.sshSubtitle')}>
-            <Setting label={t('settings.sshProfiles')} description={t('settings.sshProfilesDesc')}>
-              <Button variant="outline" onClick={() => openManager()}>
-                <Key data-icon="inline-start" weight="duotone" />
-                {t('settings.manageSSHProfiles')}
-              </Button>
-            </Setting>
-            <Setting
-              label={t('settings.sshKnownHosts')}
-              description={t('settings.sshKnownHostsDesc')}
-            >
-              <Button variant="outline" onClick={() => setSSHKnownHostsOpen(true)}>
-                <Key data-icon="inline-start" weight="duotone" />
-                {t('settings.manageSSHKnownHosts')}
-              </Button>
-            </Setting>
+            <div className={settingStackClass}>
+              <Setting
+                label={t('settings.sshProfiles')}
+                description={t('settings.sshProfilesDesc')}
+              >
+                <Button variant="outline" onClick={() => openManager()}>
+                  <Key data-icon="inline-start" weight="duotone" />
+                  {t('settings.manageSSHProfiles')}
+                </Button>
+              </Setting>
+              <Setting
+                label={t('settings.sshKnownHosts')}
+                description={t('settings.sshKnownHostsDesc')}
+              >
+                <Button variant="outline" onClick={() => setSSHKnownHostsOpen(true)}>
+                  <Key data-icon="inline-start" weight="duotone" />
+                  {t('settings.manageSSHKnownHosts')}
+                </Button>
+              </Setting>
+            </div>
           </SettingsGroup>
           <SettingsGroup title={t('settings.privacy')} subtitle={t('settings.privacySubtitle')}>
             <Setting label={t('settings.history')} description={t('settings.historyDesc')}>
