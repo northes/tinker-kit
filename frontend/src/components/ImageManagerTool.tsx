@@ -985,9 +985,33 @@ export default function ImageManagerTool({
   const watchSourceIDRef = useRef<string | null>(null);
   const [taskSnapshot, setTaskSnapshot] = useState<ImageTaskSnapshot | null>(null);
   const tasks = taskSnapshot?.tasks ?? [];
+  // 后台更新会高频推送镜像与任务事件。工具不活跃（例如切到别的工具）时只暂存最新状态、
+  // 不触发渲染，避免隐藏的镜像表持续重渲染而卡住整个应用；回到列表时一次性补齐。
+  const activeRef = useRef(active);
+  const pendingImagesRef = useRef(false);
+  const pendingTasksRef = useRef<ImageTaskSnapshot | null>(null);
+  const rebuildImagesRef = useRef<(() => DockerImage[]) | null>(null);
   const applyTasks = useCallback((snapshot: ImageTaskSnapshot) => {
+    if (!activeRef.current) {
+      pendingTasksRef.current = applyImageTaskSnapshot(pendingTasksRef.current, snapshot);
+      return;
+    }
     setTaskSnapshot((current) => applyImageTaskSnapshot(current, snapshot));
   }, []);
+  useEffect(() => {
+    activeRef.current = active;
+    if (!active) return;
+    if (pendingImagesRef.current) {
+      pendingImagesRef.current = false;
+      const rebuild = rebuildImagesRef.current;
+      if (rebuild) setImages(rebuild());
+    }
+    if (pendingTasksRef.current) {
+      const next = pendingTasksRef.current;
+      pendingTasksRef.current = null;
+      setTaskSnapshot((current) => applyImageTaskSnapshot(current, next));
+    }
+  }, [active]);
   const [tasksOpen, setTasksOpen] = useState(false);
   const [batchExportStarting, setBatchExportStarting] = useState(false);
   const [retryingTaskID, setRetryingTaskID] = useState<string | null>(null);
@@ -1065,6 +1089,15 @@ export default function ImageManagerTool({
     let currentGeneration = -1;
     let restarting = false;
     const map = new Map<string, DockerImage>();
+    const rebuild = () => Array.from(map.values());
+    rebuildImagesRef.current = rebuild;
+    const renderImages = () => {
+      if (!activeRef.current) {
+        pendingImagesRef.current = true;
+        return;
+      }
+      setImages(rebuild());
+    };
 
     setImages([]);
     setSelected(new Set());
@@ -1099,7 +1132,7 @@ export default function ImageManagerTool({
           currentGeneration = payload.generation;
           maxRevision = -1;
           map.clear();
-          setImages([]);
+          renderImages();
           setHasSnapshot(false);
           setSnapshotUpdatedAt('');
         }
@@ -1158,12 +1191,12 @@ export default function ImageManagerTool({
             map.set(img.id, img);
           }
         }
-        setImages(Array.from(map.values()));
+        renderImages();
       } else if (kind === 'create' || kind === 'update') {
         if (payload.image && payload.image.id) {
           const image = payload.image;
           map.set(image.id, image);
-          setImages(Array.from(map.values()));
+          renderImages();
         }
       } else if (kind === 'delete') {
         const idsToDelete = payload.imageIDs ?? (payload.imageID ? [payload.imageID] : []);
@@ -1174,7 +1207,7 @@ export default function ImageManagerTool({
           }
         }
         if (changed) {
-          setImages(Array.from(map.values()));
+          renderImages();
         }
         setSelected((current) => {
           const next = new Set(current);
@@ -1198,6 +1231,7 @@ export default function ImageManagerTool({
       mounted = false;
       if (watchClientID.current === clientID) watchClientID.current = null;
       if (watchSourceIDRef.current === sourceID) watchSourceIDRef.current = null;
+      if (rebuildImagesRef.current === rebuild) rebuildImagesRef.current = null;
       offWatch();
       if (typeof watchCall?.cancel === 'function') {
         watchCall.cancel();
