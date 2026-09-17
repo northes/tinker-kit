@@ -893,6 +893,8 @@
     "savedTitle": "已添加的配置",
     "localTitle": "本机 SSH config",
     "localEmpty": "未找到可导入的本机 SSH 配置",
+    "searchPlaceholder": "搜索名称、主机或用户名",
+    "searchEmpty": "没有匹配的 SSH 配置",
     "authMethod": "认证方式",
     "authPassword": "密码",
     "authKey": "私钥",
@@ -929,7 +931,6 @@
     "importedHint": "此配置来自本机 SSH config 的 {{alias}}。连接参数由导入快照决定。",
     "updateFromLocal": "从本机更新",
     "updateSucceeded": "已从本机 SSH config 更新",
-    "select": "选择",
     "test": "测试连接",
     "connectionSucceeded": "SSH 连接成功",
     "connectionFailed": "SSH 连接失败"

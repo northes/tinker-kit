@@ -893,6 +893,8 @@
     "savedTitle": "Added profiles",
     "localTitle": "Local SSH config",
     "localEmpty": "No importable SSH config entries found",
+    "searchPlaceholder": "Search name, host, or username",
+    "searchEmpty": "No matching SSH profiles",
     "authMethod": "Authentication",
     "authPassword": "Password",
     "authKey": "Private key",
@@ -929,7 +931,6 @@
     "importedHint": "This profile was imported from the local SSH config entry {{alias}}. Connection fields come from the imported snapshot.",
     "updateFromLocal": "Update from local",
     "updateSucceeded": "Updated from local SSH config",
-    "select": "Select",
     "test": "Test connection",
     "connectionSucceeded": "SSH connection succeeded",
     "connectionFailed": "SSH connection failed"

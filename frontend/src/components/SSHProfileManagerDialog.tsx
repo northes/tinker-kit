@@ -13,6 +13,7 @@ import {
   CheckCircle,
   DotsThreeOutlineVertical,
   DownloadSimple,
+  MagnifyingGlass,
   PencilSimple,
   Plus,
   Trash,
@@ -62,15 +63,10 @@ import { Spinner } from './ui/spinner';
 import { Textarea } from './ui/textarea';
 import { toast } from './ui/toast';
 
-type ManagerOptions = {
-  select?: boolean;
-  onSelect?: (profile: SSHProfile) => void;
-};
-
 type SSHProfileContextValue = {
   profiles: SSHProfile[];
   reload: () => Promise<void>;
-  openManager: (options?: ManagerOptions) => void;
+  openManager: () => void;
 };
 
 const SSHProfileContext = createContext<SSHProfileContextValue | null>(null);
@@ -118,8 +114,6 @@ export function useSSHProfiles() {
 export function SSHProfileProvider({ children }: { children: ReactNode }) {
   const [profiles, setProfiles] = useState<SSHProfile[]>([]);
   const [managerOpen, setManagerOpen] = useState(false);
-  const [selectMode, setSelectMode] = useState(false);
-  const selectRef = useRef<((profile: SSHProfile) => void) | undefined>(undefined);
 
   const reload = useCallback(async () => {
     const next = await GetSSHProfiles();
@@ -130,31 +124,16 @@ export function SSHProfileProvider({ children }: { children: ReactNode }) {
     void reload().catch(() => setProfiles([]));
   }, [reload]);
 
-  const openManager = useCallback((options: ManagerOptions = {}) => {
-    selectRef.current = options.onSelect;
-    setSelectMode(options.select === true);
-    setManagerOpen(true);
-  }, []);
-
-  const handleSelect = useCallback((profile: SSHProfile) => {
-    selectRef.current?.(profile);
-    selectRef.current = undefined;
-    setManagerOpen(false);
-  }, []);
+  const openManager = useCallback(() => setManagerOpen(true), []);
 
   return (
     <SSHProfileContext.Provider value={{ profiles, reload, openManager }}>
       {children}
       <SSHProfileManagerDialog
         open={managerOpen}
-        selectMode={selectMode}
         profiles={profiles}
         onProfilesChange={setProfiles}
-        onSelect={handleSelect}
-        onOpenChange={(open) => {
-          if (!open) selectRef.current = undefined;
-          setManagerOpen(open);
-        }}
+        onOpenChange={setManagerOpen}
       />
     </SSHProfileContext.Provider>
   );
@@ -162,17 +141,13 @@ export function SSHProfileProvider({ children }: { children: ReactNode }) {
 
 function SSHProfileManagerDialog({
   open,
-  selectMode,
   profiles,
   onProfilesChange,
-  onSelect,
   onOpenChange,
 }: {
   open: boolean;
-  selectMode: boolean;
   profiles: SSHProfile[];
   onProfilesChange: (profiles: SSHProfile[]) => void;
-  onSelect: (profile: SSHProfile) => void;
   onOpenChange: (open: boolean) => void;
 }) {
   const { t } = useTranslation();
@@ -187,9 +162,18 @@ function SSHProfileManagerDialog({
   const [deleteTarget, setDeleteTarget] = useState<SSHProfile | null>(null);
   const [localProfiles, setLocalProfiles] = useState<SSHProfile[]>([]);
   const [localLoading, setLocalLoading] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
   const [discardAction, setDiscardAction] = useState<'close' | 'back' | null>(null);
   const formBaselineRef = useRef<SSHProfile>({ ...emptyProfile });
   const imported = profileIsImported(draft);
+  const normalizedQuery = searchQuery.trim().toLowerCase();
+  const matchesQuery = (profile: SSHProfile) =>
+    !normalizedQuery ||
+    [profile.name, profile.originAlias, profile.host, profile.username, profileAddress(profile)]
+      .filter(Boolean)
+      .some((value) => value.toLowerCase().includes(normalizedQuery));
+  const filteredProfiles = profiles.filter(matchesQuery);
+  const filteredLocalProfiles = localProfiles.filter(matchesQuery);
 
   useEffect(() => {
     if (!open) return;
@@ -198,6 +182,7 @@ function SSHProfileManagerDialog({
     formBaselineRef.current = { ...emptyProfile };
     setFormError('');
     setListError('');
+    setSearchQuery('');
     setDiscardAction(null);
     void loadLocalProfiles();
   }, [open]);
@@ -400,190 +385,213 @@ function SSHProfileManagerDialog({
           <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5 [padding-inline-end:var(--overlay-scrollbar-hit-size)]">
             {view === 'list' ? (
               <div className="grid gap-6">
-                <section className="grid gap-3">
-                  <div className="flex items-center justify-between gap-3">
-                    <h3 className="text-sm font-medium text-foreground">
-                      {t('sshProfiles.savedTitle')}
-                    </h3>
-                    <div className="flex shrink-0 items-center gap-1">
+                <div className="relative flex w-full items-center">
+                  <MagnifyingGlass
+                    size={14}
+                    weight="duotone"
+                    aria-hidden="true"
+                    className="pointer-events-none absolute left-2.5 text-muted-foreground"
+                  />
+                  <Input
+                    value={searchQuery}
+                    onChange={(event) => setSearchQuery(event.target.value)}
+                    placeholder={t('sshProfiles.searchPlaceholder')}
+                    aria-label={t('sshProfiles.searchPlaceholder')}
+                    className="h-[30px] pl-8 text-[11px]"
+                  />
+                </div>
+                {normalizedQuery &&
+                filteredProfiles.length === 0 &&
+                filteredLocalProfiles.length === 0 ? (
+                  <div className="border-y border-dashed border-border py-8 text-center text-xs text-muted-foreground">
+                    {t('sshProfiles.searchEmpty')}
+                  </div>
+                ) : null}
+                {!normalizedQuery || filteredProfiles.length > 0 ? (
+                  <section className="grid gap-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <h3 className="text-sm font-medium text-foreground">
+                        {t('sshProfiles.savedTitle')}
+                      </h3>
+                      <div className="flex shrink-0 items-center gap-1">
+                        <Button
+                          variant="ghost"
+                          size="icon-sm"
+                          onClick={() => void refreshProfiles()}
+                          disabled={loading || busy}
+                          aria-label={t('sshProfiles.refresh')}
+                        >
+                          <ArrowClockwise
+                            weight="duotone"
+                            className={loading ? 'animate-spin motion-reduce:animate-none' : ''}
+                          />
+                        </Button>
+                        <Button variant="outline" size="sm" onClick={startNew} disabled={busy}>
+                          <Plus data-icon="inline-start" weight="duotone" />
+                          {t('sshProfiles.add')}
+                        </Button>
+                      </div>
+                    </div>
+                    {filteredProfiles.length ? (
+                      <div className="divide-y divide-border border-y border-border">
+                        {filteredProfiles.map((profile) => (
+                          <div key={profile.id} className="flex min-w-0 items-center gap-2 py-2.5">
+                            <div className="min-w-0 flex-1">
+                              <div className="flex min-w-0 items-center gap-2">
+                                <span className="truncate text-xs font-medium text-foreground">
+                                  {profile.name}
+                                </span>
+                                <Badge
+                                  variant={profileIsImported(profile) ? 'secondary' : 'outline'}
+                                  className="h-5 text-[10px]"
+                                >
+                                  {profileIsImported(profile)
+                                    ? t('sshProfiles.originLocal')
+                                    : t('sshProfiles.originManual')}
+                                </Badge>
+                              </div>
+                              <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-2 text-[10px] text-muted-foreground">
+                                <span className="truncate font-mono">
+                                  {profileAddress(profile)}
+                                </span>
+                                {profileIsImported(profile) ? (
+                                  <span className="truncate">{profile.originAlias}</span>
+                                ) : null}
+                              </div>
+                            </div>
+                            <Button
+                              variant="ghost"
+                              size="icon-sm"
+                              onClick={() => startEdit(profile)}
+                              disabled={busy}
+                              aria-label={t('sshProfiles.edit')}
+                            >
+                              <PencilSimple weight="duotone" />
+                            </Button>
+                            <DropdownMenu>
+                              <DropdownMenuTrigger
+                                render={
+                                  <Button
+                                    variant="ghost"
+                                    size="icon-sm"
+                                    className="text-muted-foreground"
+                                    disabled={busy}
+                                    aria-label={t('sshProfiles.moreActions')}
+                                  />
+                                }
+                              >
+                                <DotsThreeOutlineVertical weight="duotone" />
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end" className="min-w-48">
+                                <DropdownMenuGroup>
+                                  <DropdownMenuItem
+                                    onClick={() => void test(profile)}
+                                    disabled={busy || Boolean(testingID)}
+                                  >
+                                    {testingID === profile.id ? (
+                                      <Spinner data-icon="inline-start" />
+                                    ) : (
+                                      <CheckCircle data-icon="inline-start" weight="duotone" />
+                                    )}
+                                    {t('sshProfiles.test')}
+                                  </DropdownMenuItem>
+                                  {profileIsImported(profile) ? (
+                                    <DropdownMenuItem
+                                      onClick={() => void refreshImported(profile)}
+                                      disabled={busy}
+                                    >
+                                      <ArrowClockwise data-icon="inline-start" weight="duotone" />
+                                      {t('sshProfiles.updateFromLocal')}
+                                    </DropdownMenuItem>
+                                  ) : null}
+                                </DropdownMenuGroup>
+                                <DropdownMenuSeparator />
+                                <DropdownMenuItem
+                                  variant="destructive"
+                                  onClick={() => setDeleteTarget(profile)}
+                                  disabled={busy}
+                                >
+                                  <Trash data-icon="inline-start" weight="duotone" />
+                                  {t('sshProfiles.delete')}
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="border-y border-dashed border-border py-8 text-center text-xs text-muted-foreground">
+                        {t('sshProfiles.empty')}
+                      </div>
+                    )}
+                  </section>
+                ) : null}
+                {!normalizedQuery || filteredLocalProfiles.length > 0 ? (
+                  <section className="grid gap-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <h3 className="text-sm font-medium text-foreground">
+                        {t('sshProfiles.localTitle')}
+                      </h3>
                       <Button
                         variant="ghost"
                         size="icon-sm"
-                        onClick={() => void refreshProfiles()}
-                        disabled={loading || busy}
+                        onClick={() => void loadLocalProfiles()}
+                        disabled={localLoading || busy}
                         aria-label={t('sshProfiles.refresh')}
                       >
                         <ArrowClockwise
                           weight="duotone"
-                          className={loading ? 'animate-spin motion-reduce:animate-none' : ''}
+                          className={localLoading ? 'animate-spin motion-reduce:animate-none' : ''}
                         />
                       </Button>
-                      <Button variant="outline" size="sm" onClick={startNew} disabled={busy}>
-                        <Plus data-icon="inline-start" weight="duotone" />
-                        {t('sshProfiles.add')}
-                      </Button>
                     </div>
-                  </div>
-                  {profiles.length ? (
-                    <div className="divide-y divide-border border-y border-border">
-                      {profiles.map((profile) => (
-                        <div key={profile.id} className="flex min-w-0 items-center gap-2 py-2.5">
-                          <div className="min-w-0 flex-1">
-                            <div className="flex min-w-0 items-center gap-2">
-                              <span className="truncate text-xs font-medium text-foreground">
-                                {profile.name}
-                              </span>
-                              <Badge
-                                variant={profileIsImported(profile) ? 'secondary' : 'outline'}
-                                className="h-5 text-[10px]"
-                              >
-                                {profileIsImported(profile)
-                                  ? t('sshProfiles.originLocal')
-                                  : t('sshProfiles.originManual')}
-                              </Badge>
-                            </div>
-                            <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-2 text-[10px] text-muted-foreground">
-                              <span className="truncate font-mono">{profileAddress(profile)}</span>
-                              {profileIsImported(profile) ? (
-                                <span className="truncate">{profile.originAlias}</span>
-                              ) : null}
-                            </div>
-                          </div>
-                          {selectMode ? (
-                            <Button size="sm" variant="outline" onClick={() => onSelect(profile)}>
-                              {t('sshProfiles.select')}
-                            </Button>
-                          ) : null}
-                          <Button
-                            variant="ghost"
-                            size="icon-sm"
-                            onClick={() => startEdit(profile)}
-                            disabled={busy}
-                            aria-label={t('sshProfiles.edit')}
-                          >
-                            <PencilSimple weight="duotone" />
-                          </Button>
-                          <DropdownMenu>
-                            <DropdownMenuTrigger
-                              render={
-                                <Button
-                                  variant="ghost"
-                                  size="icon-sm"
-                                  className="text-muted-foreground"
-                                  disabled={busy}
-                                  aria-label={t('sshProfiles.moreActions')}
-                                />
-                              }
+                    {filteredLocalProfiles.length ? (
+                      <div className="divide-y divide-border border-y border-border">
+                        {filteredLocalProfiles.map((candidate) => {
+                          const exists = profiles.some(
+                            (profile) =>
+                              profile.origin === 'ssh-config' &&
+                              profile.originAlias === candidate.originAlias,
+                          );
+                          return (
+                            <div
+                              key={candidate.originAlias}
+                              className="flex min-w-0 items-center gap-2 py-2.5"
                             >
-                              <DotsThreeOutlineVertical weight="duotone" />
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end" className="min-w-48">
-                              <DropdownMenuGroup>
-                                <DropdownMenuItem
-                                  onClick={() => void test(profile)}
-                                  disabled={busy || Boolean(testingID)}
-                                >
-                                  {testingID === profile.id ? (
-                                    <Spinner data-icon="inline-start" />
-                                  ) : (
-                                    <CheckCircle data-icon="inline-start" weight="duotone" />
-                                  )}
-                                  {t('sshProfiles.test')}
-                                </DropdownMenuItem>
-                                {profileIsImported(profile) ? (
-                                  <DropdownMenuItem
-                                    onClick={() => void refreshImported(profile)}
-                                    disabled={busy}
-                                  >
-                                    <ArrowClockwise data-icon="inline-start" weight="duotone" />
-                                    {t('sshProfiles.updateFromLocal')}
-                                  </DropdownMenuItem>
-                                ) : null}
-                              </DropdownMenuGroup>
-                              <DropdownMenuSeparator />
-                              <DropdownMenuItem
-                                variant="destructive"
-                                onClick={() => setDeleteTarget(profile)}
-                                disabled={busy}
+                              <div className="min-w-0 flex-1">
+                                <span className="block truncate text-xs font-medium text-foreground">
+                                  {candidate.originAlias}
+                                </span>
+                                <span className="mt-1 block truncate font-mono text-[10px] text-muted-foreground">
+                                  {profileAddress(candidate)}
+                                </span>
+                              </div>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => void importProfile(candidate)}
+                                disabled={exists || busy}
                               >
-                                <Trash data-icon="inline-start" weight="duotone" />
-                                {t('sshProfiles.delete')}
-                              </DropdownMenuItem>
-                            </DropdownMenuContent>
-                          </DropdownMenu>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="border-y border-dashed border-border py-8 text-center text-xs text-muted-foreground">
-                      {t('sshProfiles.empty')}
-                    </div>
-                  )}
-                </section>
-                <section className="grid gap-3">
-                  <div className="flex items-center justify-between gap-3">
-                    <h3 className="text-sm font-medium text-foreground">
-                      {t('sshProfiles.localTitle')}
-                    </h3>
-                    <Button
-                      variant="ghost"
-                      size="icon-sm"
-                      onClick={() => void loadLocalProfiles()}
-                      disabled={localLoading || busy}
-                      aria-label={t('sshProfiles.refresh')}
-                    >
-                      <ArrowClockwise
-                        weight="duotone"
-                        className={localLoading ? 'animate-spin motion-reduce:animate-none' : ''}
-                      />
-                    </Button>
-                  </div>
-                  {localProfiles.length ? (
-                    <div className="divide-y divide-border border-y border-border">
-                      {localProfiles.map((candidate) => {
-                        const exists = profiles.some(
-                          (profile) =>
-                            profile.origin === 'ssh-config' &&
-                            profile.originAlias === candidate.originAlias,
-                        );
-                        return (
-                          <div
-                            key={candidate.originAlias}
-                            className="flex min-w-0 items-center gap-2 py-2.5"
-                          >
-                            <div className="min-w-0 flex-1">
-                              <span className="block truncate text-xs font-medium text-foreground">
-                                {candidate.originAlias}
-                              </span>
-                              <span className="mt-1 block truncate font-mono text-[10px] text-muted-foreground">
-                                {profileAddress(candidate)}
-                              </span>
+                                {exists ? (
+                                  t('sshProfiles.imported')
+                                ) : (
+                                  <>
+                                    <DownloadSimple data-icon="inline-start" weight="duotone" />
+                                    {t('sshProfiles.import')}
+                                  </>
+                                )}
+                              </Button>
                             </div>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => void importProfile(candidate)}
-                              disabled={exists || busy}
-                            >
-                              {exists ? (
-                                t('sshProfiles.imported')
-                              ) : (
-                                <>
-                                  <DownloadSimple data-icon="inline-start" weight="duotone" />
-                                  {t('sshProfiles.import')}
-                                </>
-                              )}
-                            </Button>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  ) : (
-                    <div className="border-y border-dashed border-border py-6 text-center text-xs text-muted-foreground">
-                      {t('sshProfiles.localEmpty')}
-                    </div>
-                  )}
-                </section>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <div className="border-y border-dashed border-border py-6 text-center text-xs text-muted-foreground">
+                        {t('sshProfiles.localEmpty')}
+                      </div>
+                    )}
+                  </section>
+                ) : null}
               </div>
             ) : (
               <div className="mx-auto grid w-full max-w-[560px] gap-5">

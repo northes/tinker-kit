@@ -72,12 +72,7 @@ export function SSHProfileSelect({
         className="flex-none"
         disabled={disabled}
         aria-label={t('sshProfiles.title')}
-        onClick={() =>
-          openManager({
-            select: true,
-            onSelect: (profile: SSHProfile) => onValueChange(profile.id),
-          })
-        }
+        onClick={openManager}
       >
         <GearSix weight="duotone" />
       </Button>
