@@ -7,6 +7,7 @@ import {
   CaretLeft,
   CaretUp,
   Check,
+  CloudArrowDown,
   Copy,
   DownloadSimple,
   GearSix,
@@ -2327,8 +2328,8 @@ export default function ImageManagerTool({
                 disabled={actionBlocked || !sourceSupportsDockerMutations}
                 onClick={openPullImageDialog}
               >
-                <ArrowsClockwise data-icon="inline-start" weight="duotone" />
-                {t('imageManagerTool.pullImage')}
+                <CloudArrowDown data-icon="inline-start" weight="duotone" />
+                {t('imageManagerTool.pull')}
               </Button>
               <Button
                 variant="outline"
@@ -2558,7 +2559,7 @@ export default function ImageManagerTool({
                               }
                               onClick={() => void runPull(operationRows)}
                             >
-                              <ArrowsClockwise data-icon="inline-start" weight="duotone" />
+                              <CloudArrowDown data-icon="inline-start" weight="duotone" />
                               {t('imageManagerTool.pullUpdate')}
                             </ContextMenuItem>
                             <ContextMenuItem
@@ -2710,7 +2711,7 @@ export default function ImageManagerTool({
                       {pullStarting ? (
                         <Spinner data-icon="inline-start" />
                       ) : (
-                        <ArrowsClockwise data-icon="inline-start" weight="duotone" />
+                        <CloudArrowDown data-icon="inline-start" weight="duotone" />
                       )}
                       {t('imageManagerTool.pullUpdate')}
                     </DropdownMenuItem>
