@@ -412,7 +412,7 @@ export function ToolLayout({
 }) {
   return (
     <section
-      className={`grid h-full min-h-0 grid-rows-[auto_auto_minmax(0,1fr)_auto] overflow-hidden px-7 pt-5 pb-[26px] max-[700px]:px-[18px] max-[700px]:pt-3.5 max-[700px]:pb-4 ${className}`}
+      className={`grid h-full min-h-0 grid-rows-[auto_auto_minmax(0,1fr)_auto] overflow-hidden px-7 pt-5 pb-4 max-[700px]:px-[18px] max-[700px]:pt-3.5 ${className}`}
     >
       {children}
     </section>

@@ -2411,7 +2411,7 @@ function Sidebar({
   return (
     <aside
       id="app-sidebar"
-      className="sidebar flex min-h-0 flex-col gap-0.5 overflow-auto border-r border-border bg-background px-3 pb-3.5"
+      className="sidebar flex min-h-0 flex-col gap-0.5 overflow-auto border-r border-border bg-background px-3 pb-4"
     >
       {managing && (
         <div className="sticky top-0 z-10 mb-1 flex flex-none flex-col gap-2 border-b border-border bg-background py-3">
@@ -2534,10 +2534,10 @@ function Sidebar({
           <span>{t('titlebar.settings')}</span>
         </Button>
       </nav>
-      <div className="sidebar-footer mt-auto flex-none border-t border-border pt-3.5">
+      <div className="sidebar-footer mt-auto flex-none border-t border-border pt-3">
         <Button
           variant="ghost"
-          className="sidebar-palette flex h-auto min-h-0 w-full items-center justify-start gap-2.5 rounded-lg px-2 py-1.5 text-xs text-muted-foreground hover:bg-muted hover:text-foreground [&_svg]:size-[17px]"
+          className="sidebar-palette flex h-[30px] min-h-0 w-full items-center justify-start gap-2.5 rounded-lg px-2 text-xs text-muted-foreground hover:bg-muted hover:text-foreground [&_svg]:size-[17px]"
           onClick={onOpenPalette}
           aria-label={t('statusbar.openPalette')}
           title={t('statusbar.openPalette')}
