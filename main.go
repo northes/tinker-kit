@@ -280,8 +280,15 @@ func main() {
 		menu.Add("退出").OnClick(func(_ *application.Context) { quit() })
 	}
 	tray.SetMenu(menu)
-	tray.OnClick(func() { analyzeClipboard() })
-	tray.OnRightClick(func() { tray.OpenMenu() })
+	// 左键唤回窗口；右键在开启托盘识别时分析剪贴板，关闭识别时展开菜单。
+	tray.OnClick(func() { showFromTray() })
+	tray.OnRightClick(func() {
+		if cfgService.Get().TrayMatchEnabled {
+			analyzeClipboard()
+			return
+		}
+		tray.OpenMenu()
+	})
 
 	window.RegisterHook(events.Common.WindowClosing, func(event *application.WindowEvent) {
 		x, y := window.Position()

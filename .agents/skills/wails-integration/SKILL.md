@@ -22,7 +22,7 @@ Go 层是桌面壳层和服务边界。修改这些边界前先确认现有数�
 ## 事件与托盘
 
 - Go 到前端使用 `app.Event.Emit`，前端使用生成的 `Events.On` 订阅。现有事件包括 `navigate`、`tray:analyze` 和 `mouse:navigate`；新增事件前先确认不能复用已有事件。
-- 托盘点击触发剪贴板分析，设置菜单先唤回窗口再发出 `navigate`。事件名和 payload 必须与 `App.tsx` 的订阅一致。
+- 托盘左键唤回窗口；右键在 `trayMatchEnabled` 开启时分析剪贴板，关闭时展开菜单。设置菜单先唤回窗口再发出 `navigate`。事件名和 payload 必须与 `App.tsx` 的订阅一致。
 - 托盘附件窗口不要使用 `tray.ShowWindow()`，沿用现有 `showFromTray`：显示窗口、聚焦，并在需要时临时提升层级后恢复普通层级，使窗口回到保存的位置。
 - 普通关闭窗口只隐藏窗口并取消关闭事件；只有托盘“退出”或明确的真实退出流程才调用 `app.Quit()`。窗口关闭前必须保存最新 bounds。
 - 当前 `main.go` 的 macOS `ActivationPolicy` 是 `Regular`。不要依据旧文档假设应用一定是 accessory；改变该行为必须同时评估 Dock、托盘和窗口唤回流程。
