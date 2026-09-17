@@ -626,24 +626,17 @@ func runAuthenticatedSSH(
 	return nil, errors.New("连接 SSH 主机失败")
 }
 
-func runAuthenticatedSSHStream(
-	ctx context.Context,
-	source ImageSource,
-	cliPath string,
-	language string,
-	dst io.Writer,
-	dockerArgs ...string,
-) error {
+func dialAuthenticatedSSH(ctx context.Context, source ImageSource, language string) (*ssh.Client, error) {
 	hostKeyCallback, err := newAppSSHHostKeyCallback(language)
 	if err != nil {
-		return fmt.Errorf("读取应用 SSH known_hosts 失败: %w", err)
+		return nil, fmt.Errorf("读取应用 SSH known_hosts 失败: %w", err)
 	}
 	user := source.SSHUsername
 	if user == "" {
 		user = os.Getenv("USER")
 	}
 	if user == "" {
-		return errors.New("SSH 用户名为空")
+		return nil, errors.New("SSH 用户名为空")
 	}
 	authMethods := make([]ssh.AuthMethod, 0, 3)
 	if source.SSHPassword != "" {
@@ -653,7 +646,7 @@ func runAuthenticatedSSHStream(
 	if keyData == "" && source.SSHPrivateKeyPath != "" {
 		keyData, err = readSSHPrivateKeyFile(source.SSHPrivateKeyPath)
 		if err != nil {
-			return errors.New("读取 SSH 私钥文件失败")
+			return nil, errors.New("读取 SSH 私钥文件失败")
 		}
 	}
 	if keyData != "" {
@@ -664,12 +657,12 @@ func runAuthenticatedSSHStream(
 			signer, err = ssh.ParsePrivateKey([]byte(keyData))
 		}
 		if err != nil {
-			return errors.New("解析 SSH 私钥失败")
+			return nil, errors.New("解析 SSH 私钥失败")
 		}
 		authMethods = append(authMethods, ssh.PublicKeys(signer))
 	}
 	if len(authMethods) == 0 {
-		return errors.New("SSH 未配置认证凭据")
+		return nil, errors.New("SSH 未配置认证凭据")
 	}
 	host := strings.TrimPrefix(strings.TrimSuffix(source.SSHHost, "]"), "[")
 	port := source.SSHPort
@@ -681,16 +674,49 @@ func runAuthenticatedSSHStream(
 	client, err := dialSSHClient(ctx, address, config)
 	if err != nil {
 		if ctx.Err() != nil {
-			return ctx.Err()
+			return nil, ctx.Err()
 		}
 		var hostKeyErr *sshHostKeyError
 		if errors.As(err, &hostKeyErr) {
-			return hostKeyErr
+			return nil, hostKeyErr
 		}
-		return errors.New("连接 SSH 主机失败")
+		return nil, errors.New("连接 SSH 主机失败")
+	}
+	return client, nil
+}
+
+func runAuthenticatedSSHStream(
+	ctx context.Context,
+	source ImageSource,
+	cliPath string,
+	language string,
+	dst io.Writer,
+	dockerArgs ...string,
+) error {
+	client, err := dialAuthenticatedSSH(ctx, source, language)
+	if err != nil {
+		return err
 	}
 	defer client.Close()
 	return runSSHCommandToWriter(ctx, client, cliPath, dst, dockerArgs...)
+}
+
+// runAuthenticatedSSHCombined 把远程命令的 stdout 和 stderr 都写到同一个 writer，
+// 用于需要读取 docker pull 进度（stderr）的场景。
+func runAuthenticatedSSHCombined(
+	ctx context.Context,
+	source ImageSource,
+	cliPath string,
+	language string,
+	dst io.Writer,
+	dockerArgs ...string,
+) error {
+	client, err := dialAuthenticatedSSH(ctx, source, language)
+	if err != nil {
+		return err
+	}
+	defer client.Close()
+	return runSSHCommandToWriters(ctx, client, cliPath, dst, dst, dockerArgs...)
 }
 
 func runSSHCommand(ctx context.Context, client *ssh.Client, cliPath string, dockerArgs ...string) ([]byte, error) {
@@ -743,6 +769,29 @@ func runSSHCommandToWriter(ctx context.Context, client *ssh.Client, cliPath stri
 			return err
 		}
 		return nil
+	case <-ctx.Done():
+		_ = client.Close()
+		return ctx.Err()
+	}
+}
+
+// runSSHCommandToWriters 分别把远程命令的 stdout / stderr 写到指定 writer，且都实时流式输出。
+func runSSHCommandToWriters(ctx context.Context, client *ssh.Client, cliPath string, stdout, stderr io.Writer, dockerArgs ...string) error {
+	session, err := client.NewSession()
+	if err != nil {
+		return errors.New("创建 SSH 会话失败")
+	}
+	defer session.Close()
+	session.Stdout = stdout
+	session.Stderr = stderr
+	if err := session.Start(shellJoin(append([]string{cliPath}, dockerArgs...))); err != nil {
+		return errors.New("启动远程 Docker 命令失败")
+	}
+	wait := make(chan error, 1)
+	go func() { wait <- session.Wait() }()
+	select {
+	case err := <-wait:
+		return err
 	case <-ctx.Done():
 		_ = client.Close()
 		return ctx.Err()

@@ -447,6 +447,47 @@ func TestImageTaskSnapshotRevisionConsistency(t *testing.T) {
 	}
 }
 
+func TestPullProgressCountsLayers(t *testing.T) {
+	tracker := newPullProgress()
+	for _, line := range []string{
+		"a1b2c3d4e5f6: Pulling fs layer",
+		"bbccddeeff00: Pulling fs layer",
+		"a1b2c3d4e5f6: Downloading [==>  ] 1.2MB/3.4MB",
+		"bbccddeeff00: Extracting [=>   ] 0.5MB/2.0MB",
+		"a1b2c3d4e5f6: Pull complete",
+		"bbccddeeff00: Already exists",
+	} {
+		tracker.observe(line)
+	}
+	completed, total, stage := tracker.snapshot()
+	if total != 2 || completed != 2 {
+		t.Fatalf("unexpected progress: completed=%d total=%d", completed, total)
+	}
+	if stage != "pulling" {
+		t.Fatalf("unexpected stage: %q", stage)
+	}
+}
+
+func TestPullProgressCapturesErrorLine(t *testing.T) {
+	tracker := newPullProgress()
+	tracker.observe("Error response from daemon: pull access denied for nope, repository does not exist")
+	if tracker.lastError() == "" {
+		t.Fatal("expected error line to be captured")
+	}
+}
+
+func TestLineWriterSplitsAndFlushesLines(t *testing.T) {
+	var lines []string
+	writer := &lineWriter{onLine: func(line string) { lines = append(lines, line) }}
+	if _, err := writer.Write([]byte("first\nsecond")); err != nil {
+		t.Fatalf("write failed: %v", err)
+	}
+	writer.Flush()
+	if len(lines) != 2 || lines[0] != "first" || lines[1] != "second" {
+		t.Fatalf("unexpected lines: %#v", lines)
+	}
+}
+
 func TestDockerImageFromDetailKeepsFreshImageListFields(t *testing.T) {
 	base := DockerImage{ID: "sha256:abc", Name: "app:new", Tags: []string{"app:new"}}
 	detail := DockerImageDetail{ID: "sha256:abc", Name: "app:old", Tags: []string{"app:old"}}

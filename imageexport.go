@@ -2,6 +2,7 @@ package main
 
 import (
 	"archive/tar"
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -12,6 +13,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"sync"
@@ -56,6 +58,7 @@ type ImageExportResult struct {
 
 const (
 	imageTaskTypeExport = "export"
+	imageTaskTypePull   = "pull"
 	imageTaskTypeUpdate = "update"
 	imageTaskTypeDetail = "detail"
 	imageTaskQueued     = "queued"
@@ -852,4 +855,216 @@ func (s *ImageService) collectRegistryObjects(ctx context.Context, puller *remot
 		objects[key] = registryObject{size: blob.Size}
 	}
 	return nil
+}
+
+// lineWriter 把写入的字节按行切分并回调，用于解析 docker pull 的进度输出。
+type lineWriter struct {
+	mu     sync.Mutex
+	buffer []byte
+	onLine func(string)
+}
+
+func (w *lineWriter) Write(p []byte) (int, error) {
+	w.mu.Lock()
+	w.buffer = append(w.buffer, p...)
+	var lines []string
+	for {
+		index := bytes.IndexByte(w.buffer, '\n')
+		if index < 0 {
+			break
+		}
+		lines = append(lines, strings.TrimRight(string(w.buffer[:index]), "\r"))
+		w.buffer = w.buffer[index+1:]
+	}
+	w.mu.Unlock()
+	w.emit(lines)
+	return len(p), nil
+}
+
+func (w *lineWriter) Flush() {
+	w.mu.Lock()
+	line := strings.TrimRight(string(w.buffer), "\r\n")
+	w.buffer = nil
+	w.mu.Unlock()
+	w.emit([]string{line})
+}
+
+func (w *lineWriter) emit(lines []string) {
+	if w.onLine == nil {
+		return
+	}
+	for _, line := range lines {
+		if strings.TrimSpace(line) != "" {
+			w.onLine(line)
+		}
+	}
+}
+
+var pullLayerPattern = regexp.MustCompile(`^([0-9a-fA-F]{6,64}):\s+(.+)$`)
+
+// pullProgress 从 docker pull 的分层输出里统计 completed/total。
+type pullProgress struct {
+	seen      map[string]bool
+	done      map[string]bool
+	total     int
+	completed int
+	stage     string
+	errLine   string
+}
+
+func newPullProgress() *pullProgress {
+	return &pullProgress{seen: make(map[string]bool), done: make(map[string]bool), stage: "pulling"}
+}
+
+func (p *pullProgress) observe(line string) bool {
+	trimmed := strings.TrimSpace(line)
+	if trimmed == "" {
+		return false
+	}
+	lower := strings.ToLower(trimmed)
+	if strings.HasPrefix(lower, "error") ||
+		strings.Contains(lower, "error response from daemon") ||
+		strings.Contains(lower, "pull access denied") {
+		p.errLine = trimmed
+		return false
+	}
+	match := pullLayerPattern.FindStringSubmatch(trimmed)
+	if match == nil {
+		return false
+	}
+	id, status := match[1], strings.ToLower(match[2])
+	if !p.seen[id] {
+		p.seen[id] = true
+		p.total++
+	}
+	switch {
+	case strings.Contains(status, "pull complete"), strings.Contains(status, "already exists"):
+		if !p.done[id] {
+			p.done[id] = true
+			p.completed++
+		}
+	case strings.Contains(status, "downloading"), strings.Contains(status, "extracting"):
+		p.stage = "pulling"
+	}
+	return true
+}
+
+func (p *pullProgress) snapshot() (int64, int64, string) {
+	return int64(p.completed), int64(p.total), p.stage
+}
+
+func (p *pullProgress) lastError() string {
+	return p.errLine
+}
+
+// streamDockerPull 运行 docker pull，并把 stdout/stderr 按行回调用于进度统计。
+func (s *ImageService) streamDockerPull(ctx context.Context, source ImageSource, cliPath, imageRef string, onLine func(string)) error {
+	writer := &lineWriter{onLine: onLine}
+	defer writer.Flush()
+	args := []string{"image", "pull", imageRef}
+	if source.Kind == "ssh" && (source.SSHPassword != "" || source.SSHPrivateKey != "" || source.SSHPrivateKeyPath != "") {
+		return runAuthenticatedSSHCombined(ctx, source, cliPath, s.sshLanguage(), writer, args...)
+	}
+	name, commandArgs, err := buildImageCommand(source, cliPath, args...)
+	if err != nil {
+		return err
+	}
+	cmd := execCommandContext(ctx, name, commandArgs...)
+	cmd.Stdout = writer
+	cmd.Stderr = writer
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("拉取镜像失败: %w", err)
+	}
+	return nil
+}
+
+// StartImagePulls 为每个镜像名创建独立的拉取任务；镜像名即拉取来源。
+func (s *ImageService) StartImagePulls(sourceID string, images []string) (ImageExportResult, error) {
+	refs := make([]string, 0, len(images))
+	seen := make(map[string]bool, len(images))
+	for _, image := range images {
+		reference := strings.TrimSpace(image)
+		if reference == "" || !validMutableImageReference(reference) {
+			return ImageExportResult{}, errors.New("镜像引用无效")
+		}
+		if seen[reference] {
+			continue
+		}
+		seen[reference] = true
+		refs = append(refs, reference)
+	}
+	if len(refs) == 0 {
+		return ImageExportResult{}, errors.New("未选择镜像")
+	}
+	source, cliPath, _, err := s.sourceSnapshot(sourceID)
+	if err != nil {
+		return ImageExportResult{}, err
+	}
+	if source.Kind == "registry" {
+		return ImageExportResult{}, errors.New("Registry 来源不支持拉取更新")
+	}
+	for _, reference := range refs {
+		s.enqueueImagePullWithSnapshot(sourceID, reference, source, cliPath)
+	}
+	return ImageExportResult{Started: len(refs), Snapshot: s.GetImageTasks()}, nil
+}
+
+func (s *ImageService) enqueueImagePullWithSnapshot(sourceID, imageRef string, source ImageSource, cliPath string) {
+	ctx, cancel := context.WithCancel(s.serviceContext())
+	taskID := s.createImageTask(imageTaskState{
+		ImageTask: ImageTask{Type: imageTaskTypePull, SourceID: sourceID, ImageID: imageRef},
+		cancel:    cancel,
+	})
+	s.exportWG.Add(1)
+	go func() {
+		defer s.exportWG.Done()
+		s.runImagePull(ctx, taskID, imageRef, source, cliPath)
+	}()
+}
+
+func (s *ImageService) runImagePull(ctx context.Context, taskID, imageRef string, source ImageSource, cliPath string) {
+	s.updateTask(taskID, func(task *imageTaskState) {
+		task.Status = imageTaskRunning
+		task.Stage = "pulling"
+	})
+	tracker := newPullProgress()
+	err := s.streamDockerPull(ctx, source, cliPath, imageRef, func(line string) {
+		if tracker.observe(line) {
+			completed, total, stage := tracker.snapshot()
+			s.updateTask(taskID, func(task *imageTaskState) {
+				task.Completed = completed
+				task.Total = total
+				task.Stage = stage
+			})
+		}
+	})
+	switch {
+	case errors.Is(err, context.Canceled):
+		s.updateTask(taskID, func(task *imageTaskState) {
+			task.Status = imageTaskCanceled
+			task.Stage = "canceled"
+			task.Error = ""
+			task.cancel = nil
+		})
+	case err != nil:
+		message := tracker.lastError()
+		if message == "" {
+			message = err.Error()
+		}
+		s.updateTask(taskID, func(task *imageTaskState) {
+			task.Status = imageTaskFailed
+			task.Stage = "failed"
+			task.Error = message
+			task.cancel = nil
+		})
+	default:
+		s.updateTask(taskID, func(task *imageTaskState) {
+			task.Status = imageTaskSuccess
+			task.Stage = "done"
+			if task.Total > 0 {
+				task.Completed = task.Total
+			}
+			task.cancel = nil
+		})
+	}
 }
