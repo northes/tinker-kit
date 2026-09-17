@@ -290,7 +290,12 @@ func validLegacySourceSuffix(value string) bool {
 // normalizeImageSource 规范化单个镜像来源并判断其合法性，是来源校验/规范化的唯一权威，
 // 供批量 normalizeImageSources 与 Save 的提交验证共用。seen 用于跨来源去重（成功时写入），
 // hasLocal 用于本地来源追踪（Save 校验时传 nil）。无法合法化的来源返回非 nil error。
-func normalizeImageSource(source ImageSource, seen map[string]bool, hasLocal *bool) (ImageSource, error) {
+func normalizeImageSource(
+	source ImageSource,
+	seen map[string]bool,
+	hasLocal *bool,
+	sshProfileNames map[string]string,
+) (ImageSource, error) {
 	source.ID = strings.TrimSpace(source.ID)
 	source.Name = strings.TrimSpace(source.Name)
 	source.Kind = strings.TrimSpace(strings.ToLower(source.Kind))
@@ -344,8 +349,13 @@ func normalizeImageSource(source ImageSource, seen map[string]bool, hasLocal *bo
 			if !validConfigValue(source.SSHProfileID, 128) {
 				return ImageSource{}, errors.New("SSH 配置 ID 非法")
 			}
-			if source.Name == "" {
-				source.Name = source.SSHProfileID
+			// 名称为空，或仍是旧版本写入的 SSH 配置 ID 时，改用 SSH 配置名称。
+			if source.Name == "" || source.Name == source.SSHProfileID {
+				if name := sshProfileNames[source.SSHProfileID]; name != "" {
+					source.Name = name
+				} else if source.Name == "" {
+					source.Name = source.SSHProfileID
+				}
 			}
 			if !validTextValue(source.Name, 128) {
 				return ImageSource{}, errors.New("SSH 来源名称非法")
@@ -444,12 +454,26 @@ func normalizeImageSource(source ImageSource, seen map[string]bool, hasLocal *bo
 	return source, nil
 }
 
-func normalizeImageSources(sources []ImageSource) []ImageSource {
+// sshProfileNameMap 建立 SSH 配置 ID 到名称的映射，供镜像来源默认名称使用。
+func sshProfileNameMap(profiles []SSHProfile) map[string]string {
+	names := make(map[string]string, len(profiles))
+	for _, profile := range profiles {
+		if name := strings.TrimSpace(profile.Name); name != "" {
+			names[profile.ID] = name
+		}
+	}
+	return names
+}
+
+func normalizeImageSources(
+	sources []ImageSource,
+	sshProfileNames map[string]string,
+) []ImageSource {
 	result := make([]ImageSource, 0, len(sources)+1)
 	seen := make(map[string]bool, len(sources)+1)
 	hasLocal := false
 	for _, source := range sources {
-		if normalized, err := normalizeImageSource(source, seen, &hasLocal); err == nil {
+		if normalized, err := normalizeImageSource(source, seen, &hasLocal, sshProfileNames); err == nil {
 			result = append(result, normalized)
 		}
 	}
@@ -479,7 +503,7 @@ func imageSourceIdentifier(source ImageSource) string {
 func validateImageSourcesForSave(sources []ImageSource) error {
 	seen := make(map[string]bool, len(sources))
 	for i, source := range sources {
-		if _, err := normalizeImageSource(source, seen, nil); err != nil {
+		if _, err := normalizeImageSource(source, seen, nil, nil); err != nil {
 			return fmt.Errorf("镜像来源无效（第 %d 项 %q）：%v", i+1, imageSourceIdentifier(source), err)
 		}
 	}
@@ -489,11 +513,17 @@ func validateImageSourcesForSave(sources []ImageSource) error {
 // ValidateImageSource 校验并规范化单个镜像来源，但不会写入配置。
 // 编辑镜像来源时用它尽早反馈输入错误，最终 Save 仍会校验完整列表。
 func (s *ConfigService) ValidateImageSource(source ImageSource) (ImageSource, error) {
-	normalized, err := normalizeImageSource(source, make(map[string]bool, 1), nil)
+	profiles := s.GetSSHProfiles()
+	normalized, err := normalizeImageSource(
+		source,
+		make(map[string]bool, 1),
+		nil,
+		sshProfileNameMap(profiles),
+	)
 	if err != nil || normalized.Kind != "ssh" || normalized.SSHProfileID == "" {
 		return normalized, err
 	}
-	for _, profile := range s.GetSSHProfiles() {
+	for _, profile := range profiles {
 		if profile.ID == normalized.SSHProfileID {
 			return normalized, nil
 		}
@@ -533,11 +563,11 @@ func normalizeFavoritePaths(paths []string) []string {
 
 func normalizeConfig(cfg Config) Config {
 	cfg.DockerCLIPath = normalizeDockerCLIPath(cfg.DockerCLIPath)
-	cfg.ImageSources = normalizeImageSources(cfg.ImageSources)
 	if cfg.SSHProfilesVersion == 0 {
 		cfg.SSHProfilesVersion = currentSSHProfilesVersion
 	}
 	cfg.SSHProfiles = normalizeSSHProfiles(cfg.SSHProfiles)
+	cfg.ImageSources = normalizeImageSources(cfg.ImageSources, sshProfileNameMap(cfg.SSHProfiles))
 	if cfg.SSHConnections == nil {
 		cfg.SSHConnections = []SSHConnection{}
 	}
@@ -838,8 +868,9 @@ func (s *ConfigService) SaveImageSources(dockerCLIPath string, imageSources []Im
 		for _, profile := range cfg.SSHProfiles {
 			profiles[profile.ID] = struct{}{}
 		}
+		profileNames := sshProfileNameMap(cfg.SSHProfiles)
 		for index, source := range imageSources {
-			item, err := normalizeImageSource(source, seen, nil)
+			item, err := normalizeImageSource(source, seen, nil, profileNames)
 			if err != nil {
 				return fmt.Errorf("镜像来源无效（第 %d 项 %q）：%v", index+1, imageSourceIdentifier(source), err)
 			}

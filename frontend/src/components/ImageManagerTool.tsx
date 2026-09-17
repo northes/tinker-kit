@@ -244,14 +244,21 @@ function resolveSources(sources: ImageSource[] | null | undefined): ImageSource[
   return [LOCAL_SOURCE, ...list];
 }
 
-function sourceDisplayName(source: ImageSource, t: (key: string) => string) {
-  return isLocalSource(source)
-    ? t('imageManagerTool.localSource')
-    : source.name ||
-        (source.kind === 'ssh'
-          ? (source as ManagedImageSource).sshProfileID || t('imageManagerTool.sshProfileMissing')
-          : (source as ManagedImageSource).registryURL) ||
-        '';
+function sourceDisplayName(
+  source: ImageSource,
+  t: (key: string) => string,
+  profiles: SSHProfile[],
+) {
+  if (isLocalSource(source)) return t('imageManagerTool.localSource');
+  if (source.name) return source.name;
+  if (source.kind === 'ssh') {
+    const profileID = (source as ManagedImageSource).sshProfileID?.trim() ?? '';
+    return (
+      profiles.find((profile) => profile.id === profileID)?.name ??
+      t('imageManagerTool.sshProfileMissing')
+    );
+  }
+  return (source as ManagedImageSource).registryURL || '';
 }
 
 function sourceMissingSSHProfile(source: ImageSource, profiles: SSHProfile[]) {
@@ -1216,7 +1223,7 @@ export default function ImageManagerTool({
       record(
         'image-manager',
         t('imageManagerTool.refreshed'),
-        sourceDisplayName(source, t),
+        sourceDisplayName(source, t, profiles),
         source.id,
       );
     }
@@ -1455,6 +1462,11 @@ export default function ImageManagerTool({
             <Input
               id="source-edit-name"
               value={editingSource.name ?? ''}
+              placeholder={
+                editingSource.kind === 'ssh'
+                  ? profiles.find((item) => item.id === editingSource.sshProfileID)?.name
+                  : undefined
+              }
               onChange={(e) => updateDraft({ name: e.target.value })}
             />
           </div>
@@ -1553,7 +1565,14 @@ export default function ImageManagerTool({
     const existing = draftSources.filter((item) => !isLocalSource(item));
     const nextSources: ImageSource[] = [
       bindingSource({ ...local, id: LOCAL_SOURCE_ID, kind: 'local' } as ManagedImageSource),
-      ...existing.map((item) => bindingSource(item as ManagedImageSource)),
+      ...existing.map((item) => {
+        const source = item as ManagedImageSource;
+        if (source.kind === 'ssh' && !source.name.trim()) {
+          const profile = profiles.find((entry) => entry.id === source.sshProfileID?.trim());
+          if (profile) return bindingSource({ ...source, name: profile.name });
+        }
+        return bindingSource(source);
+      }),
     ];
     const invalid = nextSources.find((item) =>
       item.kind === 'ssh'
@@ -1899,7 +1918,7 @@ export default function ImageManagerTool({
   };
   const taskSourceLabel = (task: ImageTask) => {
     const taskSource = sources.find((item) => item.id === task.sourceID);
-    return taskSource ? sourceDisplayName(taskSource, t) : task.sourceID;
+    return taskSource ? sourceDisplayName(taskSource, t, profiles) : task.sourceID;
   };
   const taskStatus = (task: ImageTask) =>
     t(`imageManagerTool.taskStatus${task.status.charAt(0).toUpperCase()}${task.status.slice(1)}`);
@@ -2027,7 +2046,7 @@ export default function ImageManagerTool({
                 <Select
                   items={sources.map((item) => ({
                     value: item.id,
-                    label: sourceDisplayName(item, t),
+                    label: sourceDisplayName(item, t, profiles),
                   }))}
                   value={source.id}
                   onValueChange={(value) => {
@@ -2050,7 +2069,7 @@ export default function ImageManagerTool({
                     <SelectGroup>
                       {sources.map((item) => (
                         <SelectItem key={item.id} value={item.id}>
-                          {sourceDisplayName(item, t)}
+                          {sourceDisplayName(item, t, profiles)}
                         </SelectItem>
                       ))}
                       {sources.length > 0 ? <SelectSeparator /> : null}
@@ -2089,7 +2108,7 @@ export default function ImageManagerTool({
                   record(
                     'image-manager',
                     t('imageManagerTool.refreshed'),
-                    sourceDisplayName(source, t),
+                    sourceDisplayName(source, t, profiles),
                     source.id,
                   );
                 }}
@@ -2758,7 +2777,7 @@ export default function ImageManagerTool({
                         <div key={item.id} className="flex items-center justify-between gap-3 py-2">
                           <div className="min-w-0">
                             <div className="truncate text-sm text-foreground">
-                              {sourceDisplayName(item, t)}
+                              {sourceDisplayName(item, t, profiles)}
                             </div>
                             <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
                               <span>{t('imageManagerTool.kindSsh')}</span>
@@ -2812,7 +2831,7 @@ export default function ImageManagerTool({
                         <div key={item.id} className="flex items-center justify-between gap-3 py-2">
                           <div className="min-w-0">
                             <div className="truncate text-sm text-foreground">
-                              {sourceDisplayName(item, t)}
+                              {sourceDisplayName(item, t, profiles)}
                             </div>
                             <div className="text-[10px] text-muted-foreground">
                               {t('imageManagerTool.kindRegistry')}
