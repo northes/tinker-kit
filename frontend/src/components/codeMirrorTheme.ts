@@ -21,6 +21,7 @@ import {
 } from '@codemirror/view';
 import { tags } from '@lezer/highlight';
 import { indentationMarkers } from '@replit/codemirror-indentation-markers';
+import { appSearchPanel } from './codeMirrorSearchPanel';
 
 const indentMarkerColor = 'color-mix(in srgb, var(--muted-foreground) 20%, transparent)';
 const indentMarkerActive = 'color-mix(in srgb, var(--primary) 30%, transparent)';
@@ -398,6 +399,8 @@ export const quietEditorTheme = [
   indentGuideFold,
   quietBase,
   syntaxHighlighting(quietSyntax),
+  // 所有共享该主题的编辑器统一使用 VSCode 风格的搜索面板。
+  appSearchPanel,
 ];
 
 function jsonFoldParseBudget(deadline?: IdleDeadline) {

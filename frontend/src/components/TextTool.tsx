@@ -211,7 +211,7 @@ export default function TextTool({
     }
     setValue(pending.input);
   }, [pending, value]);
-  // 勾选后打开搜索栏并拦截 Esc / 关闭按钮，使其保持常驻；取消勾选时收起。
+  // 勾选后打开搜索栏并保持常驻；用户按 Esc 或点关闭时关闭面板并同步取消勾选。
   useEffect(() => {
     const view = inputView.current;
     if (!view) return;
@@ -220,18 +220,14 @@ export default function TextTool({
       return;
     }
     openSearchPanel(view);
-    const panel = view.dom.querySelector<HTMLElement>('.cm-panel.cm-search');
+    const panel = view.dom.querySelector<HTMLElement>('.cm-panel.cm-app-search');
     if (!panel) return;
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        event.preventDefault();
-        event.stopPropagation();
-      }
+      if (event.key === 'Escape') setAlwaysSearch(false);
     };
     const onClick = (event: MouseEvent) => {
-      if ((event.target as HTMLElement | null)?.closest('button[name="close"]')) {
-        event.preventDefault();
-        event.stopPropagation();
+      if ((event.target as HTMLElement | null)?.closest('.cm-app-search-close')) {
+        setAlwaysSearch(false);
       }
     };
     panel.addEventListener('keydown', onKeyDown, true);

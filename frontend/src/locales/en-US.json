@@ -1321,5 +1321,19 @@
     "minutes": "{{count}} minutes ago",
     "hours": "{{count}} hours ago",
     "days": "{{count}} days ago"
+  },
+  "searchPanel": {
+    "find": "Find",
+    "replace": "Replace",
+    "replaceAll": "Replace all",
+    "previous": "Previous",
+    "next": "Next",
+    "close": "Close",
+    "matchCase": "Match case",
+    "regexp": "Regular expression",
+    "wholeWord": "Whole word",
+    "toggleReplace": "Toggle replace",
+    "noResults": "No results",
+    "matches": "{{current}}/{{total}}{{suffix}}"
   }
 }

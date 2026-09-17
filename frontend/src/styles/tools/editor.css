@@ -28,3 +28,120 @@
 .cm-cursor {
   border-left-color: var(--primary) !important;
 }
+/* 搜索面板浮在编辑器右上角的小卡片，不再挤压内容。 */
+.cm-editor .cm-panels.cm-panels-top {
+  position: absolute !important;
+  top: 6px;
+  right: 6px;
+  left: 6px;
+  z-index: 20;
+  display: flex !important;
+  justify-content: flex-end;
+  border: 0 !important;
+  background: transparent !important;
+  pointer-events: none;
+}
+.cm-editor .cm-panels.cm-panels-top .cm-panel.cm-search,
+.cm-editor .cm-panels.cm-panels-top .cm-panel.cm-app-search {
+  pointer-events: auto;
+  width: min(420px, 100%);
+  padding: 6px 8px !important;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--popover) !important;
+  color: var(--popover-foreground) !important;
+  box-shadow: var(--shadow-md);
+  font-family: var(--font-sans);
+}
+
+/* 自定义搜索面板（AppSearchPanel）：VSCode 风格的查找/替换浮层。 */
+.cm-app-search {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.cm-app-search-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.cm-app-search-input {
+  height: 26px;
+  min-width: 150px;
+  flex: 1 1 150px;
+  padding: 0 8px;
+  border: 1px solid var(--input);
+  border-radius: calc(var(--radius) - 4px);
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans);
+  font-size: 12px;
+  outline: none;
+}
+.cm-app-search-input:focus {
+  border-color: var(--ring);
+}
+.cm-app-search-count {
+  flex: none;
+  min-width: 44px;
+  text-align: right;
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted-foreground);
+}
+.cm-app-search-button,
+.cm-app-search-toggle,
+.cm-app-search-caret {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 26px;
+  flex: none;
+  border: 1px solid transparent;
+  border-radius: calc(var(--radius) - 4px);
+  background: transparent;
+  color: var(--muted-foreground);
+  cursor: pointer;
+}
+.cm-app-search-button {
+  width: 26px;
+  padding: 0;
+}
+.cm-app-search-caret {
+  width: 22px;
+  padding: 0;
+}
+.cm-app-search-toggle {
+  min-width: 26px;
+  padding: 0 5px;
+  font-size: 12px;
+}
+.cm-app-search-button:hover,
+.cm-app-search-toggle:hover,
+.cm-app-search-caret:hover {
+  background: var(--muted);
+  color: var(--foreground);
+}
+.cm-app-search-toggle[aria-pressed='true'] {
+  background: var(--secondary);
+  color: var(--secondary-foreground);
+}
+.cm-app-search-button svg,
+.cm-app-search-caret svg {
+  width: 14px;
+  height: 14px;
+}
+.cm-app-search-caret svg {
+  transition: transform 120ms ease;
+}
+.cm-app-search-caret[aria-expanded='true'] svg {
+  transform: rotate(90deg);
+}
+.cm-app-search-text {
+  width: auto;
+  padding: 0 8px;
+  border-color: var(--border);
+  background: var(--background);
+  color: var(--foreground);
+  font-size: 12px;
+}
