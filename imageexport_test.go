@@ -446,3 +446,41 @@ func TestImageTaskSnapshotRevisionConsistency(t *testing.T) {
 		t.Fatalf("并发更新丢失: %+v", snapshot)
 	}
 }
+
+func TestDockerImageFromDetailKeepsFreshImageListFields(t *testing.T) {
+	base := DockerImage{ID: "sha256:abc", Name: "app:new", Tags: []string{"app:new"}}
+	detail := DockerImageDetail{ID: "sha256:abc", Name: "app:old", Tags: []string{"app:old"}}
+	got := dockerImageFromDetail(base, detail)
+	if got.Name != "app:new" || !stringSlicesEqual(got.Tags, []string{"app:new"}) {
+		t.Fatalf("stale detail overrode fresh image ls fields: %#v", got)
+	}
+}
+
+func TestDockerImagesEqualIgnoresTagOrderAndName(t *testing.T) {
+	a := DockerImage{ID: "sha256:abc", Name: "app:b", Tags: []string{"app:b", "app:a"}}
+	b := DockerImage{ID: "sha256:abc", Name: "app:a", Tags: []string{"app:a", "app:b"}}
+	if !dockerImagesEqual(a, b) {
+		t.Fatal("expected images with the same tag set to compare equal")
+	}
+	a.Tags = []string{"app:b"}
+	if dockerImagesEqual(a, b) {
+		t.Fatal("expected different tag sets to compare unequal")
+	}
+}
+
+func TestStabilizeWatchImagesKeepsPreviousNameAndOrder(t *testing.T) {
+	service := &ImageService{}
+	service.watchSnapshots = map[string]*watchScan{
+		watchSnapshotKey("src", "fp"): {
+			index: map[string]DockerImage{
+				"sha256:1": {ID: "sha256:1", Name: "app:a", Tags: []string{"app:a", "app:b"}},
+			},
+		},
+	}
+	worker := &watchWorker{sourceID: "src"}
+	images := []DockerImage{{ID: "sha256:1", Name: "app:b", Tags: []string{"app:b", "app:a"}}}
+	got := service.stabilizeWatchImages(worker, "fp", images)
+	if got[0].Name != "app:a" || !stringSlicesEqual(got[0].Tags, []string{"app:a", "app:b"}) {
+		t.Fatalf("expected previous name and order preserved: %#v", got[0])
+	}
+}

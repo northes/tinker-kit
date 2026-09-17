@@ -199,12 +199,8 @@ func (s *ImageService) RefreshDockerImages(sourceID string, clientID string) err
 	if worker == nil || worker.sourceID != sourceID || worker.clientID != clientID {
 		return errors.New("镜像来源未处于活动状态")
 	}
-	worker.runMu.Lock()
-	running := worker.running
-	worker.runMu.Unlock()
-	if running {
-		return nil
-	}
+	// 扫描是单线程循环执行的：刷新请求写入带缓冲的 channel，当前轮结束后立刻再扫一轮，
+	// 不会打断或并行。若扫描期间直接丢弃请求，用户点刷新会毫无反应，要等下一个定时轮。
 	select {
 	case worker.refresh <- struct{}{}:
 	default:
@@ -514,6 +510,7 @@ func (s *ImageService) runWatchRound(worker *watchWorker) {
 			clearUncached()
 			return
 		}
+		images = s.stabilizeWatchImages(worker, fingerprint, images)
 		index = indexImages(images)
 		doneScanned = len(images)
 		doneTotal = len(images)
@@ -542,6 +539,25 @@ func (s *ImageService) runWatchRound(worker *watchWorker) {
 	doneEvent.SnapshotUpdatedAt = updatedAt.Format(time.RFC3339Nano)
 	s.emitWatchEvent(worker, doneEvent)
 	finishTask(nil)
+}
+
+// stabilizeWatchImages 在 tag 集合未变时沿用上一轮的 Name 与 tag 顺序。
+// docker image ls 对同一镜像多个 tag 的返回顺序不稳定，若直接采用本轮顺序，
+// 每轮的展示名会在 tag 间来回切换，刷新时看起来像“项目被替换”。
+func (s *ImageService) stabilizeWatchImages(worker *watchWorker, fingerprint string, images []DockerImage) []DockerImage {
+	previous, ok := s.watchPreviousSnapshot(worker, fingerprint)
+	if !ok {
+		return images
+	}
+	for index := range images {
+		prev, exists := previous[images[index].ID]
+		if !exists || !stringSetsEqual(prev.Tags, images[index].Tags) {
+			continue
+		}
+		images[index].Name = prev.Name
+		images[index].Tags = prev.Tags
+	}
+	return images
 }
 
 // diffWatchRound 计算上一轮与本轮差异并推送精准事件（Docker/SSH 源）。
@@ -698,10 +714,13 @@ func (s *ImageService) enrichDockerWatchImages(ctx context.Context, worker *watc
 
 func dockerImageFromDetail(base DockerImage, detail DockerImageDetail) DockerImage {
 	updated := base
-	if detail.Name != "" {
+	// docker image ls 的 Name/Tags 才是 Docker/SSH 来源的权威值；详情缓存里的
+	// Name/Tags 来自上一轮 inventory，重命名或新增 tag 后会是旧值，若覆盖新结果
+	// 会让 diff 误判为“没有变化”，列表也就不刷新。仅在缺失时用详情补充。
+	if updated.Name == "" && detail.Name != "" {
 		updated.Name = detail.Name
 	}
-	if len(detail.Tags) > 0 {
+	if len(updated.Tags) == 0 && len(detail.Tags) > 0 {
 		updated.Tags = append([]string(nil), detail.Tags...)
 	}
 	if detail.Size > 0 {
@@ -1029,12 +1048,32 @@ func indexImages(images []DockerImage) map[string]DockerImage {
 	return result
 }
 
-// dockerImagesEqual 比较 diff 相关的可展示字段。
+// dockerImagesEqual 比较 diff 相关的可展示字段。Name 只是 Tags 里的展示值，且
+// docker image ls 对同一镜像多个 tag 的返回顺序并不保证稳定；若比较 Name 或按
+// 顺序比较 Tags，会把“只是顺序变化”误判为更新，导致列表反复刷新、搜索结果闪烁。
+// 因此这里按 tag 集合比较，忽略 Name 与顺序。
 func dockerImagesEqual(a, b DockerImage) bool {
-	if a.ID != b.ID || a.Name != b.Name || a.Repository != b.Repository || a.Digest != b.Digest || a.MediaType != b.MediaType || a.SizeType != b.SizeType || a.SizeBytes != b.SizeBytes || a.CreatedAt != b.CreatedAt {
+	if a.ID != b.ID || a.Repository != b.Repository || a.Digest != b.Digest || a.MediaType != b.MediaType || a.SizeType != b.SizeType || a.SizeBytes != b.SizeBytes || a.CreatedAt != b.CreatedAt {
 		return false
 	}
-	return stringSlicesEqual(a.Tags, b.Tags)
+	return stringSetsEqual(a.Tags, b.Tags)
+}
+
+func stringSetsEqual(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	counts := make(map[string]int, len(a))
+	for _, value := range a {
+		counts[value]++
+	}
+	for _, value := range b {
+		counts[value]--
+		if counts[value] < 0 {
+			return false
+		}
+	}
+	return true
 }
 
 func (s *ImageService) logWatch(worker *watchWorker, message string) {
