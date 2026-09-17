@@ -264,6 +264,12 @@ npx shadcn@latest view owner/repo/item
 **Templates:** `next`, `vite`, `start`, `react-router`, `astro` (all support `--monorepo`) and `laravel` (not supported for monorepo)
 **Preset codes:** Version-prefixed base62 strings (e.g. `a2r6bw` or `b0`), from [ui.shadcn.com](https://ui.shadcn.com).
 
+## 项目约定（TinkerKit）
+
+- `base-nova` 注册表用 `import { cn } from "cn"` 占位并声明 `dependencies: ["cn"]`。`add` 会原样写入 `from "cn"` 并把 npm 包 `cn` 写进 `package.json`；必须手动改回 `@/lib/utils`，还原 `package.json`/`package-lock.json`（必要时 `npm prune`），否则构建与依赖被污染。
+- 注册表产物是双引号、无分号的官方格式；写入后跑项目 Prettier（单引号、分号、100 列），不要提交官方原始格式。
+- 用法细则见 `layout-guidance`：`SelectItem` 必须包在 `SelectGroup` 内（浮层内边距来源），保持 `alignItemWithTrigger` 默认值，phosphor 图标统一 `weight="duotone"`。
+
 ## Detailed References
 
 - [rules/forms.md](./rules/forms.md) — FieldGroup, Field, InputGroup, ToggleGroup, FieldSet, validation states

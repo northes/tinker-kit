@@ -22,6 +22,14 @@ user-invocable: false
 - 命令面板的 `labelKey` 复用实际界面按钮文案；只有切换型命令才使用独立的 `commands.toggleXxx` key。
 - locale key 按领域组织，例如 `tools.<id>`、`<tool>Tool.*`、`commands.*`、`settings.*`；不要为同一文案建立重复 key。
 - 翻译缺失应在资源层修复，不在组件中增加英文、中文或默认字符串兜底分支。
+- 移除某处 UI 时同步删除只为它存在的 locale key；新增或改名 key 时保持中英资源 key 结构一致，不留单语 key。
+
+## 名称与失效引用
+
+- 来源、配置等实体的显示名称不得回退为内部 ID（例如把 `ssh-profile-...` 当作名称）；名称为空时用关联实体的名称（如镜像来源用所选 SSH 配置名）。
+- 关联实体已失效时显示专门的 locale 文案（如 `sshProfileMissing`），不要显示原始 ID。
+- 名称可留空的表单，用 placeholder 展示将要采用的默认名称，让“留空即默认”可预期。
+- Go 层做展示名的默认值与规范化时同样遵守本节，见 `wails-integration`。
 
 ## Go 托盘文案
 

@@ -44,5 +44,6 @@ user-invocable: false
 ## 失败处理
 
 - 验证失败时先确认失败属于本次修改还是基线问题，继续追到数据流、生命周期、类型或构建配置的根因。
+- 基线已有未格式化文件：`fileservice.go`（gofmt）、`App.tsx`/`HistoryPage.tsx`/`ImageTool.tsx`/`ui/color-picker.tsx` 等（Prettier）。它们本就失败，不要当成本次引入，也不要顺手格式化无关文件制造噪声。
 - 不通过额外 CSS 覆盖、特殊判断、异常吞掉、隐式重试或延迟执行来让命令表面通过。
 - 代码改动完成后，验证应覆盖原始复现和相关边界；文档改动则检查是否留下过时的文件路径、API 名称、底层 primitive 或命令。

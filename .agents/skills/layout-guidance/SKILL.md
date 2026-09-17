@@ -1,6 +1,6 @@
 ---
 name: layout-guidance
-description: 仅在改工具页高度链、CodeMirror 尺寸、浮层滚动或 OverlayScrollbar 时使用。普通间距、颜色或文案修改不要使用本 skill。
+description: 仅在改工具页布局/高度链、CodeMirror 尺寸、浮层与 footer 对齐等 UI 细节或 OverlayScrollbar 时使用。纯颜色或文案修改不要使用本 skill。
 user-invocable: false
 ---
 
@@ -39,6 +39,25 @@ user-invocable: false
 - Popover/Select 会 Portal 到 `body`，局部父级选择器不能可靠定位；通过组件 `className` 或实际 `data-state`/`data-side` 定位。
 - 浮层背景统一使用 `bg-popover`；搜索框需要覆盖组件默认暗色输入背景时显式使用 `dark:bg-transparent`。
 - 圆角统一使用 shadcn 的 `--radius` 和既有组件圆角，不新增全局圆角覆盖层。
+
+## footer band 与共享分割线
+
+- 侧栏底部（`.sidebar-footer`，命令面板入口）与工具页 footer 共用同一条水平分割线时，两侧 band 的几何必须一致：底部内边距、分隔线到内容的顶部间距、控件高度三者取同一套值。
+- 锚点是 `ToolLayout`：`pb-4` 页面底部内边距 + footer `pt-3` + 30px 控件高度。侧栏 `.sidebar` 的底部内边距、`.sidebar-footer` 的 `pt` 与命令面板按钮高度按同一套值设置，改一侧必须同步另一侧。
+- `ToolLayout` 的底部内边距是页面级留白，收紧它会同时影响所有工具页和设置页，不要只按单个页面调整。
+- 底部留白只由 `ToolLayout` 的页面 `pb` 决定，不要给 footer 内容加负 margin 或第二层 padding 来“挤出”对齐。
+
+## 组件与交互细节
+
+- `DialogFooter` 自带 `border-t`；dialog 主体不要再加 `border-b`，否则相邻两条 1px 边框叠成 2px，分割线看起来比官方粗。
+- Base UI `Select`：条目必须包在 `SelectGroup` 内；浮层内边距来自 `SelectGroup` 的 `p-1`，不要给 Popup 另加 padding 覆盖官方样式。
+- 保持 `SelectContent` 的 `alignItemWithTrigger` 默认值（原生对齐：选中项与 trigger 对齐）；不要为了“展开在下方”而设为 `false`，也不要在各处混用两种定位。
+- 浮层在暗色下“没有阴影”通常是主题 token 问题：`--shadow-*` 明暗同值（10% 黑），在深色背景上不可见；要改的是暗色 token，不要改组件或加局部阴影覆盖。
+- 图标统一使用 phosphor 的 `weight="duotone"`（按钮、下拉项等装饰性图标），新增或调整控件时不要遗漏个别图标。
+- 表格/列表右键不应改变选中项；右键菜单操作在目标行未被选中时回退到该行，已选中时作用于整个选择集，不要靠右键来建立选中。
+- 搜索输入默认回车才触发（本地 `draft` + `onKeyDown` Enter），不要实时过滤，也不要引入防抖或 `useDeferredValue`。
+- 多个工具重复的同类字段抽为共享组件（如 SSH 配置字段 `SSHProfileSelect`），由各工具共同使用，不要在工具内各写一套 Select + 管理入口。
+- 与下拉框相关的管理入口放进该下拉框（如来源下拉框底部的「管理」项，内部哨兵值触发实际动作），不再额外放独立管理按钮；空列表时也不渲染多余的分隔线。
 
 ## 自绘滚动条
 
