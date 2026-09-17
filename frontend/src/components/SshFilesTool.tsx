@@ -2762,7 +2762,7 @@ export default function SshFilesTool({ active }: Props) {
               <span className="min-w-0 break-words">{manageFeedback.message}</span>
             </div>
           ) : null}
-          <div className="min-h-0 flex-1 overflow-y-auto border-b border-border px-6 py-5 [padding-inline-end:var(--overlay-scrollbar-hit-size)]">
+          <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5 [padding-inline-end:var(--overlay-scrollbar-hit-size)]">
             {manageView === 'list' ? (
               <div className="min-w-0 flex flex-col gap-4">
                 <div className="flex items-center justify-end gap-3">
