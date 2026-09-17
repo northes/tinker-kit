@@ -9,6 +9,7 @@ import {
   Check,
   Copy,
   DownloadSimple,
+  GearSix,
   HardDrives,
   ListDashes,
   MagnifyingGlass,
@@ -93,7 +94,15 @@ import {
 } from './ui/dropdown-menu';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectSeparator,
+  SelectTrigger,
+  SelectValue,
+} from './ui/select';
 import { Spinner } from './ui/spinner';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
@@ -102,6 +111,7 @@ import { SSHProfileSelect } from './SSHProfileSelect';
 import { useSSHProfiles } from './SSHProfileManagerDialog';
 
 const LOCAL_SOURCE_ID = 'local';
+const MANAGE_SOURCES_VALUE = '__manage-sources__';
 const LOCAL_SOURCE = {
   id: LOCAL_SOURCE_ID,
   name: '本机',
@@ -2021,6 +2031,10 @@ export default function ImageManagerTool({
                   }))}
                   value={source.id}
                   onValueChange={(value) => {
+                    if (value === MANAGE_SOURCES_VALUE) {
+                      openManage();
+                      return;
+                    }
                     if (value) {
                       setSourceId(value);
                     }
@@ -2032,12 +2046,21 @@ export default function ImageManagerTool({
                   >
                     <SelectValue />
                   </SelectTrigger>
-                  <SelectContent alignItemWithTrigger={false}>
-                    {sources.map((item) => (
-                      <SelectItem key={item.id} value={item.id}>
-                        {sourceDisplayName(item, t)}
+                  <SelectContent>
+                    <SelectGroup>
+                      {sources.map((item) => (
+                        <SelectItem key={item.id} value={item.id}>
+                          {sourceDisplayName(item, t)}
+                        </SelectItem>
+                      ))}
+                      {sources.length > 0 ? <SelectSeparator /> : null}
+                      <SelectItem value={MANAGE_SOURCES_VALUE}>
+                        <span className="flex items-center gap-2">
+                          <GearSix size={14} />
+                          {t('imageManagerTool.manageSources')}
+                        </span>
                       </SelectItem>
-                    ))}
+                    </SelectGroup>
                   </SelectContent>
                 </Select>
                 {sourceProfileMissing ? (
@@ -2078,13 +2101,6 @@ export default function ImageManagerTool({
                 )}
                 {t('imageManagerTool.refresh')}
               </Button>
-              <Button
-                variant="ghost"
-                className="h-[30px] flex-none px-[11px] text-[11px]"
-                onClick={openManage}
-              >
-                {t('imageManagerTool.manageSources')}
-              </Button>
             </div>
           }
         />
@@ -2111,16 +2127,6 @@ export default function ImageManagerTool({
                 <ArrowsClockwise data-icon="inline-start" weight="duotone" />
                 {t('imageManagerTool.refresh')}
               </Button>
-              {sourceProfileMissing ? (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="h-[30px] px-[11px] text-[11px]"
-                  onClick={openManage}
-                >
-                  {t('imageManagerTool.manageSources')}
-                </Button>
-              ) : null}
             </div>
           ) : contentViewState === 'empty' || contentViewState === 'no-results' ? (
             <div className="flex h-auto min-h-0 flex-1 flex-col items-center justify-center gap-2 text-center">
