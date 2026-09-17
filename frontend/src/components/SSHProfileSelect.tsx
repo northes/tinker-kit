@@ -79,7 +79,7 @@ export function SSHProfileSelect({
           })
         }
       >
-        <GearSix />
+        <GearSix weight="duotone" />
       </Button>
     </div>
   );

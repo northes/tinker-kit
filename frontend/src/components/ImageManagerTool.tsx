@@ -2056,7 +2056,7 @@ export default function ImageManagerTool({
                       {sources.length > 0 ? <SelectSeparator /> : null}
                       <SelectItem value={MANAGE_SOURCES_VALUE}>
                         <span className="flex items-center gap-2">
-                          <GearSix size={14} />
+                          <GearSix size={14} weight="duotone" />
                           {t('imageManagerTool.manageSources')}
                         </span>
                       </SelectItem>
