@@ -27,6 +27,7 @@ import {
   RetryImageExport,
   StartImageExport,
   StartImageExports,
+  StartImagePulls,
   TagDockerImages,
   TestImageSourceConnection,
   WatchDockerImages,
@@ -179,7 +180,7 @@ type ImageOperationDialogState =
     }
   | {
       type: 'copy-tag';
-      images: DockerImage[];
+      rows: ImageRow[];
       sourceConfigKey: string;
       value: string;
     }
@@ -415,8 +416,7 @@ function imageWithTag(reference: string, tag: string) {
   return `${imageRepository(reference)}:${tag}`;
 }
 
-function copyableImageName(source: ImageSource, image: DockerImage, unnamed: string) {
-  const name = imageLabel(image, unnamed);
+function copyableImageName(source: ImageSource, name: string) {
   if (source.kind !== 'registry') return name;
   const registryPrefix = ((source as ManagedImageSource).registryURL ?? '')
     .trim()
@@ -448,12 +448,18 @@ function associatedRegistryTags(images: DockerImage[], ids: string[]) {
   ];
 }
 
-function deleteTargets(images: DockerImage[], ids: string[]): DockerDeleteTarget[] {
-  const byID = new Map(images.map((image) => [image.id, image]));
-  return ids.map((imageID) => ({
-    imageID,
-    expectedDigest: byID.get(imageID)?.digest?.trim() ?? '',
-  }));
+// 删除按行粒度：具名行用 repo:tag（docker rmi <tag> 只移除该 tag），
+// 悬空行才回退到镜像 ID（docker rmi <id> 删除整个镜像）。
+function deleteTargets(rows: ImageRow[]): DockerDeleteTarget[] {
+  const seen = new Set<string>();
+  const targets: DockerDeleteTarget[] = [];
+  for (const row of rows) {
+    const imageID = row.reference || row.image.id;
+    if (seen.has(imageID)) continue;
+    seen.add(imageID);
+    targets.push({ imageID, expectedDigest: row.image.digest?.trim() ?? '' });
+  }
+  return targets;
 }
 
 function ImageSearchField({
@@ -918,10 +924,43 @@ function imageCreatedAtMs(value: string) {
   return date ? date.getTime() : null;
 }
 
-type IndexedImage = {
+type ImageRow = {
+  key: string;
+  reference: string;
+  tag: string;
   image: DockerImage;
+};
+
+// 与 `docker images` 一致：同一镜像的每个 tag 各占一行，行身份是 repo:tag。
+// 只有没有任何具名 tag 的悬空镜像才退回镜像 ID 作为行键。
+function buildImageRows(images: DockerImage[]): ImageRow[] {
+  const rows: ImageRow[] = [];
+  for (const image of images) {
+    const tags = asStringList(image.tags).filter((tag) => !tag.includes('<none>'));
+    if (tags.length === 0) {
+      rows.push({ key: image.id, reference: '', tag: '', image });
+      continue;
+    }
+    for (const tag of tags) {
+      rows.push({ key: tag, reference: tag, tag, image });
+    }
+  }
+  return rows;
+}
+
+function imageRowLabel(row: ImageRow, unnamed: string) {
+  return row.reference || imageLabel(row.image, unnamed);
+}
+
+function isNamedImageRow(row: ImageRow) {
+  return Boolean(row.reference);
+}
+
+type IndexedImage = {
+  row: ImageRow;
   searchId: string;
   searchName: string;
+  sortName: string;
   sizeBytes: number;
   createdAtMs: number | null;
 };
@@ -1014,6 +1053,7 @@ export default function ImageManagerTool({
   }, [active]);
   const [tasksOpen, setTasksOpen] = useState(false);
   const [batchExportStarting, setBatchExportStarting] = useState(false);
+  const [pullStarting, setPullStarting] = useState(false);
   const [retryingTaskID, setRetryingTaskID] = useState<string | null>(null);
   const [taskClock, setTaskClock] = useState(Date.now);
   const sourceConfigKey = JSON.stringify({
@@ -1264,24 +1304,28 @@ export default function ImageManagerTool({
   }, [clearPending, pending, record, requestWatchReload, source, t]);
 
   const unnamed = t('imageManagerTool.unnamed');
-  const indexedImages = useMemo<IndexedImage[]>(
+  const indexedRows = useMemo<IndexedImage[]>(
     () =>
-      displayedImages.map((image) => ({
-        image,
-        searchId: image.id.toLocaleLowerCase(),
-        searchName: imageLabel(image, '').toLocaleLowerCase(),
-        sizeBytes: imageSizeBytes(image),
-        createdAtMs: imageCreatedAtMs(image.createdAt),
+      buildImageRows(displayedImages).map((row) => ({
+        row,
+        searchId: row.image.id.toLocaleLowerCase(),
+        // 同时匹配行名称与全部 tag，避免因展示顺序变化导致搜索结果闪烁。
+        searchName: [imageLabel(row.image, ''), row.reference, ...asStringList(row.image.tags)]
+          .join(' ')
+          .toLocaleLowerCase(),
+        sortName: imageRowLabel(row, '').toLocaleLowerCase(),
+        sizeBytes: imageSizeBytes(row.image),
+        createdAtMs: imageCreatedAtMs(row.image.createdAt),
       })),
     [displayedImages],
   );
-  const filteredImages = useMemo(() => {
+  const filteredRows = useMemo(() => {
     const query = search.trim().toLocaleLowerCase();
     const next = query
-      ? indexedImages.filter(
+      ? indexedRows.filter(
           (item) => item.searchId.includes(query) || item.searchName.includes(query),
         )
-      : [...indexedImages];
+      : [...indexedRows];
     const direction = sortDirection === 'asc' ? 1 : -1;
     next.sort((left, right) => {
       if (sortKey === 'createdAt') {
@@ -1293,28 +1337,30 @@ export default function ImageManagerTool({
       }
       const comparison =
         sortKey === 'name'
-          ? left.searchName.localeCompare(right.searchName, i18n.language, {
+          ? left.sortName.localeCompare(right.sortName, i18n.language, {
               sensitivity: 'base',
             })
           : left.sizeBytes - right.sizeBytes;
       return comparison * direction;
     });
-    return next.map((item) => item.image);
-  }, [i18n.language, indexedImages, search, sortDirection, sortKey]);
+    return next.map((item) => item.row);
+  }, [i18n.language, indexedRows, search, sortDirection, sortKey]);
   const selectedCount = sourceIsChanging ? 0 : selected.size;
-  const selectedImages = sourceIsChanging
-    ? []
-    : filteredImages.filter((image) => selected.has(image.id));
-  const selectedNamedImages = selectedImages.filter((image) =>
-    isNamedImageReference(image, unnamed),
-  );
-  const allSelected =
-    filteredImages.length > 0 && filteredImages.every((image) => selected.has(image.id));
-  const someSelected = filteredImages.some((image) => selected.has(image.id)) && !allSelected;
-  const filteredTotalBytes = useMemo(
-    () => filteredImages.reduce((total, image) => total + imageSizeBytes(image), 0),
-    [filteredImages],
-  );
+  const selectedRows = sourceIsChanging ? [] : filteredRows.filter((row) => selected.has(row.key));
+  const selectedNamedRows = selectedRows.filter((row) => isNamedImageRow(row));
+  const allSelected = filteredRows.length > 0 && filteredRows.every((row) => selected.has(row.key));
+  const someSelected = filteredRows.some((row) => selected.has(row.key)) && !allSelected;
+  // 总大小按镜像去重（同一镜像的多个 tag 共享同一份磁盘占用），行数则按 tag 计。
+  const filteredTotalBytes = useMemo(() => {
+    const seen = new Set<string>();
+    let total = 0;
+    for (const row of filteredRows) {
+      if (seen.has(row.image.id)) continue;
+      seen.add(row.image.id);
+      total += imageSizeBytes(row.image);
+    }
+    return total;
+  }, [filteredRows]);
   const sourceViewState = sourceProfileMissing
     ? 'unavailable'
     : resolveSourceViewState(isConnecting, status, loadError, isUpdating, isInitialLoad);
@@ -1325,7 +1371,7 @@ export default function ImageManagerTool({
     isConnecting,
     hasSnapshot,
     images.length,
-    filteredImages.length,
+    filteredRows.length,
     sourceViewState,
   );
   const actionBlocked =
@@ -1335,8 +1381,8 @@ export default function ImageManagerTool({
   const sourceCanDelete = (source as ManagedImageSource).capabilities?.canDelete ?? true;
   const selectedSupportsDockerMutations =
     sourceSupportsDockerMutations &&
-    selectedImages.length > 0 &&
-    selectedNamedImages.length === selectedImages.length;
+    selectedRows.length > 0 &&
+    selectedNamedRows.length === selectedRows.length;
   const registryConfirmDigests =
     confirm?.type === 'delete' && confirm.sourceKind === 'registry'
       ? [
@@ -1353,12 +1399,12 @@ export default function ImageManagerTool({
       : [];
 
   useEffect(() => {
-    const visibleIds = new Set(filteredImages.map((image) => image.id));
+    const visibleKeys = new Set(filteredRows.map((row) => row.key));
     setSelected((current) => {
-      const next = new Set([...current].filter((id) => visibleIds.has(id)));
+      const next = new Set([...current].filter((key) => visibleKeys.has(key)));
       return next.size === current.size ? current : next;
     });
-  }, [filteredImages]);
+  }, [filteredRows]);
 
   const changeSort = (nextKey: SortKey) => {
     if (sortKey === nextKey)
@@ -1638,19 +1684,19 @@ export default function ImageManagerTool({
   };
 
   const toggleAll = (checked: boolean) => {
-    setSelected(checked ? new Set(filteredImages.map((image) => image.id)) : new Set());
+    setSelected(checked ? new Set(filteredRows.map((row) => row.key)) : new Set());
   };
 
-  const toggleRow = (id: string, checked: boolean) => {
+  const toggleRow = (key: string, checked: boolean) => {
     setSelected((current) => {
       const next = new Set(current);
-      if (checked) next.add(id);
-      else next.delete(id);
+      if (checked) next.add(key);
+      else next.delete(key);
       return next;
     });
   };
 
-  const viewImage = (image: DockerImage) => onOpenDetail(source.id, image.id);
+  const viewRow = (row: ImageRow) => onOpenDetail(source.id, row.image.id);
 
   const copyImageName = async (name: string) => {
     try {
@@ -1774,55 +1820,50 @@ export default function ImageManagerTool({
     }
   };
 
-  const operationImagesFor = (image: DockerImage) =>
-    selected.has(image.id) ? selectedImages : [image];
+  const operationRowsFor = (row: ImageRow) => (selected.has(row.key) ? selectedRows : [row]);
 
-  const openPushDialog = (images: DockerImage[]) => {
+  const openPushDialog = (rows: ImageRow[]) => {
     if (
       actionBlocked ||
       !sourceSupportsDockerMutations ||
-      images.length === 0 ||
-      images.some((image) => !isNamedImageReference(image, unnamed))
+      rows.length === 0 ||
+      rows.some((row) => !isNamedImageRow(row))
     ) {
       return;
     }
     setOperationError('');
     setOperationDialog({
       type: 'push',
-      changes: images.map((image) => {
-        const name = imageLabel(image, unnamed);
-        return { source: name, target: name };
-      }),
+      changes: rows.map((row) => ({ source: row.reference, target: row.reference })),
       sourceConfigKey,
-      value: images.length === 1 ? imageLabel(images[0], unnamed) : '',
+      value: rows.length === 1 ? rows[0].reference : '',
     });
   };
 
-  const openRenameDialog = (image: DockerImage) => {
-    if (actionBlocked || !sourceSupportsDockerMutations || !isNamedImageReference(image, unnamed)) {
+  const openRenameDialog = (row: ImageRow) => {
+    if (actionBlocked || !sourceSupportsDockerMutations || !isNamedImageRow(row)) {
       return;
     }
-    const name = imageLabel(image, unnamed);
     setOperationError('');
     setOperationDialog({
       type: 'rename',
-      changes: [{ source: name, target: name }],
+      changes: [{ source: row.reference, target: row.reference }],
       sourceConfigKey,
-      value: name,
+      value: row.reference,
     });
   };
 
-  const openCopyTagDialog = (images: DockerImage[]) => {
+  const openCopyTagDialog = (rows: ImageRow[]) => {
     if (
       actionBlocked ||
       !sourceSupportsDockerMutations ||
-      images.length === 0 ||
-      images.some((image) => !isNamedImageReference(image, unnamed))
+      rows.length === 0 ||
+      rows.some((row) => !isNamedImageRow(row))
     ) {
       return;
     }
     setOperationError('');
-    setOperationDialog({ type: 'copy-tag', images, sourceConfigKey, value: '' });
+    setOperationDialog({ type: 'copy-tag', rows, sourceConfigKey, value: '' });
   };
 
   const submitOperation = () => {
@@ -1866,10 +1907,10 @@ export default function ImageManagerTool({
       return;
     }
     if (operationDialog.type !== 'copy-tag') return;
-    const changes = operationDialog.images.map((image) => {
-      const sourceName = imageLabel(image, unnamed);
-      return { source: sourceName, target: imageWithTag(sourceName, value) };
-    });
+    const changes = operationDialog.rows.map((row) => ({
+      source: row.reference,
+      target: imageWithTag(row.reference, value),
+    }));
     void runTagChanges(changes, false);
   };
 
@@ -1947,6 +1988,7 @@ export default function ImageManagerTool({
     activeTasks.length === 1 && activeTasks[0].total > 0 ? taskPercent(activeTasks[0]) : null;
   const taskTypeLabel = (task: ImageTask) => {
     if (task.type === 'export') return t('imageManagerTool.taskStageExport');
+    if (task.type === 'pull') return t('imageManagerTool.taskStagePull');
     if (task.type === 'detail') return t('imageManagerTool.taskStageDetail');
     return t('imageManagerTool.taskStageUpdate');
   };
@@ -1995,9 +2037,11 @@ export default function ImageManagerTool({
       total: task.total,
     });
   };
-  const runBatchExport = async (requestedImages = selectedImages) => {
-    const imageIDs = requestedImages.map((image) => imageExportReference(image, unnamed));
-    const estimatedSizes = requestedImages.map(imageExportEstimateBytes);
+  const runBatchExport = async (requestedRows: ImageRow[] = selectedRows) => {
+    const imageIDs = requestedRows.map(
+      (row) => row.reference || imageExportReference(row.image, unnamed),
+    );
+    const estimatedSizes = requestedRows.map((row) => imageExportEstimateBytes(row.image));
     if (imageIDs.length === 0 || batchExportStarting) return;
     setBatchExportStarting(true);
     try {
@@ -2022,12 +2066,12 @@ export default function ImageManagerTool({
       setBatchExportStarting(false);
     }
   };
-  const runExport = async (image: DockerImage) => {
+  const runExport = async (row: ImageRow) => {
     try {
       const result = await StartImageExport(
         source.id,
-        imageExportReference(image, unnamed),
-        imageExportEstimateBytes(image),
+        row.reference || imageExportReference(row.image, unnamed),
+        imageExportEstimateBytes(row.image),
       );
       if (result.started > 0) {
         applyTasks(result.snapshot);
@@ -2035,8 +2079,8 @@ export default function ImageManagerTool({
         record(
           'image-manager',
           t('imageManagerTool.exportTar'),
-          imageLabel(image, unnamed),
-          image.id,
+          imageRowLabel(row, unnamed),
+          row.image.id,
         );
       }
     } catch (error) {
@@ -2062,6 +2106,33 @@ export default function ImageManagerTool({
       });
     } finally {
       setRetryingTaskID(null);
+    }
+  };
+  const runPull = async (requestedRows: ImageRow[]) => {
+    const refs = requestedRows.map((row) => row.reference).filter(Boolean);
+    if (refs.length === 0 || pullStarting) return;
+    setPullStarting(true);
+    try {
+      const result = await StartImagePulls(source.id, refs);
+      if (result.started > 0) {
+        applyTasks(result.snapshot);
+        setTasksOpen(true);
+        requestWatchReload();
+        record(
+          'image-manager',
+          t('imageManagerTool.pullUpdate'),
+          t('imageManagerTool.selectedCount', { count: result.started }),
+          refs.join('\n'),
+        );
+      }
+    } catch (error) {
+      toast.add({
+        title: t('imageManagerTool.pullFailed'),
+        description: errorMessage(error) || undefined,
+        type: 'error',
+      });
+    } finally {
+      setPullStarting(false);
     }
   };
 
@@ -2250,18 +2321,19 @@ export default function ImageManagerTool({
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {filteredImages.map((image) => {
-                    const operationImages = operationImagesFor(image);
+                  {filteredRows.map((row) => {
+                    const operationRows = operationRowsFor(row);
                     const operationAllowed =
                       sourceSupportsDockerMutations &&
-                      operationImages.length > 0 &&
-                      operationImages.every((item) => isNamedImageReference(item, unnamed));
+                      operationRows.length > 0 &&
+                      operationRows.every((item) => isNamedImageRow(item));
+                    const rowLabel = imageRowLabel(row, unnamed);
                     return (
-                      <ContextMenu key={image.id}>
+                      <ContextMenu key={row.key}>
                         <ContextMenuTrigger
                           render={
                             <TableRow
-                              data-state={selected.has(image.id) ? 'selected' : undefined}
+                              data-state={selected.has(row.key) ? 'selected' : undefined}
                               className="select-none border-border/60"
                             />
                           }
@@ -2271,18 +2343,18 @@ export default function ImageManagerTool({
                             onKeyDown={(event) => event.stopPropagation()}
                           >
                             <Checkbox
-                              checked={selected.has(image.id)}
-                              onCheckedChange={(checked) => toggleRow(image.id, checked === true)}
+                              checked={selected.has(row.key)}
+                              onCheckedChange={(checked) => toggleRow(row.key, checked === true)}
                               aria-label={t('imageManagerTool.selectRow')}
                             />
                           </TableCell>
                           <TableCell className="whitespace-nowrap">
-                            <span className="font-mono text-[12px]" title={image.id}>
+                            <span className="font-mono text-[12px]" title={row.image.id}>
                               {source.kind === 'registry'
-                                ? image.digest
-                                  ? shortId(image.digest)
+                                ? row.image.digest
+                                  ? shortId(row.image.digest)
                                   : t('imageManagerTool.emptyValue')
-                                : shortId(image.id)}
+                                : shortId(row.image.id)}
                             </span>
                           </TableCell>
                           <TableCell className="min-w-40">
@@ -2291,25 +2363,25 @@ export default function ImageManagerTool({
                               className="inline-flex min-w-0 max-w-full cursor-pointer truncate text-left text-foreground hover:text-primary hover:underline hover:underline-offset-4 disabled:cursor-not-allowed disabled:opacity-50"
                               disabled={interactionBlocked}
                               title={t('imageManagerTool.viewName', {
-                                name: imageLabel(image, unnamed),
+                                name: rowLabel,
                               })}
                               aria-label={t('imageManagerTool.viewName', {
-                                name: imageLabel(image, unnamed),
+                                name: rowLabel,
                               })}
-                              onClick={() => void viewImage(image)}
+                              onClick={() => void viewRow(row)}
                             >
-                              <span className="truncate">{imageLabel(image, unnamed)}</span>
+                              <span className="truncate">{rowLabel}</span>
                             </button>
                           </TableCell>
                           <TableCell className="whitespace-nowrap text-muted-foreground">
-                            {formatBytes(imageSizeBytes(image), i18n.language) ||
+                            {formatBytes(imageSizeBytes(row.image), i18n.language) ||
                               t('imageManagerTool.emptyValue')}
                           </TableCell>
                           <TableCell
                             className="whitespace-nowrap text-muted-foreground"
-                            title={formatCreatedAt(image.createdAt, i18n.language)}
+                            title={formatCreatedAt(row.image.createdAt, i18n.language)}
                           >
-                            {formatCreatedAtCompact(image.createdAt, i18n.language)}
+                            {formatCreatedAtCompact(row.image.createdAt, i18n.language)}
                           </TableCell>
                         </ContextMenuTrigger>
                         <ContextMenuContent className="min-w-48">
@@ -2317,11 +2389,11 @@ export default function ImageManagerTool({
                             <ContextMenuItem
                               disabled={interactionBlocked}
                               onClick={() =>
-                                void copyImageName(copyableImageName(source, image, unnamed))
+                                void copyImageName(copyableImageName(source, rowLabel))
                               }
                             >
                               <Copy data-icon="inline-start" weight="duotone" />
-                              {copiedName === copyableImageName(source, image, unnamed)
+                              {copiedName === copyableImageName(source, rowLabel)
                                 ? t('imageManagerTool.copied')
                                 : t('imageManagerTool.copyName')}
                             </ContextMenuItem>
@@ -2331,35 +2403,44 @@ export default function ImageManagerTool({
                             <ContextMenuItem
                               disabled={actionBlocked}
                               onClick={() =>
-                                operationImages.length === 1
-                                  ? void runExport(operationImages[0])
-                                  : void runBatchExport(operationImages)
+                                operationRows.length === 1
+                                  ? void runExport(operationRows[0])
+                                  : void runBatchExport(operationRows)
                               }
                             >
                               <DownloadSimple data-icon="inline-start" weight="duotone" />
-                              {operationImages.length > 1
+                              {operationRows.length > 1
                                 ? t('imageManagerTool.batchExport')
                                 : t('imageManagerTool.exportTar')}
                             </ContextMenuItem>
                             <ContextMenuItem
+                              disabled={
+                                actionBlocked || !operationAllowed || !sourceSupportsDockerMutations
+                              }
+                              onClick={() => void runPull(operationRows)}
+                            >
+                              <ArrowsClockwise data-icon="inline-start" weight="duotone" />
+                              {t('imageManagerTool.pullUpdate')}
+                            </ContextMenuItem>
+                            <ContextMenuItem
                               disabled={actionBlocked || !operationAllowed}
-                              onClick={() => openPushDialog(operationImages)}
+                              onClick={() => openPushDialog(operationRows)}
                             >
                               <UploadSimple data-icon="inline-start" weight="duotone" />
                               {t('imageManagerTool.pushRemote')}
                             </ContextMenuItem>
                             <ContextMenuItem
                               disabled={
-                                actionBlocked || !operationAllowed || operationImages.length !== 1
+                                actionBlocked || !operationAllowed || operationRows.length !== 1
                               }
-                              onClick={() => openRenameDialog(image)}
+                              onClick={() => openRenameDialog(row)}
                             >
                               <PencilSimple data-icon="inline-start" weight="duotone" />
                               {t('imageManagerTool.rename')}
                             </ContextMenuItem>
                             <ContextMenuItem
                               disabled={actionBlocked || !operationAllowed}
-                              onClick={() => openCopyTagDialog(operationImages)}
+                              onClick={() => openCopyTagDialog(operationRows)}
                             >
                               <Copy data-icon="inline-start" weight="duotone" />
                               {t('imageManagerTool.copyTagAction')}
@@ -2372,17 +2453,14 @@ export default function ImageManagerTool({
                             onClick={() =>
                               setConfirm({
                                 type: 'delete',
-                                ids: operationImages.map((item) => item.id),
-                                targets: deleteTargets(
-                                  images,
-                                  operationImages.map((item) => item.id),
-                                ),
+                                ids: operationRows.map((item) => item.reference || item.image.id),
+                                targets: deleteTargets(operationRows),
                                 name:
-                                  operationImages.length > 1
+                                  operationRows.length > 1
                                     ? t('imageManagerTool.selectedCount', {
-                                        count: operationImages.length,
+                                        count: operationRows.length,
                                       })
-                                    : imageLabel(image, unnamed),
+                                    : rowLabel,
                                 sourceId: source.id,
                                 sourceKind: source.kind,
                                 sourceConfigKey,
@@ -2390,7 +2468,7 @@ export default function ImageManagerTool({
                             }
                           >
                             <Trash data-icon="inline-start" weight="duotone" />
-                            {operationImages.length > 1
+                            {operationRows.length > 1
                               ? t('imageManagerTool.batchDelete')
                               : t('imageManagerTool.delete')}
                           </ContextMenuItem>
@@ -2406,7 +2484,7 @@ export default function ImageManagerTool({
         <ToolLayoutFooter>
           <div className="flex items-center justify-between gap-3 border-t border-border pt-3">
             <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-[10px] text-muted-foreground">
-              <span>{t('imageManagerTool.filteredSummary', { count: filteredImages.length })}</span>
+              <span>{t('imageManagerTool.filteredSummary', { count: filteredRows.length })}</span>
               <span>
                 {t('imageManagerTool.filteredSize', {
                   size:
@@ -2487,15 +2565,26 @@ export default function ImageManagerTool({
                       {t('imageManagerTool.batchExport')}
                     </DropdownMenuItem>
                     <DropdownMenuItem
+                      disabled={actionBlocked || !selectedSupportsDockerMutations || pullStarting}
+                      onClick={() => void runPull(selectedRows)}
+                    >
+                      {pullStarting ? (
+                        <Spinner data-icon="inline-start" />
+                      ) : (
+                        <ArrowsClockwise data-icon="inline-start" weight="duotone" />
+                      )}
+                      {t('imageManagerTool.pullUpdate')}
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
                       disabled={actionBlocked || !selectedSupportsDockerMutations}
-                      onClick={() => openPushDialog(selectedImages)}
+                      onClick={() => openPushDialog(selectedRows)}
                     >
                       <UploadSimple data-icon="inline-start" weight="duotone" />
                       {t('imageManagerTool.push')}
                     </DropdownMenuItem>
                     <DropdownMenuItem
                       disabled={actionBlocked || !selectedSupportsDockerMutations}
-                      onClick={() => openCopyTagDialog(selectedImages)}
+                      onClick={() => openCopyTagDialog(selectedRows)}
                     >
                       <Copy data-icon="inline-start" weight="duotone" />
                       {t('imageManagerTool.copyTagAction')}
@@ -2507,8 +2596,8 @@ export default function ImageManagerTool({
                       onClick={() =>
                         setConfirm({
                           type: 'delete',
-                          ids: [...selected],
-                          targets: deleteTargets(images, [...selected]),
+                          ids: selectedRows.map((row) => row.reference || row.image.id),
+                          targets: deleteTargets(selectedRows),
                           name: t('imageManagerTool.selectedCount', { count: selectedCount }),
                           sourceId: source.id,
                           sourceKind: source.kind,
@@ -2558,7 +2647,7 @@ export default function ImageManagerTool({
                       })
                     : t('imageManagerTool.copyTagBody', {
                         count:
-                          operationDialog?.type === 'copy-tag' ? operationDialog.images.length : 0,
+                          operationDialog?.type === 'copy-tag' ? operationDialog.rows.length : 0,
                       })}
               </DialogDescription>
             </DialogHeader>
