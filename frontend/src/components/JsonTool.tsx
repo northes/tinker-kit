@@ -12,7 +12,14 @@ import {
 import { Button } from './ui/button';
 import { Checkbox } from './ui/checkbox';
 import { Label } from './ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from './ui/select';
 import { Switch } from './ui/switch';
 import { useTranslation } from 'react-i18next';
 import { Clipboard } from '@wailsio/runtime';
@@ -1122,11 +1129,13 @@ export default function JsonTool({
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {convertFormats.map((option) => (
-                      <SelectItem key={option.value} value={option.value}>
-                        {option.label}
-                      </SelectItem>
-                    ))}
+                    <SelectGroup>
+                      {convertFormats.map((option) => (
+                        <SelectItem key={option.value} value={option.value}>
+                          {option.label}
+                        </SelectItem>
+                      ))}
+                    </SelectGroup>
                   </SelectContent>
                 </Select>
                 <div className="json-pane-editor relative flex min-h-0 min-w-0 flex-1">

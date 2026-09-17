@@ -78,6 +78,7 @@ import { Switch } from './ui/switch';
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
   SelectSeparator,
   SelectTrigger,
@@ -1768,7 +1769,7 @@ export default function SshFilesTool({ active }: Props) {
     [tasks],
   );
   const sourceOptions = (
-    <>
+    <SelectGroup>
       {sources.map((item) => (
         <SelectItem key={item.id} value={item.id}>
           {item.name}
@@ -1781,7 +1782,7 @@ export default function SshFilesTool({ active }: Props) {
           {t('sshFilesTool.manage')}
         </span>
       </SelectItem>
-    </>
+    </SelectGroup>
   );
   const isLoading = loadingSources || loading || searching;
   const searchModeLabel = t(
@@ -1874,7 +1875,7 @@ export default function SshFilesTool({ active }: Props) {
                 >
                   <SelectValue placeholder={t('sshFilesTool.noSource')} />
                 </SelectTrigger>
-                <SelectContent alignItemWithTrigger={false}>{sourceOptions}</SelectContent>
+                <SelectContent>{sourceOptions}</SelectContent>
               </Select>
               {source && !sourceUsable ? (
                 <Badge variant="destructive" className="h-5 text-[10px]">

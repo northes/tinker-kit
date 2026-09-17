@@ -1,6 +1,13 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Button } from './ui/button';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from './ui/select';
 import { Popover, PopoverContent, PopoverTrigger } from './ui/popover';
 import { BracketsCurly, CaretDown, Check } from '@phosphor-icons/react';
 
@@ -472,11 +479,13 @@ export function ToolActionBar({ label, actions }: { label: string; actions: Tool
               <SelectValue placeholder={action.label} />
             </SelectTrigger>
             <SelectContent>
-              {action.options.map((option) => (
-                <SelectItem key={option.key} value={option.key}>
-                  {option.label}
-                </SelectItem>
-              ))}
+              <SelectGroup>
+                {action.options.map((option) => (
+                  <SelectItem key={option.key} value={option.key}>
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectGroup>
             </SelectContent>
           </Select>
         ) : action.type === 'split' ? (

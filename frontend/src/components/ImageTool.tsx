@@ -36,7 +36,7 @@ import {
 } from './ui/color-picker';
 import {Input} from './ui/input';
 import {Label} from './ui/label';
-import {Select, SelectContent, SelectItem, SelectTrigger, SelectValue} from './ui/select';
+import {Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue} from './ui/select';
 import {Slider} from './ui/slider';
 import {Switch} from './ui/switch';
 import {Toggle} from './ui/toggle';
@@ -1633,15 +1633,17 @@ export default function ImageTool({
                                                 <SelectValue/>
                                             </SelectTrigger>
                                             <SelectContent>
-                                                {OUTPUT_FORMATS.map((format) => (
-                                                    <SelectItem
-                                                        key={format}
-                                                        value={format}
-                                                        disabled={format === 'svg' && !svgAllowed}
-                                                    >
-                                                        {t(FORMAT_LABEL_KEY[format])}
-                                                    </SelectItem>
-                                                ))}
+                                                <SelectGroup>
+                                                    {OUTPUT_FORMATS.map((format) => (
+                                                        <SelectItem
+                                                            key={format}
+                                                            value={format}
+                                                            disabled={format === 'svg' && !svgAllowed}
+                                                        >
+                                                            {t(FORMAT_LABEL_KEY[format])}
+                                                        </SelectItem>
+                                                    ))}
+                                                </SelectGroup>
                                             </SelectContent>
                                         </Select>
                                     </Label>

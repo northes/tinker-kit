@@ -17,7 +17,14 @@ import { Tooltip } from '@base-ui/react/tooltip';
 import { useTranslation } from 'react-i18next';
 import { Button } from './ui/button';
 import { Label } from './ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from './ui/select';
 import { Switch } from './ui/switch';
 import {
   Reveal,
@@ -526,11 +533,13 @@ export default function DiffTool({
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {(['alternate', 'before', 'after'] as const).map((key) => (
-                    <SelectItem key={key} value={key}>
-                      {t(`diffTool.targets.${key}`)}
-                    </SelectItem>
-                  ))}
+                  <SelectGroup>
+                    {(['alternate', 'before', 'after'] as const).map((key) => (
+                      <SelectItem key={key} value={key}>
+                        {t(`diffTool.targets.${key}`)}
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
                 </SelectContent>
               </Select>
               <Tooltip.Root>

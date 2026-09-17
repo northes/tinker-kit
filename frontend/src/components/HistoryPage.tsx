@@ -11,7 +11,14 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from './ui/alert-dialog';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from './ui/select';
 import { Popover, PopoverContent, PopoverTrigger } from './ui/popover';
 import { Calendar } from './ui/calendar';
 import {
@@ -372,13 +379,15 @@ export default function HistoryPage({
                   >
                     <SelectValue />
                   </SelectTrigger>
-                  <SelectContent alignItemWithTrigger={false}>
-                    <SelectItem value="all">{t('history.allTools')}</SelectItem>
-                    {visibleHistoryTools.map((h) => (
-                      <SelectItem key={h.id} value={h.id}>
-                        {t(h.nameKey)}
-                      </SelectItem>
-                    ))}
+                  <SelectContent>
+                    <SelectGroup>
+                      <SelectItem value="all">{t('history.allTools')}</SelectItem>
+                      {visibleHistoryTools.map((h) => (
+                        <SelectItem key={h.id} value={h.id}>
+                          {t(h.nameKey)}
+                        </SelectItem>
+                      ))}
+                    </SelectGroup>
                   </SelectContent>
                 </Select>
               </div>
