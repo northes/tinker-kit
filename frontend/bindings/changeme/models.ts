@@ -19,6 +19,7 @@ export interface Config {
     "hiddenTimeResults": string[] | null;
     "jsonAutoFormatOnFill": boolean;
     "jsonAutoFormatOnFillMigrated": boolean;
+    "textAlwaysShowSearch": boolean;
     "dockerCLIPath": string;
     "imageSources": ImageSource[] | null;
     "sshProfilesVersion": number;

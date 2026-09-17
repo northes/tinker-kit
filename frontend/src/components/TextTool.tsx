@@ -151,21 +151,28 @@ function StatPlain({ label, count }: { label: string; count: number }) {
 
 export default function TextTool({
   active,
+  alwaysShowSearch,
+  onAlwaysShowSearchChange,
   record,
   pending,
   clearPending,
 }: {
   active: boolean;
   theme: string;
+  alwaysShowSearch: boolean;
+  onAlwaysShowSearchChange: (value: boolean) => void;
   record: (tool: ToolId, action: string, detail: string, input: string) => void;
   pending: PendingAction | null;
   clearPending: () => void;
 }) {
   const { t } = useTranslation();
   const [value, setValue] = useState('');
-  const [alwaysSearch, setAlwaysSearch] = useState(false);
+  // 用 state 触发一次 effect 重跑，确保自动应用「始终显示搜索」时编辑器已创建。
+  const [editorReady, setEditorReady] = useState(false);
   const consumed = useRef<PendingAction | null>(null);
   const inputView = useRef<EditorView | null>(null);
+  const alwaysShowSearchChangeRef = useRef(onAlwaysShowSearchChange);
+  alwaysShowSearchChangeRef.current = onAlwaysShowSearchChange;
   useFocusOnActivate(active, () => inputView.current?.focus());
   const stats = useMemo(() => analyzeText(value), [value]);
   const apply = (action: string, fn: (input: string) => string) => {
@@ -215,20 +222,19 @@ export default function TextTool({
   useEffect(() => {
     const view = inputView.current;
     if (!view) return;
-    if (!alwaysSearch) {
+    if (!alwaysShowSearch) {
       closeSearchPanel(view);
       return;
     }
     openSearchPanel(view);
     const panel = view.dom.querySelector<HTMLElement>('.cm-panel.cm-app-search');
     if (!panel) return;
+    const close = () => alwaysShowSearchChangeRef.current(false);
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setAlwaysSearch(false);
+      if (event.key === 'Escape') close();
     };
     const onClick = (event: MouseEvent) => {
-      if ((event.target as HTMLElement | null)?.closest('.cm-app-search-close')) {
-        setAlwaysSearch(false);
-      }
+      if ((event.target as HTMLElement | null)?.closest('.cm-app-search-close')) close();
     };
     panel.addEventListener('keydown', onKeyDown, true);
     panel.addEventListener('click', onClick, true);
@@ -236,7 +242,7 @@ export default function TextTool({
       panel.removeEventListener('keydown', onKeyDown, true);
       panel.removeEventListener('click', onClick, true);
     };
-  }, [alwaysSearch]);
+  }, [alwaysShowSearch, editorReady]);
   return (
     <Reveal index={0} fill active={active}>
       <ToolLayout>
@@ -247,8 +253,8 @@ export default function TextTool({
               <span>{t('textTool.input')}</span>
               <Label className="min-w-0 gap-1.5 text-[11px] font-normal normal-case tracking-normal text-muted-foreground">
                 <Checkbox
-                  checked={alwaysSearch}
-                  onCheckedChange={(checked) => setAlwaysSearch(checked)}
+                  checked={alwaysShowSearch}
+                  onCheckedChange={(checked) => onAlwaysShowSearchChange(checked === true)}
                 />
                 <span>{t('textTool.alwaysShowSearch')}</span>
               </Label>
@@ -261,6 +267,7 @@ export default function TextTool({
               onCreateEditor={(view) => {
                 view.contentDOM.setAttribute('aria-label', t('textTool.input'));
                 inputView.current = view;
+                setEditorReady(true);
               }}
               theme={quietEditorTheme}
               extensions={editorExtensions}

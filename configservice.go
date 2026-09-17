@@ -34,6 +34,7 @@ type Config struct {
 	HiddenTimeResults            []string            `json:"hiddenTimeResults"`
 	JsonAutoFormatOnFill         bool                `json:"jsonAutoFormatOnFill"`
 	JsonAutoFormatOnFillMigrated bool                `json:"jsonAutoFormatOnFillMigrated"`
+	TextAlwaysShowSearch         bool                `json:"textAlwaysShowSearch"`
 	DockerCLIPath                string              `json:"dockerCLIPath"`
 	ImageSources                 []ImageSource       `json:"imageSources"`
 	SSHProfilesVersion           int                 `json:"sshProfilesVersion"`

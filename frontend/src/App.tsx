@@ -245,6 +245,7 @@ const defaultSettings: Settings = {
   hiddenTimeResults: [],
   jsonAutoFormatOnFill: true,
   jsonAutoFormatOnFillMigrated: true,
+  textAlwaysShowSearch: false,
   dockerCLIPath: '',
   imageSources: [
     {
@@ -1880,6 +1881,10 @@ function AppShell() {
                   <TextTool
                     active={page === 'text'}
                     theme={theme}
+                    alwaysShowSearch={settings.textAlwaysShowSearch === true}
+                    onAlwaysShowSearchChange={(textAlwaysShowSearch) =>
+                      setSettings((current) => ({ ...current, textAlwaysShowSearch }))
+                    }
                     record={record}
                     pending={pending}
                     clearPending={() => setPending(null)}
