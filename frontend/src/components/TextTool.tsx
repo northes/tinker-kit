@@ -71,13 +71,11 @@ const editorBasicSetup = {
   autocompletion: false,
   closeBrackets: false,
 } as const;
-const caseModes: CaseMode[] = [
-  'upper',
-  'lower',
-  'lineUpper',
-  'lineLower',
-  'wordUpper',
-  'wordLower',
+// 菜单里按 全部 / 每行 / 每个单词 分三组。
+const caseModeGroups: CaseMode[][] = [
+  ['upper', 'lower'],
+  ['lineUpper', 'lineLower'],
+  ['wordUpper', 'wordLower'],
 ];
 const transformCase = (value: string, mode: CaseMode) =>
   mode === 'upper'
@@ -327,9 +325,15 @@ export default function TextTool({
               {
                 key: 'case',
                 label: t('textTool.case'),
-                type: 'select',
+                type: 'menu',
                 disabled: !value,
-                options: caseModes.map((key) => ({ key, label: t(`textTool.caseModes.${key}`) })),
+                options: caseModeGroups.flatMap((group, index) =>
+                  group.map((key) => ({
+                    key,
+                    label: t(`textTool.caseModes.${key}`),
+                    group: String(index),
+                  })),
+                ),
                 onSelect: (mode) =>
                   apply(t(`textTool.caseModes.${mode}`), (input) =>
                     transformCase(input, mode as CaseMode),

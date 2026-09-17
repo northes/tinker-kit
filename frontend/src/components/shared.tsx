@@ -1,13 +1,13 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { Fragment, useEffect, useRef, useState, type ReactNode } from 'react';
 import { Button } from './ui/button';
 import {
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from './ui/select';
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from './ui/dropdown-menu';
 import { Popover, PopoverContent, PopoverTrigger } from './ui/popover';
 import { BracketsCurly, CaretDown, Check } from '@phosphor-icons/react';
 
@@ -432,9 +432,9 @@ export type ToolBarAction =
   | {
       key: string;
       label: string;
-      type: 'select';
+      type: 'menu';
       disabled?: boolean;
-      options: Array<{ key: string; label: string }>;
+      options: Array<{ key: string; label: string; group?: string }>;
       onSelect: (value: string) => void;
     }
   | {
@@ -457,6 +457,18 @@ const buttonVariant = {
   danger: 'destructive',
 } as const;
 
+// 按 group 字段把菜单项分成相邻的组，用于在菜单里插入分隔线。
+function groupMenuOptions(options: Array<{ key: string; label: string; group?: string }>) {
+  const groups: Array<{ key: string; options: typeof options }> = [];
+  for (const option of options) {
+    const key = option.group ?? '';
+    const last = groups[groups.length - 1];
+    if (last && last.key === key) last.options.push(option);
+    else groups.push({ key, options: [option] });
+  }
+  return groups;
+}
+
 export function ToolActionBar({ label, actions }: { label: string; actions: ToolBarAction[] }) {
   return (
     <div
@@ -465,29 +477,37 @@ export function ToolActionBar({ label, actions }: { label: string; actions: Tool
       aria-label={label}
     >
       {actions.map((action) =>
-        action.type === 'select' ? (
-          <Select
-            key={action.key}
-            value={null}
-            disabled={action.disabled}
-            items={action.options.map((option) => ({ value: option.key, label: option.label }))}
-            onValueChange={(v) => {
-              if (v !== null) action.onSelect(v);
-            }}
-          >
-            <SelectTrigger className="h-[30px] min-w-24 flex-none px-[11px] text-[11px] hover:bg-accent hover:text-accent-foreground [&_svg]:size-3.5">
-              <SelectValue placeholder={action.label} />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectGroup>
-                {action.options.map((option) => (
-                  <SelectItem key={option.key} value={option.key}>
-                    {option.label}
-                  </SelectItem>
-                ))}
-              </SelectGroup>
-            </SelectContent>
-          </Select>
+        action.type === 'menu' ? (
+          <DropdownMenu key={action.key}>
+            <DropdownMenuTrigger
+              render={
+                <Button
+                  variant="outline"
+                  disabled={action.disabled}
+                  className="h-[30px] flex-none px-[11px] text-[11px]"
+                />
+              }
+            >
+              {action.label}
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="min-w-32">
+              {groupMenuOptions(action.options).map((group, index) => (
+                <Fragment key={group.key || String(index)}>
+                  {index > 0 ? <DropdownMenuSeparator /> : null}
+                  <DropdownMenuGroup>
+                    {group.options.map((option) => (
+                      <DropdownMenuItem
+                        key={option.key}
+                        onClick={() => action.onSelect(option.key)}
+                      >
+                        {option.label}
+                      </DropdownMenuItem>
+                    ))}
+                  </DropdownMenuGroup>
+                </Fragment>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
         ) : action.type === 'split' ? (
           <div
             key={action.key}
