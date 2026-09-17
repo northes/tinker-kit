@@ -68,6 +68,7 @@ import {
   HardDrives,
   Image as ImageIcon,
   LinkSimple,
+  QrCode,
   FolderSimple,
   SidebarSimple,
   TextAa,
@@ -220,6 +221,7 @@ const defaultSettings: Settings = {
     { id: 'diff', enabled: true },
     { id: 'jwt', enabled: true },
     { id: 'url', enabled: true },
+    { id: 'qrcode', enabled: true },
     { id: 'image-manager', enabled: true },
     { id: 'ssh-files', enabled: true },
   ],
@@ -272,6 +274,7 @@ const Base64Tool = lazy(() => import('./components/Base64Tool'));
 const DiffTool = lazy(() => import('./components/DiffTool'));
 const JwtTool = lazy(() => import('./components/JwtTool'));
 const UrlTool = lazy(() => import('./components/UrlTool'));
+const QrCodeTool = lazy(() => import('./components/QrCodeTool'));
 const ImageTool = lazy(() => import('./components/ImageTool'));
 const ImageManagerTool = lazy(() => import('./components/ImageManagerTool'));
 const ImageManagerDetailPage = lazy(() => import('./components/ImageManagerDetailPage'));
@@ -330,11 +333,18 @@ const tools: ToolDefinition[] = [
     keywords: 'url uri link query params hash path 地址 链接 参数 路径 哈希',
   },
   {
+    id: 'qrcode' as const,
+    nameKey: 'tools.qrcode.name',
+    descriptionKey: 'tools.qrcode.description',
+    icon: QrCode,
+    keywords: 'qrcode qr generate decode scan paste 二维码 生成 解析 识别 粘贴',
+  },
+  {
     id: 'image' as const,
     nameKey: 'tools.image.name',
     descriptionKey: 'tools.image.description',
     icon: ImageIcon,
-    keywords: 'image picture crop expand quality png jpg jpeg svg webp 图片 裁剪 扩充 质量 导出',
+    keywords: 'image picture crop expand quality compress png jpg jpeg svg webp 图片 裁剪 扩充 质量 压缩 导出',
   },
   {
     id: 'image-manager' as const,
@@ -424,6 +434,14 @@ const paletteItems: PaletteItem[] = [
     icon: LinkSimple,
     keywords: 'url uri link query params hash path 地址 链接 参数 路径 哈希 打开工具',
     page: 'url',
+  },
+  {
+    id: 'open:qrcode',
+    labelKey: 'commands.openQrCode',
+    groupKey: 'groups.tools',
+    icon: QrCode,
+    keywords: 'qrcode qr generate decode scan paste 二维码 生成 解析 识别 粘贴 打开工具',
+    page: 'qrcode',
   },
   {
     id: 'open:image',
@@ -817,6 +835,33 @@ const paletteItems: PaletteItem[] = [
     action: 'copy',
   },
   {
+    id: 'qrcode:clear',
+    labelKey: 'qrTool.clear',
+    groupKey: 'tools.qrcode.name',
+    icon: QrCode,
+    keywords: 'clear reset empty 清空 重置',
+    tool: 'qrcode',
+    action: 'clear',
+  },
+  {
+    id: 'qrcode:copy',
+    labelKey: 'qrTool.copy',
+    groupKey: 'tools.qrcode.name',
+    icon: QrCode,
+    keywords: 'copy text clipboard 复制 文本 剪贴板',
+    tool: 'qrcode',
+    action: 'copy',
+  },
+  {
+    id: 'qrcode:export',
+    labelKey: 'qrTool.export',
+    groupKey: 'tools.qrcode.name',
+    icon: QrCode,
+    keywords: 'export save download png 导出 保存 下载',
+    tool: 'qrcode',
+    action: 'export',
+  },
+  {
     id: 'image:clear',
     labelKey: 'imageTool.clear',
     groupKey: 'tools.image.name',
@@ -833,6 +878,15 @@ const paletteItems: PaletteItem[] = [
     keywords: 'export save download 导出 保存 下载',
     tool: 'image',
     action: 'export',
+  },
+  {
+    id: 'image:compress',
+    labelKey: 'imageTool.compress',
+    groupKey: 'tools.image.name',
+    icon: ImageIcon,
+    keywords: 'compress target size quality 压缩 目标大小 质量',
+    tool: 'image',
+    action: 'compress',
   },
   {
     id: 'image-manager:refresh',
@@ -1892,6 +1946,20 @@ function AppShell() {
                   <UrlTool
                     active={page === 'url'}
                     theme={theme}
+                    record={record}
+                    pending={pending}
+                    clearPending={() => setPending(null)}
+                  />
+                </Suspense>
+              )}
+            </div>
+            <div
+              className={`tool-slot h-full min-h-0 overflow-hidden${page === 'qrcode' ? '' : ' is-hidden absolute inset-0 invisible pointer-events-none'}`}
+            >
+              {visited.has('qrcode') && (
+                <Suspense fallback={null}>
+                  <QrCodeTool
+                    active={page === 'qrcode'}
                     record={record}
                     pending={pending}
                     clearPending={() => setPending(null)}

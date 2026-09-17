@@ -89,6 +89,10 @@
       "name": "URL 分析",
       "description": "解析基础地址、路径、哈希与参数"
     },
+    "qrcode": {
+      "name": "二维码",
+      "description": "文本与二维码互转，粘贴图片自动解析"
+    },
     "image": {
       "name": "图片处理",
       "description": "裁剪、扩充并导出图片"
@@ -110,6 +114,7 @@
     "openDiff": "打开差异对比",
     "openJwt": "打开 JWT 解析",
     "openUrl": "打开 URL 分析",
+    "openQrCode": "打开二维码工具",
     "openImage": "打开图片处理",
     "openImageManager": "打开镜像管理",
     "openSshFiles": "打开 SSH 文件管理",
@@ -520,6 +525,33 @@
     "partCopied": "已复制{{part}}",
     "paramsCopied": "已复制参数 JSON"
   },
+  "qrTool": {
+    "title": "二维码",
+    "subtitle": "文本实时生成二维码；粘贴或拖入二维码图片自动解析",
+    "actions": "二维码操作",
+    "input": "文本输入",
+    "preview": "二维码预览",
+    "emptyTitle": "解析二维码图片",
+    "emptyHint": "按 ⌘V 粘贴、拖入或选择二维码图片自动解析",
+    "chooseImage": "选择图片",
+    "previewEmpty": "输入文本生成二维码，或粘贴二维码图片解析",
+    "tooLong": "文本过长，无法生成二维码",
+    "noQr": "图片中未识别到二维码",
+    "unsupported": "不支持的图片格式",
+    "tooLarge": "图片超过 10 MB 限制",
+    "decodeFailed": "无法解析图片",
+    "generated": "二维码生成",
+    "decoded": "二维码解析",
+    "clear": "清空",
+    "copy": "复制文本",
+    "export": "导出 PNG",
+    "exported": "导出二维码",
+    "exportedToast": "已导出",
+    "exportFailed": "导出失败",
+    "save": "保存",
+    "saveTitle": "保存二维码",
+    "filterPng": "PNG 图片"
+  },
   "imageTool": {
     "title": "图片处理",
     "actions": "图片操作",
@@ -552,6 +584,12 @@
     "quality": "质量",
     "qualityValue": "{{value}}%",
     "qualityPngHint": "透明扩充将导出为 PNG，质量不会改变无损结果",
+    "compress": "压缩",
+    "compressTarget": "目标大小",
+    "compressTargetInvalid": "请输入有效的目标大小",
+    "compressTooLarge": "最低质量仍超过目标大小，可切换 JPG / WebP 或缩小尺寸",
+    "compressFailed": "压缩失败",
+    "compressDone": "已压缩至 {{quality}}% 质量",
     "outputPng": "PNG",
     "output": "输出",
     "format": "格式",

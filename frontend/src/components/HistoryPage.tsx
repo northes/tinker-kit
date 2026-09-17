@@ -26,6 +26,7 @@ import {
   Image as ImageIcon,
   Key,
   LinkSimple,
+  QrCode,
   TextAa,
   Trash,
   X,
@@ -58,6 +59,7 @@ export function toHistoryItem(item: StoredHistoryItem): HistoryItem | null {
     item.tool === 'diff' ||
     item.tool === 'jwt' ||
     item.tool === 'url' ||
+    item.tool === 'qrcode' ||
     item.tool === 'image' ||
     item.tool === 'image-manager'
     || item.tool === 'ssh-files'
@@ -95,6 +97,8 @@ export function HistoryIcon({ tool }: { tool: ToolId }) {
     <Key weight="duotone" />
   ) : tool === 'url' ? (
     <LinkSimple weight="duotone" />
+  ) : tool === 'qrcode' ? (
+    <QrCode weight="duotone" />
   ) : tool === 'image' ? (
     <ImageIcon weight="duotone" />
   ) : tool === 'image-manager' ? (
@@ -157,7 +161,7 @@ function endOfDayMs(date: Date) {
   return end.getTime();
 }
 const historyTools: Array<{ id: ToolId; nameKey: string }> = (
-  ['json', 'time', 'text', 'base64', 'diff', 'jwt', 'url', 'image', 'image-manager', 'ssh-files'] as const
+  ['json', 'time', 'text', 'base64', 'diff', 'jwt', 'url', 'qrcode', 'image', 'image-manager', 'ssh-files'] as const
 ).map((id) => ({ id, nameKey: `tools.${id}.name` }));
 
 export default function HistoryPage({

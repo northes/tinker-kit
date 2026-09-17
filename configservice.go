@@ -45,7 +45,7 @@ type SidebarToolConfig struct {
 	Enabled bool   `json:"enabled"`
 }
 
-var defaultSidebarToolIDs = []string{"json", "time", "text", "base64", "diff", "jwt", "url", "image-manager", "ssh-files"}
+var defaultSidebarToolIDs = []string{"json", "time", "text", "base64", "diff", "jwt", "url", "qrcode", "image-manager", "ssh-files"}
 
 type ImageSource struct {
 	ID                string `json:"id"`

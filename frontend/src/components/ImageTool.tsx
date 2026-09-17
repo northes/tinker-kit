@@ -488,6 +488,8 @@ export default function ImageTool({
     const [fillTransparent, setFillTransparent] = useState(true);
     const [fillColor, setFillColor] = useState('#ffffff');
     const [quality, setQuality] = useState(92);
+    const [targetSize, setTargetSize] = useState('');
+    const [compressing, setCompressing] = useState(false);
     const [outputFormat, setOutputFormat] = useState<ImageOutputFormat>('png');
     const [imageSelected, setImageSelected] = useState(false);
     const [sizeInput, setSizeInput] = useState({w: '', h: ''});
@@ -505,6 +507,8 @@ export default function ImageTool({
     const encodedUrlRef = useRef<string | null>(null);
     const encodeTaskRef = useRef(0);
     const exportRef = useRef<() => Promise<void>>(async () => {
+    });
+    const compressRef = useRef<() => Promise<void>>(async () => {
     });
     const cropEditing = sizeSession?.mode === 'crop';
     const expandEditing = sizeSession?.mode === 'expand';
@@ -857,6 +861,67 @@ export default function ImageTool({
     };
     exportRef.current = exportImage;
 
+    // 二分查找不超目标大小的最大质量；质量单调影响体积，仅对有损格式生效。
+    const compressToTarget = async () => {
+        if (compressing) return;
+        if (!source) {
+            toast.add({title: t('imageTool.noImage'), type: 'warning'});
+            return;
+        }
+        if (sizeSession || pointer.dragging) return;
+        if (outputFormat !== 'jpg' && outputFormat !== 'webp') return;
+        const kb = Math.round(Number(targetSize));
+        if (!Number.isFinite(kb) || kb <= 0) {
+            toast.add({title: t('imageTool.compressTargetInvalid'), type: 'warning'});
+            return;
+        }
+        const targetBytes = kb * 1024;
+        setCompressing(true);
+        try {
+            const canvas = await renderComposite({
+                source,
+                sizeMode,
+                crop,
+                expand,
+                fillTransparent,
+                fillColor,
+            });
+            let lo = 1;
+            let hi = 100;
+            let bestQuality = -1;
+            let bestBytes = 0;
+            while (lo <= hi) {
+                const mid = (lo + hi) >> 1;
+                const blob = await encodeRasterBlob(canvas, outputFormat, mid, jpgFlattenColor);
+                if (blob.size <= targetBytes) {
+                    bestQuality = mid;
+                    bestBytes = blob.size;
+                    lo = mid + 1;
+                } else {
+                    hi = mid - 1;
+                }
+            }
+            if (bestQuality < 0) {
+                toast.add({title: t('imageTool.compressTooLarge'), type: 'warning'});
+                return;
+            }
+            setQuality(bestQuality);
+            record('image', t('imageTool.compress'), formatBytes(bestBytes), source.name);
+            toast.add({title: t('imageTool.compressDone', {quality: bestQuality})});
+        } catch (error) {
+            toast.add({
+                title:
+                    outputFormat === 'webp' && isWebpUnsupported(error)
+                        ? t('imageTool.webpUnsupported')
+                        : t('imageTool.compressFailed'),
+                type: 'error',
+            });
+        } finally {
+            setCompressing(false);
+        }
+    };
+    compressRef.current = compressToTarget;
+
     useEffect(() => {
         if (!pending || pending.tool !== 'image' || consumed.current === pending) return;
         consumed.current = pending;
@@ -867,6 +932,10 @@ export default function ImageTool({
         }
         if (pending.action === 'export') {
             void exportRef.current();
+            return;
+        }
+        if (pending.action === 'compress') {
+            void compressRef.current();
         }
     }, [pending, clearPending]);
 
@@ -1600,6 +1669,40 @@ export default function ImageTool({
                                                     if (typeof next === 'number' && Number.isFinite(next)) setQuality(next);
                                                 }}
                                             />
+                                            <div
+                                                className="flex items-end justify-between gap-2"
+                                                role="group"
+                                                aria-label={t('imageTool.compress')}
+                                            >
+                                                <Label
+                                                    htmlFor="image-compress-target"
+                                                    className="flex min-w-0 flex-1 flex-col items-stretch gap-1.5 text-[11px] text-muted-foreground"
+                                                >
+                                                    {t('imageTool.compressTarget')}
+                                                    <Input
+                                                        id="image-compress-target"
+                                                        type="number"
+                                                        min={1}
+                                                        inputMode="numeric"
+                                                        placeholder="1024"
+                                                        value={targetSize}
+                                                        disabled={!source}
+                                                        onChange={(event) => setTargetSize(event.target.value)}
+                                                    />
+                                                </Label>
+                                                <div className="flex flex-none flex-col gap-1.5">
+                                                    <span className="h-4 text-[11px] text-muted-foreground">KB</span>
+                                                    <Button
+                                                        variant="outline"
+                                                        size="sm"
+                                                        className="h-8"
+                                                        disabled={!source || compressing || Boolean(sizeSession) || pointer.dragging}
+                                                        onClick={() => void compressToTarget()}
+                                                    >
+                                                        {t('imageTool.compress')}
+                                                    </Button>
+                                                </div>
+                                            </div>
                                         </div>
                                     ) : null}
                                     <dl className="m-0 grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 text-[11px] text-muted-foreground">

@@ -89,6 +89,10 @@
       "name": "URL Analyzer",
       "description": "Parse base, path, hash, and query parameters"
     },
+    "qrcode": {
+      "name": "QR Code",
+      "description": "Convert text to QR codes and paste images to decode"
+    },
     "image": {
       "name": "Image Tools",
       "description": "Crop, expand, and export images"
@@ -110,6 +114,7 @@
     "openDiff": "Open diff compare",
     "openJwt": "Open JWT decoder",
     "openUrl": "Open URL analyzer",
+    "openQrCode": "Open QR code tool",
     "openImage": "Open image tools",
     "openImageManager": "Open image manager",
     "openSshFiles": "Open SSH files",
@@ -520,6 +525,33 @@
     "partCopied": "Copied {{part}}",
     "paramsCopied": "Copied parameters as JSON"
   },
+  "qrTool": {
+    "title": "QR Code",
+    "subtitle": "Generate QR codes from text live; paste or drop images to decode",
+    "actions": "QR code actions",
+    "input": "Text input",
+    "preview": "QR code preview",
+    "emptyTitle": "Decode a QR image",
+    "emptyHint": "Paste with ⌘V, drop, or pick a QR image to decode automatically",
+    "chooseImage": "Choose image",
+    "previewEmpty": "Type text to generate, or paste a QR image to decode",
+    "tooLong": "Text is too long for a QR code",
+    "noQr": "No QR code found in the image",
+    "unsupported": "Unsupported image format",
+    "tooLarge": "Image exceeds the 10 MB limit",
+    "decodeFailed": "Failed to decode the image",
+    "generated": "QR generated",
+    "decoded": "QR decoded",
+    "clear": "Clear",
+    "copy": "Copy text",
+    "export": "Export PNG",
+    "exported": "Export QR code",
+    "exportedToast": "Exported",
+    "exportFailed": "Export failed",
+    "save": "Save",
+    "saveTitle": "Save QR code",
+    "filterPng": "PNG image"
+  },
   "imageTool": {
     "title": "Image Tools",
     "actions": "Image actions",
@@ -552,6 +584,12 @@
     "quality": "Quality",
     "qualityValue": "{{value}}%",
     "qualityPngHint": "Transparent expand exports as PNG; quality does not change the lossless file",
+    "compress": "Compress",
+    "compressTarget": "Target size",
+    "compressTargetInvalid": "Enter a valid target size",
+    "compressTooLarge": "Still above target at minimum quality; try JPG/WebP or a smaller size",
+    "compressFailed": "Compression failed",
+    "compressDone": "Compressed to {{quality}}% quality",
     "outputPng": "PNG",
     "output": "Output",
     "format": "Format",

@@ -12,6 +12,7 @@ export type ToolId =
   | 'diff'
   | 'jwt'
   | 'url'
+  | 'qrcode'
   | 'image'
   | 'image-manager'
   | 'ssh-files';
