@@ -375,7 +375,7 @@ function SSHProfileManagerDialog({
   return (
     <>
       <Dialog open={open} onOpenChange={requestClose}>
-        <DialogContent className="flex max-h-[min(760px,calc(100dvh-32px))] w-[min(680px,calc(100vw-32px))] max-w-none flex-col gap-0 overflow-hidden p-0 sm:max-w-none">
+        <DialogContent className="flex max-h-[min(760px,calc(100dvh-32px))] w-[min(560px,calc(100vw-32px))] max-w-none flex-col gap-0 overflow-hidden p-0 sm:max-w-none">
           <DialogHeader className="flex-none border-b border-border px-6 py-5">
             <DialogTitle className="text-base">
               {view === 'list'
