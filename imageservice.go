@@ -716,7 +716,24 @@ func runAuthenticatedSSHCombined(
 		return err
 	}
 	defer client.Close()
-	return runSSHCommandToWriters(ctx, client, cliPath, dst, dst, dockerArgs...)
+	return runSSHCommandToWriters(ctx, client, cliPath, nil, dst, dst, dockerArgs...)
+}
+
+// runAuthenticatedSSHInput 把本地数据经 stdin 送给远端命令，用于在 SSH 来源上 docker load。
+func runAuthenticatedSSHInput(ctx context.Context, source ImageSource, cliPath, language string, src io.Reader, dockerArgs ...string) error {
+	client, err := dialAuthenticatedSSH(ctx, source, language)
+	if err != nil {
+		return err
+	}
+	defer client.Close()
+	stderr := &limitedBuffer{limit: maxImageCommandOutput}
+	if err := runSSHCommandToWriters(ctx, client, cliPath, src, io.Discard, stderr, dockerArgs...); err != nil {
+		if stderr.Len() > 0 {
+			return fmt.Errorf("导入镜像失败: %s", strings.TrimSpace(stderr.String()))
+		}
+		return err
+	}
+	return nil
 }
 
 func runSSHCommand(ctx context.Context, client *ssh.Client, cliPath string, dockerArgs ...string) ([]byte, error) {
@@ -775,13 +792,15 @@ func runSSHCommandToWriter(ctx context.Context, client *ssh.Client, cliPath stri
 	}
 }
 
-// runSSHCommandToWriters 分别把远程命令的 stdout / stderr 写到指定 writer，且都实时流式输出。
-func runSSHCommandToWriters(ctx context.Context, client *ssh.Client, cliPath string, stdout, stderr io.Writer, dockerArgs ...string) error {
+// runSSHCommandToWriters 分别把远程命令的 stdin / stdout / stderr 接到指定 reader / writer，
+// 且 stdout 与 stderr 都实时流式输出。
+func runSSHCommandToWriters(ctx context.Context, client *ssh.Client, cliPath string, stdin io.Reader, stdout, stderr io.Writer, dockerArgs ...string) error {
 	session, err := client.NewSession()
 	if err != nil {
 		return errors.New("创建 SSH 会话失败")
 	}
 	defer session.Close()
+	session.Stdin = stdin
 	session.Stdout = stdout
 	session.Stderr = stderr
 	if err := session.Start(shellJoin(append([]string{cliPath}, dockerArgs...))); err != nil {

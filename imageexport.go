@@ -59,6 +59,7 @@ type ImageExportResult struct {
 const (
 	imageTaskTypeExport = "export"
 	imageTaskTypePull   = "pull"
+	imageTaskTypeLoad   = "load"
 	imageTaskTypeUpdate = "update"
 	imageTaskTypeDetail = "detail"
 	imageTaskQueued     = "queued"
@@ -1069,4 +1070,191 @@ func (s *ImageService) runImagePull(ctx context.Context, taskID, imageRef string
 		// 拉取成功后 tag 可能指向新的镜像 ID，必须重扫才能在前端看到变化。
 		s.requestSourceRefresh(source.ID)
 	}
+}
+
+// StartImageImports 选择 tar 包并创建导入任务；每个文件一个 docker image load。
+func (s *ImageService) StartImageImports(sourceID string) (ImageExportResult, error) {
+	source, cliPath, _, err := s.sourceSnapshot(sourceID)
+	if err != nil {
+		return ImageExportResult{}, err
+	}
+	if source.Kind == "registry" {
+		return ImageExportResult{}, errors.New("Registry 来源不支持导入镜像")
+	}
+	app := application.Get()
+	if app == nil || app.Dialog == nil {
+		return ImageExportResult{}, errors.New("应用尚未初始化")
+	}
+	dialog := app.Dialog.OpenFile().
+		CanChooseDirectories(false).
+		CanChooseFiles(true).
+		AddFilter("Docker tar", "*.tar")
+	if window := app.Window.Current(); window != nil {
+		dialog.AttachToWindow(window)
+	}
+	paths, err := dialog.PromptForMultipleSelection()
+	if err != nil {
+		return ImageExportResult{}, fmt.Errorf("选择导入文件: %w", err)
+	}
+	if len(paths) == 0 {
+		return ImageExportResult{}, nil
+	}
+	return s.enqueueImageImportsWithSnapshot(sourceID, paths, source, cliPath)
+}
+
+// enqueueImageImportsWithSnapshot 校验导入文件后为每个 tar 创建独立任务；路径去重。
+func (s *ImageService) enqueueImageImportsWithSnapshot(sourceID string, paths []string, source ImageSource, cliPath string) (ImageExportResult, error) {
+	seen := make(map[string]bool, len(paths))
+	unique := make([]string, 0, len(paths))
+	for _, path := range paths {
+		cleaned := strings.TrimSpace(path)
+		if cleaned == "" || seen[cleaned] {
+			continue
+		}
+		info, err := os.Stat(cleaned)
+		if err != nil {
+			return ImageExportResult{}, fmt.Errorf("读取导入文件失败: %w", err)
+		}
+		if !info.Mode().IsRegular() {
+			return ImageExportResult{}, fmt.Errorf("导入路径 %q 不是普通文件", cleaned)
+		}
+		seen[cleaned] = true
+		unique = append(unique, cleaned)
+	}
+	if len(unique) == 0 {
+		return ImageExportResult{}, errors.New("未选择导入文件")
+	}
+	for _, path := range unique {
+		s.enqueueImageImportWithSnapshot(sourceID, path, source, cliPath)
+	}
+	return ImageExportResult{Started: len(unique), Snapshot: s.GetImageTasks()}, nil
+}
+
+func (s *ImageService) enqueueImageImportWithSnapshot(sourceID, path string, source ImageSource, cliPath string) {
+	ctx, cancel := context.WithCancel(s.serviceContext())
+	var size int64
+	if info, err := os.Stat(path); err == nil {
+		size = info.Size()
+	}
+	taskID := s.createImageTask(imageTaskState{
+		ImageTask: ImageTask{
+			Type:           imageTaskTypeLoad,
+			SourceID:       sourceID,
+			ImageID:        filepath.Base(path),
+			Path:           path,
+			Total:          max(size, int64(0)),
+			TotalEstimated: size > 0,
+		},
+		cancel: cancel,
+	})
+	s.exportWG.Add(1)
+	go func() {
+		defer s.exportWG.Done()
+		s.runImageImport(ctx, taskID, path, source, cliPath)
+	}()
+}
+
+func (s *ImageService) runImageImport(ctx context.Context, taskID, path string, source ImageSource, cliPath string) {
+	s.updateTask(taskID, func(task *imageTaskState) {
+		task.Status = imageTaskRunning
+		task.Stage = "loading"
+	})
+	file, err := os.Open(path)
+	if err != nil {
+		s.failImageImport(taskID, fmt.Errorf("打开导入文件失败: %w", err))
+		return
+	}
+	defer file.Close()
+	err = s.streamDockerLoad(ctx, source, cliPath, &progressReader{reader: file, onRead: s.importProgress(taskID)})
+	switch {
+	case errors.Is(err, context.Canceled):
+		s.updateTask(taskID, func(task *imageTaskState) {
+			task.Status = imageTaskCanceled
+			task.Stage = "canceled"
+			task.Error = ""
+			task.cancel = nil
+		})
+	case err != nil:
+		s.failImageImport(taskID, err)
+	default:
+		s.updateTask(taskID, func(task *imageTaskState) {
+			task.Status = imageTaskSuccess
+			task.Stage = "done"
+			if task.Total > 0 {
+				task.Bytes = task.Total
+			}
+			task.cancel = nil
+		})
+		// 导入成功后可能新增镜像或 tag，必须重扫才能在前端看到变化。
+		s.requestSourceRefresh(source.ID)
+	}
+}
+
+func (s *ImageService) failImageImport(taskID string, err error) {
+	s.updateTask(taskID, func(task *imageTaskState) {
+		task.Status = imageTaskFailed
+		task.Stage = "failed"
+		task.Error = err.Error()
+		task.cancel = nil
+	})
+}
+
+// importProgress 返回读取本地 tar 时的节流进度回调，用已读字节更新任务进度。
+func (s *ImageService) importProgress(taskID string) func(int64) {
+	var mu sync.Mutex
+	var pending int64
+	var last time.Time
+	return func(n int64) {
+		mu.Lock()
+		pending += n
+		if !last.IsZero() && time.Since(last) < 150*time.Millisecond {
+			mu.Unlock()
+			return
+		}
+		delta := pending
+		pending = 0
+		last = time.Now()
+		mu.Unlock()
+		s.updateTask(taskID, func(task *imageTaskState) {
+			task.Bytes += delta
+			task.Stage = "loading"
+		})
+	}
+}
+
+// progressReader 在读取时报告进度；读端被阻塞说明数据尚未送达远端 stdin，可用于背压。
+type progressReader struct {
+	reader io.Reader
+	onRead func(int64)
+}
+
+func (r *progressReader) Read(p []byte) (int, error) {
+	n, err := r.reader.Read(p)
+	if n > 0 && r.onRead != nil {
+		r.onRead(int64(n))
+	}
+	return n, err
+}
+
+// streamDockerLoad 把本地 tar 经 stdin 交给 docker image load（本地或 SSH 远端）。
+func (s *ImageService) streamDockerLoad(ctx context.Context, source ImageSource, cliPath string, src io.Reader) error {
+	args := []string{"image", "load"}
+	if source.Kind == "ssh" && (source.SSHPassword != "" || source.SSHPrivateKey != "" || source.SSHPrivateKeyPath != "") {
+		return runAuthenticatedSSHInput(ctx, source, cliPath, s.sshLanguage(), src, args...)
+	}
+	name, commandArgs, err := buildImageCommand(source, cliPath, args...)
+	if err != nil {
+		return err
+	}
+	cmd := execCommandContext(ctx, name, commandArgs...)
+	cmd.Stdin = src
+	stderr := &limitedBuffer{limit: maxImageCommandOutput}
+	cmd.Stderr = stderr
+	if err := cmd.Run(); err != nil {
+		if stderr.Len() > 0 {
+			return fmt.Errorf("导入镜像失败: %s", strings.TrimSpace(stderr.String()))
+		}
+		return fmt.Errorf("导入镜像失败: %w", err)
+	}
+	return nil
 }

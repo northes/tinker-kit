@@ -13,6 +13,7 @@ import {
   HardDrives,
   ListDashes,
   MagnifyingGlass,
+  Package,
   PencilSimple,
   Plus,
   Trash,
@@ -27,6 +28,7 @@ import {
   RetryImageExport,
   StartImageExport,
   StartImageExports,
+  StartImageImports,
   StartImagePulls,
   TagDockerImages,
   TestImageSourceConnection,
@@ -181,6 +183,11 @@ type ImageOperationDialogState =
   | {
       type: 'copy-tag';
       rows: ImageRow[];
+      sourceConfigKey: string;
+      value: string;
+    }
+  | {
+      type: 'pull-image';
       sourceConfigKey: string;
       value: string;
     }
@@ -1057,6 +1064,7 @@ export default function ImageManagerTool({
   const [tasksOpen, setTasksOpen] = useState(false);
   const [batchExportStarting, setBatchExportStarting] = useState(false);
   const [pullStarting, setPullStarting] = useState(false);
+  const [importStarting, setImportStarting] = useState(false);
   const [retryingTaskID, setRetryingTaskID] = useState<string | null>(null);
   const [taskClock, setTaskClock] = useState(Date.now);
   const sourceConfigKey = JSON.stringify({
@@ -1114,6 +1122,7 @@ export default function ImageManagerTool({
       const stageKeys: Record<string, string> = {
         export: 'imageManagerTool.taskStageExport',
         pull: 'imageManagerTool.taskStagePull',
+        load: 'imageManagerTool.taskStageLoad',
         update: 'imageManagerTool.taskStageUpdate',
       };
       const isTerminal = (status: string) =>
@@ -1926,6 +1935,12 @@ export default function ImageManagerTool({
     setOperationDialog({ type: 'copy-tag', rows, sourceConfigKey, value: '' });
   };
 
+  const openPullImageDialog = () => {
+    if (actionBlocked || !sourceSupportsDockerMutations) return;
+    setOperationError('');
+    setOperationDialog({ type: 'pull-image', sourceConfigKey, value: '' });
+  };
+
   const submitOperation = () => {
     if (!operationDialog || busy) return;
     if (operationDialog.sourceConfigKey !== sourceConfigKey) {
@@ -1960,6 +1975,16 @@ export default function ImageManagerTool({
         return;
       }
       void runTagChanges([{ source: operationDialog.changes[0].source, target: value }], true);
+      return;
+    }
+    if (operationDialog.type === 'pull-image') {
+      if (!value) {
+        setOperationError(t('imageManagerTool.operationInputRequired'));
+        return;
+      }
+      setOperationDialog(null);
+      setOperationError('');
+      void runPullRefs([value]);
       return;
     }
     if (!value) {
@@ -2035,12 +2060,13 @@ export default function ImageManagerTool({
   const activeTasks = visibleTasks.filter(
     (task) => task.status === 'queued' || task.status === 'running',
   );
-  const taskDone = (task: ImageTask) => (task.type === 'export' ? task.bytes : task.completed);
+  const taskUsesBytes = (task: ImageTask) => task.type === 'export' || task.type === 'load';
+  const taskDone = (task: ImageTask) => (taskUsesBytes(task) ? task.bytes : task.completed);
   const taskPercent = (task: ImageTask) => {
     if (task.status === 'success') return 100;
     if (task.total <= 0) return null;
     const percent = (taskDone(task) / task.total) * 100;
-    return task.type === 'export' && task.totalEstimated
+    return taskUsesBytes(task) && task.totalEstimated
       ? Math.min(99, percent)
       : Math.min(100, percent);
   };
@@ -2049,6 +2075,7 @@ export default function ImageManagerTool({
   const taskTypeLabel = (task: ImageTask) => {
     if (task.type === 'export') return t('imageManagerTool.taskStageExport');
     if (task.type === 'pull') return t('imageManagerTool.taskStagePull');
+    if (task.type === 'load') return t('imageManagerTool.taskStageLoad');
     if (task.type === 'detail') return t('imageManagerTool.taskStageDetail');
     return t('imageManagerTool.taskStageUpdate');
   };
@@ -2071,7 +2098,7 @@ export default function ImageManagerTool({
             ? 'blue'
             : 'secondary';
   const taskProgressLabel = (task: ImageTask) => {
-    if (task.type === 'export') {
+    if (taskUsesBytes(task)) {
       const completed = formatBytes(task.bytes, i18n.language) || formatBytes(0, i18n.language);
       if (task.totalEstimated && task.total > 0) {
         if (task.bytes > task.total) {
@@ -2168,8 +2195,8 @@ export default function ImageManagerTool({
       setRetryingTaskID(null);
     }
   };
-  const runPull = async (requestedRows: ImageRow[]) => {
-    const refs = requestedRows.map((row) => row.reference).filter(Boolean);
+  const runPullRefs = async (requestedRefs: string[]) => {
+    const refs = [...new Set(requestedRefs.map((ref) => ref.trim()).filter(Boolean))];
     if (refs.length === 0 || pullStarting) return;
     setPullStarting(true);
     try {
@@ -2193,6 +2220,32 @@ export default function ImageManagerTool({
       });
     } finally {
       setPullStarting(false);
+    }
+  };
+  const runPull = (requestedRows: ImageRow[]) =>
+    runPullRefs(requestedRows.map((row) => row.reference));
+  const runImport = async () => {
+    if (actionBlocked || !sourceSupportsDockerMutations || importStarting) return;
+    setImportStarting(true);
+    try {
+      const result = await StartImageImports(source.id);
+      if (result.started > 0) {
+        applyTasks(result.snapshot);
+        record(
+          'image-manager',
+          t('imageManagerTool.importTar'),
+          t('imageManagerTool.selectedCount', { count: result.started }),
+          source.id,
+        );
+      }
+    } catch (error) {
+      toast.add({
+        title: t('imageManagerTool.importFailed'),
+        description: errorMessage(error) || undefined,
+        type: 'error',
+      });
+    } finally {
+      setImportStarting(false);
     }
   };
 
@@ -2264,6 +2317,28 @@ export default function ImageManagerTool({
           }
           right={
             <div className="flex min-w-0 flex-wrap items-center gap-2 max-[700px]:w-full max-[700px]:justify-end">
+              <Button
+                variant="outline"
+                className="h-[30px] flex-none px-[11px] text-[11px]"
+                disabled={actionBlocked || !sourceSupportsDockerMutations}
+                onClick={openPullImageDialog}
+              >
+                <ArrowsClockwise data-icon="inline-start" weight="duotone" />
+                {t('imageManagerTool.pullImage')}
+              </Button>
+              <Button
+                variant="outline"
+                className="h-[30px] flex-none px-[11px] text-[11px]"
+                disabled={actionBlocked || !sourceSupportsDockerMutations || importStarting}
+                onClick={() => void runImport()}
+              >
+                {importStarting ? (
+                  <Spinner data-icon="inline-start" />
+                ) : (
+                  <Package data-icon="inline-start" weight="duotone" />
+                )}
+                {t('imageManagerTool.importTar')}
+              </Button>
               <Button
                 variant="outline"
                 className="h-[30px] min-w-[30px] flex-none px-[11px] text-[11px]"
@@ -2692,7 +2767,9 @@ export default function ImageManagerTool({
                     : t('imageManagerTool.pushTitle')
                   : operationDialog?.type === 'rename'
                     ? t('imageManagerTool.renameTitle')
-                    : t('imageManagerTool.copyTagTitle')}
+                    : operationDialog?.type === 'copy-tag'
+                      ? t('imageManagerTool.copyTagTitle')
+                      : t('imageManagerTool.pullImage')}
               </DialogTitle>
               <DialogDescription>
                 {operationDialog?.type === 'push'
@@ -2705,10 +2782,11 @@ export default function ImageManagerTool({
                     ? t('imageManagerTool.renameBody', {
                         name: operationDialog.changes[0]?.source ?? '',
                       })
-                    : t('imageManagerTool.copyTagBody', {
-                        count:
-                          operationDialog?.type === 'copy-tag' ? operationDialog.rows.length : 0,
-                      })}
+                    : operationDialog?.type === 'copy-tag'
+                      ? t('imageManagerTool.copyTagBody', {
+                          count: operationDialog.rows.length,
+                        })
+                      : t('imageManagerTool.pullImageBody')}
               </DialogDescription>
             </DialogHeader>
             {operationDialog?.type === 'push' && operationDialog.changes.length === 1 ? (
@@ -2764,6 +2842,28 @@ export default function ImageManagerTool({
                     setOperationError('');
                     setOperationDialog((current) =>
                       current?.type === 'copy-tag'
+                        ? { ...current, value: event.target.value }
+                        : current,
+                    );
+                  }}
+                />
+              </div>
+            ) : null}
+            {operationDialog?.type === 'pull-image' ? (
+              <div className="grid gap-2">
+                <Label htmlFor="image-operation-reference">
+                  {t('imageManagerTool.imageReference')}
+                </Label>
+                <Input
+                  id="image-operation-reference"
+                  value={operationDialog.value}
+                  placeholder={t('imageManagerTool.imageReferencePlaceholder')}
+                  autoFocus
+                  aria-invalid={Boolean(operationError)}
+                  onChange={(event) => {
+                    setOperationError('');
+                    setOperationDialog((current) =>
+                      current?.type === 'pull-image'
                         ? { ...current, value: event.target.value }
                         : current,
                     );

@@ -525,3 +525,57 @@ func TestStabilizeWatchImagesKeepsPreviousNameAndOrder(t *testing.T) {
 		t.Fatalf("expected previous name and order preserved: %#v", got[0])
 	}
 }
+
+func TestEnqueueImageImportsValidatesFiles(t *testing.T) {
+	s := &ImageService{tasks: make(map[string]*imageTaskState)}
+	dir := t.TempDir()
+	if _, err := s.enqueueImageImportsWithSnapshot("local", []string{filepath.Join(dir, "missing.tar")}, ImageSource{Kind: "local"}, "docker"); err == nil {
+		t.Fatal("expected error for missing import file")
+	}
+	if _, err := s.enqueueImageImportsWithSnapshot("local", []string{dir}, ImageSource{Kind: "local"}, "docker"); err == nil {
+		t.Fatal("expected error for directory import path")
+	}
+}
+
+func TestRunImageImportPipesTarAndSucceeds(t *testing.T) {
+	previous := execCommandContext
+	defer func() { execCommandContext = previous }()
+	execCommandContext = func(ctx context.Context, name string, args ...string) *exec.Cmd {
+		return exec.CommandContext(ctx, "cat")
+	}
+	s := &ImageService{tasks: make(map[string]*imageTaskState)}
+	path := filepath.Join(t.TempDir(), "image.tar")
+	payload := []byte("tar-archive-payload")
+	if err := os.WriteFile(path, payload, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	id := s.createImageTask(imageTaskState{ImageTask: ImageTask{
+		Type:           imageTaskTypeLoad,
+		SourceID:       "local",
+		ImageID:        "image.tar",
+		Path:           path,
+		Total:          int64(len(payload)),
+		TotalEstimated: true,
+	}})
+	s.runImageImport(context.Background(), id, path, ImageSource{Kind: "local"}, "docker")
+	task := s.GetImageTasks().Tasks[0]
+	if task.Status != imageTaskSuccess {
+		t.Fatalf("导入未成功: %+v", task)
+	}
+	if task.Bytes != int64(len(payload)) || task.Completed != 0 {
+		t.Fatalf("导入进度未回填到 Bytes: %+v", task)
+	}
+}
+
+func TestStreamDockerLoadReportsStderr(t *testing.T) {
+	previous := execCommandContext
+	defer func() { execCommandContext = previous }()
+	execCommandContext = func(ctx context.Context, name string, args ...string) *exec.Cmd {
+		return exec.CommandContext(ctx, "sh", "-c", "echo 'invalid tar' >&2; exit 1")
+	}
+	s := &ImageService{}
+	err := s.streamDockerLoad(context.Background(), ImageSource{Kind: "local"}, "docker", bytes.NewReader([]byte("x")))
+	if err == nil || !strings.Contains(err.Error(), "invalid tar") {
+		t.Fatalf("expected stderr in load error, got %v", err)
+	}
+}
