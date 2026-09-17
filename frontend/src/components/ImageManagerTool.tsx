@@ -21,7 +21,6 @@ import {
   DeleteDockerImages,
   CancelImageTask,
   GetImageTasks,
-  GetSSHConfigHosts,
   PushDockerImages,
   RefreshDockerImages,
   RetryImageExport,
@@ -42,6 +41,7 @@ import type {
   ImageSource,
   ImageTask,
   ImageTaskSnapshot,
+  SSHProfile,
 } from '../../bindings/changeme/models';
 import { applyImageTaskSnapshot } from '../lib/image-tasks';
 import {
@@ -97,44 +97,30 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { Spinner } from './ui/spinner';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
-import { Textarea } from './ui/textarea';
 import { toast } from './ui/toast';
+import { useSSHProfiles } from './SSHProfileManagerDialog';
 
 const LOCAL_SOURCE_ID = 'local';
 const LOCAL_SOURCE = {
   id: LOCAL_SOURCE_ID,
   name: '本机',
   kind: 'local',
-  sshHost: '',
 } as unknown as ImageSource;
 const IMAGE_TASK_RETENTION_MS = 24 * 60 * 60 * 1000;
 
 type SourceKind = 'local' | 'ssh' | 'registry';
 type ManagedImageSource = Omit<
   ImageSource,
-  | 'sshPort'
-  | 'sshUsername'
-  | 'sshPassword'
-  | 'sshPrivateKey'
-  | 'sshKeyPassphrase'
-  | 'sshPrivateKeyPath'
-  | 'registryURL'
-  | 'registryUsername'
-  | 'registryPassword'
+  'sshProfileID' | 'registryURL' | 'registryUsername' | 'registryPassword'
 > & {
-  sshPort?: number | string;
-  sshUsername?: string;
-  sshPassword?: string;
-  sshPrivateKey?: string;
-  sshKeyPassphrase?: string;
-  sshPrivateKeyPath?: string;
+  sshProfileID?: string;
   registryURL?: string;
   registryUsername?: string;
   registryPassword?: string;
   capabilities?: { canDelete?: boolean; canPush?: boolean };
 };
 type SourceDraft = Partial<ManagedImageSource> &
-  Pick<ManagedImageSource, 'name' | 'kind' | 'sshHost'> & { id?: string };
+  Pick<ManagedImageSource, 'name' | 'kind'> & { id?: string };
 
 type WatchEventKind = 'snapshot' | 'create' | 'update' | 'delete';
 
@@ -237,10 +223,6 @@ function isWatchCancelError(error: unknown) {
   return error instanceof CancelError || (error instanceof Error && error.name === 'CancelError');
 }
 
-function sshSourceId(alias: string) {
-  return `ssh:${alias}`;
-}
-
 function isLocalSource(source: ImageSource) {
   return source.id === LOCAL_SOURCE_ID || source.kind === 'local';
 }
@@ -254,7 +236,17 @@ function resolveSources(sources: ImageSource[] | null | undefined): ImageSource[
 function sourceDisplayName(source: ImageSource, t: (key: string) => string) {
   return isLocalSource(source)
     ? t('imageManagerTool.localSource')
-    : source.name || (source as ManagedImageSource).registryURL || source.sshHost;
+    : source.name ||
+        (source.kind === 'ssh'
+          ? (source as ManagedImageSource).sshProfileID || t('imageManagerTool.sshProfileMissing')
+          : (source as ManagedImageSource).registryURL) ||
+        '';
+}
+
+function sourceMissingSSHProfile(source: ImageSource, profiles: SSHProfile[]) {
+  if (source.kind !== 'ssh') return false;
+  const profileID = (source as ManagedImageSource).sshProfileID?.trim() ?? '';
+  return !profileID || !profiles.some((profile) => profile.id === profileID);
 }
 
 function bindingSource(source: ManagedImageSource): ImageSource {
@@ -276,13 +268,7 @@ function bindingSource(source: ManagedImageSource): ImageSource {
     id: source.id,
     name: source.name.trim(),
     kind: source.kind.trim(),
-    sshHost: ssh ? source.sshHost.trim() : '',
-    sshPort: ssh ? Number(source.sshPort) || 22 : 0,
-    sshUsername: ssh ? (source.sshUsername?.trim() ?? '') : '',
-    sshPassword: ssh ? (source.sshPassword ?? '') : '',
-    sshPrivateKey: ssh ? (source.sshPrivateKey ?? '') : '',
-    sshPrivateKeyPath: ssh ? (source.sshPrivateKeyPath ?? '') : '',
-    sshKeyPassphrase: ssh ? (source.sshKeyPassphrase ?? '') : '',
+    sshProfileID: ssh ? (source.sshProfileID?.trim() ?? '') : '',
     registryURL: normalizedRegistryURL,
     registryUsername: registry ? (source.registryUsername?.trim() ?? '') : '',
     registryPassword: registry ? (source.registryPassword ?? '') : '',
@@ -940,12 +926,14 @@ export default function ImageManagerTool({
   clearPending: () => void;
 }) {
   const { t, i18n } = useTranslation();
+  const { profiles, openManager } = useSSHProfiles();
   const consumed = useRef<PendingAction | null>(null);
   const sourceLabelId = useId();
   const sources = useMemo(() => resolveSources(settings.imageSources), [settings.imageSources]);
   const cliPath = settings.dockerCLIPath ?? '';
   const [sourceId, setSourceId] = useState(LOCAL_SOURCE_ID);
   const source = sources.find((item) => item.id === sourceId) ?? sources[0] ?? LOCAL_SOURCE;
+  const sourceProfileMissing = sourceMissingSSHProfile(source, profiles);
   const [reloadNonce, setReloadNonce] = useState(0);
   const [connectionPending, setConnectionPending] = useState(false);
   const [loadError, setLoadError] = useState('');
@@ -965,9 +953,6 @@ export default function ImageManagerTool({
   const [copiedName, setCopiedName] = useState<string | null>(null);
   const [copiedDigest, setCopiedDigest] = useState<string | null>(null);
   const [copiedTag, setCopiedTag] = useState<string | null>(null);
-  const [hostOptions, setHostOptions] = useState<Array<{ alias: string; selected: boolean }>>([]);
-  const [hostsLoading, setHostsLoading] = useState(false);
-  const [hostsError, setHostsError] = useState('');
   const [confirm, setConfirm] = useState<ConfirmState>(null);
   const [operationDialog, setOperationDialog] = useState<ImageOperationDialogState>(null);
   const [operationError, setOperationError] = useState('');
@@ -989,11 +974,20 @@ export default function ImageManagerTool({
   const [batchExportStarting, setBatchExportStarting] = useState(false);
   const [retryingTaskID, setRetryingTaskID] = useState<string | null>(null);
   const [taskClock, setTaskClock] = useState(Date.now);
-  const sourceConfigKey = JSON.stringify(source);
-  const sourceIsChanging = watchSourceId !== source.id;
-  const isConnecting = connectionPending || sourceIsChanging;
+  const sourceConfigKey = JSON.stringify({
+    source,
+    profile:
+      source.kind === 'ssh' ? profiles.find((item) => item.id === source.sshProfileID) : null,
+  });
+  const sourceIsChanging = !sourceProfileMissing && watchSourceId !== source.id;
+  const isConnecting = !sourceProfileMissing && (connectionPending || sourceIsChanging);
   const displayedImages = sourceIsChanging ? [] : images;
   const requestWatchReload = useCallback(() => {
+    if (sourceProfileMissing) {
+      setConnectionPending(false);
+      setLoadError(t('imageManagerTool.sshProfileMissingHint'));
+      return;
+    }
     const clientID = watchClientID.current;
     if (clientID && watchSourceIDRef.current === source.id) {
       void RefreshDockerImages(source.id, clientID).catch((error) => {
@@ -1004,7 +998,7 @@ export default function ImageManagerTool({
     setConnectionPending(true);
     setLoadError('');
     setReloadNonce((value) => value + 1);
-  }, [source.id, t]);
+  }, [source.id, sourceProfileMissing, t]);
   const restartWatch = useCallback(() => {
     setConnectionPending(true);
     setLoadError('');
@@ -1064,6 +1058,16 @@ export default function ImageManagerTool({
     setIsInitialLoad(false);
     setHasSnapshot(false);
     setSnapshotUpdatedAt('');
+
+    if (sourceProfileMissing) {
+      setConnectionPending(false);
+      setLoadError(t('imageManagerTool.sshProfileMissingHint'));
+      return () => {
+        mounted = false;
+        if (watchClientID.current === clientID) watchClientID.current = null;
+        if (watchSourceIDRef.current === sourceID) watchSourceIDRef.current = null;
+      };
+    }
 
     const offWatch = Events.On('image-manager:watch-docker-images', (event) => {
       const payload = event.data as WatchDockerImagesEvent | undefined;
@@ -1181,7 +1185,16 @@ export default function ImageManagerTool({
         watchCall.cancel();
       }
     };
-  }, [cliPath, reloadNonce, requestWatchReload, restartWatch, source.id, sourceConfigKey, t]);
+  }, [
+    cliPath,
+    reloadNonce,
+    requestWatchReload,
+    restartWatch,
+    source.id,
+    sourceConfigKey,
+    sourceProfileMissing,
+    t,
+  ]);
 
   useEffect(() => {
     if (!pending || pending.tool !== 'image-manager' || consumed.current === pending) return;
@@ -1250,14 +1263,12 @@ export default function ImageManagerTool({
     () => filteredImages.reduce((total, image) => total + imageSizeBytes(image), 0),
     [filteredImages],
   );
-  const sourceViewState = resolveSourceViewState(
-    isConnecting,
-    status,
-    loadError,
-    isUpdating,
-    isInitialLoad,
-  );
-  const contentError = loadError || status?.error || '';
+  const sourceViewState = sourceProfileMissing
+    ? 'unavailable'
+    : resolveSourceViewState(isConnecting, status, loadError, isUpdating, isInitialLoad);
+  const contentError = sourceProfileMissing
+    ? t('imageManagerTool.sshProfileMissingHint')
+    : loadError || status?.error || '';
   const contentViewState = resolveContentViewState(
     isConnecting,
     hasSnapshot,
@@ -1265,7 +1276,8 @@ export default function ImageManagerTool({
     filteredImages.length,
     sourceViewState,
   );
-  const actionBlocked = isConnecting || busy !== null || sourceViewState === 'unavailable';
+  const actionBlocked =
+    sourceProfileMissing || isConnecting || busy !== null || sourceViewState === 'unavailable';
   const interactionBlocked = busy !== null;
   const sourceSupportsDockerMutations = source.kind !== 'registry';
   const sourceCanDelete = (source as ManagedImageSource).capabilities?.canDelete ?? true;
@@ -1343,45 +1355,16 @@ export default function ImageManagerTool({
   const openManage = () => {
     setManageTab('ssh');
     setEditingSource(null);
-    setHostsError('');
-    setHostOptions([]);
     setManageOpen(true);
     setDraftSources(sources);
     setSourceSaveError('');
     setSourceDraftError('');
-    setHostsLoading(true);
-    void GetSSHConfigHosts()
-      .then((hosts) => {
-        const aliases = new Map<string, string>();
-        for (const host of hosts ?? []) {
-          const alias = host.alias?.trim();
-          if (alias) aliases.set(alias, alias);
-        }
-        for (const item of sources) {
-          if (!isLocalSource(item) && item.sshHost && !aliases.has(item.sshHost)) {
-            aliases.set(item.sshHost, item.name || item.sshHost);
-          }
-        }
-        const selectedIds = new Set(
-          sources.filter((item) => !isLocalSource(item)).map((item) => item.id),
-        );
-        setHostOptions(
-          [...aliases.entries()].map(([alias]) => ({
-            alias,
-            selected: selectedIds.has(sshSourceId(alias)),
-          })),
-        );
-      })
-      .catch((error) => {
-        setHostsError(errorMessage(error) || t('imageManagerTool.sshHostsFailed'));
-      })
-      .finally(() => setHostsLoading(false));
   };
 
   const newSource = (kind: 'ssh' | 'registry') => {
     setManageTab(kind);
     setSourceDraftError('');
-    setEditingSource({ id: '', name: '', kind, sshHost: '', sshPort: 22 });
+    setEditingSource({ id: '', name: '', kind, sshProfileID: '' });
   };
 
   const editSource = (item: ImageSource) => {
@@ -1403,13 +1386,17 @@ export default function ImageManagerTool({
       id: id || draft.id?.trim() || `${kind}:connection-test`,
       kind,
       name: draft.name?.trim() ?? '',
-      sshHost: draft.sshHost?.trim() ?? '',
+      sshProfileID: draft.sshProfileID?.trim() ?? '',
     } as ManagedImageSource);
   };
 
   const saveSource = async () => {
     if (!editingSource) return;
     const kind = editingSource.kind as SourceKind;
+    if (kind === 'ssh' && !editingSource.sshProfileID?.trim()) {
+      setSourceDraftError(t('imageManagerTool.sshProfileRequired'));
+      return;
+    }
     const id = editingSource.id?.trim() || `${kind}:${crypto.randomUUID()}`;
     try {
       const next = await ValidateImageSource(sourceCandidate(editingSource, id));
@@ -1446,6 +1433,26 @@ export default function ImageManagerTool({
 
   const renderEditForm = () => {
     if (!editingSource) return null;
+    const availableSSHProfiles =
+      editingSource.sshProfileID && !profiles.some((item) => item.id === editingSource.sshProfileID)
+        ? [
+            ...profiles,
+            {
+              id: editingSource.sshProfileID,
+              name: t('imageManagerTool.sshProfileMissing'),
+              origin: 'manual',
+              originAlias: '',
+              host: '',
+              port: 22,
+              username: '',
+              password: '',
+              privateKey: '',
+              privateKeyPath: '',
+              keyPassphrase: '',
+              originUpdatedAt: '',
+            } satisfies SSHProfile,
+          ]
+        : profiles;
     return (
       <div className="flex flex-col gap-3 border-t border-border pt-3">
         <h3 className="m-0 text-sm font-medium text-foreground">
@@ -1462,66 +1469,52 @@ export default function ImageManagerTool({
           </div>
           {editingSource.kind === 'ssh' ? (
             <>
-              <div className="flex flex-col gap-1">
-                <Label htmlFor="source-edit-ssh-host">{t('imageManagerTool.sshHost')}</Label>
-                <Input
-                  id="source-edit-ssh-host"
-                  value={editingSource.sshHost ?? ''}
-                  onChange={(e) => updateDraft({ sshHost: e.target.value })}
-                  placeholder={t('imageManagerTool.sshHostPlaceholder')}
-                />
-              </div>
-              <div className="flex flex-col gap-1">
-                <Label htmlFor="source-edit-ssh-port">{t('imageManagerTool.sshPort')}</Label>
-                <Input
-                  id="source-edit-ssh-port"
-                  type="number"
-                  value={editingSource.sshPort ?? 22}
-                  onChange={(e) => updateDraft({ sshPort: Number(e.target.value) || 22 })}
-                />
-              </div>
-              <div className="flex flex-col gap-1">
-                <Label htmlFor="source-edit-ssh-username">
-                  {t('imageManagerTool.sshUsername')}
-                </Label>
-                <Input
-                  id="source-edit-ssh-username"
-                  value={editingSource.sshUsername ?? ''}
-                  onChange={(e) => updateDraft({ sshUsername: e.target.value })}
-                />
-              </div>
-              <div className="flex flex-col gap-1">
-                <Label htmlFor="source-edit-ssh-password">
-                  {t('imageManagerTool.sshPassword')}
-                </Label>
-                <Input
-                  id="source-edit-ssh-password"
-                  type="password"
-                  value={editingSource.sshPassword ?? ''}
-                  onChange={(e) => updateDraft({ sshPassword: e.target.value })}
-                />
-              </div>
-              <div className="flex flex-col gap-1 sm:col-span-2">
-                <Label htmlFor="source-edit-ssh-privkey">
-                  {t('imageManagerTool.sshPrivateKey')}
-                </Label>
-                <Textarea
-                  id="source-edit-ssh-privkey"
-                  className="min-h-32 text-xs font-mono"
-                  value={editingSource.sshPrivateKey ?? ''}
-                  onChange={(e) => updateDraft({ sshPrivateKey: e.target.value })}
-                />
-              </div>
-              <div className="flex flex-col gap-1 sm:col-span-2">
-                <Label htmlFor="source-edit-ssh-passphrase">
-                  {t('imageManagerTool.sshKeyPassphrase')}
-                </Label>
-                <Input
-                  id="source-edit-ssh-passphrase"
-                  type="password"
-                  value={editingSource.sshKeyPassphrase ?? ''}
-                  onChange={(e) => updateDraft({ sshKeyPassphrase: e.target.value })}
-                />
+              <div className="flex flex-col gap-2 sm:col-span-2">
+                <Label htmlFor="source-edit-ssh-profile">{t('imageManagerTool.sshProfile')}</Label>
+                <Select
+                  items={availableSSHProfiles.map((profile) => ({
+                    value: profile.id,
+                    label: profile.name,
+                  }))}
+                  value={editingSource.sshProfileID || null}
+                  onValueChange={(value) => updateDraft({ sshProfileID: value || '' })}
+                >
+                  <SelectTrigger id="source-edit-ssh-profile" className="w-full">
+                    <SelectValue placeholder={t('imageManagerTool.selectSSHProfile')} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {availableSSHProfiles.map((profile) => (
+                      <SelectItem key={profile.id} value={profile.id}>
+                        {profile.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {editingSource.sshProfileID &&
+                !profiles.some((item) => item.id === editingSource.sshProfileID) ? (
+                  <p className="m-0 text-[10px] leading-4 text-destructive" role="alert">
+                    {t('imageManagerTool.sshProfileMissingHint')}
+                  </p>
+                ) : null}
+                <div className="flex items-center justify-between gap-2">
+                  <p className="m-0 text-[10px] leading-4 text-muted-foreground">
+                    {t('imageManagerTool.sshProfileHint')}
+                  </p>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="flex-none"
+                    onClick={() =>
+                      openManager({
+                        select: true,
+                        onSelect: (profile: SSHProfile) =>
+                          updateDraft({ sshProfileID: profile.id }),
+                      })
+                    }
+                  >
+                    {t('imageManagerTool.manageSSHProfiles')}
+                  </Button>
+                </div>
               </div>
             </>
           ) : (
@@ -1577,15 +1570,17 @@ export default function ImageManagerTool({
           >
             {t('imageManagerTool.cancel')}
           </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={testingSource}
-            onClick={() => void testSourceConnection()}
-          >
-            {testingSource ? <Spinner data-icon="inline-start" /> : null}
-            {t('imageManagerTool.testConnection')}
-          </Button>
+          {editingSource.kind === 'registry' ? (
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={testingSource}
+              onClick={() => void testSourceConnection()}
+            >
+              {testingSource ? <Spinner data-icon="inline-start" /> : null}
+              {t('imageManagerTool.testConnection')}
+            </Button>
+          ) : null}
           <Button size="sm" onClick={() => void saveSource()} disabled={testingSource}>
             {t('imageManagerTool.saveSource')}
           </Button>
@@ -1597,30 +1592,13 @@ export default function ImageManagerTool({
   const saveSources = async () => {
     const local = draftSources.find(isLocalSource) ?? LOCAL_SOURCE;
     const existing = draftSources.filter((item) => !isLocalSource(item));
-    const existingIds = new Set(existing.map((item) => item.id));
     const nextSources: ImageSource[] = [
       bindingSource({ ...local, id: LOCAL_SOURCE_ID, kind: 'local' } as ManagedImageSource),
-      ...hostOptions
-        .filter((host) => host.selected)
-        .filter((host) => !existingIds.has(sshSourceId(host.alias)))
-        .map((host) =>
-          bindingSource({
-            id: sshSourceId(host.alias),
-            name: host.alias,
-            kind: 'ssh',
-            sshHost: host.alias,
-          } as ManagedImageSource),
-        ),
-      ...existing
-        .filter(
-          (item) =>
-            !hostOptions.some((host) => sshSourceId(host.alias) === item.id && !host.selected),
-        )
-        .map((item) => bindingSource(item as ManagedImageSource)),
+      ...existing.map((item) => bindingSource(item as ManagedImageSource)),
     ];
     const invalid = nextSources.find((item) =>
       item.kind === 'ssh'
-        ? !item.sshHost.trim()
+        ? !item.sshProfileID.trim() || !profiles.some((profile) => profile.id === item.sshProfileID)
         : item.kind === 'registry'
           ? !item.registryURL.trim()
           : false,
@@ -1629,7 +1607,7 @@ export default function ImageManagerTool({
       setSourceSaveError(
         t(
           invalid.kind === 'ssh'
-            ? 'imageManagerTool.sshHostRequired'
+            ? 'imageManagerTool.sshProfileRequired'
             : 'imageManagerTool.registryURLRequired',
         ),
       );
@@ -2113,6 +2091,11 @@ export default function ImageManagerTool({
                     ))}
                   </SelectContent>
                 </Select>
+                {sourceProfileMissing ? (
+                  <Badge variant="destructive" className="h-5 text-[10px]">
+                    {t('imageManagerTool.sshProfileMissing')}
+                  </Badge>
+                ) : null}
               </div>
               <ImageSearchField
                 id="image-manager-search"
@@ -2128,7 +2111,7 @@ export default function ImageManagerTool({
               <Button
                 variant="outline"
                 className="h-[30px] min-w-[30px] flex-none px-[11px] text-[11px]"
-                disabled={busy !== null}
+                disabled={busy !== null || sourceProfileMissing}
                 onClick={() => {
                   requestWatchReload();
                   record(
@@ -2179,6 +2162,16 @@ export default function ImageManagerTool({
                 <ArrowsClockwise data-icon="inline-start" weight="duotone" />
                 {t('imageManagerTool.refresh')}
               </Button>
+              {sourceProfileMissing ? (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-[30px] px-[11px] text-[11px]"
+                  onClick={openManage}
+                >
+                  {t('imageManagerTool.manageSources')}
+                </Button>
+              ) : null}
             </div>
           ) : contentViewState === 'empty' || contentViewState === 'no-results' ? (
             <div className="flex h-auto min-h-0 flex-1 flex-col items-center justify-center gap-2 text-center">
@@ -2815,8 +2808,13 @@ export default function ImageManagerTool({
                             <div className="truncate text-sm text-foreground">
                               {sourceDisplayName(item, t)}
                             </div>
-                            <div className="text-[10px] text-muted-foreground">
-                              {t('imageManagerTool.kindSsh')}
+                            <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
+                              <span>{t('imageManagerTool.kindSsh')}</span>
+                              {sourceMissingSSHProfile(item, profiles) ? (
+                                <Badge variant="destructive" className="h-4 text-[9px]">
+                                  {t('imageManagerTool.sshProfileMissing')}
+                                </Badge>
+                              ) : null}
                             </div>
                           </div>
                           <div className="flex flex-none gap-1">
@@ -2839,50 +2837,6 @@ export default function ImageManagerTool({
                           </div>
                         </div>
                       ))}
-                  </div>
-                ) : null}
-
-                {editingSource?.kind === 'ssh' && !editingSource.id ? (
-                  <div className="flex flex-col gap-2 border-t border-border pt-3">
-                    <span className="text-[10px] font-medium text-muted-foreground">
-                      {t('imageManagerTool.sshHosts')}
-                    </span>
-                    {hostsLoading ? (
-                      <div className="flex justify-center py-3">
-                        <Spinner />
-                      </div>
-                    ) : hostsError ? (
-                      <p className="m-0 text-sm text-destructive">{hostsError}</p>
-                    ) : hostOptions.length === 0 ? (
-                      <p className="m-0 text-sm text-muted-foreground">
-                        {t('imageManagerTool.sshHostsEmpty')}
-                      </p>
-                    ) : (
-                      <div className="divide-y divide-border">
-                        {hostOptions.map((host, index) => {
-                          const id = sshSourceId(host.alias);
-                          return (
-                            <label key={id} className="flex cursor-pointer items-center gap-2 py-2">
-                              <Checkbox
-                                checked={host.selected}
-                                onCheckedChange={(checked) =>
-                                  setHostOptions((current) =>
-                                    current.map((item, itemIndex) =>
-                                      itemIndex === index
-                                        ? { ...item, selected: checked === true }
-                                        : item,
-                                    ),
-                                  )
-                                }
-                              />
-                              <span className="min-w-0 truncate font-mono text-[13px]">
-                                {host.alias}
-                              </span>
-                            </label>
-                          );
-                        })}
-                      </div>
-                    )}
                   </div>
                 ) : null}
 

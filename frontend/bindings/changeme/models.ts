@@ -21,7 +21,8 @@ export interface Config {
     "jsonAutoFormatOnFillMigrated": boolean;
     "dockerCLIPath": string;
     "imageSources": ImageSource[] | null;
-    "sshConnections": SSHConnection[] | null;
+    "sshProfilesVersion": number;
+    "sshProfiles": SSHProfile[] | null;
     "fileSources": FileSource[] | null;
 }
 
@@ -162,7 +163,7 @@ export interface DockerStatus {
 export interface FileSource {
     "id": string;
     "name": string;
-    "sshConnectionID": string;
+    "sshProfileID": string;
     "defaultPath": string;
     "favoritePaths"?: string[] | null;
 }
@@ -240,13 +241,18 @@ export interface ImageSource {
     "id": string;
     "name": string;
     "kind": string;
-    "sshHost": string;
-    "sshPort": number;
-    "sshUsername": string;
-    "sshPassword": string;
-    "sshPrivateKey": string;
-    "sshPrivateKeyPath": string;
-    "sshKeyPassphrase": string;
+    "sshProfileID": string;
+
+    /**
+     * 以下字段仅用于旧调用方的内存兼容；一次性配置清理时会从持久化 SSH 来源中移除。
+     */
+    "sshHost"?: string;
+    "sshPort"?: number;
+    "sshUsername"?: string;
+    "sshPassword"?: string;
+    "sshPrivateKey"?: string;
+    "sshPrivateKeyPath"?: string;
+    "sshKeyPassphrase"?: string;
     "registryURL": string;
     "registryUsername": string;
     "registryPassword": string;
@@ -358,6 +364,24 @@ export interface SSHKnownHost {
     "fingerprint": string;
     "comment"?: string;
     "marker"?: string;
+}
+
+/**
+ * SSHProfile 是应用全局复用的 SSH 连接配置。
+ */
+export interface SSHProfile {
+    "id": string;
+    "name": string;
+    "origin": string;
+    "originAlias": string;
+    "host": string;
+    "port": number;
+    "username": string;
+    "password": string;
+    "privateKey": string;
+    "privateKeyPath": string;
+    "keyPassphrase": string;
+    "originUpdatedAt": string;
 }
 
 export interface SidebarToolConfig {

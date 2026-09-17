@@ -120,9 +120,11 @@ type remoteFileOperationProgress struct {
 
 type fileTaskState struct {
 	FileTask
-	ctx             context.Context
-	cancel          context.CancelFunc
-	operationPolicy string
+	ctx                   context.Context
+	cancel                context.CancelFunc
+	operationPolicy       string
+	connection            SSHConnection
+	hasConnectionSnapshot bool
 }
 
 func (s *FileService) setEventEmitter(emit func(string, any)) { s.emitEvent = emit }
@@ -166,6 +168,25 @@ func (s *FileService) createFileTask(
 	s.taskMu.Unlock()
 	s.emitTasks(snapshot)
 	return task.ID
+}
+
+func (s *FileService) setFileTaskConnection(id string, connection SSHConnection) {
+	s.taskMu.Lock()
+	if task := s.tasks[id]; task != nil {
+		task.connection = connection
+		task.hasConnectionSnapshot = true
+	}
+	s.taskMu.Unlock()
+}
+
+func (s *FileService) fileTaskConnection(id string) (SSHConnection, bool) {
+	s.taskMu.Lock()
+	defer s.taskMu.Unlock()
+	task := s.tasks[id]
+	if task == nil || !task.hasConnectionSnapshot {
+		return SSHConnection{}, false
+	}
+	return task.connection, true
 }
 
 func (s *FileService) updateFileTask(id string, update func(*fileTaskState)) {
@@ -323,6 +344,51 @@ func (s *FileService) SaveSSHFileConfig(connections []SSHConnection, sources []F
 	return s.config.Save(cfg)
 }
 
+// SaveFileSources 只持久化文件工具元数据；SSH 凭据保存在 ConfigService.SSHProfiles，
+// 不会由此接口提交。
+func (s *FileService) SaveFileSources(sources []FileSource) error {
+	sources = copyFileSources(sources)
+	if s == nil || s.config == nil {
+		return errors.New("配置服务尚未初始化")
+	}
+	return s.config.updateConfigAllowDanglingRefs(func(cfg *Config) error {
+		profiles := make(map[string]struct{}, len(cfg.SSHProfiles))
+		for _, profile := range cfg.SSHProfiles {
+			profiles[profile.ID] = struct{}{}
+		}
+		for index := range sources {
+			source := &sources[index]
+			source.ID = strings.TrimSpace(source.ID)
+			source.Name = strings.TrimSpace(source.Name)
+			source.SSHProfileID = strings.TrimSpace(source.SSHProfileID)
+			source.SSHConnectionID = ""
+			source.DefaultPath = strings.TrimSpace(source.DefaultPath)
+			if !validConfigValue(source.ID, 128) || source.Name == "" || !validTextValue(source.Name, 256) {
+				return fmt.Errorf("文件源 %q 配置无效", source.ID)
+			}
+			if !validConfigValue(source.SSHProfileID, 128) {
+				return fmt.Errorf("文件源 %q 的 SSH 配置 ID 无效", source.ID)
+			}
+			if _, ok := profiles[source.SSHProfileID]; !ok {
+				return fmt.Errorf("文件源 %q 引用的 SSH 配置不存在", source.ID)
+			}
+			if source.DefaultPath != "" && !validPathValue(source.DefaultPath, 4096) {
+				return fmt.Errorf("文件源 %q 的默认路径无效", source.ID)
+			}
+			source.FavoritePaths = normalizeFavoritePaths(source.FavoritePaths)
+		}
+		seen := make(map[string]struct{}, len(sources))
+		for _, source := range sources {
+			if _, ok := seen[source.ID]; ok {
+				return fmt.Errorf("文件源 ID 重复: %q", source.ID)
+			}
+			seen[source.ID] = struct{}{}
+		}
+		cfg.FileSources = sources
+		return nil
+	})
+}
+
 func (s *FileService) sourceSnapshot(sourceID string) (FileSource, SSHConnection, error) {
 	cfg := s.configSnapshot()
 	var src FileSource
@@ -334,6 +400,14 @@ func (s *FileService) sourceSnapshot(sourceID string) (FileSource, SSHConnection
 	}
 	if src.ID == "" {
 		return FileSource{}, SSHConnection{}, errors.New("文件源不存在")
+	}
+	if src.SSHProfileID != "" {
+		for _, profile := range cfg.SSHProfiles {
+			if profile.ID == src.SSHProfileID {
+				return src, sshProfileToConnection(profile), nil
+			}
+		}
+		return FileSource{}, SSHConnection{}, errors.New("文件源引用的 SSH 配置不存在")
 	}
 	for _, conn := range cfg.SSHConnections {
 		if conn.ID == src.SSHConnectionID {
@@ -1460,6 +1534,18 @@ func (s *FileService) operateRemoteFiles(
 	target, conflictPolicy string,
 	onProgress func(remoteFileOperationProgress),
 ) (RemoteFileOperationResult, error) {
+	return s.operateRemoteFilesWithConnection(ctx, sourceID, operation, remotePaths, target, conflictPolicy, SSHConnection{}, false, onProgress)
+}
+
+func (s *FileService) operateRemoteFilesWithConnection(
+	ctx context.Context,
+	sourceID, operation string,
+	remotePaths []string,
+	target, conflictPolicy string,
+	connection SSHConnection,
+	hasConnectionSnapshot bool,
+	onProgress func(remoteFileOperationProgress),
+) (RemoteFileOperationResult, error) {
 	var result RemoteFileOperationResult
 	operation = strings.TrimSpace(operation)
 	switch operation {
@@ -1513,11 +1599,14 @@ func (s *FileService) operateRemoteFiles(
 		target = normalizedRemotePath(target)
 	}
 
-	_, conn, err := s.sourceSnapshot(sourceID)
-	if err != nil {
-		return result, err
+	var err error
+	if !hasConnectionSnapshot {
+		_, connection, err = s.sourceSnapshot(sourceID)
+		if err != nil {
+			return result, err
+		}
 	}
-	sshClient, client, err := s.dialSFTP(ctx, conn)
+	sshClient, client, err := s.dialSFTP(ctx, connection)
 	if err != nil {
 		return result, err
 	}
@@ -1574,7 +1663,7 @@ func (s *FileService) operateRemoteFiles(
 			}
 			if err := runRemoteCommand(
 				ctx,
-				conn,
+				connection,
 				sshClient,
 				remoteTransferCommand(operation, item.source, destination),
 			); err != nil {
@@ -1631,7 +1720,7 @@ func (s *FileService) operateRemoteFiles(
 		format := remoteArchiveFormatForPath(target)
 		if _, err := runRemoteArchiveCompression(
 			ctx,
-			conn,
+			connection,
 			sshClient,
 			client,
 			format,
@@ -1654,7 +1743,7 @@ func (s *FileService) operateRemoteFiles(
 			baseTotalKnown := totalKnown
 			summary, err := s.extractRemoteArchive(
 				ctx,
-				conn,
+				connection,
 				sshClient,
 				client,
 				remotePath,
@@ -1726,7 +1815,8 @@ func (s *FileService) StartRemoteFileOperation(
 		conflictPolicy = ""
 	}
 	target = normalizedRemotePath(target)
-	if _, _, err := s.sourceSnapshot(sourceID); err != nil {
+	_, connection, err := s.sourceSnapshot(sourceID)
+	if err != nil {
 		return FileTaskSnapshot{}, err
 	}
 
@@ -1748,6 +1838,7 @@ func (s *FileService) StartRemoteFileOperation(
 		task.operationPolicy = conflictPolicy
 	}
 	s.taskMu.Unlock()
+	s.setFileTaskConnection(id, connection)
 	go s.runRemoteFileOperationTask(ctx, id)
 	return s.GetFileTasks(), nil
 }
@@ -1808,6 +1899,7 @@ func (s *FileService) runRemoteFileOperationTask(ctx context.Context, taskID str
 	if !ok {
 		return
 	}
+	connection, hasConnectionSnapshot := s.fileTaskConnection(taskID)
 	s.updateFileTask(taskID, func(task *fileTaskState) {
 		task.Status, task.Stage, task.Current = fileTaskScanning, "preparing", target
 	})
@@ -1825,13 +1917,15 @@ func (s *FileService) runRemoteFileOperationTask(ctx context.Context, taskID str
 			task.DoneFiles, task.Current = progress.doneFiles, progress.current
 		})
 	}
-	result, err := s.operateRemoteFiles(
+	result, err := s.operateRemoteFilesWithConnection(
 		ctx,
 		sourceID,
 		operation,
 		paths,
 		target,
 		conflictPolicy,
+		connection,
+		hasConnectionSnapshot,
 		onProgress,
 	)
 	if err != nil {
@@ -2296,7 +2390,7 @@ func (s *FileService) StartFileUpload(sourceID string, localPaths []string, remo
 	if len(localPaths) == 0 {
 		return FileTaskSnapshot{}, errors.New("未选择上传文件")
 	}
-	src, _, err := s.sourceSnapshot(sourceID)
+	src, connection, err := s.sourceSnapshot(sourceID)
 	if err != nil {
 		return FileTaskSnapshot{}, err
 	}
@@ -2307,7 +2401,7 @@ func (s *FileService) StartFileUpload(sourceID string, localPaths []string, remo
 		ctx,
 		cancel,
 	)
-	go s.runFileUpload(ctx, id, src, localPaths, remotePath)
+	go s.runFileUpload(ctx, id, src, connection, localPaths, remotePath)
 	return s.GetFileTasks(), nil
 }
 
@@ -2371,7 +2465,7 @@ func (s *FileService) StartFileDownload(sourceID string, remotePaths []string) (
 		ctx,
 		cancel,
 	)
-	go s.runFileDownload(ctx, id, sourceID, remotePaths, target)
+	go s.runFileDownload(ctx, id, conn, remotePaths, target)
 	return s.GetFileTasks(), nil
 }
 
@@ -2425,7 +2519,7 @@ func collectRemoteTree(
 	return nil
 }
 
-func (s *FileService) runFileUpload(ctx context.Context, taskID string, source FileSource, localPaths []string, remoteRoot string) {
+func (s *FileService) runFileUpload(ctx context.Context, taskID string, source FileSource, connection SSHConnection, localPaths []string, remoteRoot string) {
 	s.updateFileTask(taskID, func(task *fileTaskState) {
 		task.Status, task.Stage = fileTaskScanning, fileTaskScanning
 	})
@@ -2437,12 +2531,7 @@ func (s *FileService) runFileUpload(ctx context.Context, taskID string, source F
 	s.updateFileTask(taskID, func(task *fileTaskState) {
 		task.Total, task.Files = total, files
 	})
-	_, conn, err := s.sourceSnapshot(source.ID)
-	if err != nil {
-		s.finishFileTask(taskID, err)
-		return
-	}
-	sshClient, client, err := s.dialSFTP(ctx, conn)
+	sshClient, client, err := s.dialSFTP(ctx, connection)
 	if err != nil {
 		s.finishFileTask(taskID, err)
 		return
@@ -2570,13 +2659,8 @@ func (s *FileService) uploadLocalFile(
 	return nil
 }
 
-func (s *FileService) runFileDownload(ctx context.Context, taskID, sourceID string, remotePaths []string, target string) {
-	_, conn, err := s.sourceSnapshot(sourceID)
-	if err != nil {
-		s.finishFileTask(taskID, err)
-		return
-	}
-	sshClient, client, err := s.dialSFTPWithOptions(ctx, conn, remoteDownloadSFTPOptions()...)
+func (s *FileService) runFileDownload(ctx context.Context, taskID string, connection SSHConnection, remotePaths []string, target string) {
+	sshClient, client, err := s.dialSFTPWithOptions(ctx, connection, remoteDownloadSFTPOptions()...)
 	if err != nil {
 		s.finishFileTask(taskID, err)
 		return
@@ -2623,7 +2707,7 @@ func (s *FileService) runFileDownload(ctx context.Context, taskID, sourceID stri
 	defer closeRemoteDownloadFiles(filesToDownload)
 	sshClients, sftpClients = s.expandDownloadSFTPClients(
 		ctx,
-		conn,
+		connection,
 		sshClients,
 		sftpClients,
 		remoteDownloadConnectionWanted(filesToDownload),
@@ -3129,7 +3213,8 @@ func (s *FileService) finishFileTask(taskID string, err error) {
 }
 
 func (s *FileService) CalculateRemoteSize(sourceID, remotePath string) (FileTaskSnapshot, error) {
-	if _, _, err := s.sourceSnapshot(sourceID); err != nil {
+	_, connection, err := s.sourceSnapshot(sourceID)
+	if err != nil {
 		return FileTaskSnapshot{}, err
 	}
 	ctx, cancel := context.WithCancel(context.Background())
@@ -3138,17 +3223,12 @@ func (s *FileService) CalculateRemoteSize(sourceID, remotePath string) (FileTask
 		ctx,
 		cancel,
 	)
-	go s.runSizeTask(ctx, id, sourceID, normalizedRemotePath(remotePath))
+	go s.runSizeTask(ctx, id, connection, normalizedRemotePath(remotePath))
 	return s.GetFileTasks(), nil
 }
 
-func (s *FileService) runSizeTask(ctx context.Context, taskID, sourceID, remotePath string) {
-	_, conn, err := s.sourceSnapshot(sourceID)
-	if err != nil {
-		s.finishFileTask(taskID, err)
-		return
-	}
-	sshClient, client, err := s.dialSFTP(ctx, conn)
+func (s *FileService) runSizeTask(ctx context.Context, taskID string, connection SSHConnection, remotePath string) {
+	sshClient, client, err := s.dialSFTP(ctx, connection)
 	if err != nil {
 		s.finishFileTask(taskID, err)
 		return

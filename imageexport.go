@@ -69,6 +69,10 @@ type imageTaskState struct {
 	ImageTask
 	cancel          context.CancelFunc
 	exclusiveTarget bool
+	// exportSource/exportCLIPath 是导出任务排队时取得的来源快照。
+	exportSource      ImageSource
+	exportCLIPath     string
+	hasExportSnapshot bool
 }
 
 func (s *ImageService) initImageTasks() {
@@ -205,7 +209,8 @@ func (s *ImageService) RetryImageExport(id string) (ImageExportResult, error) {
 	if sourceID == "" || imageID == "" || target == "" {
 		return ImageExportResult{}, errors.New("导出任务信息不完整")
 	}
-	if _, _, _, err := s.sourceSnapshot(sourceID); err != nil {
+	source, cliPath, _, err := s.sourceSnapshot(sourceID)
+	if err != nil {
 		return ImageExportResult{}, err
 	}
 
@@ -232,6 +237,9 @@ func (s *ImageService) RetryImageExport(id string) (ImageExportResult, error) {
 	task.Bytes = 0
 	task.Error = ""
 	task.cancel = cancel
+	task.exportSource = source
+	task.exportCLIPath = cliPath
+	task.hasExportSnapshot = true
 	task.UpdatedAt = time.Now().UTC().Format(time.RFC3339Nano)
 	s.taskRevision++
 	snapshot := s.taskSnapshotLocked()
@@ -240,7 +248,7 @@ func (s *ImageService) RetryImageExport(id string) (ImageExportResult, error) {
 	s.exportWG.Add(1)
 	go func() {
 		defer s.exportWG.Done()
-		s.runImageExport(ctx, id, sourceID, imageID, target)
+		s.runImageExportWithSnapshot(ctx, id, sourceID, imageID, target, source, cliPath)
 	}()
 	return ImageExportResult{Started: 1, Snapshot: snapshot}, nil
 }
@@ -271,7 +279,9 @@ func (s *ImageService) StartImageExport(sourceID, imageID string, estimatedSize 
 	}
 	s.exportQueueMu.Lock()
 	defer s.exportQueueMu.Unlock()
-	s.enqueueImageExport(sourceID, imageID, path, false, estimatedSize, estimatedSize > 0)
+	if _, err := s.enqueueImageExport(sourceID, imageID, path, false, estimatedSize, estimatedSize > 0); err != nil {
+		return ImageExportResult{}, err
+	}
 	return ImageExportResult{Started: 1, Snapshot: s.GetImageTasks()}, nil
 }
 
@@ -294,7 +304,8 @@ func (s *ImageService) StartImageExports(sourceID string, imageIDs []string, est
 	if len(estimatedSizes) != len(imageIDs) {
 		return ImageExportResult{}, errors.New("镜像大小估算数量不匹配")
 	}
-	if _, _, _, err := s.sourceSnapshot(sourceID); err != nil {
+	source, cliPath, _, err := s.sourceSnapshot(sourceID)
+	if err != nil {
 		return ImageExportResult{}, err
 	}
 	app := application.Get()
@@ -321,10 +332,30 @@ func (s *ImageService) StartImageExports(sourceID string, imageIDs []string, est
 		seen[id] = true
 		estimates = append(estimates, estimatedSizes[i])
 	}
-	return s.enqueueImageExports(sourceID, ids, estimates, directory)
+	return s.enqueueImageExportsWithSnapshot(sourceID, ids, estimates, directory, source, cliPath)
 }
 
 func (s *ImageService) enqueueImageExports(sourceID string, ids []string, estimates []int64, directory string) (ImageExportResult, error) {
+	source, cliPath, err := s.exportSourceSnapshot(sourceID)
+	if err != nil {
+		return ImageExportResult{}, err
+	}
+	return s.enqueueImageExportsWithSnapshot(sourceID, ids, estimates, directory, source, cliPath)
+}
+
+// exportSourceSnapshot 为没有配置服务的低层任务测试提供最小本地来源快照；真实入口仍要求来源存在。
+func (s *ImageService) exportSourceSnapshot(sourceID string) (ImageSource, string, error) {
+	if s == nil || s.config == nil {
+		return ImageSource{ID: sourceID, Kind: "local"}, "docker", nil
+	}
+	source, cliPath, _, err := s.sourceSnapshot(sourceID)
+	if err != nil {
+		return ImageSource{}, "", err
+	}
+	return source, cliPath, nil
+}
+
+func (s *ImageService) enqueueImageExportsWithSnapshot(sourceID string, ids []string, estimates []int64, directory string, source ImageSource, cliPath string) (ImageExportResult, error) {
 	if len(estimates) != len(ids) {
 		return ImageExportResult{}, errors.New("镜像大小估算数量不匹配")
 	}
@@ -344,7 +375,9 @@ func (s *ImageService) enqueueImageExports(sourceID string, ids []string, estima
 	}
 	for i, id := range ids {
 		estimate := estimates[i]
-		s.enqueueImageExport(sourceID, id, paths[i], true, estimate, estimate > 0)
+		if _, err := s.enqueueImageExportWithSnapshot(sourceID, id, paths[i], true, estimate, estimate > 0, source, cliPath); err != nil {
+			return ImageExportResult{}, err
+		}
 	}
 	return ImageExportResult{Started: len(ids), Snapshot: s.GetImageTasks()}, nil
 }
@@ -378,7 +411,15 @@ func batchExportPaths(directory string, ids []string, reserved map[string]bool) 
 }
 
 // 调用方持有 exportQueueMu，避免批量任务分配到相同目标路径。
-func (s *ImageService) enqueueImageExport(sourceID, imageID, path string, exclusive bool, total int64, totalEstimated bool) ImageTask {
+func (s *ImageService) enqueueImageExport(sourceID, imageID, path string, exclusive bool, total int64, totalEstimated bool) (ImageTask, error) {
+	source, cliPath, err := s.exportSourceSnapshot(sourceID)
+	if err != nil {
+		return ImageTask{}, err
+	}
+	return s.enqueueImageExportWithSnapshot(sourceID, imageID, path, exclusive, total, totalEstimated, source, cliPath)
+}
+
+func (s *ImageService) enqueueImageExportWithSnapshot(sourceID, imageID, path string, exclusive bool, total int64, totalEstimated bool, source ImageSource, cliPath string) (ImageTask, error) {
 	ctx, cancel := context.WithCancel(s.serviceContext())
 	id := s.createImageTask(imageTaskState{
 		ImageTask: ImageTask{
@@ -389,8 +430,11 @@ func (s *ImageService) enqueueImageExport(sourceID, imageID, path string, exclus
 			Total:          max(total, int64(0)),
 			TotalEstimated: totalEstimated && total > 0,
 		},
-		cancel:          cancel,
-		exclusiveTarget: exclusive,
+		cancel:            cancel,
+		exclusiveTarget:   exclusive,
+		exportSource:      source,
+		exportCLIPath:     cliPath,
+		hasExportSnapshot: true,
 	})
 	s.taskMu.Lock()
 	result := s.tasks[id].ImageTask
@@ -398,9 +442,9 @@ func (s *ImageService) enqueueImageExport(sourceID, imageID, path string, exclus
 	s.exportWG.Add(1)
 	go func() {
 		defer s.exportWG.Done()
-		s.runImageExport(ctx, id, sourceID, imageID, path)
+		s.runImageExportWithSnapshot(ctx, id, sourceID, imageID, path, source, cliPath)
 	}()
-	return result
+	return result, nil
 }
 
 func (s *ImageService) commitImageExport(taskID, tmp, target string) error {
@@ -433,7 +477,22 @@ func (s *ImageService) commitImageExport(taskID, tmp, target string) error {
 	return nil
 }
 
+// runImageExport 保留给旧的内部调用方；新任务应在排队时传入来源快照。
 func (s *ImageService) runImageExport(ctx context.Context, taskID, sourceID, imageID, target string) {
+	source, cliPath, _, err := s.sourceSnapshot(sourceID)
+	if err != nil {
+		s.updateTask(taskID, func(task *imageTaskState) {
+			task.Status = imageTaskFailed
+			task.Stage = "failed"
+			task.Error = err.Error()
+			task.cancel = nil
+		})
+		return
+	}
+	s.runImageExportWithSnapshot(ctx, taskID, sourceID, imageID, target, source, cliPath)
+}
+
+func (s *ImageService) runImageExportWithSnapshot(ctx context.Context, taskID, sourceID, imageID, target string, source ImageSource, cliPath string) {
 	s.taskMu.Lock()
 	if s.exportSem == nil {
 		s.exportSem = make(chan struct{}, 2)
@@ -452,7 +511,7 @@ func (s *ImageService) runImageExport(ctx context.Context, taskID, sourceID, ima
 		return
 	}
 	s.updateTask(taskID, func(task *imageTaskState) { task.Status = imageTaskRunning; task.Stage = "preparing" })
-	source, cliPath, _, err := s.sourceSnapshot(sourceID)
+	var err error
 	if err == nil {
 		if source.Kind == "registry" {
 			err = s.exportRegistryOCI(ctx, taskID, source, imageID, target)

@@ -380,8 +380,24 @@ func (s *ImageService) sourceSnapshot(sourceID string) (ImageSource, string, str
 			if source.Kind == "local" {
 				return source, cliPath, imageSourceFingerprint(source, cliPath), nil
 			}
-			if source.Kind == "ssh" && validSSHHost(source.SSHHost) {
-				return source, "docker", imageSourceFingerprint(source, "docker"), nil
+			if source.Kind == "ssh" {
+				if source.SSHProfileID != "" {
+					var profile SSHProfile
+					for _, candidate := range config.SSHProfiles {
+						if candidate.ID == source.SSHProfileID {
+							profile = candidate
+							break
+						}
+					}
+					if profile.ID == "" {
+						return ImageSource{}, "", "", errors.New("镜像来源引用的 SSH 配置不存在")
+					}
+					resolved := imageSourceFromSSHProfile(source, profile)
+					return resolved, "docker", imageSourceFingerprint(resolved, "docker"), nil
+				}
+				if validSSHHost(source.SSHHost) {
+					return source, "docker", imageSourceFingerprint(source, "docker"), nil
+				}
 			}
 			if source.Kind == "registry" {
 				if _, ok := normalizeRegistryURL(source.RegistryURL); ok {
@@ -392,6 +408,17 @@ func (s *ImageService) sourceSnapshot(sourceID string) (ImageSource, string, str
 		}
 	}
 	return ImageSource{}, "", "", fmt.Errorf("镜像来源 %q 不存在", sourceID)
+}
+
+func imageSourceFromSSHProfile(source ImageSource, profile SSHProfile) ImageSource {
+	source.SSHHost = profile.Host
+	source.SSHPort = profile.Port
+	source.SSHUsername = profile.Username
+	source.SSHPassword = profile.Password
+	source.SSHPrivateKey = profile.PrivateKey
+	source.SSHPrivateKeyPath = profile.PrivateKeyPath
+	source.SSHKeyPassphrase = profile.KeyPassphrase
+	return source
 }
 
 func (s *ImageService) source(sourceID string) (ImageSource, string, error) {
@@ -969,6 +996,19 @@ func (s *ImageService) TestImageSourceConnection(source ImageSource) error {
 		return errors.New("仅支持测试 SSH 或 Registry 来源")
 	}
 	config := normalizeConfig(s.config.Get())
+	if normalized.Kind == "ssh" && normalized.SSHProfileID != "" {
+		var profile SSHProfile
+		for _, candidate := range config.SSHProfiles {
+			if candidate.ID == normalized.SSHProfileID {
+				profile = candidate
+				break
+			}
+		}
+		if profile.ID == "" {
+			return errors.New("镜像来源引用的 SSH 配置不存在")
+		}
+		normalized = imageSourceFromSSHProfile(normalized, profile)
+	}
 	cliPath := config.DockerCLIPath
 	if cliPath == "" {
 		cliPath = "docker"

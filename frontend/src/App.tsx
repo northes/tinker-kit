@@ -96,6 +96,7 @@ import {
   GetHistoryContent,
   ResolveSSHHostKeyPrompt,
   Save as SaveConfig,
+  SaveImageSources,
 } from '../bindings/changeme/configservice';
 import { Log as LogFrontend } from '../bindings/changeme/logservice';
 import { SetAutoCheckEnabled } from '../bindings/changeme/updateservice';
@@ -151,7 +152,11 @@ function normalizedImageSource(source: NonNullable<Settings['imageSources']>[num
   const kind = String(value.kind ?? '').trim();
   const registry = kind === 'registry';
   const ssh = kind === 'ssh';
-  let registryURL = registry ? String(value.registryURL ?? '').trim().replace(/\/+$/, '') : '';
+  let registryURL = registry
+    ? String(value.registryURL ?? '')
+        .trim()
+        .replace(/\/+$/, '')
+    : '';
   try {
     const parsed = new URL(registryURL);
     if (parsed.protocol === 'https:') {
@@ -166,13 +171,7 @@ function normalizedImageSource(source: NonNullable<Settings['imageSources']>[num
     id: String(value.id ?? ''),
     name: String(value.name ?? '').trim(),
     kind,
-    sshHost: ssh ? String(value.sshHost ?? '').trim() : '',
-    sshPort: ssh ? Number(value.sshPort) || 22 : 0,
-    sshUsername: ssh ? String(value.sshUsername ?? '').trim() : '',
-    sshPassword: ssh ? String(value.sshPassword ?? '') : '',
-    sshPrivateKey: ssh ? String(value.sshPrivateKey ?? '') : '',
-    sshPrivateKeyPath: ssh ? String(value.sshPrivateKeyPath ?? '') : '',
-    sshKeyPassphrase: ssh ? String(value.sshKeyPassphrase ?? '') : '',
+    sshProfileID: ssh ? String(value.sshProfileID ?? '').trim() : '',
     registryURL,
     registryUsername: registry ? String(value.registryUsername ?? '').trim() : '',
     registryPassword: registry ? String(value.registryPassword ?? '') : '',
@@ -252,19 +251,14 @@ const defaultSettings: Settings = {
       id: 'local',
       name: '本机',
       kind: 'local',
-      sshHost: '',
-      sshPort: 0,
-      sshUsername: '',
-      sshPassword: '',
-      sshPrivateKey: '',
-      sshPrivateKeyPath: '',
-      sshKeyPassphrase: '',
+      sshProfileID: '',
       registryURL: '',
       registryUsername: '',
       registryPassword: '',
     },
   ],
-  sshConnections: [],
+  sshProfilesVersion: 1,
+  sshProfiles: [],
   fileSources: [],
 };
 const JsonTool = lazy(() => import('./components/JsonTool'));
@@ -1413,11 +1407,12 @@ function AppShell() {
         if (sourceRequest) {
           const candidate = { ...settingsRef.current, ...sourceRequest.patch };
           try {
-            await SaveConfig(candidate);
+            await SaveImageSources(candidate.dockerCLIPath ?? '', candidate.imageSources ?? []);
             const canonical = await GetConfig();
             const candidateSources = (candidate.imageSources ?? []).map(normalizedImageSource);
             const canonicalSources = (canonical.imageSources ?? []).map(normalizedImageSource);
-            if (JSON.stringify(canonicalSources) !== JSON.stringify(candidateSources)) throw new Error(t('toast.settingsCanonicalMismatch'));
+            if (JSON.stringify(canonicalSources) !== JSON.stringify(candidateSources))
+              throw new Error(t('toast.settingsCanonicalMismatch'));
             const committed = {
               ...settingsRef.current,
               dockerCLIPath: canonical.dockerCLIPath,
@@ -1459,7 +1454,9 @@ function AppShell() {
         // 仅由对应配置对象的 SaveConfig 结果结算 waiter。
         const orphaned = saveWaiters.current;
         saveWaiters.current = [];
-        orphaned.forEach((waiter) => waiter.reject(new Error('Settings save snapshot was superseded')));
+        orphaned.forEach((waiter) =>
+          waiter.reject(new Error('Settings save snapshot was superseded')),
+        );
       }
     }
   };

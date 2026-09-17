@@ -64,6 +64,7 @@ import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { Spinner } from './ui/spinner';
 import { Textarea } from './ui/textarea';
+import { useSSHProfiles } from './SSHProfileManagerDialog';
 
 const TRAY_MATCH_DEFAULT_TOOLS: readonly ToolId[] = [
   'json',
@@ -633,6 +634,7 @@ export default function SettingsPage({
   flushSettingsSave: () => Promise<void>;
 }) {
   const { t } = useTranslation();
+  const { openManager } = useSSHProfiles();
   const [confirmClear, setConfirmClear] = useState(false);
   const [confirmQuit, setConfirmQuit] = useState(false);
   const [checking, setChecking] = useState(false);
@@ -897,6 +899,12 @@ export default function SettingsPage({
             </div>
           </SettingsGroup>
           <SettingsGroup title={t('settings.ssh')} subtitle={t('settings.sshSubtitle')}>
+            <Setting label={t('settings.sshProfiles')} description={t('settings.sshProfilesDesc')}>
+              <Button variant="outline" onClick={() => openManager()}>
+                <Key data-icon="inline-start" weight="duotone" />
+                {t('settings.manageSSHProfiles')}
+              </Button>
+            </Setting>
             <Setting
               label={t('settings.sshKnownHosts')}
               description={t('settings.sshKnownHostsDesc')}

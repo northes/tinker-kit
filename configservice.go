@@ -36,8 +36,11 @@ type Config struct {
 	JsonAutoFormatOnFillMigrated bool                `json:"jsonAutoFormatOnFillMigrated"`
 	DockerCLIPath                string              `json:"dockerCLIPath"`
 	ImageSources                 []ImageSource       `json:"imageSources"`
-	SSHConnections               []SSHConnection     `json:"sshConnections"`
-	FileSources                  []FileSource        `json:"fileSources"`
+	SSHProfilesVersion           int                 `json:"sshProfilesVersion"`
+	SSHProfiles                  []SSHProfile        `json:"sshProfiles"`
+	// SSHConnections 仅作为旧调用方的内存兼容形状保留；新配置和新调用方使用 SSHProfiles。
+	SSHConnections []SSHConnection `json:"-"`
+	FileSources    []FileSource    `json:"fileSources"`
 }
 
 type SidebarToolConfig struct {
@@ -48,19 +51,37 @@ type SidebarToolConfig struct {
 var defaultSidebarToolIDs = []string{"json", "time", "text", "base64", "diff", "jwt", "url", "qrcode", "image-manager", "ssh-files"}
 
 type ImageSource struct {
-	ID                string `json:"id"`
-	Name              string `json:"name"`
-	Kind              string `json:"kind"`
-	SSHHost           string `json:"sshHost"`
-	SSHPort           int    `json:"sshPort"`
-	SSHUsername       string `json:"sshUsername"`
-	SSHPassword       string `json:"sshPassword"`
-	SSHPrivateKey     string `json:"sshPrivateKey"`
-	SSHPrivateKeyPath string `json:"sshPrivateKeyPath"`
-	SSHKeyPassphrase  string `json:"sshKeyPassphrase"`
+	ID           string `json:"id"`
+	Name         string `json:"name"`
+	Kind         string `json:"kind"`
+	SSHProfileID string `json:"sshProfileID"`
+	// 以下字段仅用于旧调用方的内存兼容；一次性配置清理时会从持久化 SSH 来源中移除。
+	SSHHost           string `json:"sshHost,omitempty"`
+	SSHPort           int    `json:"sshPort,omitempty"`
+	SSHUsername       string `json:"sshUsername,omitempty"`
+	SSHPassword       string `json:"sshPassword,omitempty"`
+	SSHPrivateKey     string `json:"sshPrivateKey,omitempty"`
+	SSHPrivateKeyPath string `json:"sshPrivateKeyPath,omitempty"`
+	SSHKeyPassphrase  string `json:"sshKeyPassphrase,omitempty"`
 	RegistryURL       string `json:"registryURL"`
 	RegistryUsername  string `json:"registryUsername"`
 	RegistryPassword  string `json:"registryPassword"`
+}
+
+// SSHProfile 是应用全局复用的 SSH 连接配置。
+type SSHProfile struct {
+	ID              string `json:"id"`
+	Name            string `json:"name"`
+	Origin          string `json:"origin"`
+	OriginAlias     string `json:"originAlias"`
+	Host            string `json:"host"`
+	Port            int    `json:"port"`
+	Username        string `json:"username"`
+	Password        string `json:"password"`
+	PrivateKey      string `json:"privateKey"`
+	PrivateKeyPath  string `json:"privateKeyPath"`
+	KeyPassphrase   string `json:"keyPassphrase"`
+	OriginUpdatedAt string `json:"originUpdatedAt"`
 }
 
 // SSHConnection 是文件工具复用的 SSH 连接配置。文件源只引用 ID，避免重复保存凭据。
@@ -80,12 +101,16 @@ type SSHConnection struct {
 
 // FileSource 是 SSH 文件管理中的可浏览源；同一连接可被多个源引用。
 type FileSource struct {
-	ID              string   `json:"id"`
-	Name            string   `json:"name"`
-	SSHConnectionID string   `json:"sshConnectionID"`
+	ID           string `json:"id"`
+	Name         string `json:"name"`
+	SSHProfileID string `json:"sshProfileID"`
+	// SSHConnectionID 仅供旧调用方在内存中使用，新持久化配置不会使用它。
+	SSHConnectionID string   `json:"-"`
 	DefaultPath     string   `json:"defaultPath"`
 	FavoritePaths   []string `json:"favoritePaths,omitempty"`
 }
+
+const currentSSHProfilesVersion = 1
 
 const localImageSourceID = "local"
 
@@ -133,7 +158,7 @@ type historyStored struct {
 }
 
 func defaultConfig() Config {
-	return Config{TrayMatchEnabled: true, TrayMatchTools: []string{"json", "time", "text", "base64", "diff", "jwt", "url"}, AutoOverwrite: true, AutoCheckUpdates: true, Language: "zh-CN", SidebarMode: "full", SidebarTools: defaultSidebarTools(), ThemeMode: "dark", LightTheme: "default-light", DarkTheme: "default-dark", DiffClipboardTargetMode: "alternate", CodeEditorFontSize: 16, TimeResultOrder: []string{"local", "dateTime", "dateOnly", "timeOnly", "zonedIso8601", "rfc3339", "utc", "compact", "underscore", "unixSeconds", "unixMilliseconds", "unixNanoseconds"}, JsonAutoFormatOnFill: true, JsonAutoFormatOnFillMigrated: true, ImageSources: defaultImageSources(), SSHConnections: []SSHConnection{}, FileSources: []FileSource{}}
+	return Config{TrayMatchEnabled: true, TrayMatchTools: []string{"json", "time", "text", "base64", "diff", "jwt", "url"}, AutoOverwrite: true, AutoCheckUpdates: true, Language: "zh-CN", SidebarMode: "full", SidebarTools: defaultSidebarTools(), ThemeMode: "dark", LightTheme: "default-light", DarkTheme: "default-dark", DiffClipboardTargetMode: "alternate", CodeEditorFontSize: 16, TimeResultOrder: []string{"local", "dateTime", "dateOnly", "timeOnly", "zonedIso8601", "rfc3339", "utc", "compact", "underscore", "unixSeconds", "unixMilliseconds", "unixNanoseconds"}, JsonAutoFormatOnFill: true, JsonAutoFormatOnFillMigrated: true, ImageSources: defaultImageSources(), SSHProfilesVersion: currentSSHProfilesVersion, SSHProfiles: []SSHProfile{}, SSHConnections: []SSHConnection{}, FileSources: []FileSource{}}
 }
 
 func normalizeThemeID(theme string, defaultID string, legacyID string) string {
@@ -269,6 +294,7 @@ func normalizeImageSource(source ImageSource, seen map[string]bool, hasLocal *bo
 	source.ID = strings.TrimSpace(source.ID)
 	source.Name = strings.TrimSpace(source.Name)
 	source.Kind = strings.TrimSpace(strings.ToLower(source.Kind))
+	source.SSHProfileID = strings.TrimSpace(source.SSHProfileID)
 	source.SSHHost = strings.TrimSpace(source.SSHHost)
 	source.SSHUsername = strings.TrimSpace(source.SSHUsername)
 	source.RegistryURL = strings.TrimSpace(source.RegistryURL)
@@ -297,6 +323,7 @@ func normalizeImageSource(source ImageSource, seen map[string]bool, hasLocal *bo
 		source.SSHPrivateKey = ""
 		source.SSHPrivateKeyPath = ""
 		source.SSHKeyPassphrase = ""
+		source.SSHProfileID = ""
 		source.RegistryURL = ""
 		source.RegistryUsername = ""
 		source.RegistryPassword = ""
@@ -313,6 +340,29 @@ func normalizeImageSource(source ImageSource, seen map[string]bool, hasLocal *bo
 		if seen[source.ID] {
 			return ImageSource{}, fmt.Errorf("SSH 来源 ID %q 重复", source.ID)
 		}
+		if source.SSHProfileID != "" {
+			if !validConfigValue(source.SSHProfileID, 128) {
+				return ImageSource{}, errors.New("SSH 配置 ID 非法")
+			}
+			if source.Name == "" {
+				source.Name = source.SSHProfileID
+			}
+			if !validTextValue(source.Name, 128) {
+				return ImageSource{}, errors.New("SSH 来源名称非法")
+			}
+			source.SSHHost = ""
+			source.SSHPort = 0
+			source.SSHUsername = ""
+			source.SSHPassword = ""
+			source.SSHPrivateKey = ""
+			source.SSHPrivateKeyPath = ""
+			source.SSHKeyPassphrase = ""
+			source.RegistryURL = ""
+			source.RegistryUsername = ""
+			source.RegistryPassword = ""
+			break
+		}
+		// 旧内存调用方仍可使用旧来源；启动加载配置时会先清理这些来源。
 		if !validSSHHost(source.SSHHost) {
 			return ImageSource{}, errors.New("SSH 主机非法")
 		}
@@ -386,6 +436,7 @@ func normalizeImageSource(source ImageSource, seen map[string]bool, hasLocal *bo
 		source.SSHPrivateKey = ""
 		source.SSHPrivateKeyPath = ""
 		source.SSHKeyPassphrase = ""
+		source.SSHProfileID = ""
 	default:
 		return ImageSource{}, fmt.Errorf("未知来源类型 %q", source.Kind)
 	}
@@ -438,7 +489,16 @@ func validateImageSourcesForSave(sources []ImageSource) error {
 // ValidateImageSource 校验并规范化单个镜像来源，但不会写入配置。
 // 编辑镜像来源时用它尽早反馈输入错误，最终 Save 仍会校验完整列表。
 func (s *ConfigService) ValidateImageSource(source ImageSource) (ImageSource, error) {
-	return normalizeImageSource(source, make(map[string]bool, 1), nil)
+	normalized, err := normalizeImageSource(source, make(map[string]bool, 1), nil)
+	if err != nil || normalized.Kind != "ssh" || normalized.SSHProfileID == "" {
+		return normalized, err
+	}
+	for _, profile := range s.GetSSHProfiles() {
+		if profile.ID == normalized.SSHProfileID {
+			return normalized, nil
+		}
+	}
+	return ImageSource{}, errors.New("镜像来源引用的 SSH 配置不存在")
 }
 
 func normalizeDockerCLIPath(path string) string {
@@ -474,6 +534,10 @@ func normalizeFavoritePaths(paths []string) []string {
 func normalizeConfig(cfg Config) Config {
 	cfg.DockerCLIPath = normalizeDockerCLIPath(cfg.DockerCLIPath)
 	cfg.ImageSources = normalizeImageSources(cfg.ImageSources)
+	if cfg.SSHProfilesVersion == 0 {
+		cfg.SSHProfilesVersion = currentSSHProfilesVersion
+	}
+	cfg.SSHProfiles = normalizeSSHProfiles(cfg.SSHProfiles)
 	if cfg.SSHConnections == nil {
 		cfg.SSHConnections = []SSHConnection{}
 	}
@@ -482,6 +546,11 @@ func normalizeConfig(cfg Config) Config {
 	}
 	for index := range cfg.FileSources {
 		cfg.FileSources[index].FavoritePaths = normalizeFavoritePaths(cfg.FileSources[index].FavoritePaths)
+		cfg.FileSources[index].SSHProfileID = strings.TrimSpace(cfg.FileSources[index].SSHProfileID)
+		cfg.FileSources[index].SSHConnectionID = strings.TrimSpace(cfg.FileSources[index].SSHConnectionID)
+		if cfg.FileSources[index].SSHProfileID != "" {
+			cfg.FileSources[index].SSHConnectionID = ""
+		}
 	}
 	validSidebarTool := make(map[string]bool, len(defaultSidebarToolIDs))
 	for _, id := range defaultSidebarToolIDs {
@@ -657,10 +726,20 @@ func NewConfigService() *ConfigService {
 			_, hasLegacyTheme := raw["theme"]
 			_, hasDockerCLIPath := raw["dockerCLIPath"]
 			_, hasImageSources := raw["imageSources"]
+			_, hasSSHProfilesVersion := raw["sshProfilesVersion"]
+			legacySSHReset := !hasSSHProfilesVersion || cfg.SSHProfilesVersion != currentSSHProfilesVersion
 			cfg = migrateLegacyTheme(cfg, legacy.Theme, hasThemeMode)
+			if legacySSHReset {
+				// SSH 凭据不迁移：删除旧 SSH 镜像/文件来源，并从空配置目录开始。
+				cfg.ImageSources = filterNonSSHImageSources(cfg.ImageSources)
+				cfg.SSHProfiles = []SSHProfile{}
+				cfg.SSHConnections = []SSHConnection{}
+				cfg.FileSources = []FileSource{}
+				cfg.SSHProfilesVersion = currentSSHProfilesVersion
+			}
 
 			cfg = normalizeConfig(cfg)
-			if hasLegacyTheme || !hasDockerCLIPath || !hasImageSources || beforeNormalize.ThemeMode != cfg.ThemeMode || beforeNormalize.LightTheme != cfg.LightTheme || beforeNormalize.DarkTheme != cfg.DarkTheme || !stringSlicesEqual(beforeNormalize.TrayMatchTools, cfg.TrayMatchTools) || beforeNormalize.CodeEditorFontSize != cfg.CodeEditorFontSize || !sidebarToolsEqual(beforeNormalize.SidebarTools, cfg.SidebarTools) || !imageSourcesEqual(beforeNormalize.ImageSources, cfg.ImageSources) || beforeNormalize.DockerCLIPath != cfg.DockerCLIPath {
+			if legacySSHReset || hasLegacyTheme || !hasDockerCLIPath || !hasImageSources || beforeNormalize.ThemeMode != cfg.ThemeMode || beforeNormalize.LightTheme != cfg.LightTheme || beforeNormalize.DarkTheme != cfg.DarkTheme || !stringSlicesEqual(beforeNormalize.TrayMatchTools, cfg.TrayMatchTools) || beforeNormalize.CodeEditorFontSize != cfg.CodeEditorFontSize || !sidebarToolsEqual(beforeNormalize.SidebarTools, cfg.SidebarTools) || !imageSourcesEqual(beforeNormalize.ImageSources, cfg.ImageSources) || beforeNormalize.DockerCLIPath != cfg.DockerCLIPath {
 				if normalized, marshalErr := json.Marshal(cfg); marshalErr == nil {
 					_ = writeConfigAtomically(path, normalized)
 				}
@@ -673,6 +752,17 @@ func NewConfigService() *ConfigService {
 		_ = json.Unmarshal(b, &s.history)
 	}
 	return s
+}
+
+func filterNonSSHImageSources(sources []ImageSource) []ImageSource {
+	filtered := make([]ImageSource, 0, len(sources))
+	for _, source := range sources {
+		if strings.EqualFold(strings.TrimSpace(source.Kind), "ssh") {
+			continue
+		}
+		filtered = append(filtered, source)
+	}
+	return filtered
 }
 func (s *ConfigService) ServiceName() string { return "ConfigService" }
 func (s *ConfigService) GetAppName() string  { return appName }
@@ -706,12 +796,20 @@ func (s *ConfigService) setOnChange(callback func(Config)) {
 
 func (s *ConfigService) Save(cfg Config) error {
 	s.mu.Lock()
-	if err := validateImageSourcesForSave(cfg.ImageSources); err != nil {
+	// SSH 配置和文件来源由各自的定向服务负责；保留内存值，避免设置页旧快照
+	// 覆盖其他入口刚刚修改的配置或来源。
+	cfg.SSHProfilesVersion = s.cfg.SSHProfilesVersion
+	cfg.SSHProfiles = copySSHProfiles(s.cfg.SSHProfiles)
+	cfg.SSHConnections = append([]SSHConnection(nil), s.cfg.SSHConnections...)
+	cfg.FileSources = copyFileSources(s.cfg.FileSources)
+	// 删除 SSH 配置后，工具引用可以暂时悬空；镜像/文件来源定向接口会在写入新引用前
+	// 校验配置，而设置页快照仍应能保存无关设置，交由界面修复悬空来源。
+	if err := validateConfigForSave(cfg, true); err != nil {
 		s.mu.Unlock()
 		return err
 	}
 	cfg = normalizeConfig(cfg)
-	b, err := json.Marshal(cfg)
+	b, err := marshalConfig(cfg)
 	if err != nil {
 		s.mu.Unlock()
 		return err
@@ -727,6 +825,38 @@ func (s *ConfigService) Save(cfg Config) error {
 		onChange(cfg)
 	}
 	return nil
+}
+
+// SaveImageSources 只持久化镜像管理拥有的设置。SSH 来源在原子写入时必须引用现有
+// 全局 SSH 配置，凭据本身不会经过此接口。
+func (s *ConfigService) SaveImageSources(dockerCLIPath string, imageSources []ImageSource) error {
+	imageSources = append([]ImageSource(nil), imageSources...)
+	return s.updateConfigAllowDanglingRefs(func(cfg *Config) error {
+		seen := make(map[string]bool, len(imageSources))
+		normalized := make([]ImageSource, 0, len(imageSources))
+		profiles := make(map[string]struct{}, len(cfg.SSHProfiles))
+		for _, profile := range cfg.SSHProfiles {
+			profiles[profile.ID] = struct{}{}
+		}
+		for index, source := range imageSources {
+			item, err := normalizeImageSource(source, seen, nil)
+			if err != nil {
+				return fmt.Errorf("镜像来源无效（第 %d 项 %q）：%v", index+1, imageSourceIdentifier(source), err)
+			}
+			if item.Kind == "ssh" {
+				if item.SSHProfileID == "" {
+					return fmt.Errorf("镜像来源 %q 必须选择 SSH 配置", imageSourceIdentifier(item))
+				}
+				if _, ok := profiles[item.SSHProfileID]; !ok {
+					return fmt.Errorf("镜像来源 %q 引用的 SSH 配置不存在", imageSourceIdentifier(item))
+				}
+			}
+			normalized = append(normalized, item)
+		}
+		cfg.DockerCLIPath = dockerCLIPath
+		cfg.ImageSources = normalized
+		return nil
+	})
 }
 
 func writeConfigAtomically(path string, data []byte) error {

@@ -21,7 +21,7 @@ function sourceLabel(settings: Settings, sourceId: string, localSourceLabel: str
   if (!source || source.id === 'local' || source.kind === 'local') {
     return sourceId === 'local' ? localSourceLabel : sourceId;
   }
-  return source.name || source.registryURL || source.sshHost || sourceId;
+  return source.name || source.registryURL || source.sshProfileID || sourceId;
 }
 
 export default function ImageManagerDetailPage({

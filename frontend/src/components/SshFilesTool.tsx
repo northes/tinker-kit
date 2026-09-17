@@ -105,7 +105,6 @@ import {
 import { Input } from './ui/input';
 import { Spinner } from './ui/spinner';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
 import {
   ToolLayout,
   ToolLayoutContent,
@@ -119,7 +118,7 @@ import type {
   FileTask,
   FileTaskSnapshot,
   RemoteFileEntry,
-  SSHConnection,
+  SSHProfile,
 } from '../../bindings/changeme/models';
 import {
   CalculateRemoteSize,
@@ -127,39 +126,25 @@ import {
   CreateRemoteDirectory,
   GetFileSources,
   GetFileTasks,
-  GetSSHConnections,
   ListRemoteFiles,
   OperateRemoteFiles,
   ResolveRemoteFileTask,
-  SaveSSHFileConfig,
+  SaveFileSources,
   SearchRemoteFiles,
   StartFileDownload,
   StartRemoteFileOperation,
   StartFileUpload,
-  TestSSHFileConnection,
 } from '../../bindings/changeme/fileservice';
-import { GetSSHConfigHosts } from '../../bindings/changeme/imageservice';
+import { useSSHProfiles } from './SSHProfileManagerDialog';
 import { toast } from './ui/toast';
 
-const emptyConnection: SSHConnection = {
-  id: '',
-  name: '',
-  host: '',
-  port: 22,
-  username: '',
-  password: '',
-  privateKey: '',
-  privateKeyPath: '',
-  keyPassphrase: '',
-  mode: 'local',
-  alias: '',
-};
+type ManagedFileSource = FileSource;
 
-function emptyFileSource(sshConnectionID = ''): FileSource {
+function emptyFileSource(sshProfileID = ''): ManagedFileSource {
   return {
     id: '',
     name: '',
-    sshConnectionID,
+    sshProfileID,
     defaultPath: '',
     favoritePaths: [],
   };
@@ -188,18 +173,18 @@ function remoteParent(value: string) {
   return index <= 0 ? '/' : normalized.slice(0, index);
 }
 
-function sshConnectionListingKey(connection: SSHConnection | null | undefined) {
-  if (!connection) return '';
+function sshProfileListingKey(profile: SSHProfile | null | undefined) {
+  if (!profile) return '';
   return [
-    connection.mode,
-    connection.alias,
-    connection.host,
-    String(connection.port),
-    connection.username,
-    connection.password,
-    connection.privateKey,
-    connection.privateKeyPath,
-    connection.keyPassphrase,
+    profile.origin,
+    profile.originAlias,
+    profile.host,
+    String(profile.port),
+    profile.username,
+    profile.password,
+    profile.privateKey,
+    profile.privateKeyPath,
+    profile.keyPassphrase,
   ].join('\0');
 }
 
@@ -655,12 +640,10 @@ function isRemotePathNotFound(error: unknown) {
 }
 
 type Props = { active: boolean };
-type ManageView = 'list' | 'connection' | 'source';
-type ManageTab = 'source' | 'connection';
+type ManageView = 'list' | 'source';
 type ManageConfirm =
-  | { type: 'removeConnection'; connectionID: string; linkedCount: number }
-  | { type: 'removeSource'; source: FileSource }
-  | { type: 'discardAndCreate'; editor: 'connection' | 'source'; connectionID?: string }
+  | { type: 'removeSource'; source: ManagedFileSource }
+  | { type: 'discardAndCreate'; profileID?: string }
   | { type: 'discardNavigate'; target: 'list' }
   | { type: 'discardManage' }
   | null;
@@ -697,8 +680,8 @@ type CancellableCall = {
 
 export default function SshFilesTool({ active }: Props) {
   const { t, i18n } = useTranslation();
-  const [connections, setConnections] = useState<SSHConnection[]>([]);
-  const [sources, setSources] = useState<FileSource[]>([]);
+  const { profiles, openManager } = useSSHProfiles();
+  const [sources, setSources] = useState<ManagedFileSource[]>([]);
   const [sourceID, setSourceID] = useState('');
   const [currentPath, setCurrentPath] = useState('');
   const [pathInput, setPathInput] = useState('');
@@ -723,20 +706,13 @@ export default function SshFilesTool({ active }: Props) {
   const [tasksOpen, setTasksOpen] = useState(false);
   const [manageOpen, setManageOpen] = useState(false);
   const [manageView, setManageView] = useState<ManageView>('list');
-  const [manageTab, setManageTab] = useState<ManageTab>('source');
-  const [manageEditor, setManageEditor] = useState<'connection' | 'source'>('connection');
   const [manageFeedback, setManageFeedback] = useState<{
     type: 'success' | 'error';
     message: string;
   } | null>(null);
   const [manageConfirm, setManageConfirm] = useState<ManageConfirm>(null);
   const [savingManage, setSavingManage] = useState(false);
-  const [testingConnection, setTestingConnection] = useState(false);
-  const [connectionDraft, setConnectionDraft] = useState<SSHConnection>(emptyConnection);
-  const [sshHosts, setSshHosts] = useState<string[]>([]);
-  const [sshHostsLoading, setSshHostsLoading] = useState(false);
-  const [sshHostsError, setSshHostsError] = useState('');
-  const [sourceDraft, setSourceDraft] = useState<FileSource>(emptyFileSource());
+  const [sourceDraft, setSourceDraft] = useState<ManagedFileSource>(emptyFileSource());
   const [uploadPaths, setUploadPaths] = useState<string[]>([]);
   const [uploadOpen, setUploadOpen] = useState(false);
   const [uploadTarget, setUploadTarget] = useState('/');
@@ -768,12 +744,8 @@ export default function SshFilesTool({ active }: Props) {
   const sourceIDRef = useRef(sourceID);
   const currentPathRef = useRef(currentPath);
   const directoryLoadKeyRef = useRef('');
-  const manageBaselineRef = useRef<{ connections: SSHConnection[]; sources: FileSource[] }>({
-    connections: [],
-    sources: [],
-  });
-  const manageNewConnectionBaselineRef = useRef<SSHConnection>({ ...emptyConnection });
-  const manageNewSourceBaselineRef = useRef<FileSource>(emptyFileSource());
+  const manageBaselineRef = useRef<ManagedFileSource[]>([]);
+  const manageNewSourceBaselineRef = useRef<ManagedFileSource>(emptyFileSource());
 
   const cancelLoading = useCallback(() => {
     const kind = loadingKindRef.current;
@@ -806,23 +778,25 @@ export default function SshFilesTool({ active }: Props) {
   const source = sources.find((item) => item.id === sourceID) ?? null;
   const favoritePaths = source?.favoritePaths ?? [];
   const isCurrentPathFavorite = favoritePaths.includes(currentPath);
-  const activeSourceConnectionID = source?.sshConnectionID ?? '';
+  const activeSourceProfileID = source?.sshProfileID ?? '';
+  const activeSourceProfile = profiles.find((item) => item.id === activeSourceProfileID);
+  const sourceUsable = Boolean(source && activeSourceProfile);
   const sourceDefaultPath = source?.defaultPath ?? '';
-  const connectionListingKey = useMemo(
-    () => sshConnectionListingKey(connections.find((item) => item.id === activeSourceConnectionID)),
-    [activeSourceConnectionID, connections],
+  const profileListingKey = useMemo(
+    () => sshProfileListingKey(activeSourceProfile),
+    [activeSourceProfile],
   );
   const directoryLoadKey = sourceID
     ? [
         sourceID,
-        activeSourceConnectionID,
-        connectionListingKey,
+        activeSourceProfileID,
+        profileListingKey,
         currentPath,
         showHidden ? '1' : '0',
       ].join('\0')
     : '';
   const fileDrag = useFileDragOver({
-    enabled: active && Boolean(sourceID) && !loadingSources && !loading && !searching,
+    enabled: active && sourceUsable && !loadingSources && !loading && !searching,
   });
   const breadcrumbs = useMemo(() => {
     const parts = currentPath.split('/').filter(Boolean);
@@ -856,16 +830,12 @@ export default function SshFilesTool({ active }: Props) {
     setLoadingCanceled(null);
     setLoadingSources(true);
     setError('');
-    let connectionRequest: ReturnType<typeof GetSSHConnections> | null = null;
     let sourceRequest: ReturnType<typeof GetFileSources> | null = null;
     try {
-      connectionRequest = GetSSHConnections();
       sourceRequest = GetFileSources();
-      loadingCallsRef.current.add(connectionRequest);
       loadingCallsRef.current.add(sourceRequest);
-      const [nextConnections, nextSources] = await Promise.all([connectionRequest, sourceRequest]);
+      const nextSources = await sourceRequest;
       if (requestID !== sourcesRequestRef.current) return;
-      setConnections(nextConnections ?? []);
       setSources(nextSources ?? []);
       setSourceID((current) =>
         nextSources?.some((item) => item.id === current) ? current : nextSources?.[0]?.id || '',
@@ -874,7 +844,6 @@ export default function SshFilesTool({ active }: Props) {
       if (requestID !== sourcesRequestRef.current) return;
       throw reason;
     } finally {
-      if (connectionRequest) loadingCallsRef.current.delete(connectionRequest);
       if (sourceRequest) loadingCallsRef.current.delete(sourceRequest);
       if (requestID === sourcesRequestRef.current) {
         setLoadingSources(false);
@@ -883,65 +852,68 @@ export default function SshFilesTool({ active }: Props) {
     }
   }, []);
 
-  const loadDirectory = useCallback(async (id: string, pathValue: string, hidden: boolean) => {
-    const requestID = ++directoryRequestRef.current;
-    loadingKindRef.current = 'directory';
-    setLoadingCanceled(null);
-    const requested = pathValue.trim();
-    const normalizedPath = requested ? normalizeRemotePath(requested) : '';
-    const pendingFavoritePath =
-      pendingFavoritePathRef.current?.sourceID === id &&
-      pendingFavoritePathRef.current.path === normalizedPath
-        ? pendingFavoritePathRef.current
-        : null;
-    pendingFavoritePathRef.current = null;
-    setMissingFavoritePath(null);
-    if (!id) {
-      if (loadingKindRef.current === 'directory') loadingKindRef.current = null;
+  const loadDirectory = useCallback(
+    async (id: string, pathValue: string, hidden: boolean) => {
+      const requestID = ++directoryRequestRef.current;
+      loadingKindRef.current = 'directory';
+      setLoadingCanceled(null);
+      const requested = pathValue.trim();
+      const normalizedPath = requested ? normalizeRemotePath(requested) : '';
+      const pendingFavoritePath =
+        pendingFavoritePathRef.current?.sourceID === id &&
+        pendingFavoritePathRef.current.path === normalizedPath
+          ? pendingFavoritePathRef.current
+          : null;
+      pendingFavoritePathRef.current = null;
+      setMissingFavoritePath(null);
+      if (!id) {
+        if (loadingKindRef.current === 'directory') loadingKindRef.current = null;
+        setEntries([]);
+        setSelected([]);
+        setError('');
+        setLoading(false);
+        return;
+      }
+      setLoading(true);
+      setError('');
       setEntries([]);
       setSelected([]);
-      setError('');
-      setLoading(false);
-      return;
-    }
-    setLoading(true);
-    setError('');
-    setEntries([]);
-    setSelected([]);
-    const request = ListRemoteFiles(id, normalizedPath, hidden);
-    loadingCallsRef.current.add(request);
-    try {
-      const result = await request;
-      if (requestID !== directoryRequestRef.current) return;
-      const resolved = result.path ? normalizeRemotePath(result.path) : normalizedPath;
-      setEntries(result.entries ?? []);
-      if (resolved) {
-        directoryLoadKeyRef.current = [
-          id,
-          activeSourceConnectionID,
-          connectionListingKey,
-          resolved,
-          hidden ? '1' : '0',
-        ].join('\0');
-        setCurrentPath(resolved);
-        setPathInput(resolved);
+      const request = ListRemoteFiles(id, normalizedPath, hidden);
+      loadingCallsRef.current.add(request);
+      try {
+        const result = await request;
+        if (requestID !== directoryRequestRef.current) return;
+        const resolved = result.path ? normalizeRemotePath(result.path) : normalizedPath;
+        setEntries(result.entries ?? []);
+        if (resolved) {
+          directoryLoadKeyRef.current = [
+            id,
+            activeSourceProfileID,
+            profileListingKey,
+            resolved,
+            hidden ? '1' : '0',
+          ].join('\0');
+          setCurrentPath(resolved);
+          setPathInput(resolved);
+        }
+      } catch (reason) {
+        if (requestID !== directoryRequestRef.current) return;
+        setEntries([]);
+        const message = errorMessage(reason);
+        setError(message);
+        if (pendingFavoritePath && isRemotePathNotFound(reason)) {
+          setMissingFavoritePath(pendingFavoritePath);
+        }
+      } finally {
+        loadingCallsRef.current.delete(request);
+        if (requestID === directoryRequestRef.current) {
+          setLoading(false);
+          if (loadingKindRef.current === 'directory') loadingKindRef.current = null;
+        }
       }
-    } catch (reason) {
-      if (requestID !== directoryRequestRef.current) return;
-      setEntries([]);
-      const message = errorMessage(reason);
-      setError(message);
-      if (pendingFavoritePath && isRemotePathNotFound(reason)) {
-        setMissingFavoritePath(pendingFavoritePath);
-      }
-    } finally {
-      loadingCallsRef.current.delete(request);
-      if (requestID === directoryRequestRef.current) {
-        setLoading(false);
-        if (loadingKindRef.current === 'directory') loadingKindRef.current = null;
-      }
-    }
-  }, [activeSourceConnectionID, connectionListingKey]);
+    },
+    [activeSourceProfileID, profileListingKey],
+  );
 
   const resetSearchState = useCallback(() => {
     searchRequestRef.current++;
@@ -952,7 +924,7 @@ export default function SshFilesTool({ active }: Props) {
   }, []);
 
   const executeSearch = async (queryValue = searchInput) => {
-    if (!sourceID || searching) return;
+    if (!sourceUsable || searching) return;
     const query = queryValue.trim();
     if (!query) {
       resetSearchState();
@@ -1068,6 +1040,7 @@ export default function SshFilesTool({ active }: Props) {
         data.details?.id !== 'ssh-files-drop-zone' ||
         !currentSourceID ||
         !paths.length ||
+        !sourceUsable ||
         loadingSources ||
         loading ||
         searching
@@ -1079,7 +1052,15 @@ export default function SshFilesTool({ active }: Props) {
       offTasks();
       offDrop();
     };
-  }, [active, applyTaskSnapshot, loading, loadingSources, openUploadDialog, searching]);
+  }, [
+    active,
+    applyTaskSnapshot,
+    loading,
+    loadingSources,
+    openUploadDialog,
+    searching,
+    sourceUsable,
+  ]);
 
   useEffect(() => {
     if (!active || !sourceID) {
@@ -1087,6 +1068,14 @@ export default function SshFilesTool({ active }: Props) {
       return;
     }
     if (manageOpen) return;
+    if (!sourceUsable) {
+      directoryLoadKeyRef.current = directoryLoadKey;
+      resetSearchState();
+      setEntries([]);
+      setLoading(false);
+      setError(t('sshFilesTool.sshProfileMissing'));
+      return;
+    }
     const nextPath = sourceDefaultPath
       ? currentPath === '/' || !currentPath.trim()
         ? normalizeRemotePath(sourceDefaultPath)
@@ -1114,10 +1103,12 @@ export default function SshFilesTool({ active }: Props) {
     showHidden,
     sourceDefaultPath,
     sourceID,
+    sourceUsable,
+    t,
   ]);
 
   useEffect(() => {
-    if (!active || !sourceID) return;
+    if (!active || !sourceUsable) return;
     for (const task of tasks) {
       if (
         task.type !== 'upload' ||
@@ -1131,7 +1122,16 @@ export default function SshFilesTool({ active }: Props) {
       resetSearchState();
       void loadDirectory(sourceID, currentPath, showHidden);
     }
-  }, [active, currentPath, loadDirectory, resetSearchState, showHidden, sourceID, tasks]);
+  }, [
+    active,
+    currentPath,
+    loadDirectory,
+    resetSearchState,
+    showHidden,
+    sourceID,
+    sourceUsable,
+    tasks,
+  ]);
 
   useEffect(() => {
     if (!active) return;
@@ -1154,7 +1154,7 @@ export default function SshFilesTool({ active }: Props) {
         handledConflictTasks.current.delete(task.id);
       }
     }
-    if (!active || !sourceID || operationConflict) return;
+    if (!active || !sourceUsable || operationConflict) return;
     const conflictTask = tasks.find(
       (task) =>
         task.sourceID === sourceID &&
@@ -1175,10 +1175,10 @@ export default function SshFilesTool({ active }: Props) {
       value: conflictTask.target ?? '/',
       conflicts: conflictTask.conflicts ?? [],
     });
-  }, [active, operationConflict, sourceID, tasks]);
+  }, [active, operationConflict, sourceID, sourceUsable, tasks]);
 
   useEffect(() => {
-    if (!active || !sourceID) return;
+    if (!active || !sourceUsable) return;
     for (const task of tasks) {
       if (
         task.sourceID !== sourceID ||
@@ -1198,7 +1198,17 @@ export default function SshFilesTool({ active }: Props) {
         type: 'success',
       });
     }
-  }, [active, currentPath, loadDirectory, resetSearchState, showHidden, sourceID, t, tasks]);
+  }, [
+    active,
+    currentPath,
+    loadDirectory,
+    resetSearchState,
+    showHidden,
+    sourceID,
+    sourceUsable,
+    t,
+    tasks,
+  ]);
 
   const navigate = (nextPath: string, navigationSource: 'favorite' | 'normal' = 'normal') => {
     const normalizedPath = normalizeRemotePath(nextPath);
@@ -1233,7 +1243,7 @@ export default function SshFilesTool({ active }: Props) {
   };
 
   const toggleFavorite = async (pathValue = currentPath) => {
-    if (!sourceID || !source || favoritesSaving) return;
+    if (!sourceUsable || !source || favoritesSaving) return;
     const normalizedPath = normalizeRemotePath(pathValue);
     const isFavorite = favoritePaths.includes(normalizedPath);
     const isCurrentPath = normalizedPath === currentPath;
@@ -1245,7 +1255,7 @@ export default function SshFilesTool({ active }: Props) {
     );
     setFavoritesSaving(true);
     try {
-      await SaveSSHFileConfig(connections, nextSources);
+      await SaveFileSources(nextSources);
       setSources(nextSources);
       setSourceDraft((current) =>
         current.id === sourceID ? { ...current, favoritePaths: nextFavoritePaths } : current,
@@ -1294,7 +1304,7 @@ export default function SshFilesTool({ active }: Props) {
     );
     setFavoritesSaving(true);
     try {
-      await SaveSSHFileConfig(connections, nextSources);
+      await SaveFileSources(nextSources);
       setSources(nextSources);
       setSourceDraft((current) =>
         current.id === pending.sourceID
@@ -1318,14 +1328,14 @@ export default function SshFilesTool({ active }: Props) {
   };
 
   const requestCreateFolder = () => {
-    if (!sourceID || isLoading) return;
+    if (!sourceUsable || isLoading) return;
     setCreateFolderName('');
     setCreateFolderError('');
     setCreateFolderOpen(true);
   };
 
   const executeCreateFolder = async () => {
-    if (!sourceID || creatingFolder) return;
+    if (!sourceUsable || creatingFolder) return;
     const name = createFolderName.trim();
     if (!name) {
       setCreateFolderError(t('sshFilesTool.folderNameRequired'));
@@ -1353,6 +1363,7 @@ export default function SshFilesTool({ active }: Props) {
   };
 
   const requestFileOperation = (operation: RemoteFileOperation, paths: string[]) => {
+    if (!sourceUsable) return;
     const normalizedPaths = Array.from(new Set(paths.map(normalizeRemotePath)));
     if (!normalizedPaths.length) return;
     if (operation === 'rename' && normalizedPaths.length !== 1) return;
@@ -1385,7 +1396,7 @@ export default function SshFilesTool({ active }: Props) {
     target: string,
     conflictPolicy = '',
   ): Promise<RemoteOperationRunResult> => {
-    if (!sourceID || operationRunning) return { status: 'failed' };
+    if (!sourceUsable || operationRunning) return { status: 'failed' };
     setOperationRunning(true);
     setOperationError('');
     try {
@@ -1494,6 +1505,7 @@ export default function SshFilesTool({ active }: Props) {
   };
 
   const selectUploadPaths = async () => {
+    if (!sourceUsable) return;
     try {
       const result = await Dialogs.OpenFile({
         Title: t('sshFilesTool.chooseUpload'),
@@ -1510,7 +1522,7 @@ export default function SshFilesTool({ active }: Props) {
   };
 
   const confirmUpload = async () => {
-    if (!sourceID || uploadPaths.length === 0 || uploadStarting || !allowOverwrite) return;
+    if (!sourceUsable || uploadPaths.length === 0 || uploadStarting || !allowOverwrite) return;
     setUploadStarting(true);
     setUploadError('');
     try {
@@ -1525,6 +1537,7 @@ export default function SshFilesTool({ active }: Props) {
   };
 
   const downloadSelected = async (paths: string[]) => {
+    if (!sourceUsable) return;
     try {
       const snapshot = await StartFileDownload(sourceID, paths);
       applyTaskSnapshot(snapshot);
@@ -1536,145 +1549,53 @@ export default function SshFilesTool({ active }: Props) {
 
   const openManage = () => {
     const activeSource = sources.find((item) => item.id === sourceID) ?? sources[0];
-    const activeConnection =
-      connections.find((item) => item.id === activeSource?.sshConnectionID) ?? connections[0];
-    const nextConnection = activeConnection ? { ...activeConnection } : { ...emptyConnection };
-    const nextSource = activeSource
-      ? { ...activeSource }
-      : emptyFileSource(activeConnection?.id ?? '');
-    manageBaselineRef.current = {
-      connections: connections.map((item) => ({ ...item })),
-      sources: sources.map((item) => ({ ...item })),
-    };
-    manageNewConnectionBaselineRef.current = { ...nextConnection };
+    const nextSource = activeSource ? { ...activeSource } : emptyFileSource(profiles[0]?.id ?? '');
+    manageBaselineRef.current = sources.map((item) => ({ ...item }));
     manageNewSourceBaselineRef.current = { ...nextSource };
-    setConnectionDraft(nextConnection);
     setSourceDraft(nextSource);
     setManageOpen(true);
     setManageView('list');
-    setManageTab('source');
-    setManageEditor(activeSource ? 'source' : 'connection');
     setManageFeedback(null);
     setManageConfirm(null);
-    void loadSSHHosts();
   };
 
-  const loadSSHHosts = useCallback(async () => {
-    setSshHostsLoading(true);
-    setSshHostsError('');
-    try {
-      const hosts = await GetSSHConfigHosts();
-      setSshHosts((hosts ?? []).map((item) => item.alias).filter(Boolean));
-    } catch (reason) {
-      setSshHosts([]);
-      setSshHostsError(errorMessage(reason));
-    } finally {
-      setSshHostsLoading(false);
-    }
-  }, []);
-
-  const refreshSSHHosts = () => void loadSSHHosts();
-
-  const startNewConnection = () => {
-    const draft = { ...emptyConnection, id: crypto.randomUUID() };
-    manageNewConnectionBaselineRef.current = { ...draft };
-    setManageView('connection');
-    setManageTab('connection');
-    setManageEditor('connection');
-    setConnectionDraft(draft);
-    setSourceDraft(emptyFileSource());
-    setManageFeedback(null);
-  };
-  const startNewFileSource = (connectionID = connectionDraft.id || connections[0]?.id || '') => {
-    const draft = { ...emptyFileSource(connectionID), id: crypto.randomUUID() };
+  const startNewFileSource = (profileID = sourceDraft.sshProfileID || profiles[0]?.id || '') => {
+    const draft = { ...emptyFileSource(profileID), id: crypto.randomUUID() };
     manageNewSourceBaselineRef.current = { ...draft };
     setManageView('source');
-    setManageTab('source');
-    setManageEditor('source');
     setSourceDraft(draft);
     setManageFeedback(null);
   };
-  const newConnection = () => {
-    if (manageFormDirty) {
-      setManageConfirm({ type: 'discardAndCreate', editor: 'connection' });
-      return;
-    }
-    startNewConnection();
-  };
   const newFileSource = () => {
-    const connectionID =
-      connectionDraft.id && connections.some((item) => item.id === connectionDraft.id)
-        ? connectionDraft.id
-        : connections[0]?.id || '';
+    const profileID = sourceDraft.sshProfileID || profiles[0]?.id || '';
     if (manageFormDirty) {
-      setManageConfirm({ type: 'discardAndCreate', editor: 'source', connectionID });
+      setManageConfirm({ type: 'discardAndCreate', profileID });
       return;
     }
-    startNewFileSource(connectionID);
-  };
-  const removeConnectionByID = (connectionID: string) => {
-    const nextConnections = connections.filter((item) => item.id !== connectionID);
-    const nextSources = sources.filter((item) => item.sshConnectionID !== connectionID);
-    setConnections(nextConnections);
-    setSources(nextSources);
-    setConnectionDraft(nextConnections[0] ? { ...nextConnections[0] } : { ...emptyConnection });
-    setSourceDraft(
-      nextSources[0] ? { ...nextSources[0] } : emptyFileSource(nextConnections[0]?.id ?? ''),
-    );
-    setManageView('list');
-    setManageTab('connection');
-    setManageConfirm(null);
-    setManageFeedback(null);
+    startNewFileSource(profileID);
   };
   const removeSourceByID = (sourceIDToRemove: string) => {
     const nextSources = sources.filter((item) => item.id !== sourceIDToRemove);
     setSources(nextSources);
     const nextSource = nextSources[0];
-    setSourceDraft(
-      nextSource
-        ? { ...nextSource }
-        : emptyFileSource(connectionDraft.id || connections[0]?.id || ''),
-    );
+    setSourceDraft(nextSource ? { ...nextSource } : emptyFileSource(profiles[0]?.id ?? ''));
     setManageView('list');
-    setManageTab('source');
     setManageConfirm(null);
     setManageFeedback(null);
   };
 
-  const connectionDraftDirty = connections.some((candidate) => candidate.id === connectionDraft.id)
-    ? JSON.stringify(connectionDraft) !==
-      JSON.stringify(connections.find((candidate) => candidate.id === connectionDraft.id))
-    : JSON.stringify(connectionDraft) !== JSON.stringify(manageNewConnectionBaselineRef.current);
   const savedSourceDraft = sources.find((candidate) => candidate.id === sourceDraft.id);
   const sourceDraftDirty = savedSourceDraft
     ? JSON.stringify(sourceDraft) !== JSON.stringify(savedSourceDraft)
     : JSON.stringify(sourceDraft) !== JSON.stringify(manageNewSourceBaselineRef.current);
   const manageCollectionDirty =
-    JSON.stringify(connections) !== JSON.stringify(manageBaselineRef.current.connections) ||
-    JSON.stringify(sources) !== JSON.stringify(manageBaselineRef.current.sources);
-  const manageFormDirty =
-    manageView === 'connection'
-      ? connectionDraftDirty
-      : manageView === 'source'
-        ? sourceDraftDirty
-        : false;
+    JSON.stringify(sources) !== JSON.stringify(manageBaselineRef.current);
+  const manageFormDirty = manageView === 'source' ? sourceDraftDirty : false;
   const manageDirty = manageCollectionDirty || manageFormDirty;
-  const editConnection = (item: SSHConnection) => {
-    manageNewConnectionBaselineRef.current = { ...item };
-    setManageView('connection');
-    setManageTab('connection');
-    setManageEditor('connection');
-    setConnectionDraft({ ...item });
-    setManageFeedback(null);
-  };
-  const editSource = (item: FileSource) => {
+  const editSource = (item: ManagedFileSource) => {
     manageNewSourceBaselineRef.current = { ...item };
     setManageView('source');
-    setManageTab('source');
-    setManageEditor('source');
     setSourceDraft({ ...item });
-    const linkedConnection = connections.find((candidate) => candidate.id === item.sshConnectionID);
-    if (linkedConnection) setConnectionDraft({ ...linkedConnection });
     setManageFeedback(null);
   };
   const backToManageList = () => {
@@ -1686,33 +1607,21 @@ export default function SshFilesTool({ active }: Props) {
     setManageFeedback(null);
   };
   const restoreManageBaseline = () => {
-    const nextConnections = manageBaselineRef.current.connections.map((item) => ({ ...item }));
-    const nextSources = manageBaselineRef.current.sources.map((item) => ({ ...item }));
+    const nextSources = manageBaselineRef.current.map((item) => ({ ...item }));
     const nextSource = nextSources.find((item) => item.id === sourceID) ?? nextSources[0];
-    const nextConnection =
-      nextConnections.find((item) => item.id === nextSource?.sshConnectionID) ?? nextConnections[0];
-    setConnections(nextConnections);
     setSources(nextSources);
-    setConnectionDraft(nextConnection ? { ...nextConnection } : { ...emptyConnection });
-    setSourceDraft(nextSource ? { ...nextSource } : emptyFileSource(nextConnection?.id ?? ''));
-    manageNewConnectionBaselineRef.current = nextConnection
-      ? { ...nextConnection }
-      : { ...emptyConnection };
+    setSourceDraft(nextSource ? { ...nextSource } : emptyFileSource(profiles[0]?.id ?? ''));
     manageNewSourceBaselineRef.current = nextSource
       ? { ...nextSource }
-      : emptyFileSource(nextConnection?.id ?? '');
+      : emptyFileSource(profiles[0]?.id ?? '');
     setManageView('list');
-    setManageTab('source');
-    setManageEditor(nextSource ? 'source' : 'connection');
   };
   const confirmManageAction = () => {
     if (!manageConfirm) return;
     if (manageConfirm.type === 'discardAndCreate') {
-      const { editor, connectionID } = manageConfirm;
       setManageConfirm(null);
       setManageFeedback(null);
-      if (editor === 'connection') startNewConnection();
-      else startNewFileSource(connectionID);
+      startNewFileSource(manageConfirm.profileID);
       return;
     }
     if (manageConfirm.type === 'discardManage') {
@@ -1728,10 +1637,6 @@ export default function SshFilesTool({ active }: Props) {
       setManageFeedback(null);
       return;
     }
-    if (manageConfirm.type === 'removeConnection') {
-      removeConnectionByID(manageConfirm.connectionID);
-      return;
-    }
     if (manageConfirm.type === 'removeSource') {
       removeSourceByID(manageConfirm.source.id);
       return;
@@ -1739,38 +1644,21 @@ export default function SshFilesTool({ active }: Props) {
   };
 
   const saveManage = async () => {
-    let nextConnections = connections.map((item) => ({ ...item }));
     let nextSources = sources.map((item) => ({ ...item }));
-    if (manageView === 'connection') {
-      if (!connectionReady) {
-        setManageFeedback({ type: 'error', message: t('sshFilesTool.connectionDetailsRequired') });
-        return;
-      }
-      const draft = { ...connectionDraft, id: connectionDraft.id || crypto.randomUUID() };
-      nextConnections = nextConnections.some((item) => item.id === draft.id)
-        ? nextConnections.map((item) => (item.id === draft.id ? draft : item))
-        : [...nextConnections, draft];
-      setConnectionDraft(draft);
-    } else if (manageView === 'source') {
+    if (manageView === 'source') {
       if (!sourceDraft.name.trim()) {
         setManageFeedback({ type: 'error', message: t('sshFilesTool.sourceNameRequired') });
         return;
       }
-      const connectionID = sourceDraft.sshConnectionID || connectionDraft.id;
-      const connection =
-        nextConnections.find((item) => item.id === connectionID) ??
-        (connectionDraft.id === connectionID && connectionReady ? { ...connectionDraft } : null);
-      if (!connectionID || !connection) {
-        setManageFeedback({ type: 'error', message: t('sshFilesTool.connectionRequired') });
+      const profileID = sourceDraft.sshProfileID;
+      if (!profileID || !profiles.some((item) => item.id === profileID)) {
+        setManageFeedback({ type: 'error', message: t('sshFilesTool.sshProfileRequired') });
         return;
-      }
-      if (!nextConnections.some((item) => item.id === connection.id)) {
-        nextConnections = [...nextConnections, connection];
       }
       const draft = {
         ...sourceDraft,
         id: sourceDraft.id || crypto.randomUUID(),
-        sshConnectionID: connectionID,
+        sshProfileID: profileID,
       };
       nextSources = nextSources.some((item) => item.id === draft.id)
         ? nextSources.map((item) => (item.id === draft.id ? draft : item))
@@ -1780,19 +1668,14 @@ export default function SshFilesTool({ active }: Props) {
     setSavingManage(true);
     setManageFeedback(null);
     try {
-      await SaveSSHFileConfig(nextConnections, nextSources);
-      setConnections(nextConnections);
+      await SaveFileSources(nextSources);
       setSources(nextSources);
-      manageBaselineRef.current = {
-        connections: nextConnections.map((item) => ({ ...item })),
-        sources: nextSources.map((item) => ({ ...item })),
-      };
+      manageBaselineRef.current = nextSources.map((item) => ({ ...item }));
       setSourceID((current) =>
         nextSources.some((item) => item.id === current) ? current : (nextSources[0]?.id ?? ''),
       );
-      if (manageView !== 'list') {
+      if (manageView === 'source') {
         setManageView('list');
-        setManageTab(manageEditor);
       }
       setManageFeedback(null);
     } catch (reason) {
@@ -1807,7 +1690,7 @@ export default function SshFilesTool({ active }: Props) {
       setManageOpen(true);
       return;
     }
-    if (savingManage || testingConnection) return;
+    if (savingManage) return;
     if (manageDirty) {
       setManageConfirm({ type: 'discardManage' });
       return;
@@ -1816,29 +1699,8 @@ export default function SshFilesTool({ active }: Props) {
     setManageFeedback(null);
   };
 
-  const testConnection = async () => {
-    setTestingConnection(true);
-    setManageFeedback(null);
-    try {
-      await TestSSHFileConnection(connectionDraft, sourceDraft.defaultPath);
-      setManageFeedback({ type: 'success', message: t('sshFilesTool.connectionSucceeded') });
-      toast.add({ title: t('sshFilesTool.connectionSucceeded'), type: 'success' });
-    } catch (reason) {
-      setManageFeedback({
-        type: 'error',
-        message: `${t('sshFilesTool.connectionFailed')}: ${errorMessage(reason)}`,
-      });
-      toast.add({
-        title: t('sshFilesTool.connectionFailed'),
-        description: errorMessage(reason),
-        type: 'error',
-      });
-    } finally {
-      setTestingConnection(false);
-    }
-  };
-
   const calculateSize = async (entry: RemoteFileEntry) => {
+    if (!sourceUsable) return;
     try {
       const snapshot = await CalculateRemoteSize(sourceID, entry.path);
       applyTaskSnapshot(snapshot);
@@ -1898,10 +1760,26 @@ export default function SshFilesTool({ active }: Props) {
       ),
     [tasks],
   );
-  const availableConnections =
-    connectionDraft.id && !connections.some((item) => item.id === connectionDraft.id)
-      ? [...connections, connectionDraft]
-      : connections;
+  const availableProfiles =
+    sourceDraft.sshProfileID && !profiles.some((item) => item.id === sourceDraft.sshProfileID)
+      ? [
+          ...profiles,
+          {
+            id: sourceDraft.sshProfileID,
+            name: t('sshFilesTool.sshProfileMissing'),
+            origin: 'manual',
+            originAlias: '',
+            host: '',
+            port: 22,
+            username: '',
+            password: '',
+            privateKey: '',
+            privateKeyPath: '',
+            keyPassphrase: '',
+            originUpdatedAt: '',
+          },
+        ]
+      : profiles;
   const sourceOptions = sources.map((item) => (
     <SelectItem key={item.id} value={item.id}>
       {item.name}
@@ -1916,29 +1794,11 @@ export default function SshFilesTool({ active }: Props) {
       ? 'sshFilesTool.searchCurrentDirectory'
       : 'sshFilesTool.searchFromCurrentDirectory',
   );
-  const connectionReady = Boolean(
-    connectionDraft.name.trim() &&
-    (connectionDraft.mode === 'local'
-      ? connectionDraft.alias
-      : connectionDraft.host &&
-        connectionDraft.username &&
-        Number.isInteger(connectionDraft.port) &&
-        connectionDraft.port >= 1 &&
-        connectionDraft.port <= 65535),
-  );
-  const sourceConnectionID = sourceDraft.sshConnectionID || connectionDraft.id;
-  const sourceConnection = availableConnections.find((item) => item.id === sourceConnectionID);
+  const sourceProfileID = sourceDraft.sshProfileID;
+  const sourceProfile = profiles.find((item) => item.id === sourceProfileID);
   const sourceReady = Boolean(
-    sourceDraft.id &&
-    sourceDraft.name.trim() &&
-    sourceConnectionID &&
-    sourceConnection &&
-    (sourceConnection.id !== connectionDraft.id || connectionReady),
+    sourceDraft.id && sourceDraft.name.trim() && sourceProfileID && sourceProfile,
   );
-  const connectionSummary = (item: SSHConnection) =>
-    item.mode === 'local'
-      ? item.alias || t('sshFilesTool.localSSH')
-      : `${item.username}@${item.host}:${item.port}`;
   const changeSort = (nextKey: FileSortKey) => {
     if (sortKey === nextKey) {
       setSortDirection((direction) => (direction === 'asc' ? 'desc' : 'asc'));
@@ -2016,6 +1876,11 @@ export default function SshFilesTool({ active }: Props) {
                 </SelectTrigger>
                 <SelectContent alignItemWithTrigger={false}>{sourceOptions}</SelectContent>
               </Select>
+              {source && !sourceUsable ? (
+                <Badge variant="destructive" className="h-5 text-[10px]">
+                  {t('sshFilesTool.sshProfileMissing')}
+                </Badge>
+              ) : null}
             </div>
             <label className="flex items-center gap-2 pb-1.5 text-xs text-muted-foreground">
               <Switch
@@ -2058,7 +1923,7 @@ export default function SshFilesTool({ active }: Props) {
                     event.preventDefault();
                   }
                 }}
-                disabled={!sourceID || isLoading}
+                disabled={!sourceUsable || isLoading}
                 placeholder={t('sshFilesTool.searchPlaceholder')}
                 aria-label={t('sshFilesTool.search')}
                 className="h-[30px] w-full bg-muted/20 pl-8 pr-8 text-[11px]"
@@ -2069,7 +1934,7 @@ export default function SshFilesTool({ active }: Props) {
                   variant="ghost"
                   size="icon-sm"
                   className="absolute top-1/2 right-0.5 h-7 w-7 -translate-y-1/2"
-                  disabled={!sourceID || isLoading}
+                  disabled={!sourceUsable || isLoading}
                   aria-label={t('sshFilesTool.clearSearch')}
                   onClick={clearSearch}
                 >
@@ -2084,7 +1949,7 @@ export default function SshFilesTool({ active }: Props) {
                     variant="outline"
                     size="sm"
                     className="h-[30px] max-w-[190px] flex-none px-2 text-[10px]"
-                    disabled={!sourceID || isLoading}
+                    disabled={!sourceUsable || isLoading}
                     aria-label={t('sshFilesTool.searchOptions')}
                   />
                 }
@@ -2142,7 +2007,7 @@ export default function SshFilesTool({ active }: Props) {
             <Button
               variant="default"
               className="h-[30px] flex-none px-[11px] text-[11px]"
-              disabled={!sourceID || isLoading}
+              disabled={!sourceUsable || isLoading}
               onClick={() => void selectUploadPaths()}
             >
               <UploadSimple data-icon="inline-start" size={14} />
@@ -2155,6 +2020,14 @@ export default function SshFilesTool({ active }: Props) {
             >
               <GearSix data-icon="inline-start" size={14} />
               {t('sshFilesTool.manage')}
+            </Button>
+            <Button
+              variant="ghost"
+              className="h-[30px] flex-none px-[11px] text-[11px]"
+              onClick={() => openManager()}
+            >
+              <GearSix data-icon="inline-start" size={14} />
+              {t('sshFilesTool.manageSSHProfiles')}
             </Button>
           </div>
         }
@@ -2187,7 +2060,7 @@ export default function SshFilesTool({ active }: Props) {
                   setPathInput(currentPath);
                   setPathEditing(false);
                 }}
-                disabled={!sourceID || isLoading}
+                disabled={!sourceUsable || isLoading}
                 aria-label={t('sshFilesTool.pathInput')}
                 className="h-7 min-w-0 flex-1 border-0 bg-transparent px-1 font-mono text-xs shadow-none focus-visible:ring-0"
               />
@@ -2196,7 +2069,7 @@ export default function SshFilesTool({ active }: Props) {
                 variant="ghost"
                 size="icon-sm"
                 className="h-7 w-7 flex-none"
-                disabled={!sourceID || isLoading}
+                disabled={!sourceUsable || isLoading}
                 aria-label={t('sshFilesTool.navigatePath')}
               >
                 <CheckCircle size={14} />
@@ -2224,7 +2097,7 @@ export default function SshFilesTool({ active }: Props) {
                     <button
                       type="button"
                       className={`rounded px-1.5 py-1 hover:bg-accent hover:text-foreground ${index === breadcrumbs.length - 1 ? 'font-medium text-foreground' : 'text-muted-foreground'}`}
-                      disabled={!sourceID || isLoading}
+                      disabled={!sourceUsable || isLoading}
                       aria-current={index === breadcrumbs.length - 1 ? 'page' : undefined}
                       onClick={() => navigate(crumb.path)}
                     >
@@ -2240,7 +2113,7 @@ export default function SshFilesTool({ active }: Props) {
                 variant="ghost"
                 size="icon-sm"
                 className="h-7 w-7 flex-none"
-                disabled={!sourceID || isLoading}
+                disabled={!sourceUsable || isLoading}
                 aria-label={t('sshFilesTool.editPath')}
                 onClick={() => {
                   setPathInput(currentPath);
@@ -2258,7 +2131,7 @@ export default function SshFilesTool({ active }: Props) {
                   variant={isCurrentPathFavorite ? 'secondary' : 'ghost'}
                   size="sm"
                   className="h-7 flex-none px-2 text-[11px]"
-                  disabled={!sourceID || isLoading || favoritesSaving}
+                  disabled={!sourceUsable || isLoading || favoritesSaving}
                   aria-label={t('sshFilesTool.favorites')}
                 />
               }
@@ -2296,7 +2169,7 @@ export default function SshFilesTool({ active }: Props) {
               </DropdownMenuGroup>
               <DropdownMenuSeparator />
               <DropdownMenuItem
-                disabled={!sourceID || isLoading || favoritesSaving}
+                disabled={!sourceUsable || isLoading || favoritesSaving}
                 onClick={() => void toggleFavorite()}
               >
                 <Star
@@ -2316,7 +2189,7 @@ export default function SshFilesTool({ active }: Props) {
             variant="ghost"
             size="icon-sm"
             className="h-7 w-7 flex-none"
-            disabled={!sourceID || isLoading}
+            disabled={!sourceUsable || isLoading}
             onClick={() =>
               searchActive && searchQuery
                 ? void executeSearch(searchQuery)
@@ -2417,6 +2290,22 @@ export default function SshFilesTool({ active }: Props) {
                 </div>
                 <Button variant="outline" className="mt-1 h-8 text-xs" onClick={openManage}>
                   {t('sshFilesTool.addSource')}
+                </Button>
+                <Button variant="ghost" className="h-8 text-xs" onClick={() => openManager()}>
+                  {t('sshFilesTool.manageSSHProfiles')}
+                </Button>
+              </div>
+            ) : !sourceUsable ? (
+              <div className="flex h-full flex-col items-center justify-center gap-2 p-6 text-center">
+                <Warning size={30} weight="duotone" className="text-destructive" />
+                <div className="text-sm font-medium text-foreground">
+                  {t('sshFilesTool.sshProfileMissing')}
+                </div>
+                <div className="max-w-sm text-xs text-muted-foreground">
+                  {t('sshFilesTool.sshProfileMissingHint')}
+                </div>
+                <Button variant="outline" className="mt-1 h-8 text-xs" onClick={openManage}>
+                  {t('sshFilesTool.manageSSHProfiles')}
                 </Button>
               </div>
             ) : error ? (
@@ -2724,18 +2613,18 @@ export default function SshFilesTool({ active }: Props) {
           <ContextMenuContent className="min-w-44">
             <ContextMenuGroup>
               <ContextMenuItem
-                disabled={!sourceID || isLoading}
+                disabled={!sourceUsable || isLoading}
                 onClick={() => void copyPathToClipboard(currentPath)}
               >
                 <Copy size={14} weight="duotone" aria-hidden="true" />
                 {t('sshFilesTool.copyPath')}
               </ContextMenuItem>
-              <ContextMenuItem disabled={!sourceID || isLoading} onClick={requestCreateFolder}>
+              <ContextMenuItem disabled={!sourceUsable || isLoading} onClick={requestCreateFolder}>
                 <FolderSimplePlus size={14} weight="duotone" aria-hidden="true" />
                 {t('sshFilesTool.createFolder')}
               </ContextMenuItem>
               <ContextMenuItem
-                disabled={!sourceID || isLoading || favoritesSaving}
+                disabled={!sourceUsable || isLoading || favoritesSaving}
                 onClick={() => void toggleFavorite()}
               >
                 <Star
@@ -2874,24 +2763,18 @@ export default function SshFilesTool({ active }: Props) {
                   size="sm"
                   className="-ml-2 h-7 w-fit px-2 text-[11px] text-muted-foreground"
                   onClick={backToManageList}
-                  disabled={savingManage || testingConnection}
+                  disabled={savingManage}
                 >
                   <CaretLeft data-icon="inline-start" size={14} />
                   {t('sshFilesTool.backToList')}
                 </Button>
                 <DialogTitle className="text-base">
-                  {manageEditor === 'connection'
-                    ? connections.some((item) => item.id === connectionDraft.id)
-                      ? t('sshFilesTool.editConnectionTitle')
-                      : t('sshFilesTool.newConnectionTitle')
-                    : sources.some((item) => item.id === sourceDraft.id)
-                      ? t('sshFilesTool.editSourceTitle')
-                      : t('sshFilesTool.newSourceTitle')}
+                  {sources.some((item) => item.id === sourceDraft.id)
+                    ? t('sshFilesTool.editSourceTitle')
+                    : t('sshFilesTool.newSourceTitle')}
                 </DialogTitle>
                 <DialogDescription className="text-xs leading-5">
-                  {manageEditor === 'connection'
-                    ? t('sshFilesTool.connectionDetails')
-                    : t('sshFilesTool.fileSourceDetails')}
+                  {t('sshFilesTool.fileSourceDetails')}
                 </DialogDescription>
               </>
             )}
@@ -2912,575 +2795,209 @@ export default function SshFilesTool({ active }: Props) {
           ) : null}
           <div className="min-h-0 flex-1 overflow-y-auto border-b border-border px-6 py-5 [padding-inline-end:var(--overlay-scrollbar-hit-size)]">
             {manageView === 'list' ? (
-              <Tabs
-                value={manageTab}
-                onValueChange={(value) => setManageTab(value as ManageTab)}
-                className="min-h-0 gap-5"
-              >
-                <TabsList className="w-full">
-                  <TabsTrigger value="source">
-                    {t('sshFilesTool.fileSource')}
-                    <span className="text-[10px] text-muted-foreground">{sources.length}</span>
-                  </TabsTrigger>
-                  <TabsTrigger value="connection">
-                    {t('sshFilesTool.connection')}
-                    <span className="text-[10px] text-muted-foreground">{connections.length}</span>
-                  </TabsTrigger>
-                </TabsList>
-
-                <TabsContent value="source" className="min-w-0 flex flex-col gap-4">
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="min-w-0">
-                      <h3 className="text-sm font-medium text-foreground">
-                        {t('sshFilesTool.fileSource')}
-                      </h3>
-                      <p className="mt-1 text-[10px] leading-4 text-muted-foreground">
-                        {t('sshFilesTool.sourceHint')}
-                      </p>
-                    </div>
+              <div className="min-w-0 flex flex-col gap-4">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <h3 className="text-sm font-medium text-foreground">
+                      {t('sshFilesTool.fileSource')}
+                    </h3>
+                    <p className="mt-1 text-[10px] leading-4 text-muted-foreground">
+                      {t('sshFilesTool.sourceHint')}
+                    </p>
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="flex-none"
+                    disabled={!profiles.length}
+                    onClick={newFileSource}
+                  >
+                    <Plus data-icon="inline-start" size={14} />
+                    {t('sshFilesTool.addSource')}
+                  </Button>
+                </div>
+                {sources.length ? (
+                  <div className="divide-y divide-border">
+                    {sources.map((item) => {
+                      const linkedProfile = profiles.find(
+                        (candidate) => candidate.id === item.sshProfileID,
+                      );
+                      return (
+                        <div key={item.id} className="flex min-w-0 items-center gap-1 py-1">
+                          <Button
+                            variant="ghost"
+                            className="h-auto min-w-0 flex-1 justify-start px-3 py-2 text-left"
+                            onClick={() => editSource(item)}
+                          >
+                            <Folder data-icon="inline-start" size={16} />
+                            <span className="min-w-0 flex-1">
+                              <span className="block truncate text-xs font-medium">
+                                {item.name || t('sshFilesTool.sourceName')}
+                              </span>
+                              <span className="mt-0.5 flex min-w-0 items-center gap-1 text-[10px] text-muted-foreground">
+                                <span className="truncate">
+                                  {linkedProfile?.name || t('sshFilesTool.sshProfileMissing')}
+                                </span>
+                                {!linkedProfile ? (
+                                  <Badge variant="destructive" className="h-4 shrink-0 text-[9px]">
+                                    {t('sshFilesTool.sshProfileMissing')}
+                                  </Badge>
+                                ) : null}
+                                <span aria-hidden="true">·</span>
+                                <span className="truncate font-mono">
+                                  {item.defaultPath.trim()
+                                    ? normalizeRemotePath(item.defaultPath)
+                                    : t('sshFilesTool.remoteHome')}
+                                </span>
+                              </span>
+                            </span>
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon-sm"
+                            className="flex-none text-muted-foreground"
+                            aria-label={t('sshFilesTool.editSource')}
+                            onClick={() => editSource(item)}
+                          >
+                            <PencilSimple size={15} />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon-sm"
+                            className="flex-none text-muted-foreground hover:text-destructive"
+                            aria-label={t('sshFilesTool.removeSourceAction')}
+                            onClick={() =>
+                              setManageConfirm({ type: 'removeSource', source: { ...item } })
+                            }
+                          >
+                            <Trash size={15} />
+                          </Button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="flex flex-col items-center gap-2 py-12 text-center">
+                    <Folder size={28} weight="duotone" className="text-muted-foreground" />
+                    <p className="m-0 text-xs font-medium text-foreground">
+                      {t('sshFilesTool.empty')}
+                    </p>
+                    <p className="m-0 max-w-xs text-[10px] leading-4 text-muted-foreground">
+                      {profiles.length
+                        ? t('sshFilesTool.emptyHint')
+                        : t('sshFilesTool.sourceNeedsSSHProfile')}
+                    </p>
                     <Button
                       variant="outline"
                       size="sm"
-                      className="flex-none"
-                      disabled={!connections.length}
+                      className="mt-2"
+                      disabled={!profiles.length}
                       onClick={newFileSource}
                     >
                       <Plus data-icon="inline-start" size={14} />
                       {t('sshFilesTool.addSource')}
                     </Button>
                   </div>
-                  {sources.length ? (
-                    <div className="divide-y divide-border">
-                      {sources.map((item) => {
-                        const linkedConnection = connections.find(
-                          (candidate) => candidate.id === item.sshConnectionID,
-                        );
-                        return (
-                          <div key={item.id} className="flex min-w-0 items-center gap-1 py-1">
-                            <Button
-                              variant="ghost"
-                              className="h-auto min-w-0 flex-1 justify-start px-3 py-2 text-left"
-                              onClick={() => editSource(item)}
-                            >
-                              <Folder data-icon="inline-start" size={16} />
-                              <span className="min-w-0 flex-1">
-                                <span className="block truncate text-xs font-medium">
-                                  {item.name || t('sshFilesTool.sourceName')}
-                                </span>
-                                <span className="mt-0.5 flex min-w-0 items-center gap-1 text-[10px] text-muted-foreground">
-                                  <span className="truncate">
-                                    {linkedConnection?.name || t('sshFilesTool.connectionMissing')}
-                                  </span>
-                                  <span aria-hidden="true">·</span>
-                                  <span className="truncate font-mono">
-                                    {item.defaultPath.trim()
-                                      ? normalizeRemotePath(item.defaultPath)
-                                      : t('sshFilesTool.remoteHome')}
-                                  </span>
-                                </span>
-                              </span>
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="icon-sm"
-                              className="flex-none text-muted-foreground"
-                              aria-label={t('sshFilesTool.editSource')}
-                              onClick={() => editSource(item)}
-                            >
-                              <PencilSimple size={15} />
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="icon-sm"
-                              className="flex-none text-muted-foreground hover:text-destructive"
-                              aria-label={t('sshFilesTool.removeSourceAction')}
-                              onClick={() =>
-                                setManageConfirm({ type: 'removeSource', source: { ...item } })
-                              }
-                            >
-                              <Trash size={15} />
-                            </Button>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  ) : (
-                    <div className="flex flex-col items-center gap-2 py-12 text-center">
-                      <Folder size={28} weight="duotone" className="text-muted-foreground" />
-                      <p className="m-0 text-xs font-medium text-foreground">
-                        {t('sshFilesTool.empty')}
-                      </p>
-                      <p className="m-0 max-w-xs text-[10px] leading-4 text-muted-foreground">
-                        {connections.length
-                          ? t('sshFilesTool.emptyHint')
-                          : t('sshFilesTool.sourceNeedsConnection')}
-                      </p>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="mt-2"
-                        disabled={!connections.length}
-                        onClick={newFileSource}
-                      >
-                        <Plus data-icon="inline-start" size={14} />
-                        {t('sshFilesTool.addSource')}
-                      </Button>
-                    </div>
-                  )}
-                </TabsContent>
-
-                <TabsContent value="connection" className="min-w-0 flex flex-col gap-4">
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="min-w-0">
-                      <h3 className="text-sm font-medium text-foreground">
-                        {t('sshFilesTool.connection')}
-                      </h3>
-                      <p className="mt-1 text-[10px] leading-4 text-muted-foreground">
-                        {t('sshFilesTool.connectionListHint')}
-                      </p>
-                    </div>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="flex-none"
-                      onClick={newConnection}
-                    >
-                      <Plus data-icon="inline-start" size={14} />
-                      {t('sshFilesTool.addConnection')}
-                    </Button>
-                  </div>
-                  {connections.length ? (
-                    <div className="divide-y divide-border">
-                      {connections.map((item) => {
-                        const linkedCount = sources.filter(
-                          (sourceItem) => sourceItem.sshConnectionID === item.id,
-                        ).length;
-                        return (
-                          <div key={item.id} className="flex min-w-0 items-center gap-1 py-1">
-                            <Button
-                              variant="ghost"
-                              className="h-auto min-w-0 flex-1 justify-start px-3 py-2 text-left"
-                              onClick={() => editConnection(item)}
-                            >
-                              <HardDrives data-icon="inline-start" size={16} />
-                              <span className="min-w-0 flex-1">
-                                <span className="block truncate text-xs font-medium">
-                                  {item.name || t('sshFilesTool.connectionName')}
-                                </span>
-                                <span className="mt-0.5 flex min-w-0 items-center gap-1 text-[10px] text-muted-foreground">
-                                  <span className="truncate">{connectionSummary(item)}</span>
-                                  <span aria-hidden="true">·</span>
-                                  <span className="flex-none">
-                                    {t('sshFilesTool.linkedSources', { count: linkedCount })}
-                                  </span>
-                                </span>
-                              </span>
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="icon-sm"
-                              className="flex-none text-muted-foreground"
-                              aria-label={t('sshFilesTool.editConnection')}
-                              onClick={() => editConnection(item)}
-                            >
-                              <PencilSimple size={15} />
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="icon-sm"
-                              className="flex-none text-muted-foreground hover:text-destructive"
-                              aria-label={t('sshFilesTool.removeConnectionAction')}
-                              onClick={() =>
-                                setManageConfirm({
-                                  type: 'removeConnection',
-                                  connectionID: item.id,
-                                  linkedCount,
-                                })
-                              }
-                            >
-                              <Trash size={15} />
-                            </Button>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  ) : (
-                    <div className="flex flex-col items-center gap-2 py-12 text-center">
-                      <HardDrives size={28} weight="duotone" className="text-muted-foreground" />
-                      <p className="m-0 text-xs font-medium text-foreground">
-                        {t('sshFilesTool.noConnections')}
-                      </p>
-                      <p className="m-0 max-w-xs text-[10px] leading-4 text-muted-foreground">
-                        {t('sshFilesTool.noConnectionsHint')}
-                      </p>
-                      <Button variant="outline" size="sm" className="mt-2" onClick={newConnection}>
-                        <Plus data-icon="inline-start" size={14} />
-                        {t('sshFilesTool.addConnection')}
-                      </Button>
-                    </div>
-                  )}
-                </TabsContent>
-              </Tabs>
+                )}
+              </div>
             ) : (
-              <section
-                className="min-h-0"
-                aria-label={
-                  manageEditor === 'connection'
-                    ? t('sshFilesTool.connectionDetails')
-                    : t('sshFilesTool.fileSourceDetails')
-                }
-              >
-                {manageEditor === 'connection' ? (
-                  <div className="mx-auto grid w-full max-w-[560px] content-start gap-5">
-                    <div className="grid gap-4">
-                      <div className="grid gap-1.5">
-                        <Label
-                          htmlFor="ssh-connection-name"
-                          className="text-xs text-muted-foreground"
-                        >
-                          {t('sshFilesTool.connectionName')}
-                        </Label>
-                        <Input
-                          id="ssh-connection-name"
-                          value={connectionDraft.name}
-                          onChange={(event) =>
-                            setConnectionDraft({ ...connectionDraft, name: event.target.value })
-                          }
-                        />
-                      </div>
-                      <div className="grid gap-1.5">
-                        <Label
-                          htmlFor="ssh-connection-mode"
-                          className="text-xs text-muted-foreground"
-                        >
-                          {t('sshFilesTool.connectionMode')}
-                        </Label>
-                        <Select
-                          items={[
-                            { value: 'local', label: t('sshFilesTool.localSSH') },
-                            { value: 'manual', label: t('sshFilesTool.manualSSH') },
-                          ]}
-                          value={connectionDraft.mode || 'manual'}
-                          onValueChange={(value) =>
-                            setConnectionDraft({ ...connectionDraft, mode: value || 'manual' })
-                          }
-                        >
-                          <SelectTrigger id="ssh-connection-mode" className="w-full">
-                            <SelectValue placeholder={t('sshFilesTool.connectionMode')} />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="local">{t('sshFilesTool.localSSH')}</SelectItem>
-                            <SelectItem value="manual">{t('sshFilesTool.manualSSH')}</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      {connectionDraft.mode === 'local' ? (
-                        <div className="grid gap-3 rounded-lg border border-border bg-muted/20 p-3">
-                          <div className="flex items-start justify-between gap-3">
-                            <div className="min-w-0">
-                              <p className="m-0 text-xs font-medium text-foreground">
-                                {t('sshFilesTool.localSSH')}
-                              </p>
-                              <p className="mt-1 m-0 text-[10px] leading-4 text-muted-foreground">
-                                {t('sshFilesTool.localSSHHint')}
-                              </p>
-                            </div>
-                            <Button
-                              variant="ghost"
-                              size="icon-sm"
-                              className="h-7 w-7 flex-none"
-                              onClick={refreshSSHHosts}
-                              disabled={sshHostsLoading}
-                              aria-label={t('sshFilesTool.refreshSSHHosts')}
-                            >
-                              <ArrowClockwise
-                                size={14}
-                                className={
-                                  sshHostsLoading ? 'animate-spin motion-reduce:animate-none' : ''
-                                }
-                              />
-                            </Button>
-                          </div>
-                          {sshHostsLoading ? (
-                            <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
-                              <Spinner className="size-3" />
-                              {t('common.loading')}
-                            </div>
-                          ) : sshHostsError ? (
-                            <div className="grid gap-2" role="alert">
-                              <p className="m-0 text-xs text-destructive">
-                                {t('sshFilesTool.sshHostsFailed')}
-                              </p>
-                              <p className="m-0 break-words text-[10px] leading-4 text-muted-foreground">
-                                {sshHostsError}
-                              </p>
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                className="h-7 w-fit px-2 text-[11px]"
-                                onClick={refreshSSHHosts}
-                              >
-                                <ArrowClockwise data-icon="inline-start" size={13} />
-                                {t('sshFilesTool.refresh')}
-                              </Button>
-                            </div>
-                          ) : sshHosts.length ? (
-                            <div className="grid gap-1.5">
-                              <Label
-                                htmlFor="ssh-connection-host"
-                                className="text-xs text-muted-foreground"
-                              >
-                                {t('sshFilesTool.selectSSHHost')}
-                              </Label>
-                              <Select
-                                items={sshHosts.map((host) => ({ value: host, label: host }))}
-                                value={connectionDraft.alias || null}
-                                onValueChange={(value) =>
-                                  setConnectionDraft({ ...connectionDraft, alias: value || '' })
-                                }
-                              >
-                                <SelectTrigger id="ssh-connection-host" className="w-full">
-                                  <SelectValue placeholder={t('sshFilesTool.selectSSHHost')} />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  {sshHosts.map((host) => (
-                                    <SelectItem key={host} value={host}>
-                                      {host}
-                                    </SelectItem>
-                                  ))}
-                                </SelectContent>
-                              </Select>
-                            </div>
-                          ) : (
-                            <div className="rounded-md border border-dashed border-border px-3 py-2">
-                              <p className="m-0 text-xs font-medium text-foreground">
-                                {t('sshFilesTool.sshHostsEmpty')}
-                              </p>
-                              <p className="mt-1 m-0 text-[10px] leading-4 text-muted-foreground">
-                                {t('sshFilesTool.sshHostsEmptyHint')}
-                              </p>
-                            </div>
-                          )}
-                        </div>
-                      ) : (
-                        <div className="grid gap-4">
-                          <p className="m-0 text-[11px] leading-4 text-muted-foreground">
-                            {t('sshFilesTool.manualSSHHint')}
-                          </p>
-                          <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_112px]">
-                            <div className="grid gap-1.5">
-                              <Label
-                                htmlFor="ssh-connection-host-manual"
-                                className="text-xs text-muted-foreground"
-                              >
-                                {t('sshFilesTool.host')}
-                              </Label>
-                              <Input
-                                id="ssh-connection-host-manual"
-                                value={connectionDraft.host}
-                                onChange={(event) =>
-                                  setConnectionDraft({
-                                    ...connectionDraft,
-                                    host: event.target.value,
-                                  })
-                                }
-                              />
-                            </div>
-                            <div className="grid gap-1.5">
-                              <Label
-                                htmlFor="ssh-connection-port"
-                                className="text-xs text-muted-foreground"
-                              >
-                                {t('sshFilesTool.port')}
-                              </Label>
-                              <Input
-                                id="ssh-connection-port"
-                                type="number"
-                                min={1}
-                                max={65535}
-                                value={connectionDraft.port}
-                                onChange={(event) =>
-                                  setConnectionDraft({
-                                    ...connectionDraft,
-                                    port: Number(event.target.value),
-                                  })
-                                }
-                              />
-                            </div>
-                          </div>
-                          <div className="grid gap-1.5">
-                            <Label
-                              htmlFor="ssh-connection-username"
-                              className="text-xs text-muted-foreground"
-                            >
-                              {t('sshFilesTool.username')}
-                            </Label>
-                            <Input
-                              id="ssh-connection-username"
-                              value={connectionDraft.username}
-                              onChange={(event) =>
-                                setConnectionDraft({
-                                  ...connectionDraft,
-                                  username: event.target.value,
-                                })
-                              }
-                            />
-                          </div>
-                          <div className="grid gap-4 sm:grid-cols-2">
-                            <div className="grid gap-1.5">
-                              <Label
-                                htmlFor="ssh-connection-password"
-                                className="text-xs text-muted-foreground"
-                              >
-                                {t('sshFilesTool.password')}
-                              </Label>
-                              <Input
-                                id="ssh-connection-password"
-                                type="password"
-                                value={connectionDraft.password}
-                                onChange={(event) =>
-                                  setConnectionDraft({
-                                    ...connectionDraft,
-                                    password: event.target.value,
-                                  })
-                                }
-                              />
-                            </div>
-                            <div className="grid gap-1.5">
-                              <Label
-                                htmlFor="ssh-connection-key-path"
-                                className="text-xs text-muted-foreground"
-                              >
-                                {t('sshFilesTool.privateKeyPath')}
-                              </Label>
-                              <Input
-                                id="ssh-connection-key-path"
-                                value={connectionDraft.privateKeyPath}
-                                onChange={(event) =>
-                                  setConnectionDraft({
-                                    ...connectionDraft,
-                                    privateKeyPath: event.target.value,
-                                  })
-                                }
-                              />
-                            </div>
-                          </div>
-                          <div className="grid gap-1.5">
-                            <Label
-                              htmlFor="ssh-connection-key-passphrase"
-                              className="text-xs text-muted-foreground"
-                            >
-                              {t('sshFilesTool.keyPassphrase')}
-                            </Label>
-                            <Input
-                              id="ssh-connection-key-passphrase"
-                              type="password"
-                              value={connectionDraft.keyPassphrase}
-                              onChange={(event) =>
-                                setConnectionDraft({
-                                  ...connectionDraft,
-                                  keyPassphrase: event.target.value,
-                                })
-                              }
-                            />
-                          </div>
-                        </div>
-                      )}
+              <section className="min-h-0" aria-label={t('sshFilesTool.fileSourceDetails')}>
+                <div className="mx-auto grid w-full max-w-[560px] content-start gap-5">
+                  <div className="grid gap-4">
+                    <div className="grid gap-1.5">
+                      <Label htmlFor="ssh-source-name" className="text-xs text-muted-foreground">
+                        {t('sshFilesTool.sourceName')}
+                      </Label>
+                      <Input
+                        id="ssh-source-name"
+                        value={sourceDraft.name}
+                        onChange={(event) =>
+                          setSourceDraft({ ...sourceDraft, name: event.target.value })
+                        }
+                      />
                     </div>
-                    <div className="flex flex-wrap items-center justify-end gap-2 border-t border-border pt-4">
-                      <Button
-                        variant="outline"
-                        onClick={() => void testConnection()}
-                        disabled={
-                          savingManage ||
-                          testingConnection ||
-                          (connectionDraft.mode === 'local'
-                            ? !connectionDraft.alias
-                            : !connectionDraft.host || !connectionDraft.username)
+                    <div className="grid gap-1.5">
+                      <Label htmlFor="ssh-source-profile" className="text-xs text-muted-foreground">
+                        {t('sshFilesTool.selectSSHProfile')}
+                      </Label>
+                      <Select
+                        items={availableProfiles.map((item) => ({
+                          value: item.id,
+                          label: item.name,
+                        }))}
+                        value={sourceDraft.sshProfileID || null}
+                        onValueChange={(value) =>
+                          setSourceDraft({
+                            ...sourceDraft,
+                            sshProfileID: value || '',
+                          })
                         }
                       >
-                        {testingConnection ? <Spinner data-icon="inline-start" /> : null}
-                        {t('sshFilesTool.testConnection')}
-                      </Button>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="mx-auto grid w-full max-w-[560px] content-start gap-5">
-                    <div className="grid gap-4">
-                      <div className="grid gap-1.5">
-                        <Label htmlFor="ssh-source-name" className="text-xs text-muted-foreground">
-                          {t('sshFilesTool.sourceName')}
-                        </Label>
-                        <Input
-                          id="ssh-source-name"
-                          value={sourceDraft.name}
-                          onChange={(event) =>
-                            setSourceDraft({ ...sourceDraft, name: event.target.value })
-                          }
-                        />
-                      </div>
-                      <div className="grid gap-1.5">
-                        <Label
-                          htmlFor="ssh-source-connection"
-                          className="text-xs text-muted-foreground"
-                        >
-                          {t('sshFilesTool.selectConnection')}
-                        </Label>
-                        <Select
-                          items={availableConnections.map((item) => ({
-                            value: item.id,
-                            label: item.name,
-                          }))}
-                          value={sourceDraft.sshConnectionID || null}
-                          onValueChange={(value) =>
-                            setSourceDraft({
-                              ...sourceDraft,
-                              sshConnectionID: value || '',
+                        <SelectTrigger id="ssh-source-profile" className="w-full">
+                          <SelectValue placeholder={t('sshFilesTool.selectSSHProfile')} />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {availableProfiles.map((item) => (
+                            <SelectItem key={item.id} value={item.id}>
+                              {item.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="m-0 text-[10px] leading-4 text-muted-foreground">
+                          {sourceProfile
+                            ? `${sourceProfile.username ? `${sourceProfile.username}@` : ''}${sourceProfile.host}:${sourceProfile.port || 22}`
+                            : t('sshFilesTool.sshProfileMissing')}
+                        </p>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="flex-none"
+                          onClick={() =>
+                            openManager({
+                              select: true,
+                              onSelect: (profile: SSHProfile) =>
+                                setSourceDraft({
+                                  ...sourceDraft,
+                                  sshProfileID: profile.id,
+                                }),
                             })
                           }
                         >
-                          <SelectTrigger id="ssh-source-connection" className="w-full">
-                            <SelectValue placeholder={t('sshFilesTool.selectConnection')} />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {availableConnections.map((item) => (
-                              <SelectItem key={item.id} value={item.id}>
-                                {item.name}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div className="grid gap-1.5">
-                        <Label
-                          htmlFor="ssh-source-default-path"
-                          className="text-xs text-muted-foreground"
-                        >
-                          {t('sshFilesTool.defaultPath')}
-                        </Label>
-                        <Input
-                          id="ssh-source-default-path"
-                          value={sourceDraft.defaultPath}
-                          placeholder={t('sshFilesTool.remoteHome')}
-                          onChange={(event) =>
-                            setSourceDraft({ ...sourceDraft, defaultPath: event.target.value })
-                          }
-                          className="font-mono text-xs"
-                        />
-                        <p className="m-0 text-[10px] leading-4 text-muted-foreground">
-                          {t('sshFilesTool.sourceHint')}
-                        </p>
+                          {t('sshFilesTool.manageSSHProfiles')}
+                        </Button>
                       </div>
                     </div>
+                    <div className="grid gap-1.5">
+                      <Label
+                        htmlFor="ssh-source-default-path"
+                        className="text-xs text-muted-foreground"
+                      >
+                        {t('sshFilesTool.defaultPath')}
+                      </Label>
+                      <Input
+                        id="ssh-source-default-path"
+                        value={sourceDraft.defaultPath}
+                        placeholder={t('sshFilesTool.remoteHome')}
+                        onChange={(event) =>
+                          setSourceDraft({ ...sourceDraft, defaultPath: event.target.value })
+                        }
+                        className="font-mono text-xs"
+                      />
+                      <p className="m-0 text-[10px] leading-4 text-muted-foreground">
+                        {t('sshFilesTool.sourceHint')}
+                      </p>
+                    </div>
                   </div>
-                )}
+                </div>
               </section>
             )}
           </div>
           <DialogFooter className="mx-0 mb-0 flex-none rounded-b-xl px-6 py-4">
             <Button
               variant="outline"
-              disabled={savingManage || testingConnection}
+              disabled={savingManage}
               onClick={() =>
                 manageView === 'list' ? handleManageOpenChange(false) : backToManageList()
               }
@@ -3489,7 +3006,7 @@ export default function SshFilesTool({ active }: Props) {
             </Button>
             {manageView === 'list' ? (
               <Button
-                disabled={savingManage || testingConnection}
+                disabled={savingManage}
                 onClick={() =>
                   manageCollectionDirty ? void saveManage() : handleManageOpenChange(false)
                 }
@@ -3497,14 +3014,7 @@ export default function SshFilesTool({ active }: Props) {
                 {manageCollectionDirty ? t('common.save') : t('common.done')}
               </Button>
             ) : (
-              <Button
-                disabled={
-                  savingManage ||
-                  testingConnection ||
-                  (manageEditor === 'connection' ? !connectionReady : !sourceReady)
-                }
-                onClick={() => void saveManage()}
-              >
+              <Button disabled={savingManage || !sourceReady} onClick={() => void saveManage()}>
                 {savingManage ? <Spinner data-icon="inline-start" /> : null}
                 {t('common.save')}
               </Button>
@@ -3521,54 +3031,40 @@ export default function SshFilesTool({ active }: Props) {
         <AlertDialogContent className="min-w-0 max-w-[calc(100vw-32px)] sm:max-w-md">
           <AlertDialogHeader>
             <AlertDialogTitle>
-              {manageConfirm?.type === 'removeConnection'
-                ? t('sshFilesTool.removeConnectionTitle')
-                : manageConfirm?.type === 'removeSource'
-                  ? t('sshFilesTool.removeSourceTitle')
-                  : manageConfirm?.type === 'discardManage' ||
-                      manageConfirm?.type === 'discardAndCreate'
-                    ? t('sshFilesTool.discardManageTitle')
-                    : manageConfirm?.type === 'discardNavigate'
-                      ? t('sshFilesTool.discardEditTitle')
-                      : t('sshFilesTool.discardDraftTitle')}
+              {manageConfirm?.type === 'removeSource'
+                ? t('sshFilesTool.removeSourceTitle')
+                : manageConfirm?.type === 'discardManage' ||
+                    manageConfirm?.type === 'discardAndCreate'
+                  ? t('sshFilesTool.discardManageTitle')
+                  : manageConfirm?.type === 'discardNavigate'
+                    ? t('sshFilesTool.discardEditTitle')
+                    : t('sshFilesTool.discardDraftTitle')}
             </AlertDialogTitle>
             <AlertDialogDescription className="text-xs leading-5">
-              {manageConfirm?.type === 'removeConnection'
-                ? manageConfirm.linkedCount > 0
-                  ? t('sshFilesTool.removeConnectionConfirm', {
-                      count: manageConfirm.linkedCount,
-                    })
-                  : t('sshFilesTool.removeConnectionNoSourcesConfirm')
-                : manageConfirm?.type === 'removeSource'
-                  ? t('sshFilesTool.removeSourceConfirm', { name: manageConfirm.source.name })
-                  : manageConfirm?.type === 'discardManage' ||
-                      manageConfirm?.type === 'discardAndCreate'
-                    ? t('sshFilesTool.discardManageConfirm')
-                    : manageConfirm?.type === 'discardNavigate'
-                      ? t('sshFilesTool.discardEditConfirm')
-                      : t('sshFilesTool.discardDraftConfirm')}
+              {manageConfirm?.type === 'removeSource'
+                ? t('sshFilesTool.removeSourceConfirm', { name: manageConfirm.source.name })
+                : manageConfirm?.type === 'discardManage' ||
+                    manageConfirm?.type === 'discardAndCreate'
+                  ? t('sshFilesTool.discardManageConfirm')
+                  : manageConfirm?.type === 'discardNavigate'
+                    ? t('sshFilesTool.discardEditConfirm')
+                    : t('sshFilesTool.discardDraftConfirm')}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
             <AlertDialogAction
-              variant={
-                manageConfirm?.type === 'removeConnection' || manageConfirm?.type === 'removeSource'
-                  ? 'destructive'
-                  : 'default'
-              }
+              variant={manageConfirm?.type === 'removeSource' ? 'destructive' : 'default'}
               onClick={confirmManageAction}
             >
-              {manageConfirm?.type === 'removeConnection'
-                ? t('sshFilesTool.removeConnectionAction')
-                : manageConfirm?.type === 'removeSource'
-                  ? t('sshFilesTool.removeSourceAction')
-                  : manageConfirm?.type === 'discardManage' ||
-                      manageConfirm?.type === 'discardAndCreate'
-                    ? t('sshFilesTool.discardManageAction')
-                    : manageConfirm?.type === 'discardNavigate'
-                      ? t('sshFilesTool.discardEditAction')
-                      : t('sshFilesTool.discardDraftAction')}
+              {manageConfirm?.type === 'removeSource'
+                ? t('sshFilesTool.removeSourceAction')
+                : manageConfirm?.type === 'discardManage' ||
+                    manageConfirm?.type === 'discardAndCreate'
+                  ? t('sshFilesTool.discardManageAction')
+                  : manageConfirm?.type === 'discardNavigate'
+                    ? t('sshFilesTool.discardEditAction')
+                    : t('sshFilesTool.discardDraftAction')}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -3697,7 +3193,9 @@ export default function SshFilesTool({ active }: Props) {
               {t('common.cancel')}
             </Button>
             <Button
-              disabled={uploadStarting || !sourceID || uploadPaths.length === 0 || !allowOverwrite}
+              disabled={
+                uploadStarting || !sourceUsable || uploadPaths.length === 0 || !allowOverwrite
+              }
               onClick={() => void confirmUpload()}
             >
               {uploadStarting ? (
@@ -3763,7 +3261,7 @@ export default function SshFilesTool({ active }: Props) {
               {t('common.cancel')}
             </Button>
             <Button
-              disabled={creatingFolder || !sourceID}
+              disabled={creatingFolder || !sourceUsable}
               onClick={() => void executeCreateFolder()}
             >
               {creatingFolder ? (

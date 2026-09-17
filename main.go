@@ -86,6 +86,7 @@ func main() {
 	}
 
 	cfgService := NewConfigService()
+	sshProfileService := NewSSHProfileService(cfgService)
 	logService := NewLogService()
 	systemInfoService := NewSystemInfoService()
 	updateService := NewUpdateService(currentVersion)
@@ -101,6 +102,7 @@ func main() {
 		},
 		Services: []application.Service{
 			application.NewService(cfgService),
+			application.NewService(sshProfileService),
 			application.NewService(logService),
 			application.NewService(systemInfoService),
 			application.NewService(updateService),
@@ -139,7 +141,6 @@ func main() {
 	updateService.start(app.Updater, cfgService.Get().AutoCheckUpdates)
 	app.OnShutdown(updateService.stopScheduler)
 	app.OnShutdown(imageService.shutdown)
-
 
 	window := app.Window.NewWithOptions(application.WebviewWindowOptions{
 		Name:             appName,
