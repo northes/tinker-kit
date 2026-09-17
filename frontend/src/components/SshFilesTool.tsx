@@ -2411,9 +2411,6 @@ export default function SshFilesTool({ active }: Props) {
                             <TableRow
                               data-state={selected.includes(entry.path) ? 'selected' : undefined}
                               className="group select-none border-border/60"
-                              onContextMenu={() => {
-                                if (!selected.includes(entry.path)) setSelected([entry.path]);
-                              }}
                             />
                           }
                         >

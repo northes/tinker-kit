@@ -2210,9 +2210,6 @@ export default function ImageManagerTool({
                             <TableRow
                               data-state={selected.has(image.id) ? 'selected' : undefined}
                               className="select-none border-border/60"
-                              onContextMenu={() => {
-                                if (!selected.has(image.id)) setSelected(new Set([image.id]));
-                              }}
                             />
                           }
                         >
