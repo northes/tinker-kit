@@ -2064,6 +2064,10 @@ export default function ImageManagerTool({
   const taskDone = (task: ImageTask) => (taskUsesBytes(task) ? task.bytes : task.completed);
   const taskPercent = (task: ImageTask) => {
     if (task.status === 'success') return 100;
+    // docker pull 在管道下只输出层状态，层数会随发现新层（含“已存在”的层先报完成）
+    // 回退，用 completed/total 会先冲到 100% 再掉回来；拉取改用不确定进度，
+    // 进度文本仍显示已完成的层数。
+    if (task.type === 'pull') return null;
     if (task.total <= 0) return null;
     const percent = (taskDone(task) / task.total) * 100;
     return taskUsesBytes(task) && task.totalEstimated
