@@ -188,6 +188,25 @@ func (s *ImageService) storeWatchSnapshot(worker *watchWorker, fingerprint strin
 	return updatedAt
 }
 
+// requestSourceRefresh 让正在 watch 该来源的 worker 立刻重扫一轮，不要求 clientID。
+// 用于后台任务（如 docker pull）完成后刷新列表：任务在后台异步执行，任务开始时
+// 刷新拿到的仍是旧结果，必须在完成后重扫才能看到变化。
+func (s *ImageService) requestSourceRefresh(sourceID string) {
+	if s == nil || sourceID == "" {
+		return
+	}
+	s.mu.Lock()
+	worker := s.watchWorker
+	s.mu.Unlock()
+	if worker == nil || worker.sourceID != sourceID {
+		return
+	}
+	select {
+	case worker.refresh <- struct{}{}:
+	default:
+	}
+}
+
 // RefreshDockerImages 请求当前来源立即执行下一轮扫描。已有扫描不会被打断或并行。
 func (s *ImageService) RefreshDockerImages(sourceID string, clientID string) error {
 	if s == nil || sourceID == "" || clientID == "" {

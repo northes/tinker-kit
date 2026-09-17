@@ -1066,5 +1066,7 @@ func (s *ImageService) runImagePull(ctx context.Context, taskID, imageRef string
 			}
 			task.cancel = nil
 		})
+		// 拉取成功后 tag 可能指向新的镜像 ID，必须重扫才能在前端看到变化。
+		s.requestSourceRefresh(source.ID)
 	}
 }

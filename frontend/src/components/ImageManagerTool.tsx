@@ -2115,9 +2115,9 @@ export default function ImageManagerTool({
     try {
       const result = await StartImagePulls(source.id, refs);
       if (result.started > 0) {
+        // 只放入后台任务队列，不弹出任务面板；进度由底栏的后台任务入口展示。
+        // 拉取在后台异步执行，开始时就刷新只会拿到旧结果；完成后由 Go 侧重扫并推送 diff。
         applyTasks(result.snapshot);
-        setTasksOpen(true);
-        requestWatchReload();
         record(
           'image-manager',
           t('imageManagerTool.pullUpdate'),
