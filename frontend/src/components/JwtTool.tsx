@@ -227,7 +227,7 @@ export default function JwtTool({
                 inputView.current = view;
               }}
             />
-            <div className="grid min-h-0 min-w-0 grid-rows-3 gap-3">
+            <div className="grid min-h-0 min-w-0 grid-rows-[2fr_4fr_1fr] gap-3">
               <JwtPane
                 label={t('jwtTool.header')}
                 value={decoded?.header ?? ''}
