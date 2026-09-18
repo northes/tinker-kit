@@ -92,7 +92,7 @@ function CrashScreen({ error, onReload }: { error: Error; onReload: () => void }
   return (
     <main className="relative flex h-dvh items-center justify-center bg-background px-6 text-foreground">
       <header
-        className="absolute inset-x-0 top-0 h-(--app-titlebar-height) [--wails-draggable:drag]"
+        className="absolute inset-x-0 top-0 h-(--app-titlebar-height) cursor-default [--wails-draggable:drag]"
         data-wails-drag
       />
       <section className="flex w-full max-w-[420px] flex-col items-center text-center">
