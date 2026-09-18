@@ -986,7 +986,7 @@
     "trayMatchToolsExtraDesc": "Off by default; turn on only if you need them.",
     "trayMatchToolsMin": "Keep at least one matching tool.",
     "autoOverwrite": "Auto overwrite",
-    "autoOverwriteDesc": "Fill the matching tool immediately after a match; when off, ask each time.",
+    "autoOverwriteDesc": "Fill the matching tool immediately after a match; when off, jump to the tool first and ask before filling.",
     "editor": "Code editor",
     "editorSubtitle": "Adjust the font size of all code editors.",
     "editorFontSize": "Font size",

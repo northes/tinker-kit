@@ -986,7 +986,7 @@
     "trayMatchToolsExtraDesc": "默认不匹配，需要时再打开。",
     "trayMatchToolsMin": "至少保留一个匹配工具。",
     "autoOverwrite": "自动覆盖",
-    "autoOverwriteDesc": "匹配成功后直接填入对应工具；关闭后每次先询问。",
+    "autoOverwriteDesc": "匹配成功后直接填入对应工具；关闭后先跳到对应工具，再询问是否填入。",
     "editor": "代码编辑器",
     "editorSubtitle": "调整所有代码编辑器的字号。",
     "editorFontSize": "字体大小",

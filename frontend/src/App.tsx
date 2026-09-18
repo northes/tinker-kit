@@ -1768,8 +1768,13 @@ function AppShell() {
       });
     };
     const match = { tool, input: text, mode, target };
-    if (currentSettings.autoOverwrite) apply(match);
-    else setMatchDialog(match);
+    if (currentSettings.autoOverwrite) {
+      apply(match);
+    } else {
+      // 关闭自动覆盖时，先跳到对应工具（让用户看到将被填入/覆盖的内容），再弹窗询问。
+      navigate(tool);
+      setMatchDialog(match);
+    }
   };
   return (
     <>
@@ -2131,16 +2136,22 @@ function AppShell() {
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>{t('matchDialog.title')}</AlertDialogTitle>
-            <AlertDialogDescription>
-              {t('matchDialog.bodyPrefix')}
-              <strong>{matchDialog ? t(`tools.${matchDialog.tool}.name`) : ''}</strong>
-              {t('matchDialog.bodySuffix')}
+            <AlertDialogDescription render={<div />} className="text-left">
+              <p className="m-0">
+                {t('matchDialog.bodyPrefix')}
+                <strong>{matchDialog ? t(`tools.${matchDialog.tool}.name`) : ''}</strong>
+                {t('matchDialog.bodySuffix')}
+              </p>
+              {matchDialog ? (
+                <code className="mt-2 block h-24 overflow-y-auto rounded-md border bg-muted/30 px-2 py-1 text-xs leading-5 break-all whitespace-pre-wrap">
+                  {matchDialog.input}
+                </code>
+              ) : null}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>{t('matchDialog.cancel')}</AlertDialogCancel>
             <AlertDialogAction
-              variant="destructive"
               onClick={() => {
                 const d = matchDialog;
                 setMatchDialog(null);
@@ -2158,7 +2169,6 @@ function AppShell() {
                     mode: d.mode,
                     target: d.target,
                   });
-                  navigate(d.tool);
                 }
               }}
             >
