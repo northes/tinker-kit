@@ -62,6 +62,16 @@ import {
   DialogHeader,
   DialogTitle,
 } from './ui/dialog';
+import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from './ui/dropdown-menu';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
 import {
@@ -79,9 +89,38 @@ import { toast } from './ui/toast';
 const MANAGE_TARGETS_VALUE = '__manage-targets__';
 const LOCAL_TARGET: ServiceTarget = { id: 'local', name: 'local', kind: 'local' };
 
-type RuntimeFilter = 'all' | 'docker' | 'pm2' | 'systemd';
+type Runtime = 'docker' | 'pm2' | 'systemd';
 type Selection = { resource: ServiceResourceRef; kind: 'container' | 'group' | 'pm2' | 'systemd' };
 type LogEvent = { lines?: ServiceLogLine[] };
+
+// 每个运行时支持的状态，作为状态筛选里的分组。
+const STATUS_GROUPS: Array<{ runtime: Runtime; statuses: string[] }> = [
+  {
+    runtime: 'docker',
+    statuses: ['running', 'exited', 'created', 'paused', 'restarting', 'removing', 'dead'],
+  },
+  {
+    runtime: 'pm2',
+    statuses: ['online', 'launching', 'stopping', 'stopped', 'errored', 'waiting restart'],
+  },
+  {
+    runtime: 'systemd',
+    statuses: ['active', 'reloading', 'inactive', 'failed', 'activating', 'deactivating'],
+  },
+];
+function statusKey(runtime: Runtime, status: string) {
+  return `${runtime}:${status}`;
+}
+function matchesStatusFilter(statuses: Set<string>, runtime: Runtime, status: string) {
+  return statuses.size === 0 || statuses.has(statusKey(runtime, status));
+}
+function runtimeFiltered(statuses: Set<string>, runtime: Runtime) {
+  if (statuses.size === 0) return true;
+  for (const key of statuses) {
+    if (key.startsWith(`${runtime}:`)) return true;
+  }
+  return false;
+}
 
 function resourceKey(resource: ServiceResourceRef) {
   return `${resource.runtime}|${resource.scope ?? ''}|${resource.id}`;
@@ -126,7 +165,7 @@ export default function ServiceManagerTool({
   targetIDRef.current = targetID;
   const [inventory, setInventory] = useState<ServiceInventory | null>(null);
   const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState<RuntimeFilter>('all');
+  const [statusFilter, setStatusFilter] = useState<Set<string>>(new Set());
   const [searchDraft, setSearchDraft] = useState('');
   const [search, setSearch] = useState('');
   const [selection, setSelection] = useState<Selection | null>(null);
@@ -523,6 +562,16 @@ export default function ServiceManagerTool({
       </form>
     );
   };
+  const toggleStatus = (runtime: Runtime, status: string, checked: boolean) => {
+    const key = statusKey(runtime, status);
+    setStatusFilter((current) => {
+      const next = new Set(current);
+      if (checked) next.add(key);
+      else next.delete(key);
+      return next;
+    });
+  };
+  const clearStatusFilter = () => setStatusFilter(new Set());
 
   return (
     <Reveal active={active} fill>
@@ -577,29 +626,51 @@ export default function ServiceManagerTool({
               </div>
               <div className="flex min-w-0 flex-col gap-1 max-[700px]:w-full">
                 <span className="text-[10px] font-medium text-muted-foreground">
-                  {t('serviceManagerTool.runtime')}
+                  {t('serviceManagerTool.status')}
                 </span>
-                <Select
-                  items={['all', 'docker', 'pm2', 'systemd'].map((value) => ({
-                    value,
-                    label: t(`serviceManagerTool.runtimes.${value}`),
-                  }))}
-                  value={filter}
-                  onValueChange={(value) => setFilter((value ?? 'all') as RuntimeFilter)}
-                >
-                  <SelectTrigger className="min-w-30">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectGroup>
-                      {['all', 'docker', 'pm2', 'systemd'].map((value) => (
-                        <SelectItem key={value} value={value}>
-                          {t(`serviceManagerTool.runtimes.${value}`)}
-                        </SelectItem>
-                      ))}
-                    </SelectGroup>
-                  </SelectContent>
-                </Select>
+                <DropdownMenu>
+                  <DropdownMenuTrigger
+                    render={
+                      <Button variant="outline" size="sm" className="min-w-48 justify-between" />
+                    }
+                  >
+                    <span className="truncate">
+                      {statusFilter.size === 0
+                        ? t('serviceManagerTool.statusAll')
+                        : t('serviceManagerTool.statusSelected', { count: statusFilter.size })}
+                    </span>
+                    <CaretDown data-icon="inline-end" aria-hidden="true" />
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="start" className="max-h-80 w-56 overflow-y-auto">
+                    {STATUS_GROUPS.map((group) => (
+                      <DropdownMenuGroup key={group.runtime}>
+                        <DropdownMenuLabel>
+                          {t(`serviceManagerTool.runtimes.${group.runtime}`)}
+                        </DropdownMenuLabel>
+                        {group.statuses.map((status) => (
+                          <DropdownMenuCheckboxItem
+                            key={statusKey(group.runtime, status)}
+                            checked={statusFilter.has(statusKey(group.runtime, status))}
+                            closeOnClick={false}
+                            onCheckedChange={(checked) =>
+                              toggleStatus(group.runtime, status, checked === true)
+                            }
+                          >
+                            {status}
+                          </DropdownMenuCheckboxItem>
+                        ))}
+                      </DropdownMenuGroup>
+                    ))}
+                    {statusFilter.size > 0 ? (
+                      <>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem onClick={clearStatusFilter}>
+                          {t('serviceManagerTool.clearStatusFilter')}
+                        </DropdownMenuItem>
+                      </>
+                    ) : null}
+                  </DropdownMenuContent>
+                </DropdownMenu>
               </div>
               <div className="flex min-w-0 flex-col gap-1 max-[700px]:w-full">
                 <span className="text-[10px] font-medium text-muted-foreground">
@@ -626,7 +697,7 @@ export default function ServiceManagerTool({
         <ToolLayoutContent className="grid min-h-0 grid-cols-[minmax(230px,38%)_minmax(0,1fr)] border-t max-[800px]:grid-cols-1 max-[800px]:grid-rows-[minmax(180px,42%)_minmax(0,1fr)]">
           <ResourceList
             inventory={inventory}
-            filter={filter}
+            statuses={statusFilter}
             search={search}
             selection={selection}
             onSelect={setSelection}
@@ -793,7 +864,7 @@ export default function ServiceManagerTool({
 
 function ResourceList({
   inventory,
-  filter,
+  statuses,
   search,
   selection,
   onSelect,
@@ -802,7 +873,7 @@ function ResourceList({
   t,
 }: {
   inventory: ServiceInventory | null;
-  filter: RuntimeFilter;
+  statuses: Set<string>;
   search: string;
   selection: Selection | null;
   onSelect: (next: Selection) => void;
@@ -827,6 +898,7 @@ function ResourceList({
     description = '',
   ) => {
     if (!match(resource.name || resource.id)) return null;
+    if (!matchesStatusFilter(statuses, resource.runtime as Runtime, status)) return null;
     const active = selection && resourceKey(selection.resource) === resourceKey(resource);
     const monitor = monitored.get(resourceKey(resource));
     return (
@@ -851,6 +923,10 @@ function ResourceList({
   };
   const group = (item: DockerComposeGroup) => {
     const containers = item.containers ?? [];
+    const visibleContainers = containers.filter((container) =>
+      matchesStatusFilter(statuses, 'docker', container.status),
+    );
+    if (!visibleContainers.length) return null;
     const resource = { runtime: 'docker-compose', id: item.id, name: item.name };
     return (
       <div key={item.id}>
@@ -884,7 +960,7 @@ function ResourceList({
             <ClockCounterClockwise weight="duotone" />
           </Button>
         </div>
-        {containers.map((container) =>
+        {visibleContainers.map((container) =>
           row(
             { runtime: 'docker', id: container.id, name: container.name },
             'container',
@@ -895,38 +971,51 @@ function ResourceList({
       </div>
     );
   };
+  const standaloneContainers = (inventory.containers ?? []).filter((container) =>
+    matchesStatusFilter(statuses, 'docker', container.status),
+  );
+  const pm2Processes = (inventory.pm2Processes ?? []).filter((process) =>
+    matchesStatusFilter(statuses, 'pm2', process.status),
+  );
+  const systemUnits = (inventory.systemUnits ?? []).filter((unit) =>
+    matchesStatusFilter(statuses, 'systemd', unit.activeState),
+  );
   return (
     <div className="h-full min-h-0 overflow-y-auto">
-      {filter === 'all' || filter === 'docker' ? (
+      {runtimeFiltered(statuses, 'docker') ? (
         <>
           {inventory.docker.available ? (
             <>
               {(inventory.dockerGroups ?? []).map(group)}
-              <div className="border-b px-3 py-2 text-xs font-semibold text-muted-foreground">
-                {t('serviceManagerTool.standalone')}
-              </div>
-              {(inventory.containers ?? []).map((container: DockerContainer) =>
-                row(
-                  { runtime: 'docker', id: container.id, name: container.name },
-                  'container',
-                  container.status,
-                  container.image,
-                ),
-              )}
+              {standaloneContainers.length ? (
+                <>
+                  <div className="border-b px-3 py-2 text-xs font-semibold text-muted-foreground">
+                    {t('serviceManagerTool.standalone')}
+                  </div>
+                  {standaloneContainers.map((container: DockerContainer) =>
+                    row(
+                      { runtime: 'docker', id: container.id, name: container.name },
+                      'container',
+                      container.status,
+                      container.image,
+                    ),
+                  )}
+                </>
+              ) : null}
             </>
           ) : (
             <RuntimeError name="Docker" error={inventory.docker.error} />
           )}
         </>
       ) : null}
-      {filter === 'all' || filter === 'pm2' ? (
+      {runtimeFiltered(statuses, 'pm2') ? (
         <>
           {inventory.pm2.available ? (
             <>
               <div className="border-b px-3 py-2 text-xs font-semibold text-muted-foreground">
                 PM2
               </div>
-              {(inventory.pm2Processes ?? []).map((process) =>
+              {pm2Processes.map((process) =>
                 row(
                   { runtime: 'pm2', id: process.id, name: process.name },
                   'pm2',
@@ -940,14 +1029,14 @@ function ResourceList({
           )}
         </>
       ) : null}
-      {filter === 'all' || filter === 'systemd' ? (
+      {runtimeFiltered(statuses, 'systemd') ? (
         <>
           {inventory.systemd.available ? (
             <>
               <div className="border-b px-3 py-2 text-xs font-semibold text-muted-foreground">
                 Systemd
               </div>
-              {(inventory.systemUnits ?? []).map((unit: SystemdUnit) =>
+              {systemUnits.map((unit: SystemdUnit) =>
                 row(
                   { runtime: 'systemd', id: unit.id, scope: unit.scope, name: unit.name },
                   'systemd',
