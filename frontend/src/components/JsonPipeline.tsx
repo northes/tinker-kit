@@ -21,6 +21,7 @@ import {
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { Button } from './ui/button';
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from './ui/dialog';
 import {
   Select,
   SelectContent,
@@ -30,7 +31,7 @@ import {
   SelectValue,
 } from './ui/select';
 import { Switch } from './ui/switch';
-import { DotsSixVertical, Table as TableIcon, Trash } from '@phosphor-icons/react';
+import { ArrowsOut, DotsSixVertical, Table as TableIcon, Trash } from '@phosphor-icons/react';
 import type { Extension } from '@codemirror/state';
 import { pathCompletions, valueCompletions } from './JsonPathCompletion';
 import { JsonErrorPanel } from './JsonErrorPanel';
@@ -165,6 +166,27 @@ function PipelineSelect({
     </Select>
   );
 }
+const pathFieldBasicSetup = {
+  lineNumbers: false,
+  foldGutter: false,
+  highlightActiveLine: false,
+  highlightActiveLineGutter: false,
+  autocompletion: false,
+  closeBrackets: false,
+};
+const pathFieldWheelToHorizontal = EditorView.domEventHandlers({
+  wheel: (event, view) => {
+    const { deltaX, deltaY, deltaMode } = event;
+    if (event.ctrlKey || (deltaX === 0 && deltaY === 0)) return false;
+    const scroller = view.scrollDOM;
+    if (scroller.scrollWidth <= scroller.clientWidth) return false;
+    const scale = deltaMode === 1 ? 16 : deltaMode === 2 ? scroller.clientWidth : 1;
+    const delta = Math.abs(deltaX) > Math.abs(deltaY) ? deltaX : deltaY;
+    scroller.scrollLeft += delta * scale;
+    event.preventDefault();
+    return true;
+  },
+});
 function PathField({
   label,
   value,
@@ -179,7 +201,7 @@ function PathField({
 }: {
   label: string;
   value: string;
-  placeholder: string;
+  placeholder?: string;
   onChange: (value: string) => void;
   root: unknown;
   theme: Extension;
@@ -188,13 +210,15 @@ function PathField({
   values?: unknown[];
   onCreate?: (view: EditorView) => void;
 }) {
+  const { t } = useTranslation();
+  const [expanded, setExpanded] = useState(false);
+  const [draft, setDraft] = useState(value);
   const rootRef = useRef(root);
   const valuesRef = useRef(values);
   if (root !== undefined) rootRef.current = root;
   if (values !== undefined) valuesRef.current = values;
-  const extensions = useMemo(
+  const completionExtensions = useMemo(
     () => [
-      EditorView.lineWrapping,
       ...(!completion
         ? valueCompletions(() => valuesRef.current ?? [])
         : pathCompletions(() => rootRef.current, template)),
@@ -202,35 +226,95 @@ function PathField({
     ],
     [completion, template],
   );
+  const smallExtensions = useMemo(
+    () => [pathFieldWheelToHorizontal, ...completionExtensions],
+    [completionExtensions],
+  );
+  const expandedExtensions = useMemo(
+    () => [...completionExtensions, EditorView.lineWrapping],
+    [completionExtensions],
+  );
+  const openExpanded = () => {
+    setDraft(value);
+    setExpanded(true);
+  };
   return (
-    <label className="json-pipeline-field flex min-w-0 items-center gap-2 @max-[520px]/pipeline-rules:items-stretch @max-[520px]/pipeline-rules:flex-col @max-[520px]/pipeline-rules:gap-[5px]">
-      <span className="w-[86px] min-w-[86px] whitespace-nowrap font-mono text-[10px] font-medium leading-none tracking-[.02em] text-muted-foreground @max-[520px]/pipeline-rules:w-auto @max-[520px]/pipeline-rules:min-w-0">
-        {label}
-      </span>
-      <CodeMirror
-        className="json-cm json-pipeline-path-cm min-w-0 flex-1 overflow-visible rounded-lg border border-input bg-card focus-within:border-ring"
-        height="30px"
-        value={value}
-        placeholder={placeholder}
-        onChange={onChange}
-        spellCheck={false}
-        theme={theme}
-        indentWithTab={false}
-        basicSetup={{
-          lineNumbers: false,
-          foldGutter: false,
-          highlightActiveLine: false,
-          highlightActiveLineGutter: false,
-          autocompletion: false,
-          closeBrackets: false,
+    <>
+      <div className="json-pipeline-field flex min-w-0 items-center gap-2 @max-[520px]/pipeline-rules:items-stretch @max-[520px]/pipeline-rules:flex-col @max-[520px]/pipeline-rules:gap-[5px]">
+        <span className="w-[86px] min-w-[86px] whitespace-nowrap font-mono text-[10px] font-medium leading-none tracking-[.02em] text-muted-foreground @max-[520px]/pipeline-rules:w-auto @max-[520px]/pipeline-rules:min-w-0">
+          {label}
+        </span>
+        <div className="relative min-w-0 flex-1">
+          <CodeMirror
+            className="json-cm json-pipeline-path-cm w-full overflow-visible rounded-lg border border-input bg-card focus-within:border-ring"
+            height="30px"
+            value={value}
+            placeholder={placeholder}
+            onChange={onChange}
+            spellCheck={false}
+            theme={theme}
+            indentWithTab={false}
+            basicSetup={pathFieldBasicSetup}
+            extensions={smallExtensions}
+            onCreateEditor={(view) => {
+              view.contentDOM.setAttribute('aria-label', label);
+              onCreate?.(view);
+            }}
+          />
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-xs"
+            className="json-pipeline-expand absolute top-0 right-1 bottom-0 my-auto text-muted-foreground"
+            aria-label={t('jsonTool.pipeline.expandField')}
+            title={t('jsonTool.pipeline.expandField')}
+            onClick={openExpanded}
+          >
+            <ArrowsOut size={12} weight="duotone" />
+          </Button>
+        </div>
+      </div>
+      <Dialog
+        open={expanded}
+        onOpenChange={(next) => {
+          if (!next) setExpanded(false);
         }}
-        extensions={extensions}
-        onCreateEditor={(view) => {
-          view.contentDOM.setAttribute('aria-label', label);
-          onCreate?.(view);
-        }}
-      />
-    </label>
+      >
+        <DialogContent className="flex max-h-[calc(100dvh-2rem)] min-h-0 flex-col sm:max-w-2xl">
+          <DialogHeader className="flex-none">
+            <DialogTitle>{label}</DialogTitle>
+          </DialogHeader>
+          <CodeMirror
+            className="json-cm json-pipeline-expanded-cm w-full"
+            height="100%"
+            value={draft}
+            placeholder={placeholder}
+            onChange={setDraft}
+            spellCheck={false}
+            theme={theme}
+            indentWithTab={false}
+            autoFocus
+            basicSetup={pathFieldBasicSetup}
+            extensions={expandedExtensions}
+            onCreateEditor={(view) => view.contentDOM.setAttribute('aria-label', label)}
+          />
+          <DialogFooter className="flex-none">
+            <Button type="button" variant="outline" onClick={() => setExpanded(false)}>
+              {t('common.cancel')}
+            </Button>
+            <Button
+              type="button"
+              onClick={() => {
+                onChange(draft);
+                setExpanded(false);
+              }}
+            >
+              {t('common.save')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }
 function SelectField({
@@ -427,7 +511,6 @@ function PipelineRuleRow({
             <PathField
               label={t('jsonTool.pipeline.filterValue')}
               value={item.filterValue}
-              placeholder={t('jsonTool.pipeline.filterValuePlaceholder')}
               onChange={(value) => onUpdate(item.id, { filterValue: value })}
               root={root}
               theme={theme}
