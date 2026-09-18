@@ -1,6 +1,6 @@
 ---
 name: layout-guidance
-description: 仅在改工具页布局/高度链、CodeMirror 尺寸与交互、浮层与 footer 对齐、列表勾选与批量操作等 UI 细节或 OverlayScrollbar 时使用。纯颜色或文案修改不要使用本 skill。
+description: 仅在改工具页布局/高度链、CodeMirror 尺寸与交互、浮层与 footer 对齐、列表勾选与批量操作、弹窗表单提交等 UI 细节或 OverlayScrollbar 时使用。纯颜色或文案修改不要使用本 skill。
 user-invocable: false
 ---
 
@@ -66,6 +66,13 @@ user-invocable: false
 - 多个工具重复的同类字段抽为共享组件（如来源或配置选择字段），由各工具共同使用，不要在工具内各写一套 Select + 管理入口。
 - 与下拉框相关的管理入口放进该下拉框（如来源下拉框底部的「管理」项，内部哨兵值触发实际动作），不再额外放独立管理按钮；空列表时也不渲染多余的分隔线。
 
+## 原生表单与弹窗提交
+
+- 弹窗表单优先用原生 `<form onSubmit>` 承载字段，回车提交、Tab 顺序和 `disabled` 语义交给浏览器；不要只给主按钮挂 `onClick`，再给每个输入补 Enter 监听。
+- 主按钮在 `DialogFooter`（字段区之外）时，把字段容器直接改成带唯一 `id` 的 `<form>`，页脚按钮设 `type="submit" form="<id>"` 关联；Base UI `Button` 默认 `type="button"`，非提交按钮保持默认，避免包进表单后误提交。
+- 同一弹窗按模式或类型切换字段时，各分支渲染同一个 `id` 的 form（同一时刻只渲染一个）；对话框打开期间必须始终存在该 form，否则外部 submit 按钮会失效。
+- `onSubmit` 里先 `preventDefault()`，提交动作复用已有的 busy/禁用守卫；禁用态的默认提交按钮会阻止隐式提交，不必为 Enter 写额外分支；Textarea 回车换行是原生行为，不要拦截。
+
 ## 长列表虚拟化
 
 - 长列表用 `@tanstack/react-virtual`：滚动容器加 `ref`，`useVirtualizer` 只渲染 `getVirtualItems()` 的可视行；`<table>` 用上下占位 `<tr><td colSpan={n} style={{ height }} />` 撑出滚动高度，保留 `table-fixed`、粘性表头、列宽和右键菜单。
@@ -94,3 +101,4 @@ user-invocable: false
 - **滚动容器**：按 [overlay-scrollbar.md](./overlay-scrollbar.md) 检查。
 - **浮层**：Portal 挂载位置、实际滚动层，以及 Dialog 内浮层的滚动与定位关系。
 - **CodeMirror/常驻工具页**：隐藏页面不卸载、撤销历史和滚动位置保留、尺寸链，以及编辑器自身滚动责任。
+- **弹窗表单**：字段处于原生 `<form>` 内，页脚提交按钮通过 `form` 关联且为 `type="submit"`，禁用态能阻止回车提交，非提交按钮未被误设为 submit。
