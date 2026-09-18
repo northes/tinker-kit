@@ -3,17 +3,27 @@ import {
   findNext,
   findPrevious,
   getSearchQuery,
+  openSearchPanel,
   replaceAll,
   replaceNext,
   search,
   setSearchQuery,
   SearchQuery,
 } from '@codemirror/search';
-import { EditorView, runScopeHandlers, type Panel, type ViewUpdate } from '@codemirror/view';
+import {
+  EditorView,
+  runScopeHandlers,
+  ViewPlugin,
+  type Panel,
+  type ViewUpdate,
+} from '@codemirror/view';
 import i18n from '../i18n';
 
 // 命中数超过上限就停止统计并显示 “N+”，避免大文档每次输入都全量扫描。
 const MAX_MATCHES = 1000;
+
+// 记录每个编辑器当前的面板实例，供快捷键直接展开替换行。
+const searchPanels = new WeakMap<EditorView, AppSearchPanel>();
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
@@ -50,6 +60,7 @@ class AppSearchPanel implements Panel {
   private searchField: HTMLInputElement;
   private replaceField: HTMLInputElement;
   private replaceRow: HTMLDivElement;
+  private replaceToggle: HTMLButtonElement;
   private countEl: HTMLSpanElement;
   private caseButton: HTMLButtonElement;
   private regexpButton: HTMLButtonElement;
@@ -61,6 +72,7 @@ class AppSearchPanel implements Panel {
 
   constructor(view: EditorView) {
     this.view = view;
+    searchPanels.set(view, this);
     this.query = getSearchQuery(view.state);
     this.origin = view.state.selection.main.to;
     const t = (key: string, options?: Record<string, unknown>) => i18n.t(key, options);
@@ -110,14 +122,14 @@ class AppSearchPanel implements Panel {
 
     const findRow = document.createElement('div');
     findRow.className = 'cm-app-search-row';
-    const replaceToggle = button(
+    this.replaceToggle = button(
       'cm-app-search-caret',
       t('searchPanel.toggleReplace'),
       icon('M6 4 10 8 6 12'),
     );
-    replaceToggle.setAttribute('aria-expanded', 'false');
+    this.replaceToggle.setAttribute('aria-expanded', 'false');
     findRow.append(
-      replaceToggle,
+      this.replaceToggle,
       this.searchField,
       this.countEl,
       prevButton,
@@ -157,10 +169,8 @@ class AppSearchPanel implements Panel {
     this.replaceRow.hidden = true;
     this.replaceRow.append(this.replaceField, replaceButton, replaceAllButton);
 
-    replaceToggle.addEventListener('click', () => {
-      this.replaceOpen = !this.replaceOpen;
-      this.replaceRow.hidden = !this.replaceOpen;
-      replaceToggle.setAttribute('aria-expanded', String(this.replaceOpen));
+    this.replaceToggle.addEventListener('click', () => {
+      this.setReplaceOpen(!this.replaceOpen);
       if (this.replaceOpen) this.replaceField.focus();
     });
 
@@ -300,6 +310,17 @@ class AppSearchPanel implements Panel {
     this.searchField.select();
   }
 
+  // 快捷键打开时直接展开替换行。
+  showReplace() {
+    this.setReplaceOpen(true);
+  }
+
+  private setReplaceOpen(open: boolean) {
+    this.replaceOpen = open;
+    this.replaceRow.hidden = !open;
+    this.replaceToggle.setAttribute('aria-expanded', String(open));
+  }
+
   destroy() {
     this.destroyed = true;
   }
@@ -309,7 +330,63 @@ class AppSearchPanel implements Panel {
   }
 }
 
+// 焦点在编辑器内时取该编辑器；否则取当前可见的第一个编辑器，模态弹窗打开时只在弹窗内查找。
+function visibleEditorDom() {
+  const active = document.activeElement;
+  const focused = active instanceof HTMLElement ? active.closest<HTMLElement>('.cm-editor') : null;
+  if (focused) return focused;
+  const modal = document.querySelector<HTMLElement>(
+    '[role="dialog"][data-open], [role="alertdialog"][data-open]',
+  );
+  for (const dom of (modal ?? document).querySelectorAll<HTMLElement>('.cm-editor')) {
+    const style = getComputedStyle(dom);
+    if (style.display === 'none' || style.visibility !== 'visible') continue;
+    if (dom.getClientRects().length > 0) return dom;
+  }
+  return null;
+}
+
+// 打开搜索替换面板并展开替换行。
+function openEditorSearchWithReplace(view: EditorView) {
+  openSearchPanel(view);
+  searchPanels.get(view)?.showReplace();
+}
+
+// Cmd/Ctrl+R 在当前界面存在可见编辑器时打开搜索替换面板，替代 WebView 刷新。
+function openEditorSearchOnShortcut(event: KeyboardEvent) {
+  if (event.isComposing || event.defaultPrevented) return;
+  if (event.key.toLowerCase() !== 'r' || event.shiftKey || event.altKey) return;
+  if (!event.metaKey && !event.ctrlKey) return;
+  const dom = visibleEditorDom();
+  if (!dom) return;
+  const view = EditorView.findFromDOM(dom);
+  if (!view) return;
+  event.preventDefault();
+  openEditorSearchWithReplace(view);
+}
+
+let shortcutEditorCount = 0;
+
+// 编辑器全部卸载后移除监听，避免在没有编辑器的页面抢占 Cmd/Ctrl+R。
+const searchShortcutPlugin = ViewPlugin.fromClass(
+  class {
+    constructor() {
+      shortcutEditorCount += 1;
+      if (shortcutEditorCount === 1)
+        document.addEventListener('keydown', openEditorSearchOnShortcut, true);
+    }
+    destroy() {
+      shortcutEditorCount -= 1;
+      if (shortcutEditorCount === 0)
+        document.removeEventListener('keydown', openEditorSearchOnShortcut, true);
+    }
+  },
+);
+
 // 附加到 EditorView 组合中；各工具通过 quietEditorTheme 共享同一个自定义面板。
-export const appSearchPanel = search({
-  createPanel: (view: EditorView) => new AppSearchPanel(view),
-});
+export const appSearchPanel = [
+  search({
+    createPanel: (view: EditorView) => new AppSearchPanel(view),
+  }),
+  searchShortcutPlugin,
+];

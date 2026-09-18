@@ -290,6 +290,25 @@ func main() {
 		tray.OpenMenu()
 	})
 
+	// 默认应用菜单把 Cmd+R 绑定为 Reload，会在 WebView 之前拦截按键；
+	// 重建 View 菜单去掉 Reload，让快捷键交给前端（编辑器搜索），Cmd+Shift+R 仍可强制重载。
+	appMenu := app.Menu.New()
+	appMenu.AddRole(application.AppMenu)
+	appMenu.AddRole(application.FileMenu)
+	appMenu.AddRole(application.EditMenu)
+	viewMenu := appMenu.AddSubmenu("View")
+	viewMenu.AddRole(application.ForceReload)
+	addDevToolsMenuItem(viewMenu)
+	viewMenu.AddSeparator()
+	viewMenu.AddRole(application.ResetZoom)
+	viewMenu.AddRole(application.ZoomIn)
+	viewMenu.AddRole(application.ZoomOut)
+	viewMenu.AddSeparator()
+	viewMenu.AddRole(application.ToggleFullscreen)
+	appMenu.AddRole(application.WindowMenu)
+	appMenu.AddRole(application.HelpMenu)
+	app.Menu.SetApplicationMenu(appMenu)
+
 	window.RegisterHook(events.Common.WindowClosing, func(event *application.WindowEvent) {
 		x, y := window.Position()
 		w, h := window.Size()
