@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useVirtualizer } from '@tanstack/react-virtual';
 import { CancelError, Events } from '@wailsio/runtime';
 import {
   ArrowsClockwise,
@@ -1415,6 +1416,20 @@ export default function ImageManagerTool({
     });
     return next.map((item) => item.row);
   }, [i18n.language, indexedRows, search, sortDirection, sortKey]);
+  // 只渲染可视区域的行：列表可达上千条，全量 DOM 会让工具切换与滚动明显卡顿。
+  const imageListRef = useRef<HTMLDivElement | null>(null);
+  const imageRowVirtualizer = useVirtualizer({
+    count: filteredRows.length,
+    getScrollElement: () => imageListRef.current,
+    estimateSize: () => 37,
+    overscan: 12,
+  });
+  const imageVirtualRows = imageRowVirtualizer.getVirtualItems();
+  const imagePaddingTop = imageVirtualRows.length > 0 ? imageVirtualRows[0].start : 0;
+  const imagePaddingBottom =
+    imageVirtualRows.length > 0
+      ? imageRowVirtualizer.getTotalSize() - imageVirtualRows[imageVirtualRows.length - 1].end
+      : 0;
   const selectedCount = sourceIsChanging ? 0 : selected.size;
   const selectedRows = sourceIsChanging ? [] : filteredRows.filter((row) => selected.has(row.key));
   const selectedNamedRows = selectedRows.filter((row) => isNamedImageRow(row));
@@ -2407,7 +2422,10 @@ export default function ImageManagerTool({
               </div>
             </div>
           ) : (
-            <div className="min-h-0 flex-1 overflow-auto overscroll-contain [padding-inline-end:var(--overlay-scrollbar-hit-size)]">
+            <div
+              ref={imageListRef}
+              className="min-h-0 flex-1 overflow-auto overscroll-contain [padding-inline-end:var(--overlay-scrollbar-hit-size)]"
+            >
               <Table className="min-w-[640px]" containerClassName="overflow-visible">
                 <TableHeader className="sticky top-0 z-10 bg-background">
                   <TableRow>
@@ -2461,7 +2479,13 @@ export default function ImageManagerTool({
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {filteredRows.map((row) => {
+                  {imagePaddingTop > 0 ? (
+                    <tr>
+                      <td colSpan={5} style={{ height: imagePaddingTop, padding: 0 }} />
+                    </tr>
+                  ) : null}
+                  {imageVirtualRows.map((virtualRow) => {
+                    const row = filteredRows[virtualRow.index];
                     const operationRows = operationRowsFor(row);
                     const operationAllowed =
                       sourceSupportsDockerMutations &&
@@ -2473,6 +2497,8 @@ export default function ImageManagerTool({
                         <ContextMenuTrigger
                           render={
                             <TableRow
+                              ref={imageRowVirtualizer.measureElement}
+                              data-index={virtualRow.index}
                               data-state={selected.has(row.key) ? 'selected' : undefined}
                               className="select-none border-border/60"
                             />
@@ -2616,6 +2642,11 @@ export default function ImageManagerTool({
                       </ContextMenu>
                     );
                   })}
+                  {imagePaddingBottom > 0 ? (
+                    <tr>
+                      <td colSpan={5} style={{ height: imagePaddingBottom, padding: 0 }} />
+                    </tr>
+                  ) : null}
                 </TableBody>
               </Table>
             </div>

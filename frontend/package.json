@@ -37,6 +37,7 @@
     "@phosphor-icons/react": "^2.1.10",
     "@replit/codemirror-indentation-markers": "^6.5.3",
     "@tanstack/react-table": "^8.21.3",
+    "@tanstack/react-virtual": "^3.14.13",
     "@uiw/react-codemirror": "^4.25.11",
     "@wailsio/runtime": "latest",
     "class-variance-authority": "^0.7.1",

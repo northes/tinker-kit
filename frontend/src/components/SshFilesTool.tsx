@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Dialogs, Events } from '@wailsio/runtime';
 import { useTranslation } from 'react-i18next';
+import { useVirtualizer } from '@tanstack/react-virtual';
 import {
   Archive,
   ArrowClockwise,
@@ -1754,6 +1755,20 @@ export default function SshFilesTool({ active }: Props) {
       return (leftValue - rightValue) * direction;
     });
   }, [entries, i18n.language, sizeValues, sortDirection, sortKey]);
+  // 只渲染可视区域的行：远端目录可能很大，全量渲染会拖慢滚动与切换。
+  const fileListRef = useRef<HTMLDivElement | null>(null);
+  const fileRowVirtualizer = useVirtualizer({
+    count: sortedEntries.length,
+    getScrollElement: () => fileListRef.current,
+    estimateSize: () => 33,
+    overscan: 12,
+  });
+  const fileVirtualRows = fileRowVirtualizer.getVirtualItems();
+  const filePaddingTop = fileVirtualRows.length > 0 ? fileVirtualRows[0].start : 0;
+  const filePaddingBottom =
+    fileVirtualRows.length > 0
+      ? fileRowVirtualizer.getTotalSize() - fileVirtualRows[fileVirtualRows.length - 1].end
+      : 0;
   const calculatingSizePaths = useMemo(
     () =>
       new Set(
@@ -2189,6 +2204,7 @@ export default function SshFilesTool({ active }: Props) {
           <ContextMenuTrigger
             render={
               <div
+                ref={fileListRef}
                 id="ssh-files-drop-zone"
                 data-file-drop-target
                 data-over={fileDrag.over ? 'true' : undefined}
@@ -2394,7 +2410,13 @@ export default function SshFilesTool({ active }: Props) {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {sortedEntries.map((entry) => {
+                  {filePaddingTop > 0 ? (
+                    <tr>
+                      <td colSpan={5} style={{ height: filePaddingTop, padding: 0 }} />
+                    </tr>
+                  ) : null}
+                  {fileVirtualRows.map((virtualRow) => {
+                    const entry = sortedEntries[virtualRow.index];
                     const operationPaths = operationPathsFor(entry.path);
                     const archiveSelection = operationPaths.every(isArchivePath);
                     const parentPath = searchActive ? remoteParent(entry.path) : '';
@@ -2409,6 +2431,8 @@ export default function SshFilesTool({ active }: Props) {
                         <ContextMenuTrigger
                           render={
                             <TableRow
+                              ref={fileRowVirtualizer.measureElement}
+                              data-index={virtualRow.index}
                               data-state={selected.includes(entry.path) ? 'selected' : undefined}
                               className="group select-none border-border/60"
                             />
@@ -2582,6 +2606,11 @@ export default function SshFilesTool({ active }: Props) {
                       </ContextMenu>
                     );
                   })}
+                  {filePaddingBottom > 0 ? (
+                    <tr>
+                      <td colSpan={5} style={{ height: filePaddingBottom, padding: 0 }} />
+                    </tr>
+                  ) : null}
                 </TableBody>
               </Table>
             )}
