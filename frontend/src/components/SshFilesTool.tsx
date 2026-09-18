@@ -3019,7 +3019,9 @@ export default function SshFilesTool({ active }: Props) {
                     ? t('sshFilesTool.discardEditTitle')
                     : t('sshFilesTool.discardDraftTitle')}
             </AlertDialogTitle>
-            <AlertDialogDescription className="text-xs leading-5">
+            <AlertDialogDescription
+              className={manageConfirm?.type === 'removeSource' ? undefined : 'text-xs leading-5'}
+            >
               {manageConfirm?.type === 'removeSource'
                 ? t('sshFilesTool.removeSourceConfirm', { name: manageConfirm.source.name })
                 : manageConfirm?.type === 'discardManage' ||
