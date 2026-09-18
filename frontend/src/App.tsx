@@ -2136,7 +2136,7 @@ function AppShell() {
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>{t('matchDialog.title')}</AlertDialogTitle>
-            <AlertDialogDescription render={<div />} className="text-left">
+            <AlertDialogDescription render={<div />} className="w-full text-left">
               <p className="m-0">
                 {t('matchDialog.bodyPrefix')}
                 <strong>{matchDialog ? t(`tools.${matchDialog.tool}.name`) : ''}</strong>
