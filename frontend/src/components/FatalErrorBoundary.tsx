@@ -90,7 +90,11 @@ function CrashScreen({ error, onReload }: { error: Error; onReload: () => void }
   };
 
   return (
-    <main className="flex h-dvh items-center justify-center bg-background px-6 text-foreground">
+    <main className="relative flex h-dvh items-center justify-center bg-background px-6 text-foreground">
+      <header
+        className="absolute inset-x-0 top-0 h-(--app-titlebar-height) [--wails-draggable:drag]"
+        data-wails-drag
+      />
       <section className="flex w-full max-w-[420px] flex-col items-center text-center">
         <Bug size={34} weight="duotone" className="mb-4 text-destructive" />
         <h1 className="text-base font-semibold">{t('crash.title')}</h1>
