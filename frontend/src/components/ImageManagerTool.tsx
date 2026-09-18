@@ -91,14 +91,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from './ui/dialog';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuGroup,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from './ui/dropdown-menu';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
 import {
@@ -1441,7 +1433,6 @@ export default function ImageManagerTool({
       : 0;
   const selectedCount = sourceIsChanging ? 0 : selected.size;
   const selectedRows = sourceIsChanging ? [] : filteredRows.filter((row) => selected.has(row.key));
-  const selectedNamedRows = selectedRows.filter((row) => isNamedImageRow(row));
   const allSelected = filteredRows.length > 0 && filteredRows.every((row) => selected.has(row.key));
   const someSelected = filteredRows.some((row) => selected.has(row.key)) && !allSelected;
   // 总大小按镜像去重（同一镜像的多个 tag 共享同一份磁盘占用），行数则按 tag 计。
@@ -1473,10 +1464,6 @@ export default function ImageManagerTool({
   const interactionBlocked = busy !== null;
   const sourceSupportsDockerMutations = source.kind !== 'registry';
   const sourceCanDelete = (source as ManagedImageSource).capabilities?.canDelete ?? true;
-  const selectedSupportsDockerMutations =
-    sourceSupportsDockerMutations &&
-    selectedRows.length > 0 &&
-    selectedNamedRows.length === selectedRows.length;
   const registryConfirmDigests =
     confirm?.type === 'delete' && confirm.sourceKind === 'registry'
       ? [
@@ -2597,18 +2584,22 @@ export default function ImageManagerTool({
                               onClick={() => copyImageNames(operationRows)}
                             >
                               <Copy data-icon="inline-start" weight="duotone" />
-                              {copiedName === copyableImageName(source, rowLabel)
-                                ? t('imageManagerTool.copied')
-                                : t('imageManagerTool.copyName')}
+                              {operationRows.length > 1
+                                ? t('imageManagerTool.batchCopyName')
+                                : copiedName === copyableImageName(source, rowLabel)
+                                  ? t('imageManagerTool.copied')
+                                  : t('imageManagerTool.copyName')}
                             </ContextMenuItem>
                             <ContextMenuItem
                               disabled={interactionBlocked}
                               onClick={() => copyImageIds(operationRows)}
                             >
                               <IdentificationCard data-icon="inline-start" weight="duotone" />
-                              {copiedId === row.image.id
-                                ? t('imageManagerTool.idCopied')
-                                : t('imageManagerTool.copyId')}
+                              {operationRows.length > 1
+                                ? t('imageManagerTool.batchCopyId')
+                                : copiedId === row.image.id
+                                  ? t('imageManagerTool.idCopied')
+                                  : t('imageManagerTool.copyId')}
                             </ContextMenuItem>
                           </ContextMenuGroup>
                           <ContextMenuSeparator />
@@ -2633,14 +2624,18 @@ export default function ImageManagerTool({
                               onClick={() => void runPull(operationRows)}
                             >
                               <CloudArrowDown data-icon="inline-start" weight="duotone" />
-                              {t('imageManagerTool.pullUpdate')}
+                              {operationRows.length > 1
+                                ? t('imageManagerTool.batchPullUpdate')
+                                : t('imageManagerTool.pullUpdate')}
                             </ContextMenuItem>
                             <ContextMenuItem
                               disabled={actionBlocked || !operationAllowed}
                               onClick={() => openPushDialog(operationRows)}
                             >
                               <UploadSimple data-icon="inline-start" weight="duotone" />
-                              {t('imageManagerTool.pushRemote')}
+                              {operationRows.length > 1
+                                ? t('imageManagerTool.batchPushRemote')
+                                : t('imageManagerTool.pushRemote')}
                             </ContextMenuItem>
                             <ContextMenuItem
                               disabled={
@@ -2656,7 +2651,9 @@ export default function ImageManagerTool({
                               onClick={() => openCopyTagDialog(operationRows)}
                             >
                               <Copy data-icon="inline-start" weight="duotone" />
-                              {t('imageManagerTool.copyTagAction')}
+                              {operationRows.length > 1
+                                ? t('imageManagerTool.batchCopyTagAction')
+                                : t('imageManagerTool.copyTagAction')}
                             </ContextMenuItem>
                           </ContextMenuGroup>
                           <ContextMenuSeparator />
@@ -2752,97 +2749,6 @@ export default function ImageManagerTool({
                   )}
                 </button>
               ) : null}
-            </div>
-            <div className="flex min-h-[30px] flex-none flex-wrap items-center justify-end gap-2">
-              <DropdownMenu>
-                <DropdownMenuTrigger
-                  render={
-                    <Button
-                      variant="outline"
-                      className={`h-[30px] flex-none px-[11px] text-[11px]${selectedCount > 0 ? '' : ' invisible pointer-events-none'}`}
-                      disabled={actionBlocked || selectedCount === 0}
-                      aria-hidden={selectedCount === 0}
-                      tabIndex={selectedCount > 0 ? 0 : -1}
-                    />
-                  }
-                >
-                  <ListDashes data-icon="inline-start" size={14} />
-                  {t('imageManagerTool.batchActions')}
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="min-w-48">
-                  <DropdownMenuGroup>
-                    <DropdownMenuItem
-                      disabled={actionBlocked || batchExportStarting}
-                      onClick={() => void runBatchExport()}
-                    >
-                      {batchExportStarting ? (
-                        <Spinner data-icon="inline-start" />
-                      ) : (
-                        <DownloadSimple data-icon="inline-start" weight="duotone" />
-                      )}
-                      {t('imageManagerTool.batchExport')}
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      disabled={actionBlocked || !selectedSupportsDockerMutations || pullStarting}
-                      onClick={() => void runPull(selectedRows)}
-                    >
-                      {pullStarting ? (
-                        <Spinner data-icon="inline-start" />
-                      ) : (
-                        <CloudArrowDown data-icon="inline-start" weight="duotone" />
-                      )}
-                      {t('imageManagerTool.pullUpdate')}
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      disabled={actionBlocked || !selectedSupportsDockerMutations}
-                      onClick={() => openPushDialog(selectedRows)}
-                    >
-                      <UploadSimple data-icon="inline-start" weight="duotone" />
-                      {t('imageManagerTool.push')}
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      disabled={actionBlocked || !selectedSupportsDockerMutations}
-                      onClick={() => openCopyTagDialog(selectedRows)}
-                    >
-                      <Copy data-icon="inline-start" weight="duotone" />
-                      {t('imageManagerTool.copyTagAction')}
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      disabled={interactionBlocked}
-                      onClick={() => copyImageNames(selectedRows)}
-                    >
-                      <Copy data-icon="inline-start" weight="duotone" />
-                      {t('imageManagerTool.copyName')}
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      disabled={interactionBlocked}
-                      onClick={() => copyImageIds(selectedRows)}
-                    >
-                      <IdentificationCard data-icon="inline-start" weight="duotone" />
-                      {t('imageManagerTool.copyId')}
-                    </DropdownMenuItem>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem
-                      variant="destructive"
-                      disabled={actionBlocked || selectedCount === 0 || !sourceCanDelete}
-                      onClick={() =>
-                        setConfirm({
-                          type: 'delete',
-                          ids: selectedRows.map((row) => row.reference || row.image.id),
-                          targets: deleteTargets(selectedRows),
-                          name: t('imageManagerTool.selectedCount', { count: selectedCount }),
-                          sourceId: source.id,
-                          sourceKind: source.kind,
-                          sourceConfigKey,
-                        })
-                      }
-                    >
-                      <Trash data-icon="inline-start" weight="duotone" />
-                      {t('imageManagerTool.batchDelete')}
-                    </DropdownMenuItem>
-                  </DropdownMenuGroup>
-                </DropdownMenuContent>
-              </DropdownMenu>
             </div>
           </div>
         </ToolLayoutFooter>
