@@ -13,6 +13,7 @@ import {
   DownloadSimple,
   GearSix,
   HardDrives,
+  IdentificationCard,
   ListDashes,
   MagnifyingGlass,
   Package,
@@ -434,6 +435,12 @@ function copyableImageName(source: ImageSource, name: string) {
   return registryPrefix && !name.startsWith(`${registryPrefix}/`)
     ? `${registryPrefix}/${name}`
     : name;
+}
+
+// 多选复制时按「1. 值\n2. 值\n...\n共 N 个」输出；单选直接返回原始值。
+function clipboardList(values: string[], countLabel: string) {
+  if (values.length <= 1) return values[0] ?? '';
+  return [...values.map((value, index) => `${index + 1}. ${value}`), countLabel].join('\n');
 }
 
 function registryImageIdentity(image: DockerImage) {
@@ -1017,6 +1024,7 @@ export default function ImageManagerTool({
   const [sourceDraftError, setSourceDraftError] = useState('');
   const [testingSource, setTestingSource] = useState(false);
   const [copiedName, setCopiedName] = useState<string | null>(null);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
   const [copiedDigest, setCopiedDigest] = useState<string | null>(null);
   const [copiedTag, setCopiedTag] = useState<string | null>(null);
   const [confirm, setConfirm] = useState<ConfirmState>(null);
@@ -1797,6 +1805,31 @@ export default function ImageManagerTool({
     }
   };
 
+  const copyImageId = async (id: string) => {
+    try {
+      await navigator.clipboard.writeText(id);
+      setCopiedId(id);
+      window.setTimeout(() => setCopiedId((current) => (current === id ? null : current)), 1400);
+      toast.add({ title: t('imageManagerTool.idCopied') });
+    } catch {
+      toast.add({ title: t('imageManagerTool.copyFailed'), type: 'error' });
+    }
+  };
+
+  const copyImageNames = (rows: ImageRow[]) => {
+    const values = rows.map((item) => copyableImageName(source, imageRowLabel(item, unnamed)));
+    void copyImageName(
+      clipboardList(values, t('imageManagerTool.copyCount', { total: values.length })),
+    );
+  };
+
+  const copyImageIds = (rows: ImageRow[]) => {
+    const values = rows.map((item) => item.image.id);
+    void copyImageId(
+      clipboardList(values, t('imageManagerTool.copyCount', { total: values.length })),
+    );
+  };
+
   const copyDigest = async (digest: string) => {
     try {
       await navigator.clipboard.writeText(digest);
@@ -2554,14 +2587,21 @@ export default function ImageManagerTool({
                           <ContextMenuGroup>
                             <ContextMenuItem
                               disabled={interactionBlocked}
-                              onClick={() =>
-                                void copyImageName(copyableImageName(source, rowLabel))
-                              }
+                              onClick={() => copyImageNames(operationRows)}
                             >
                               <Copy data-icon="inline-start" weight="duotone" />
                               {copiedName === copyableImageName(source, rowLabel)
                                 ? t('imageManagerTool.copied')
                                 : t('imageManagerTool.copyName')}
+                            </ContextMenuItem>
+                            <ContextMenuItem
+                              disabled={interactionBlocked}
+                              onClick={() => copyImageIds(operationRows)}
+                            >
+                              <IdentificationCard data-icon="inline-start" weight="duotone" />
+                              {copiedId === row.image.id
+                                ? t('imageManagerTool.idCopied')
+                                : t('imageManagerTool.copyId')}
                             </ContextMenuItem>
                           </ContextMenuGroup>
                           <ContextMenuSeparator />
@@ -2759,6 +2799,20 @@ export default function ImageManagerTool({
                     >
                       <Copy data-icon="inline-start" weight="duotone" />
                       {t('imageManagerTool.copyTagAction')}
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      disabled={interactionBlocked}
+                      onClick={() => copyImageNames(selectedRows)}
+                    >
+                      <Copy data-icon="inline-start" weight="duotone" />
+                      {t('imageManagerTool.copyName')}
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      disabled={interactionBlocked}
+                      onClick={() => copyImageIds(selectedRows)}
+                    >
+                      <IdentificationCard data-icon="inline-start" weight="duotone" />
+                      {t('imageManagerTool.copyId')}
                     </DropdownMenuItem>
                     <DropdownMenuSeparator />
                     <DropdownMenuItem
