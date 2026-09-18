@@ -1,6 +1,6 @@
 ---
 name: layout-guidance
-description: 仅在改工具页布局/高度链、CodeMirror 尺寸、浮层与 footer 对齐等 UI 细节或 OverlayScrollbar 时使用。纯颜色或文案修改不要使用本 skill。
+description: 仅在改工具页布局/高度链、CodeMirror 尺寸与交互、浮层与 footer 对齐、列表勾选与批量操作等 UI 细节或 OverlayScrollbar 时使用。纯颜色或文案修改不要使用本 skill。
 user-invocable: false
 ---
 
@@ -24,7 +24,11 @@ user-invocable: false
 ## 编辑器与状态
 
 - CodeMirror 实例不因切页、Schema 开关或工具状态切换而重建；实例保留撤销历史、滚动位置和尺寸状态。
-- 文本工具主输入使用 CodeMirror，不额外实现 textarea 历史或撤销拦截。
+- 全局快捷键执行编辑器命令时（如打开搜索替换），在窗口捕获阶段监听 `keydown`，并按可见性选择实例：焦点在编辑器内优先该实例，否则取当前可见的第一个；用 `visibility` 和布局排除常驻挂载的隐藏页，不要假设第一个 `.cm-editor` 可用。
+- 模态弹窗打开时，把查找范围限制在 `[role="dialog"][data-open]`、`[role="alertdialog"][data-open]` 内，避免快捷键落到弹窗背后的编辑器。
+- 监听用 `ViewPlugin` 跟随实例生命周期注册/卸载（引用计数），没有可见编辑器时不抢占按键；DOM 到实例的查找用 `EditorView.findFromDOM`，不要自建映射表。
+- 打开面板后需要设置面板内部状态（如展开替换行）时，在面板构造函数用模块级 `WeakMap<EditorView, Panel>` 记录实例并调用其方法；不要打开后再查询面板 DOM 或模拟点击。
+- 编辑器工具的主输入统一使用共享 CodeMirror 配置，不额外实现 textarea 历史或撤销拦截。
 - 纯 input/textarea 的程序化变更使用共享 `useHistory`；键盘撤销需要处理 `Mod/Ctrl+Z`、重做快捷键和 IME composing 状态。
 - pending action 必须先校验所属 `tool`，避免常驻挂载后多个工具抢消费同一操作。
 - 切页滚动复位使用 `useLayoutEffect`；workspace 滚动容器增加 `overflow-x: hidden`。
@@ -38,6 +42,8 @@ user-invocable: false
 - `scrollbar-gutter` 只作用于真实滚动层；外壳和内部滚动层需要时都显式使用 `scrollbar-gutter: auto !important`。
 - Popover/Select 会 Portal 到 `body`，局部父级选择器不能可靠定位；通过组件 `className` 或实际 `data-state`/`data-side` 定位。
 - 浮层背景统一使用 `bg-popover`；搜索框需要覆盖组件默认暗色输入背景时显式使用 `dark:bg-transparent`。
+- `AlertDialogHeader` 是 `grid place-items-center`，子项会收缩为内容宽度；描述里的块级预览要占满整行时给描述容器加 `w-full`，块级内容放进 `render={<div />}` 的描述里，避免块级元素嵌套在 `<p>` 中。
+- 剪贴板或长文本预览用固定高度 + 自动换行 + 垂直滚动（如 `h-24 whitespace-pre-wrap break-all overflow-y-auto`），不要按字符截断成不可滚动，也不要只靠 `max-h` 裁切。
 - 圆角统一使用 shadcn 的 `--radius` 和既有组件圆角，不新增全局圆角覆盖层。
 
 ## footer band 与共享分割线
@@ -57,7 +63,7 @@ user-invocable: false
 - 表格/列表右键不应改变选中项；右键菜单操作在目标行未被选中时回退到该行，已选中时作用于整个选择集，不要靠右键来建立选中。
 - 批量复制多项内容用「1. 值 / 2. 值 / … / 共 N 个」的编号格式（每项一行、末行汇总数量）；单选取原始值。
 - 搜索输入默认回车才触发（本地 `draft` + `onKeyDown` Enter），不要实时过滤，也不要引入防抖或 `useDeferredValue`。
-- 多个工具重复的同类字段抽为共享组件（如 SSH 配置字段 `SSHProfileSelect`），由各工具共同使用，不要在工具内各写一套 Select + 管理入口。
+- 多个工具重复的同类字段抽为共享组件（如来源或配置选择字段），由各工具共同使用，不要在工具内各写一套 Select + 管理入口。
 - 与下拉框相关的管理入口放进该下拉框（如来源下拉框底部的「管理」项，内部哨兵值触发实际动作），不再额外放独立管理按钮；空列表时也不渲染多余的分隔线。
 
 ## 长列表虚拟化
@@ -66,7 +72,15 @@ user-invocable: false
 - 占位行用普通 `<tr>/<td>`，不要复用 `TableRow`/`TableCell`，否则会带上 hover 和边框样式。
 - 行高不固定时（例如搜索态文件名下多一行父路径）用 `measureElement` 测量：把 `ref={virtualizer.measureElement}` 和 `data-index` 挂到行元素上，否则按 `estimateSize` 布局会产生错位。
 - Base UI 组件通过 `render` 接收元素时会与该元素自身的 `ref` 合并，测量 ref 可直接写在 `render={<TableRow ref={...} data-index={...} />}` 上，不必改组件。
-- 任务进度分母会随发现新项回退（如 docker pull 的层数），或命令在管道模式下不提供细粒度进度时，用不确定进度（脉动）而不是会跳动的百分比，成功后再置 100%；不要用会先冲到 100% 再掉回来的 `completed/total`。
+- 任务进度分母会随发现新项回退，或命令不提供细粒度进度时，用不确定进度（脉动）而不是会跳动的百分比，成功后再置 100%；不要用会先冲到 100% 再掉回来的 `completed/total`。
+
+## 列表勾选与批量操作
+
+- 勾选框列支持按住滑动多选时：在勾选框列按下即切换起始行，指针滑过的行按各自当前状态各切换一次；用本次拖选的 `handled` 集合去重，回滑不重复切换，不要用统一目标状态覆盖所有经过的行。
+- 切换由前端接管：在窗口捕获阶段吞掉按下后浏览器补发的 `click`，用标志位 + 常驻捕获监听，并在下一次 `pointerdown`/`keydown` 重置；不要用 `setTimeout` 摘监听或引入激活阈值，否则切换会被反向改回，表现为只能取消、不能选中。
+- 拖选范围限定在勾选框列：用 `document.elementFromPoint` 加首列 `getBoundingClientRect` 判断指针是否仍在列内，行 key 从行元素的 `data-row-key` 读取，兼容虚拟化列表；仅响应鼠标主键，避免与触摸滚动冲突，窗口外丢失 `pointerup` 时由下一次 `pointerdown` 清理状态。
+- 勾选框列保持默认箭头光标（`cursor-default`），不要出现手型或文本光标。
+- 多选后右键菜单作用于整个选择集时，操作项使用批量文案；批量入口放在该右键菜单，不要再在 footer 增加“批量操作”下拉。
 
 ## 自绘滚动条
 
