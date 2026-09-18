@@ -41,6 +41,12 @@ Go 层是桌面壳层和服务边界。修改这些边界前先确认现有数�
 - 修改 `build/config.yml` 的 `info` 或 `fileAssociations` 后运行 `wails3 task common:update:build-assets`，并检查生成的资源变化。
 - 当前 `build/config.yml` 的资源元数据仍含模板占位信息；修改这些字段时以配置文件为准，并接受更新任务会重新生成相关资源。
 
+## 后台任务与远程命令
+
+- 后台任务（`imageexport.go` 的任务系统）异步执行：任务开始时刷新只能拿到旧结果，完成后由服务端 `requestSourceRefresh` 触发来源重扫；前端只负责进度和终态提示，不要在启动任务时刷新列表。
+- 在 SSH 来源执行需要 stdin 的命令（如 `docker image load`）必须设置 `session.Stdin`；`runSSHCommandToWriters` 已支持 stdin/stdout/stderr 三路，导出等只读 stdout 的命令复用同一实现。
+- 管道模式下 docker 只输出状态行，不做字节级进度；进度展示遵循 `layout-guidance` 的不确定进度规则。
+
 ## 静态检查
 
 - 配置默认值、规范化、迁移、持久化和前端绑定形成一条完整数据流。

@@ -55,9 +55,18 @@ user-invocable: false
 - 浮层在暗色下“没有阴影”通常是主题 token 问题：`--shadow-*` 明暗同值（10% 黑），在深色背景上不可见；要改的是暗色 token，不要改组件或加局部阴影覆盖。
 - 图标统一使用 phosphor 的 `weight="duotone"`（按钮、下拉项等装饰性图标），新增或调整控件时不要遗漏个别图标。
 - 表格/列表右键不应改变选中项；右键菜单操作在目标行未被选中时回退到该行，已选中时作用于整个选择集，不要靠右键来建立选中。
+- 批量复制多项内容用「1. 值 / 2. 值 / … / 共 N 个」的编号格式（每项一行、末行汇总数量）；单选取原始值。
 - 搜索输入默认回车才触发（本地 `draft` + `onKeyDown` Enter），不要实时过滤，也不要引入防抖或 `useDeferredValue`。
 - 多个工具重复的同类字段抽为共享组件（如 SSH 配置字段 `SSHProfileSelect`），由各工具共同使用，不要在工具内各写一套 Select + 管理入口。
 - 与下拉框相关的管理入口放进该下拉框（如来源下拉框底部的「管理」项，内部哨兵值触发实际动作），不再额外放独立管理按钮；空列表时也不渲染多余的分隔线。
+
+## 长列表虚拟化
+
+- 长列表用 `@tanstack/react-virtual`：滚动容器加 `ref`，`useVirtualizer` 只渲染 `getVirtualItems()` 的可视行；`<table>` 用上下占位 `<tr><td colSpan={n} style={{ height }} />` 撑出滚动高度，保留 `table-fixed`、粘性表头、列宽和右键菜单。
+- 占位行用普通 `<tr>/<td>`，不要复用 `TableRow`/`TableCell`，否则会带上 hover 和边框样式。
+- 行高不固定时（例如搜索态文件名下多一行父路径）用 `measureElement` 测量：把 `ref={virtualizer.measureElement}` 和 `data-index` 挂到行元素上，否则按 `estimateSize` 布局会产生错位。
+- Base UI 组件通过 `render` 接收元素时会与该元素自身的 `ref` 合并，测量 ref 可直接写在 `render={<TableRow ref={...} data-index={...} />}` 上，不必改组件。
+- 任务进度分母会随发现新项回退（如 docker pull 的层数），或命令在管道模式下不提供细粒度进度时，用不确定进度（脉动）而不是会跳动的百分比，成功后再置 100%；不要用会先冲到 100% 再掉回来的 `completed/total`。
 
 ## 自绘滚动条
 
