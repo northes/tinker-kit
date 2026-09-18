@@ -1,4 +1,11 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import {
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type MutableRefObject,
+} from 'react';
 import { useTranslation } from 'react-i18next';
 import CodeMirror from '@uiw/react-codemirror';
 import { json5 } from 'codemirror-json5';
@@ -33,7 +40,11 @@ import {
 import { Switch } from './ui/switch';
 import { ArrowsOut, DotsSixVertical, Table as TableIcon, Trash } from '@phosphor-icons/react';
 import type { Extension } from '@codemirror/state';
-import { pathCompletions, valueCompletions } from './JsonPathCompletion';
+import { backendPathCompletions, backendValueCompletions } from './JsonPathCompletion';
+import type { PipelineCompletionContext, PipelineEvaluation } from './useBackendPipelineEvaluation';
+import { ReadPipelineTablePage } from '../../bindings/changeme/jsonpipelineservice';
+import type { PipelineTablePage } from '../../bindings/changeme/models';
+import { Spinner } from './ui/spinner';
 import { JsonErrorPanel } from './JsonErrorPanel';
 import { JsonTablePreview } from './JsonTablePreview';
 import { isObject } from './JsonPipelineEngine';
@@ -42,9 +53,7 @@ import { toast } from './ui/toast';
 import '../styles/tools/editor.css';
 import '../styles/tools/json.css';
 import type {
-  PipelineContexts,
   PipelineDirection,
-  PipelineError,
   PipelineItem,
   PipelineItemType,
   PipelineSortMode,
@@ -192,40 +201,36 @@ function PathField({
   value,
   placeholder,
   onChange,
-  root,
   theme,
+  itemId,
+  field,
+  completionRef,
   template = false,
-  completion = true,
-  values,
   onCreate,
 }: {
   label: string;
   value: string;
   placeholder?: string;
   onChange: (value: string) => void;
-  root: unknown;
   theme: Extension;
+  itemId: string;
+  field: string;
+  completionRef: MutableRefObject<PipelineCompletionContext>;
   template?: boolean;
-  completion?: boolean;
-  values?: unknown[];
   onCreate?: (view: EditorView) => void;
 }) {
   const { t } = useTranslation();
   const [expanded, setExpanded] = useState(false);
   const [draft, setDraft] = useState(value);
-  const rootRef = useRef(root);
-  const valuesRef = useRef(values);
-  if (root !== undefined) rootRef.current = root;
-  if (values !== undefined) valuesRef.current = values;
-  const completionExtensions = useMemo(
-    () => [
-      ...(!completion
-        ? valueCompletions(() => valuesRef.current ?? [])
-        : pathCompletions(() => rootRef.current, template)),
+  const completionExtensions = useMemo(() => {
+    const getContext = () => completionRef.current;
+    return [
+      ...(field === 'filterValue'
+        ? backendValueCompletions(getContext, itemId)
+        : backendPathCompletions(getContext, itemId, field, template)),
       keymap.of([{ key: 'Tab', run: (view) => acceptCompletion(view) }]),
-    ],
-    [completion, template],
-  );
+    ];
+  }, [completionRef, field, itemId, template]);
   const smallExtensions = useMemo(
     () => [pathFieldWheelToHorizontal, ...completionExtensions],
     [completionExtensions],
@@ -341,11 +346,9 @@ function SelectField({
 function PipelineRuleRow({
   item,
   index,
-  root,
-  itemRoot,
-  filterValues,
   labels,
   theme,
+  completionRef,
   onUpdate,
   onTypeChange,
   onRemove,
@@ -353,11 +356,9 @@ function PipelineRuleRow({
 }: {
   item: PipelineItem;
   index: number;
-  root: unknown;
-  itemRoot: unknown;
-  filterValues: unknown[];
   labels: Record<PipelineItemType, string>;
   theme: Extension;
+  completionRef: MutableRefObject<PipelineCompletionContext>;
   onUpdate: (id: string, patch: Partial<PipelineItem>) => void;
   onTypeChange: (item: PipelineItem, type: PipelineItemType) => void;
   onRemove: (id: string) => void;
@@ -432,8 +433,10 @@ function PipelineRuleRow({
             value={item.path}
             placeholder={t('jsonTool.pipeline.pathPlaceholder')}
             onChange={(value) => onUpdate(item.id, { path: value })}
-            root={root}
             theme={theme}
+            itemId={item.id}
+            field="path"
+            completionRef={completionRef}
             onCreate={(view) => onFirstEditorCreate(item.id, view)}
           />
         )}{' '}
@@ -466,8 +469,10 @@ function PipelineRuleRow({
               value={item.arrayPath}
               placeholder={t('jsonTool.pipeline.arrayPathPlaceholder')}
               onChange={(value) => onUpdate(item.id, { arrayPath: value })}
-              root={root}
               theme={theme}
+              itemId={item.id}
+              field="arrayPath"
+              completionRef={completionRef}
               onCreate={(view) => onFirstEditorCreate(item.id, view)}
             />
             <PathField
@@ -475,8 +480,10 @@ function PipelineRuleRow({
               value={item.itemPath}
               placeholder={t('jsonTool.pipeline.itemPathPlaceholder')}
               onChange={(value) => onUpdate(item.id, { itemPath: value })}
-              root={itemRoot}
               theme={theme}
+              itemId={item.id}
+              field="itemPath"
+              completionRef={completionRef}
             />
             <SelectField
               label={t('jsonTool.pipeline.direction')}
@@ -496,8 +503,10 @@ function PipelineRuleRow({
               value={item.arrayPath}
               placeholder={t('jsonTool.pipeline.arrayPathPlaceholder')}
               onChange={(value) => onUpdate(item.id, { arrayPath: value })}
-              root={root}
               theme={theme}
+              itemId={item.id}
+              field="arrayPath"
+              completionRef={completionRef}
               onCreate={(view) => onFirstEditorCreate(item.id, view)}
             />
             <PathField
@@ -505,17 +514,19 @@ function PipelineRuleRow({
               value={item.itemPath}
               placeholder={t('jsonTool.pipeline.itemPathPlaceholder')}
               onChange={(value) => onUpdate(item.id, { itemPath: value })}
-              root={itemRoot}
               theme={theme}
+              itemId={item.id}
+              field="itemPath"
+              completionRef={completionRef}
             />
             <PathField
               label={t('jsonTool.pipeline.filterValue')}
               value={item.filterValue}
               onChange={(value) => onUpdate(item.id, { filterValue: value })}
-              root={root}
               theme={theme}
-              completion={false}
-              values={filterValues}
+              itemId={item.id}
+              field="filterValue"
+              completionRef={completionRef}
             />
           </div>
         )}{' '}
@@ -525,8 +536,10 @@ function PipelineRuleRow({
             value={item.template}
             placeholder={t('jsonTool.pipeline.templatePlaceholder')}
             onChange={(value) => onUpdate(item.id, { template: value })}
-            root={root}
             theme={theme}
+            itemId={item.id}
+            field="template"
+            completionRef={completionRef}
             template
             onCreate={(view) => onFirstEditorCreate(item.id, view)}
           />
@@ -537,30 +550,66 @@ function PipelineRuleRow({
 }
 
 export function PipelineOutputPane({
-  output,
-  error,
+  evaluation,
   theme,
   foldExt,
 }: {
-  output: string;
-  error: PipelineError | null;
+  evaluation: PipelineEvaluation;
   theme: Extension;
   foldExt: Extension;
 }) {
   const { t } = useTranslation();
   const [outputTableMode, setOutputTableMode] = useState(false);
-  const outputPreview = useMemo(() => {
+  const [tablePage, setTablePage] = useState<PipelineTablePage | null>(null);
+  const [tableRows, setTableRows] = useState<unknown[]>([]);
+  const [tableLoading, setTableLoading] = useState(false);
+  const output = evaluation.previewText;
+  const error = evaluation.status === 'error' ? evaluation.error : null;
+  const loading = evaluation.status === 'loading';
+  const canTable =
+    evaluation.status === 'ok' && evaluation.format === 'json' && !!evaluation.resultID;
+  const smallOutput = evaluation.previewComplete && canTable;
+  const smallPreview = useMemo(() => {
+    if (!smallOutput) return { valid: false, value: null };
     try {
       return { valid: true, value: parseJsonLoose(output) };
     } catch {
       return { valid: false, value: null };
     }
-  }, [output]);
+  }, [output, smallOutput]);
   useEffect(() => {
-    if (outputTableMode && (error || !output.trim() || !outputPreview.valid)) {
-      setOutputTableMode(false);
+    if (outputTableMode && !canTable) setOutputTableMode(false);
+  }, [canTable, outputTableMode]);
+  useEffect(() => {
+    if (outputTableMode) {
+      setTablePage(null);
+      setTableRows([]);
     }
-  }, [output, outputPreview.valid, outputTableMode, error]);
+  }, [evaluation.resultID, outputTableMode]);
+  const loadTablePage = async (offset: number) => {
+    if (!evaluation.resultID) return;
+    setTableLoading(true);
+    try {
+      const page = await ReadPipelineTablePage({
+        resultID: evaluation.resultID,
+        offset,
+        limit: 200,
+      });
+      if (page.expired || page.invalid) return;
+      const parsed = JSON.parse(page.rowsJSON || '[]') as unknown[];
+      setTablePage(page);
+      setTableRows((current) => (offset === 0 ? parsed : [...current, ...parsed]));
+    } catch {
+      // 结果过期或后端不可用时保持当前表格。
+    } finally {
+      setTableLoading(false);
+    }
+  };
+  useEffect(() => {
+    if (outputTableMode && evaluation.resultID && !smallOutput && tablePage === null)
+      void loadTablePage(0);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [outputTableMode, evaluation.resultID, smallOutput, tablePage]);
   return (
     <section className="json-pipeline-output json-pane flex h-full min-h-0 min-w-0 flex-col gap-2">
       <span className="json-pane-label flex-none font-mono text-[10px] font-medium leading-none tracking-[.04em] text-muted-foreground uppercase">
@@ -575,7 +624,7 @@ export function PipelineOutputPane({
           aria-label={t('jsonTool.tablePreview')}
           title={t(outputTableMode ? 'jsonTool.tablePreviewOn' : 'jsonTool.tablePreview')}
           onClick={() => {
-            if (error || !output.trim() || !outputPreview.valid) {
+            if (!canTable) {
               toast.add({ title: t('jsonTool.tablePreviewNotJson'), type: 'warning' });
               return;
             }
@@ -608,7 +657,7 @@ export function PipelineOutputPane({
             value={output}
             editable={false}
             theme={theme}
-            extensions={[json5(), foldExt]}
+            extensions={evaluation.previewComplete ? [json5(), foldExt] : [foldExt]}
             onCreateEditor={(view) =>
               view.contentDOM.setAttribute('aria-label', t('jsonTool.pipeline.output'))
             }
@@ -620,9 +669,64 @@ export function PipelineOutputPane({
             aria-hidden={!outputTableMode}
             {...(!outputTableMode ? { inert: true } : {})}
           >
-            <JsonTablePreview value={outputPreview.value} t={t} />
+            {smallOutput && smallPreview.valid ? (
+              <JsonTablePreview value={smallPreview.value} t={t} />
+            ) : (
+              <div className="json-table-scroll">
+                <table className="json-table-data">
+                  <thead>
+                    <tr>
+                      {(tablePage?.columns ?? []).map((column) => (
+                        <th key={column} className="json-table-key">
+                          {column}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {tableRows.map((row, rowIndex) => (
+                      <tr key={rowIndex}>
+                        {(tablePage?.columns ?? []).map((column) => (
+                          <td key={column}>
+                            {typeof (row as Record<string, unknown>)?.[column] === 'string'
+                              ? ((row as Record<string, unknown>)[column] as string)
+                              : JSON.stringify((row as Record<string, unknown>)?.[column], null, 0)}
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                {tablePage && !tablePage.complete ? (
+                  <div className="flex justify-center p-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="xs"
+                      disabled={tableLoading}
+                      onClick={() => void loadTablePage(tablePage.nextOffset)}
+                    >
+                      {t('jsonTool.pipeline.loadMore')}
+                    </Button>
+                  </div>
+                ) : null}
+              </div>
+            )}
           </div>
         )}
+        {loading ? (
+          <div className="json-pipeline-loading absolute inset-0 z-30 flex items-center justify-center bg-background/60">
+            <Spinner />
+          </div>
+        ) : null}
+        {!evaluation.previewComplete && !error ? (
+          <span className="absolute right-2 bottom-1 z-20 text-[10px] text-muted-foreground">
+            {t('jsonTool.pipeline.truncated', {
+              bytes: evaluation.totalBytes,
+              lines: evaluation.totalLines,
+            })}
+          </span>
+        ) : null}
       </div>
     </section>
   );
@@ -630,7 +734,7 @@ export function PipelineOutputPane({
 
 export function PipelinePanel({
   rules,
-  contexts,
+  context,
   theme,
   onChange,
   onRemove,
@@ -639,7 +743,7 @@ export function PipelinePanel({
   onFocusHandled,
 }: {
   rules: PipelineItem[];
-  contexts: PipelineContexts;
+  context: PipelineCompletionContext;
   theme: Extension;
   onChange: (update: PipelineItem[] | ((rules: PipelineItem[]) => PipelineItem[])) => void;
   onRemove: (id: string) => void;
@@ -648,7 +752,8 @@ export function PipelinePanel({
   onFocusHandled: () => void;
 }) {
   const { t } = useTranslation();
-  const { roots: root, itemRoots, filterValues } = contexts;
+  const completionRef = useRef<PipelineCompletionContext>(context);
+  completionRef.current = context;
   const listRef = useRef<HTMLDivElement>(null);
   const editorViews = useRef(new Map<string, EditorView>());
   const focusItemIdRef = useRef(focusItemId);
@@ -731,11 +836,9 @@ export function PipelinePanel({
                   key={item.id}
                   item={item}
                   index={index}
-                  root={root[index]}
-                  itemRoot={itemRoots[index]}
-                  filterValues={filterValues[index]}
                   labels={labels}
                   theme={theme}
+                  completionRef={completionRef}
                   onUpdate={update}
                   onTypeChange={updateType}
                   onRemove={onRemove}

@@ -13,485 +13,73 @@ export type PipelineItem = {
   filterValue: string;
   template: string;
 };
-export type PipelineError = { code: string; item?: number; path?: string; index?: number };
-export type PipelineContexts = {
-  roots: unknown[];
-  itemRoots: unknown[];
-  filterValues: unknown[][];
-};
-export type PipelineEvaluation = {
-  output: string;
-  error: PipelineError | null;
-  text: boolean;
-  contexts: PipelineContexts;
-};
-export type PipelineWorkerRequest = { id: number; source: string; rules: PipelineItem[] };
-export type PipelineWorkerResponse = { id: number; result: PipelineEvaluation };
 
-type PathToken = { type: 'key' | 'index' | 'all'; value: string };
-type Scalar = null | boolean | number | string;
-
-class PipelinePathError extends Error {
-  constructor(readonly code: string) {
-    super(code);
-  }
-}
-class PipelineRunError extends Error {
-  constructor(readonly error: PipelineError) {
-    super(error.code);
-  }
-}
-const fail = (error: PipelineError): never => {
-  throw new PipelineRunError(error);
-};
 export const isObject = (value: unknown): value is Record<string, unknown> =>
   value !== null && typeof value === 'object' && !Array.isArray(value);
-const isScalar = (value: unknown): value is Scalar =>
-  value === null ||
-  typeof value === 'boolean' ||
-  typeof value === 'number' ||
-  typeof value === 'string';
 
-function stripJsonComments(source: string) {
-  let output = '',
-    inString = false,
-    escaped = false;
-  for (let index = 0; index < source.length; index++) {
-    const character = source[index];
-    if (inString) {
-      output += character;
-      if (escaped) escaped = false;
-      else if (character === '\\') escaped = true;
-      else if (character === '"') inString = false;
-      continue;
-    }
-    if (character === '"') {
-      inString = true;
-      output += character;
-      continue;
-    }
-    if (character === '/' && source[index + 1] === '/') {
-      while (index < source.length && source[index] !== '\n') index++;
-      output += '\n';
-      continue;
-    }
-    if (character === '/' && source[index + 1] === '*') {
-      index += 2;
-      while (index < source.length && !(source[index] === '*' && source[index + 1] === '/'))
-        index++;
-      index++;
-      continue;
-    }
-    output += character;
+class PipelineConfigError extends Error {
+  constructor() {
+    super('invalidConfig');
   }
-  return output;
-}
-function stripTrailingCommas(source: string) {
-  let output = '',
-    inString = false,
-    escaped = false;
-  for (let index = 0; index < source.length; index++) {
-    const character = source[index];
-    if (inString) {
-      output += character;
-      if (escaped) escaped = false;
-      else if (character === '\\') escaped = true;
-      else if (character === '"') inString = false;
-      continue;
-    }
-    if (character === '"') {
-      inString = true;
-      output += character;
-      continue;
-    }
-    if (character === ',') {
-      let next = index + 1;
-      while (next < source.length && /\s/.test(source[next])) next++;
-      if (source[next] === '}' || source[next] === ']') continue;
-    }
-    output += character;
-  }
-  return output;
-}
-export function parseJsonLoose(source: string) {
-  return JSON.parse(stripTrailingCommas(stripJsonComments(source)));
 }
 
-function parsePath(path: string): PathToken[] {
-  const tokens: PathToken[] = [];
-  let source = path.trim();
-  if (source.startsWith('$')) source = source.slice(1);
-  let index = 0;
-  while (index < source.length) {
-    if (source[index] === '.' || source[index] === '/') {
-      index++;
-      continue;
-    }
-    if (source[index] === '[') {
-      const end = source.indexOf(']', index);
-      if (end < 0) throw new PipelinePathError('missingBracket');
-      const inner = source.slice(index + 1, end).trim();
-      if (inner === '*') tokens.push({ type: 'all', value: '*' });
-      else if (/^-?\d+$/.test(inner)) tokens.push({ type: 'index', value: inner });
-      else if (
-        (inner.startsWith("'") && inner.endsWith("'")) ||
-        (inner.startsWith('"') && inner.endsWith('"'))
-      )
-        tokens.push({ type: 'key', value: inner.slice(1, -1) });
-      else throw new PipelinePathError('invalidSegment');
-      index = end + 1;
-    } else if (/[A-Za-z0-9_$]/.test(source[index])) {
-      let end = index;
-      while (end < source.length && /[A-Za-z0-9_$-]/.test(source[end])) end++;
-      tokens.push({ type: 'key', value: source.slice(index, end) });
-      index = end;
-    } else throw new PipelinePathError('invalidChar');
-  }
-  return tokens;
-}
-function readTokens(value: unknown, tokens: PathToken[], offset = 0): unknown {
-  if (offset >= tokens.length) return value;
-  const token = tokens[offset];
-  if (token.type === 'all') {
-    const children = Array.isArray(value) ? value : isObject(value) ? Object.values(value) : [];
-    if (!Array.isArray(value) && !isObject(value)) throw new PipelinePathError('notContainer');
-    return children.map((child) => readTokens(child, tokens, offset + 1));
-  }
-  if (token.type === 'index') {
-    if (!Array.isArray(value)) throw new PipelinePathError('notArray');
-    const index = Number(token.value);
-    if (index < 0 || index >= value.length) throw new PipelinePathError('indexOutOfRange');
-    return readTokens(value[index], tokens, offset + 1);
-  }
-  if (!isObject(value) || !(token.value in value)) throw new PipelinePathError('pathNotFound');
-  return readTokens(value[token.value], tokens, offset + 1);
-}
-function readPath(
-  value: unknown,
-  path: string,
-  allowWildcard: boolean,
-  index: number,
-  kind: 'path' | 'arrayPath' | 'itemPath' | 'template',
-): unknown {
-  if (!path.trim())
-    return fail({
-      code:
-        kind === 'arrayPath'
-          ? 'arrayPathRequired'
-          : kind === 'itemPath'
-            ? 'itemPathRequired'
-            : 'pathRequired',
-      item: index,
-    });
-  let tokens: PathToken[] = [];
-  try {
-    tokens = parsePath(path);
-  } catch {
-    return fail({ code: 'invalidPath', item: index, path });
-  }
-  if (!allowWildcard && tokens.some((token) => token.type === 'all'))
-    return fail({ code: 'pathMultiple', item: index, path });
-  try {
-    return readTokens(value, tokens);
-  } catch (error) {
-    if (error instanceof PipelinePathError) {
-      if (error.code === 'notContainer' || error.code === 'notArray')
-        return fail({
-          code:
-            kind === 'arrayPath'
-              ? 'arrayPathInvalid'
-              : kind === 'itemPath'
-                ? 'itemPathInvalid'
-                : 'pathNotFound',
-          item: index,
-          path,
-        });
-      if (error.code === 'indexOutOfRange')
-        return fail({ code: 'pathIndexOutOfRange', item: index, path });
-      return fail({
-        code:
-          kind === 'arrayPath'
-            ? 'arrayPathNotFound'
-            : kind === 'template'
-              ? 'templatePathNotFound'
-              : 'pathNotFound',
-        item: index,
-        path,
-      });
-    }
-    throw error;
-  }
-}
-function readOptionalPath(
-  value: unknown,
-  tokens: PathToken[],
-): { ok: true; value: unknown } | { ok: false } {
-  try {
-    return { ok: true, value: readTokens(value, tokens) };
-  } catch (error) {
-    if (error instanceof PipelinePathError && error.code === 'pathNotFound') return { ok: false };
-    throw error;
-  }
-}
-function compareValues(a: Scalar, b: Scalar) {
-  const rank = (value: Scalar) =>
-    value === null ? 0 : typeof value === 'boolean' ? 1 : typeof value === 'number' ? 2 : 3;
-  const ar = rank(a),
-    br = rank(b);
-  if (ar !== br) return ar - br;
-  if (typeof a === 'boolean' && typeof b === 'boolean') return Number(a) - Number(b);
-  if (typeof a === 'number' && typeof b === 'number') return a - b;
-  if (typeof a === 'string' && typeof b === 'string') return a < b ? -1 : a > b ? 1 : 0;
-  return 0;
-}
-function stableSort<T>(
-  items: T[],
-  key: (item: T, index: number) => Scalar,
-  direction: PipelineDirection,
-) {
-  return items
-    .map((item, index) => ({ item, index }))
-    .sort((a, b) => {
-      const result = compareValues(key(a.item, a.index), key(b.item, b.index));
-      return result === 0 ? a.index - b.index : direction === 'asc' ? result : -result;
-    })
-    .map((entry) => entry.item);
-}
-function sortKeys(value: unknown, direction: PipelineDirection): unknown {
-  if (Array.isArray(value)) return value.map((item) => sortKeys(item, direction));
-  if (!isObject(value)) return value;
-  const result: Record<string, unknown> = {};
-  for (const key of Object.keys(value).sort((a, b) => {
-    const result = a < b ? -1 : a > b ? 1 : 0;
-    return direction === 'asc' ? result : -result;
-  }))
-    result[key] = sortKeys(value[key], direction);
-  return result;
-}
-function sortValues(value: unknown, direction: PipelineDirection): unknown {
-  if (Array.isArray(value)) {
-    const next = value.every(isScalar) ? stableSort(value, (item) => item, direction) : value;
-    return next.map((item) => sortValues(item, direction));
-  }
-  if (!isObject(value)) return value;
-  const result: Record<string, unknown> = {};
-  for (const key of Object.keys(value)) result[key] = sortValues(value[key], direction);
-  return result;
-}
-function updatePath(
-  value: unknown,
-  tokens: PathToken[],
-  update: (current: unknown) => unknown,
-  offset = 0,
-): unknown {
-  if (offset >= tokens.length) return update(value);
-  const token = tokens[offset];
-  if (token.type === 'all') throw new PipelinePathError('multiple');
-  if (token.type === 'index') {
-    if (!Array.isArray(value)) throw new PipelinePathError('notArray');
-    const index = Number(token.value);
-    if (index < 0 || index >= value.length) throw new PipelinePathError('indexOutOfRange');
-    const result = [...value];
-    result[index] = updatePath(result[index], tokens, update, offset + 1);
-    return result;
-  }
-  if (!isObject(value) || !(token.value in value)) throw new PipelinePathError('pathNotFound');
-  return { ...value, [token.value]: updatePath(value[token.value], tokens, update, offset + 1) };
-}
-function pathTokens(path: string, index: number, kind: 'arrayPath' | 'itemPath') {
-  if (!path.trim())
-    return fail({
-      code: kind === 'arrayPath' ? 'arrayPathRequired' : 'itemPathRequired',
-      item: index,
-    });
-  try {
-    const tokens = parsePath(path);
-    if (tokens.some((token) => token.type === 'all'))
-      return fail({ code: 'pathMultiple', item: index, path });
-    return tokens;
-  } catch (error) {
-    if (error instanceof PipelineRunError) throw error;
-    return fail({ code: 'invalidPath', item: index, path });
-  }
-}
-function executeArraySort(value: unknown, item: PipelineItem, index: number) {
-  const arrayTokens = pathTokens(item.arrayPath, index, 'arrayPath');
-  const itemTokens = pathTokens(item.itemPath, index, 'itemPath');
-  let target: unknown;
-  try {
-    target = readTokens(value, arrayTokens);
-  } catch {
-    return fail({ code: 'arrayPathNotFound', item: index, path: item.arrayPath });
-  }
-  if (!Array.isArray(target))
-    return fail({ code: 'arrayPathInvalid', item: index, path: item.arrayPath });
-  const matched = target.flatMap((entry, slot) => {
-    if (entry === null) return [];
-    try {
-      const key = readTokens(entry, itemTokens);
-      return isScalar(key) ? [{ entry, slot, key }] : [];
-    } catch {
-      return [];
-    }
-  });
-  const sorted = stableSort(matched, (item) => item.key, item.direction);
-  const result = [...target];
-  matched.forEach((item, position) => {
-    result[item.slot] = sorted[position].entry;
-  });
-  try {
-    return updatePath(value, arrayTokens, () => result);
-  } catch {
-    return fail({ code: 'arrayPathNotFound', item: index, path: item.arrayPath });
-  }
-}
-function parseFilterValue(raw: string, index: number) {
-  if (!raw.trim()) return fail({ code: 'filterValueRequired', item: index });
-  try {
-    const value = parseJsonLoose(raw);
-    if (!isScalar(value)) return fail({ code: 'filterValueInvalid', item: index });
-    return value;
-  } catch (error) {
-    if (error instanceof PipelineRunError) throw error;
-    return fail({ code: 'filterValueInvalid', item: index });
-  }
-}
-function executeFilter(value: unknown, item: PipelineItem, index: number) {
-  const arrayTokens = pathTokens(item.arrayPath, index, 'arrayPath');
-  let target: unknown;
-  try {
-    target = readTokens(value, arrayTokens);
-  } catch {
-    return fail({ code: 'arrayPathNotFound', item: index, path: item.arrayPath });
-  }
-  if (!Array.isArray(target))
-    return fail({ code: 'arrayPathInvalid', item: index, path: item.arrayPath });
-  const itemTokens = item.itemPath.trim() ? pathTokens(item.itemPath, index, 'itemPath') : [];
-  const expected = parseFilterValue(item.filterValue, index);
-  const filtered = target.filter((entry) => {
-    const matched = readOptionalPath(entry, itemTokens);
-    return matched.ok && isScalar(matched.value) && matched.value === expected;
-  });
-  try {
-    return updatePath(value, arrayTokens, () => filtered);
-  } catch {
-    return fail({ code: 'arrayPathNotFound', item: index, path: item.arrayPath });
-  }
-}
-function executeTemplate(value: unknown, template: string, index: number) {
-  if (!template.trim()) return fail({ code: 'templateRequired', item: index });
-  if (!isObject(value)) return fail({ code: 'templateRequiresObject', item: index });
-  const pattern = /\{(\$[^{}]*)\}/g;
-  return template.replace(pattern, (_match, path) => {
-    const matched = readPath(value, path, true, index, 'template');
-    if (Array.isArray(matched)) return fail({ code: 'templateArrayValue', item: index, path });
-    if (typeof matched === 'string') return matched;
-    const rendered = JSON.stringify(matched);
-    return rendered === undefined ? '' : rendered;
-  });
-}
-function executeItem(value: unknown, item: PipelineItem, index: number) {
-  if (item.type === 'extract')
-    return { value: readPath(value, item.path, true, index, 'path'), text: false };
-  if (item.type === 'sort') {
-    if (!Array.isArray(value) && !isObject(value))
-      return fail({ code: 'sortRequiresContainer', item: index });
-    return {
-      value:
-        item.sortMode === 'key'
-          ? sortKeys(value, item.direction)
-          : sortValues(value, item.direction),
-      text: false,
-    };
-  }
-  if (item.type === 'arraySort')
-    return { value: executeArraySort(value, item, index), text: false };
-  if (item.type === 'filter') return { value: executeFilter(value, item, index), text: false };
-  return { value: executeTemplate(value, item.template, index), text: true };
-}
-const emptyContexts = (rules: PipelineItem[]): PipelineContexts => ({
-  roots: Array(rules.length),
-  itemRoots: Array(rules.length),
-  filterValues: Array(rules.length),
-});
-export const emptyPipelineEvaluation = (rules: PipelineItem[] = []): PipelineEvaluation => ({
-  output: '',
-  error: null,
-  text: false,
-  contexts: emptyContexts(rules),
-});
-const fillPipelineContext = (
-  value: unknown,
-  item: PipelineItem,
-  index: number,
-  contexts: PipelineContexts,
-) => {
-  contexts.roots[index] = value;
-  contexts.itemRoots[index] = value;
-  if (item.type === 'arraySort' || item.type === 'filter') {
-    try {
-      const target = readTokens(value, parsePath(item.arrayPath));
-      if (Array.isArray(target))
-        contexts.itemRoots[index] =
-          target.find((entry) => entry !== null && typeof entry === 'object') ??
-          target.find((entry) => entry !== null);
-    } catch {}
-  }
-  if (item.type === 'filter') {
-    try {
-      const target = readTokens(value, parsePath(item.arrayPath));
-      if (!Array.isArray(target)) {
-        contexts.filterValues[index] = [];
-        return;
-      }
-      const tokens = item.itemPath.trim() ? parsePath(item.itemPath) : [];
-      contexts.filterValues[index] = target
-        .map((entry) => {
-          try {
-            return readTokens(entry, tokens);
-          } catch {
-            return undefined;
-          }
-        })
-        .filter(isScalar);
-    } catch {
-      contexts.filterValues[index] = [];
-    }
-  }
+const typeOptions: PipelineItemType[] = ['extract', 'sort', 'arraySort', 'filter', 'template'];
+const configString = (item: Record<string, unknown>, key: string, fallback: string) => {
+  const value = item[key];
+  if (value === undefined) return fallback;
+  if (typeof value !== 'string') throw new PipelineConfigError();
+  return value;
 };
-export function evaluatePipeline(source: string, rules: PipelineItem[]): PipelineEvaluation {
-  const contexts = emptyContexts(rules);
-  if (!source.trim()) return { output: '', error: null, text: false, contexts };
-  let value: unknown;
+
+const createPipelineId = () => `pipeline-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+
+export function parsePipelineConfig(source: string): PipelineItem[] {
+  let parsed: unknown;
   try {
-    value = parseJsonLoose(source);
+    parsed = JSON.parse(source);
   } catch {
-    return { output: '', error: { code: 'invalidJson' }, text: false, contexts };
+    throw new PipelineConfigError();
   }
-  let text = false;
-  try {
-    for (let index = 0; index < rules.length; index++) {
-      const item = rules[index];
-      fillPipelineContext(value, item, index, contexts);
-      if (!item.enabled) continue;
-      if (item.type === 'template' && rules.slice(index + 1).some((next) => next.enabled))
-        fail({ code: 'templateNotLast', item: index });
-      const result = executeItem(value, item, index);
-      value = result.value;
-      text = result.text;
-    }
-    return {
-      output: text ? String(value) : (JSON.stringify(value, null, 2) ?? ''),
-      error: null,
-      text,
-      contexts,
+  if (isObject(parsed) && parsed.version !== undefined && parsed.version !== 1)
+    throw new PipelineConfigError();
+  const items = Array.isArray(parsed)
+    ? parsed
+    : isObject(parsed) && Array.isArray(parsed.items)
+      ? parsed.items
+      : null;
+  if (!items) throw new PipelineConfigError();
+  const result = items.map((raw) => {
+    if (
+      !isObject(raw) ||
+      typeof raw.type !== 'string' ||
+      !typeOptions.includes(raw.type as PipelineItemType)
+    )
+      throw new PipelineConfigError();
+    if (raw.enabled !== undefined && typeof raw.enabled !== 'boolean')
+      throw new PipelineConfigError();
+    if (raw.sortMode !== undefined && raw.sortMode !== 'key' && raw.sortMode !== 'value')
+      throw new PipelineConfigError();
+    if (raw.direction !== undefined && raw.direction !== 'asc' && raw.direction !== 'desc')
+      throw new PipelineConfigError();
+    const item: PipelineItem = {
+      id: createPipelineId(),
+      enabled: raw.enabled ?? true,
+      type: raw.type as PipelineItemType,
+      path: configString(raw, 'path', '$'),
+      sortMode: (raw.sortMode ?? 'key') as PipelineSortMode,
+      direction: (raw.direction ?? 'asc') as PipelineDirection,
+      arrayPath: configString(raw, 'arrayPath', '$'),
+      itemPath: configString(raw, 'itemPath', '$'),
+      filterValue: configString(raw, 'filterValue', ''),
+      template: configString(raw, 'template', '{$.name}?token={$.token}'),
     };
-  } catch (error) {
-    return {
-      output: '',
-      error: error instanceof PipelineRunError ? error.error : { code: 'failed' },
-      text: false,
-      contexts,
-    };
-  }
+    return item;
+  });
+  if (result.filter((item) => item.type === 'template').length > 1) throw new PipelineConfigError();
+  const template = result.find((item) => item.type === 'template');
+  return template ? [...result.filter((item) => item !== template), template] : result;
+}
+
+export function serializePipeline(rules: PipelineItem[]): string {
+  return JSON.stringify({ version: 1, items: rules.map(({ id, ...item }) => item) }, null, 2);
 }

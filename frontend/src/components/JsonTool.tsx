@@ -72,7 +72,8 @@ import {
   PipelinePanel,
 } from './JsonPipeline';
 import type { PipelineItem } from './JsonPipelineEngine';
-import { useDebouncedPipelineEvaluation } from './useDebouncedPipelineEvaluation';
+import { useBackendPipelineEvaluation } from './useBackendPipelineEvaluation';
+import { GetPipelineResultText } from '../../bindings/changeme/jsonpipelineservice';
 import { pathCompletions as sharedPathCompletions } from './JsonPathCompletion';
 
 type PathToken = { type: 'key' | 'index' | 'all'; value: string };
@@ -467,12 +468,14 @@ export default function JsonTool({
   useFocusOnActivate(active, () => views.current.get('input')?.focus());
   const cmTheme = quietEditorTheme;
   const inputPreview = useMemo(() => {
+    // 流水线模式下不再在主线程解析输入；输入表格按需使用后端结果。
+    if (pipelineMode) return { valid: false as const, value: null };
     try {
       return { valid: true as const, value: parseJsonLoose(input) };
     } catch {
       return { valid: false as const, value: null };
     }
-  }, [input]);
+  }, [input, pipelineMode]);
   const jsonValue = inputPreview.valid ? inputPreview.value : null;
   const resultPreview = useMemo(() => {
     try {
@@ -676,7 +679,9 @@ export default function JsonTool({
       return normalized === '' || normalized === '$.' ? '$' : current;
     });
   }, [schema]);
-  const pipeline = useDebouncedPipelineEvaluation(pipelineMode, input, pipelineRules);
+  const pipeline = useBackendPipelineEvaluation(pipelineMode, input, pipelineRules);
+  const pipelineError = pipeline.evaluation.status === 'error' ? pipeline.evaluation.error : null;
+  const pipelineReady = pipeline.evaluation.status === 'ok' && !!pipeline.evaluation.resultID;
   const addPipelineItem = () => {
     const next = newPipelineItem();
     const hasTemplate = pipelineRules.some((item) => item.type === 'template');
@@ -742,18 +747,19 @@ export default function JsonTool({
       });
     }
   };
-  const copyPipeline = () => {
-    if (pipeline.error || !pipeline.output) return;
-    void navigator.clipboard?.writeText(pipeline.output).catch(() => {});
-    const bytes = new TextEncoder().encode(pipeline.output).length;
+  const copyPipeline = async () => {
+    if (pipelineError || !pipeline.evaluation.resultID) return;
+    let text = '';
+    try {
+      text = await GetPipelineResultText(pipeline.evaluation.resultID);
+    } catch {
+      toast.add({ title: t('jsonTool.pipeline.copyFailed'), type: 'error' });
+      return;
+    }
+    void navigator.clipboard?.writeText(text).catch(() => {});
+    const bytes = new TextEncoder().encode(text).length;
     toast.add({ title: t('toast.copied', { value: `${bytes} ${t('jsonTool.bytes')}` }) });
-    record(
-      'json',
-      t('jsonTool.pipeline.copy'),
-      `${bytes} ${t('jsonTool.bytes')}`,
-      input,
-      pipeline.output,
-    );
+    record('json', t('jsonTool.pipeline.copy'), `${bytes} ${t('jsonTool.bytes')}`, input, text);
   };
   const copyPane = async (pane: 'input' | 'result') => {
     const value = pane === 'input' ? input : result;
@@ -849,7 +855,7 @@ export default function JsonTool({
           label: t('jsonTool.copy'),
           icon: Copy,
           variant: 'primary',
-          disabled: !!pipeline.error || !pipeline.output,
+          disabled: !!pipelineError || !pipelineReady,
           onPress: copyPipeline,
         },
       ]}
@@ -1098,8 +1104,7 @@ export default function JsonTool({
                   {...(!pipelineMode ? { inert: true } : {})}
                 >
                   <PipelineOutputPane
-                    output={pipeline.output}
-                    error={pipeline.error}
+                    evaluation={pipeline.evaluation}
                     theme={cmTheme}
                     foldExt={foldExt}
                   />
@@ -1270,7 +1275,7 @@ export default function JsonTool({
                 {...(!pipelineMode ? { inert: true } : {})}
               >
                 <PipelinePanel
-                  contexts={pipeline.contexts}
+                  context={pipeline.context}
                   rules={pipelineRules}
                   theme={cmTheme}
                   focusItemId={pipelineFocusId}

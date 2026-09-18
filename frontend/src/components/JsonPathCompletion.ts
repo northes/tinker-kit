@@ -5,6 +5,8 @@ import {
   type CompletionResult,
 } from '@codemirror/autocomplete';
 import { EditorView, tooltips } from '@codemirror/view';
+import { QueryPipelineCompletion } from '../../bindings/changeme/jsonpipelineservice';
+import type { PipelineCompletionContext } from './useBackendPipelineEvaluation';
 
 type PathToken = { type: 'key' | 'index' | 'all'; value: string };
 const normalizeCompletionText = (value: string) =>
@@ -211,6 +213,142 @@ export function valueCompletions(values: unknown[] | (() => unknown[])) {
       .map((value) => ({ label: value, apply: value, type: 'value' }));
     if (!options.length) return null;
     return { from: match?.from ?? context.pos, to: context.pos, options, filter: false };
+  };
+  return [
+    autocompletion({
+      override: [source],
+      activateOnTyping: true,
+      tooltipClass: () => 'json-path-autocomplete',
+    }),
+    tooltips({ position: 'fixed', parent: document.body }),
+  ];
+}
+
+type BackendContextGetter = () => PipelineCompletionContext;
+
+// backendPathCompletions / backendValueCompletions 把路径与取值补全委托给后端，
+// 前端只负责光标位置、替换范围与渲染，不再需要完整 AST。
+export function backendPathCompletions(
+  getContext: BackendContextGetter,
+  itemId: string,
+  field: string,
+  template = false,
+) {
+  const source = async (context: CompletionContext): Promise<CompletionResult | null> => {
+    const before = context.state.doc.sliceString(0, context.pos);
+    const start = template ? before.lastIndexOf('{') : 0;
+    if (start < 0 || (template && before.lastIndexOf('}') > start)) return null;
+    const templatePrefix = template ? before.slice(start + 1) : '';
+    if (template && templatePrefix === '')
+      return {
+        from: context.pos,
+        to: context.pos,
+        options: [
+          {
+            label: '{$.}',
+            type: 'keyword',
+            apply: (view, _completion, from, to) => {
+              view.dispatch({
+                changes: { from, to, insert: '$.}' },
+                selection: { anchor: from + 2 },
+              });
+              startCompletion(view);
+            },
+          },
+        ],
+      };
+    if (template && !templatePrefix.startsWith('$.')) return null;
+    const prefix = (template ? templatePrefix : before).replace(/\s+$/, '');
+    if (!template && (prefix === '' || prefix === '$')) return null;
+    const { tokens, partial, inBracket } = splitPathSegments(prefix);
+    if (!template && tokens.length === 0 && !(prefix.startsWith('$.') || prefix.startsWith('$[')))
+      return null;
+    const last = prefix.slice(-1);
+    const afterSep = last === '.' || last === '[' || last === '/';
+    if (!template && !partial.length && !afterSep && !inBracket) return null;
+    const pipeline = getContext();
+    if (!pipeline) return null;
+    const request = QueryPipelineCompletion({
+      sessionID: pipeline.sessionID,
+      docID: pipeline.docID,
+      pipelineID: pipeline.pipelineID,
+      itemID: itemId,
+      field,
+      prefix,
+      limit: 100,
+    });
+    context.addEventListener('abort', () => void request.cancel(), { onDocChange: true });
+    let options: CompletionResult['options'];
+    try {
+      const response = await request;
+      if (context.aborted || response.stale || !response.items?.length) return null;
+      options = response.items.map((option) => ({
+        label: option.label,
+        apply: option.apply,
+        type: option.type,
+      }));
+    } catch {
+      return null;
+    }
+    const end =
+      context.pos + (context.state.doc.sliceString(context.pos, context.pos + 1) === ']' ? 1 : 0);
+    const isArraySample = options[0]?.label.startsWith('[*].') ?? false;
+    const from = isArraySample
+      ? partial.length && prefix.includes('.')
+        ? context.pos - partial.length - 1
+        : prefix.endsWith('.')
+          ? context.pos - 1
+          : context.pos
+      : inBracket
+        ? context.pos - partial.length - 1
+        : partial.length
+          ? context.pos - partial.length
+          : context.pos;
+    return { from, to: end, options, filter: false };
+  };
+  return [
+    autocompletion({
+      override: [source],
+      activateOnTyping: true,
+      tooltipClass: () => 'json-path-autocomplete',
+    }),
+    tooltips({ position: 'fixed', parent: document.body }),
+    normalizePathInput,
+  ];
+}
+
+export function backendValueCompletions(getContext: BackendContextGetter, itemId: string) {
+  const source = async (context: CompletionContext): Promise<CompletionResult | null> => {
+    const match = context.matchBefore(/[^\s,]*/);
+    const typed = match?.text ?? '';
+    const pipeline = getContext();
+    if (!pipeline) return null;
+    const request = QueryPipelineCompletion({
+      sessionID: pipeline.sessionID,
+      docID: pipeline.docID,
+      pipelineID: pipeline.pipelineID,
+      itemID: itemId,
+      field: 'filterValue',
+      prefix: typed,
+      limit: 100,
+    });
+    context.addEventListener('abort', () => void request.cancel(), { onDocChange: true });
+    try {
+      const response = await request;
+      if (context.aborted || response.stale || !response.items?.length) return null;
+      return {
+        from: match?.from ?? context.pos,
+        to: context.pos,
+        options: response.items.map((option) => ({
+          label: option.label,
+          apply: option.apply,
+          type: option.type,
+        })),
+        filter: false,
+      };
+    } catch {
+      return null;
+    }
   };
   return [
     autocompletion({

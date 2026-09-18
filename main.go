@@ -93,6 +93,7 @@ func main() {
 	fileService := NewFileService(cfgService)
 	imageService := NewImageService(cfgService)
 	serviceManagerService := NewServiceManagerService(cfgService)
+	jsonPipelineService := NewJSONPipelineService()
 	dockService := dock.New()
 	isQuitting := false
 	app := application.New(application.Options{
@@ -110,6 +111,7 @@ func main() {
 			application.NewService(fileService),
 			application.NewService(imageService),
 			application.NewService(serviceManagerService),
+			application.NewService(jsonPipelineService),
 			application.NewService(dockService),
 		},
 		Mac: application.MacOptions{
@@ -120,6 +122,9 @@ func main() {
 		_ = app.Event.Emit(name, data)
 	})
 	serviceManagerService.setEventEmitter(func(name string, data any) {
+		_ = app.Event.Emit(name, data)
+	})
+	jsonPipelineService.setEventEmitter(func(name string, data any) {
 		_ = app.Event.Emit(name, data)
 	})
 	serviceManagerService.start()
@@ -148,6 +153,7 @@ func main() {
 	app.OnShutdown(updateService.stopScheduler)
 	app.OnShutdown(imageService.shutdown)
 	app.OnShutdown(serviceManagerService.shutdown)
+	app.OnShutdown(jsonPipelineService.shutdown)
 
 	window := app.Window.NewWithOptions(application.WebviewWindowOptions{
 		Name:             appName,
