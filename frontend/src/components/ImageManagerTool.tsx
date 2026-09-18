@@ -158,15 +158,18 @@ type WatchDockerImagesEvent = {
   error?: string;
 };
 
-type ConfirmState = {
-  type: 'delete';
-  ids: string[];
-  targets: DockerDeleteTarget[];
-  name: string;
-  sourceId: string;
-  sourceKind: string;
-  sourceConfigKey: string;
-} | null;
+type ConfirmState =
+  | {
+      type: 'delete';
+      ids: string[];
+      targets: DockerDeleteTarget[];
+      name: string;
+      sourceId: string;
+      sourceKind: string;
+      sourceConfigKey: string;
+    }
+  | { type: 'removeSource'; id: string; name: string }
+  | null;
 
 type ImageOperationDialogState =
   | {
@@ -2092,6 +2095,11 @@ export default function ImageManagerTool({
 
   const confirmAction = () => {
     if (!confirm || busy) return;
+    if (confirm.type === 'removeSource') {
+      removeSource(confirm.id);
+      setConfirm(null);
+      return;
+    }
     if (confirm.sourceConfigKey !== sourceConfigKey) {
       toast.add({ title: t('imageManagerTool.sourceChangedRefresh'), type: 'warning' });
       setConfirm(null);
@@ -3130,8 +3138,15 @@ export default function ImageManagerTool({
                             <Button
                               variant="ghost"
                               size="sm"
+                              className="text-muted-foreground hover:text-destructive"
                               aria-label={t('imageManagerTool.removeSource')}
-                              onClick={() => removeSource(item.id)}
+                              onClick={() =>
+                                setConfirm({
+                                  type: 'removeSource',
+                                  id: item.id,
+                                  name: sourceDisplayName(item, t, profiles),
+                                })
+                              }
                             >
                               <Trash />
                             </Button>
@@ -3179,8 +3194,15 @@ export default function ImageManagerTool({
                             <Button
                               variant="ghost"
                               size="sm"
+                              className="text-muted-foreground hover:text-destructive"
                               aria-label={t('imageManagerTool.removeSource')}
-                              onClick={() => removeSource(item.id)}
+                              onClick={() =>
+                                setConfirm({
+                                  type: 'removeSource',
+                                  id: item.id,
+                                  name: sourceDisplayName(item, t, profiles),
+                                })
+                              }
                             >
                               <Trash />
                             </Button>
@@ -3218,12 +3240,20 @@ export default function ImageManagerTool({
       >
         <AlertDialogContent className="min-w-0 max-w-[calc(100vw-2rem)] sm:max-w-md">
           <AlertDialogHeader className="min-w-0">
-            <AlertDialogTitle>{t('imageManagerTool.deleteConfirmTitle')}</AlertDialogTitle>
+            <AlertDialogTitle>
+              {confirm?.type === 'removeSource'
+                ? t('imageManagerTool.removeSourceConfirmTitle')
+                : t('imageManagerTool.deleteConfirmTitle')}
+            </AlertDialogTitle>
             <AlertDialogDescription
               render={<div />}
               className="min-w-0 max-w-full text-left whitespace-normal break-words [overflow-wrap:anywhere]"
             >
-              {confirm?.type === 'delete' ? (
+              {confirm?.type === 'removeSource' ? (
+                <p className="m-0">
+                  {t('imageManagerTool.removeSourceConfirmBody', { name: confirm.name })}
+                </p>
+              ) : confirm?.type === 'delete' ? (
                 confirm.sourceKind === 'registry' ? (
                   <div className="flex min-w-0 flex-col gap-3">
                     <p className="m-0">{t('imageManagerTool.registryDeleteConfirmSummary')}</p>
@@ -3311,7 +3341,9 @@ export default function ImageManagerTool({
               onClick={confirmAction}
             >
               {busy ? <Spinner data-icon="inline-start" /> : null}
-              {t('imageManagerTool.confirm')}
+              {confirm?.type === 'removeSource'
+                ? t('imageManagerTool.removeSource')
+                : t('imageManagerTool.confirm')}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

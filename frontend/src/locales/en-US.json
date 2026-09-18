@@ -651,6 +651,8 @@
     "addRegistry": "Add Registry source",
     "editSource": "Edit source",
     "removeSource": "Remove source",
+    "removeSourceConfirmTitle": "Remove source?",
+    "removeSourceConfirmBody": "Source \"{{name}}\" will be removed when you save. Continue?",
     "saveSource": "Save source",
     "testConnection": "Test connection",
     "connectionSucceeded": "Connection succeeded",

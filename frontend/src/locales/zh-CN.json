@@ -651,6 +651,8 @@
     "addRegistry": "新增 Registry 来源",
     "editSource": "编辑来源",
     "removeSource": "删除来源",
+    "removeSourceConfirmTitle": "删除来源？",
+    "removeSourceConfirmBody": "来源“{{name}}”将被移除，保存后生效。继续吗？",
     "saveSource": "保存来源",
     "testConnection": "测试连接",
     "connectionSucceeded": "连接成功",
