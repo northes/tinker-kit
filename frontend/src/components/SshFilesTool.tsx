@@ -119,6 +119,7 @@ import {
   ToolLayoutFooter,
   ToolLayoutHeader,
   ToolLayoutToolbar,
+  useCheckboxDragSelect,
 } from './shared';
 import { useFileDragOver } from './FileDropEmpty';
 import type {
@@ -1242,6 +1243,18 @@ export default function SshFilesTool({ active }: Props) {
 
   const operationPathsFor = (entryPath: string) =>
     selected.includes(entryPath) ? selected : [entryPath];
+
+  const startCheckboxDrag = useCheckboxDragSelect(
+    (path) => selected.includes(path),
+    (path, checked) =>
+      setSelected((current) =>
+        checked
+          ? current.includes(path)
+            ? current
+            : [...current, path]
+          : current.filter((item) => item !== path),
+      ),
+  );
 
   const copyPathToClipboard = async (pathValue: string) => {
     try {
@@ -2433,13 +2446,18 @@ export default function SshFilesTool({ active }: Props) {
                             <TableRow
                               ref={fileRowVirtualizer.measureElement}
                               data-index={virtualRow.index}
+                              data-row-key={entry.path}
                               data-state={selected.includes(entry.path) ? 'selected' : undefined}
                               className="group select-none border-border/60"
                             />
                           }
                         >
-                          <TableCell className="w-10 px-3 py-2">
+                          <TableCell
+                            className="w-10 cursor-default px-3 py-2"
+                            onPointerDown={(event) => startCheckboxDrag(event, entry.path)}
+                          >
                             <Checkbox
+                              className="cursor-default"
                               checked={selected.includes(entry.path)}
                               onCheckedChange={(checked) =>
                                 setSelected((current) =>

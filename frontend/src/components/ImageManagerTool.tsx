@@ -58,6 +58,7 @@ import {
   ToolLayoutFooter,
   ToolLayoutHeader,
   ToolLayoutToolbar,
+  useCheckboxDragSelect,
   type PendingAction,
   type ToolId,
 } from './shared';
@@ -1789,6 +1790,8 @@ export default function ImageManagerTool({
     });
   };
 
+  const startCheckboxDrag = useCheckboxDragSelect((key) => selected.has(key), toggleRow);
+
   const viewRow = (row: ImageRow) => onOpenDetail(source.id, row.image.id);
 
   const copyImageName = async (name: string) => {
@@ -2532,16 +2535,20 @@ export default function ImageManagerTool({
                             <TableRow
                               ref={imageRowVirtualizer.measureElement}
                               data-index={virtualRow.index}
+                              data-row-key={row.key}
                               data-state={selected.has(row.key) ? 'selected' : undefined}
                               className="select-none border-border/60"
                             />
                           }
                         >
                           <TableCell
+                            className="cursor-default"
+                            onPointerDown={(event) => startCheckboxDrag(event, row.key)}
                             onClick={(event) => event.stopPropagation()}
                             onKeyDown={(event) => event.stopPropagation()}
                           >
                             <Checkbox
+                              className="cursor-default"
                               checked={selected.has(row.key)}
                               onCheckedChange={(checked) => toggleRow(row.key, checked === true)}
                               aria-label={t('imageManagerTool.selectRow')}

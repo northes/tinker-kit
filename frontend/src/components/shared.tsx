@@ -1,4 +1,11 @@
-import { Fragment, useEffect, useRef, useState, type ReactNode } from 'react';
+import {
+  Fragment,
+  useEffect,
+  useRef,
+  useState,
+  type PointerEvent as ReactPointerEvent,
+  type ReactNode,
+} from 'react';
 import { Button } from './ui/button';
 import {
   DropdownMenu,
@@ -639,4 +646,85 @@ export function useFocusOnActivate(active: boolean, focus: () => void) {
     if (active && !prev.current) focusRef.current();
     prev.current = active;
   }, [active]);
+}
+
+// 勾选框列按住滑动多选：按下即切换起始行，滑过的每个勾选框各切换一次，仅识别首列内的指针位置。
+type CheckboxDragState = {
+  pointerId: number;
+  handled: Set<string>;
+};
+
+export function useCheckboxDragSelect(
+  isSelected: (key: string) => boolean,
+  setSelected: (key: string, selected: boolean) => void,
+) {
+  const optionsRef = useRef({ isSelected, setSelected });
+  optionsRef.current = { isSelected, setSelected };
+  const dragRef = useRef<CheckboxDragState | null>(null);
+  // 切换由本 hook 接管，随后浏览器补发的 click 必须吞掉，否则会被反向切回。
+  const suppressClickRef = useRef(false);
+
+  useEffect(() => {
+    const rowKeyAt = (x: number, y: number) => {
+      const row = document.elementFromPoint(x, y)?.closest<HTMLElement>('tr[data-row-key]');
+      if (!row) return null;
+      // 仅限勾选框列：指针移出首列后不再继续选择。
+      const cell = row.querySelector<HTMLElement>('td');
+      if (!cell) return null;
+      const rect = cell.getBoundingClientRect();
+      if (x < rect.left || x > rect.right) return null;
+      return row.dataset.rowKey ?? null;
+    };
+    const toggleOnce = (key: string) => {
+      const drag = dragRef.current;
+      if (!drag || drag.handled.has(key)) return;
+      drag.handled.add(key);
+      const { isSelected: selectedNow, setSelected: setNow } = optionsRef.current;
+      setNow(key, !selectedNow(key));
+    };
+    const onMove = (event: PointerEvent) => {
+      const drag = dragRef.current;
+      if (!drag || event.pointerId !== drag.pointerId || !(event.buttons & 1)) return;
+      const key = rowKeyAt(event.clientX, event.clientY);
+      if (key) toggleOnce(key);
+    };
+    const onClickCapture = (event: MouseEvent) => {
+      if (!suppressClickRef.current) return;
+      suppressClickRef.current = false;
+      event.preventDefault();
+      event.stopPropagation();
+    };
+    const onEnd = (event: PointerEvent) => {
+      const drag = dragRef.current;
+      if (!drag || event.pointerId !== drag.pointerId) return;
+      dragRef.current = null;
+    };
+    // 窗口外松开可能收不到 pointerup；新的按下或键盘事件先结束上一次拖选与点击抑制。
+    const reset = () => {
+      dragRef.current = null;
+      suppressClickRef.current = false;
+    };
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onEnd);
+    window.addEventListener('pointercancel', onEnd);
+    window.addEventListener('pointerdown', reset, true);
+    window.addEventListener('keydown', reset, true);
+    window.addEventListener('click', onClickCapture, true);
+    return () => {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onEnd);
+      window.removeEventListener('pointercancel', onEnd);
+      window.removeEventListener('pointerdown', reset, true);
+      window.removeEventListener('keydown', reset, true);
+      window.removeEventListener('click', onClickCapture, true);
+    };
+  }, []);
+
+  return (event: ReactPointerEvent, key: string) => {
+    if (event.button !== 0 || !event.isPrimary || event.pointerType !== 'mouse') return;
+    dragRef.current = { pointerId: event.pointerId, handled: new Set([key]) };
+    suppressClickRef.current = true;
+    const { isSelected: selectedNow, setSelected: setNow } = optionsRef.current;
+    setNow(key, !selectedNow(key));
+  };
 }
