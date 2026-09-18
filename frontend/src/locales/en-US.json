@@ -922,6 +922,7 @@
     "refreshFailed": "Unable to refresh services",
     "loading": "Loading services…",
     "selectHint": "Select a container or service to view details and logs",
+    "info": "Info",
     "standalone": "Standalone containers",
     "composeGroup": "Compose · {{name}}",
     "expandGroup": "Expand group",

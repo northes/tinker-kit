@@ -9,6 +9,7 @@ import {
   CircleNotch,
   Eraser,
   GearSix,
+  Info,
   Pause,
   PencilSimple,
   Play,
@@ -181,7 +182,6 @@ export default function ServiceManagerTool({
   const [caseSensitive, setCaseSensitive] = useState(false);
   const [lines, setLines] = useState<ServiceLogLine[]>([]);
   const [truncated, setTruncated] = useState(false);
-  const [detail, setDetail] = useState<Record<string, unknown> | null>(null);
   const [manageOpen, setManageOpen] = useState(false);
   const [editingTarget, setEditingTarget] = useState<ServiceTarget | null>(null);
   const [draftTargets, setDraftTargets] = useState<ServiceTarget[]>([]);
@@ -297,22 +297,6 @@ export default function ServiceManagerTool({
     };
     void run();
   }, [activeMonitorID, logQuery, regex, caseSensitive]);
-  useEffect(() => {
-    if (!selection || selection.kind === 'group') {
-      setDetail(null);
-      return;
-    }
-    const resource = selection.resource;
-    const request =
-      resource.runtime === 'docker'
-        ? GetDockerContainerDetail(targetID, resource.id)
-        : resource.runtime === 'pm2'
-          ? GetPM2ProcessDetail(targetID, resource.id)
-          : GetSystemdUnitDetail(targetID, resource.id, resource.scope ?? 'system');
-    void request
-      .then((value) => setDetail(value as unknown as Record<string, unknown>))
-      .catch(() => setDetail(null));
-  }, [selection, targetID]);
 
   const selectedTarget = targets.find((target) => target.id === targetID);
 
@@ -698,7 +682,7 @@ export default function ServiceManagerTool({
             {selection ? (
               <ResourcePanel
                 selection={selection}
-                detail={detail}
+                targetID={targetID}
                 monitor={selectedMonitor}
                 lines={lines}
                 truncated={truncated}
@@ -1058,7 +1042,7 @@ function RuntimeError({ name, error }: { name: string; error?: string }) {
 
 function ResourcePanel({
   selection,
-  detail,
+  targetID,
   monitor,
   lines,
   truncated,
@@ -1077,7 +1061,7 @@ function ResourcePanel({
   t,
 }: {
   selection: Selection;
-  detail: Record<string, unknown> | null;
+  targetID: string;
   monitor?: LogMonitor;
   lines: ServiceLogLine[];
   truncated: boolean;
@@ -1102,6 +1086,7 @@ function ResourcePanel({
       : ['start', 'stop', 'restart', 'delete'];
   const activeMonitorIDs = monitor ? [monitor.id] : [];
   const [confirmingClear, setConfirmingClear] = useState(false);
+  const [infoOpen, setInfoOpen] = useState(false);
   return (
     <>
       <div className="grid h-full min-h-0 grid-rows-[auto_auto_minmax(0,1fr)]">
@@ -1138,12 +1123,18 @@ function ResourcePanel({
                 )}
               </Button>
             ))}
+            {selection.kind !== 'group' ? (
+              <Button
+                variant="outline"
+                size="icon-xs"
+                title={t('serviceManagerTool.info')}
+                aria-label={t('serviceManagerTool.info')}
+                onClick={() => setInfoOpen(true)}
+              >
+                <Info weight="duotone" />
+              </Button>
+            ) : null}
           </div>
-          {detail ? (
-            <pre className="mt-2 max-h-24 overflow-auto whitespace-pre-wrap break-all text-[11px] text-muted-foreground">
-              {JSON.stringify(detail, null, 2)}
-            </pre>
-          ) : null}
         </div>
         <div className="border-b px-4 py-2">
           <div className="flex items-center gap-2">
@@ -1242,7 +1233,98 @@ function ResourcePanel({
           setConfirmingClear(false);
         }}
       />
+      <ResourceInfoDialog
+        open={infoOpen}
+        onOpenChange={setInfoOpen}
+        targetID={targetID}
+        resource={resource}
+      />
     </>
+  );
+}
+function ResourceInfoDialog({
+  open,
+  onOpenChange,
+  targetID,
+  resource,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  targetID: string;
+  resource: ServiceResourceRef;
+}) {
+  const { t } = useTranslation();
+  const [loading, setLoading] = useState(true);
+  const [detail, setDetail] = useState<Record<string, unknown> | null>(null);
+  const [error, setError] = useState('');
+
+  const load = async () => {
+    setLoading(true);
+    setDetail(null);
+    setError('');
+    try {
+      const value =
+        resource.runtime === 'docker'
+          ? await GetDockerContainerDetail(targetID, resource.id)
+          : resource.runtime === 'pm2'
+            ? await GetPM2ProcessDetail(targetID, resource.id)
+            : await GetSystemdUnitDetail(targetID, resource.id, resource.scope ?? 'system');
+      setDetail(value as unknown as Record<string, unknown>);
+    } catch (reason) {
+      setError(String(reason));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!open) {
+      setLoading(true);
+      setDetail(null);
+      setError('');
+      return;
+    }
+    void load();
+  }, [open, targetID, resource.runtime, resource.id, resource.scope]);
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="flex h-[75dvh] min-h-0 flex-col sm:max-w-lg">
+        <DialogHeader className="flex-none">
+          <DialogTitle>{resource.name || resource.id}</DialogTitle>
+          <DialogDescription>{t('serviceManagerTool.info')}</DialogDescription>
+        </DialogHeader>
+        <div className="min-h-0 flex-1 overflow-auto rounded-md border border-border bg-muted/20 p-3">
+          {loading ? (
+            <div className="flex h-full items-center justify-center gap-2 text-xs text-muted-foreground">
+              <Spinner />
+              {t('common.loading')}
+            </div>
+          ) : error ? (
+            <p className="m-0 text-xs text-destructive" role="alert">
+              {error}
+            </p>
+          ) : (
+            <pre className="m-0 font-mono text-[11px] break-all whitespace-pre-wrap text-foreground">
+              {JSON.stringify(detail, null, 2)}
+            </pre>
+          )}
+        </div>
+        <DialogFooter className="flex-none">
+          <Button variant="outline" onClick={() => onOpenChange(false)}>
+            {t('common.close')}
+          </Button>
+          <Button disabled={loading} onClick={() => void load()}>
+            {loading ? (
+              <Spinner data-icon="inline-start" />
+            ) : (
+              <ArrowsClockwise data-icon="inline-start" />
+            )}
+            {t('serviceManagerTool.refresh')}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 const LOG_GRID = 'grid grid-cols-[11rem_10rem_minmax(0,1fr)] items-start gap-3 px-3';

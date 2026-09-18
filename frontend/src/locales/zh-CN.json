@@ -922,6 +922,7 @@
     "refreshFailed": "刷新服务列表失败",
     "loading": "正在加载服务列表…",
     "selectHint": "选择一个容器或服务查看详情与日志",
+    "info": "信息",
     "standalone": "独立容器",
     "composeGroup": "Compose · {{name}}",
     "expandGroup": "展开分组",
