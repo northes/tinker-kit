@@ -2906,7 +2906,15 @@ export default function SshFilesTool({ active }: Props) {
                 )}
               </div>
             ) : (
-              <section className="min-h-0" aria-label={t('sshFilesTool.fileSourceDetails')}>
+              <form
+                className="min-h-0"
+                id="ssh-source-form"
+                aria-label={t('sshFilesTool.fileSourceDetails')}
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  if (sourceReady && !savingManage) void saveManage();
+                }}
+              >
                 <div className="mx-auto grid w-full max-w-[560px] content-start gap-5">
                   <div className="grid gap-4">
                     <div className="grid gap-1.5">
@@ -2962,7 +2970,7 @@ export default function SshFilesTool({ active }: Props) {
                     </div>
                   </div>
                 </div>
-              </section>
+              </form>
             )}
           </div>
           <DialogFooter className="mx-0 mb-0 flex-none rounded-b-xl px-6 py-4">
@@ -2985,7 +2993,7 @@ export default function SshFilesTool({ active }: Props) {
                 {manageCollectionDirty ? t('common.save') : t('common.done')}
               </Button>
             ) : (
-              <Button disabled={savingManage || !sourceReady} onClick={() => void saveManage()}>
+              <Button type="submit" form="ssh-source-form" disabled={savingManage || !sourceReady}>
                 {savingManage ? <Spinner data-icon="inline-start" /> : null}
                 {t('common.save')}
               </Button>
@@ -3087,7 +3095,14 @@ export default function SshFilesTool({ active }: Props) {
               {t('sshFilesTool.uploadDesc', { count: uploadPaths.length })}
             </DialogDescription>
           </DialogHeader>
-          <div className="grid gap-4">
+          <form
+            className="grid gap-4"
+            id="ssh-upload-form"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void confirmUpload();
+            }}
+          >
             <div className="flex items-start gap-2 rounded-md border border-warning/30 bg-warning/10 px-3 py-2 text-xs text-warning">
               <Warning size={16} weight="duotone" className="mt-0.5 shrink-0" />
               <div className="grid min-w-0 gap-2">
@@ -3154,7 +3169,7 @@ export default function SshFilesTool({ active }: Props) {
                 </span>
               </div>
             ) : null}
-          </div>
+          </form>
           <DialogFooter>
             <Button
               variant="outline"
@@ -3164,10 +3179,11 @@ export default function SshFilesTool({ active }: Props) {
               {t('common.cancel')}
             </Button>
             <Button
+              type="submit"
+              form="ssh-upload-form"
               disabled={
                 uploadStarting || !sourceUsable || uploadPaths.length === 0 || !allowOverwrite
               }
-              onClick={() => void confirmUpload()}
             >
               {uploadStarting ? (
                 <Spinner data-icon="inline-start" />
@@ -3196,7 +3212,14 @@ export default function SshFilesTool({ active }: Props) {
               {t('sshFilesTool.createFolderDesc', { path: currentPath })}
             </DialogDescription>
           </DialogHeader>
-          <div className="grid gap-1.5">
+          <form
+            className="grid gap-1.5"
+            id="ssh-create-folder-form"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void executeCreateFolder();
+            }}
+          >
             <Label htmlFor="ssh-create-folder-name" className="text-xs text-muted-foreground">
               {t('sshFilesTool.folderName')}
             </Label>
@@ -3222,7 +3245,7 @@ export default function SshFilesTool({ active }: Props) {
                 </span>
               </div>
             ) : null}
-          </div>
+          </form>
           <DialogFooter>
             <Button
               variant="outline"
@@ -3232,8 +3255,9 @@ export default function SshFilesTool({ active }: Props) {
               {t('common.cancel')}
             </Button>
             <Button
+              type="submit"
+              form="ssh-create-folder-form"
               disabled={creatingFolder || !sourceUsable}
-              onClick={() => void executeCreateFolder()}
             >
               {creatingFolder ? (
                 <Spinner data-icon="inline-start" />
@@ -3264,7 +3288,14 @@ export default function SshFilesTool({ active }: Props) {
               {t('sshFilesTool.operationDesc', { count: operationDialog?.paths.length ?? 0 })}
             </DialogDescription>
           </DialogHeader>
-          <div className="grid gap-4">
+          <form
+            className="grid gap-4"
+            id="ssh-file-operation-form"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void executeOperationDialog();
+            }}
+          >
             <div className="grid gap-1.5">
               <Label htmlFor="ssh-file-operation-target" className="text-xs text-muted-foreground">
                 {operationDialog?.operation === 'rename'
@@ -3303,7 +3334,7 @@ export default function SshFilesTool({ active }: Props) {
                 </span>
               </div>
             ) : null}
-          </div>
+          </form>
           <DialogFooter>
             <Button
               variant="outline"
@@ -3313,8 +3344,9 @@ export default function SshFilesTool({ active }: Props) {
               {t('common.cancel')}
             </Button>
             <Button
+              type="submit"
+              form="ssh-file-operation-form"
               disabled={operationRunning || operationDialog === null}
-              onClick={() => void executeOperationDialog()}
             >
               {operationRunning ? (
                 <Spinner data-icon="inline-start" />

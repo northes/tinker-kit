@@ -643,7 +643,14 @@ function SSHProfileManagerDialog({
                     <span>{t('sshProfiles.importedHint', { alias: draft.originAlias })}</span>
                   </div>
                 ) : null}
-                <div className="grid gap-4">
+                <form
+                  className="grid gap-4"
+                  id="ssh-profile-form"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    if (!busy) void save();
+                  }}
+                >
                   <div className="grid gap-1.5">
                     <Label htmlFor="ssh-profile-name">{t('sshProfiles.name')}</Label>
                     <Input
@@ -763,7 +770,7 @@ function SSHProfileManagerDialog({
                       </div>
                     </>
                   )}
-                </div>
+                </form>
                 {formError ? (
                   <p className="m-0 text-xs text-destructive" role="alert">
                     {formError}
@@ -800,7 +807,7 @@ function SSHProfileManagerDialog({
               {view === 'list' ? t('common.cancel') : t('sshProfiles.back')}
             </Button>
             {view === 'form' ? (
-              <Button onClick={() => void save()} disabled={busy}>
+              <Button type="submit" form="ssh-profile-form" disabled={busy}>
                 {busy ? <Spinner data-icon="inline-start" /> : null}
                 {t('common.save')}
               </Button>

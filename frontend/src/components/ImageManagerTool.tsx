@@ -1613,7 +1613,14 @@ export default function ImageManagerTool({
   const renderEditForm = () => {
     if (!editingSource) return null;
     return (
-      <div className="flex flex-col gap-3 border-t border-border pt-3">
+      <form
+        className="flex flex-col gap-3 border-t border-border pt-3"
+        id="image-source-form"
+        onSubmit={(event) => {
+          event.preventDefault();
+          void saveSource();
+        }}
+      >
         <h3 className="m-0 text-sm font-medium text-foreground">
           {editingSource.id ? t('imageManagerTool.editSource') : t('imageManagerTool.addSource')}
         </h3>
@@ -1713,11 +1720,11 @@ export default function ImageManagerTool({
               {t('imageManagerTool.testConnection')}
             </Button>
           ) : null}
-          <Button size="sm" onClick={() => void saveSource()} disabled={testingSource}>
+          <Button type="submit" size="sm" disabled={testingSource}>
             {t('imageManagerTool.saveSource')}
           </Button>
         </div>
-      </div>
+      </form>
     );
   };
 
@@ -1979,6 +1986,9 @@ export default function ImageManagerTool({
     setOperationError('');
     setOperationDialog({ type: 'pull-image', sourceConfigKey, value: '' });
   };
+
+  // 字段表单按操作类型唯一渲染，页脚确认按钮通过 form 关联，回车即可提交。
+  const operationFormID = operationDialog ? `image-operation-${operationDialog.type}` : undefined;
 
   const submitOperation = () => {
     if (!operationDialog || busy) return;
@@ -2793,7 +2803,14 @@ export default function ImageManagerTool({
               </DialogDescription>
             </DialogHeader>
             {operationDialog?.type === 'push' && operationDialog.changes.length === 1 ? (
-              <div className="grid gap-2">
+              <form
+                className="grid gap-2"
+                id={operationFormID}
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  submitOperation();
+                }}
+              >
                 <Label htmlFor="image-operation-target">
                   {t('imageManagerTool.targetImageName')}
                 </Label>
@@ -2811,10 +2828,17 @@ export default function ImageManagerTool({
                     );
                   }}
                 />
-              </div>
+              </form>
             ) : null}
             {operationDialog?.type === 'rename' ? (
-              <div className="grid gap-2">
+              <form
+                className="grid gap-2"
+                id={operationFormID}
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  submitOperation();
+                }}
+              >
                 <Label htmlFor="image-operation-target">
                   {t('imageManagerTool.targetImageName')}
                 </Label>
@@ -2831,10 +2855,17 @@ export default function ImageManagerTool({
                     );
                   }}
                 />
-              </div>
+              </form>
             ) : null}
             {operationDialog?.type === 'copy-tag' ? (
-              <div className="grid gap-2">
+              <form
+                className="grid gap-2"
+                id={operationFormID}
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  submitOperation();
+                }}
+              >
                 <Label htmlFor="image-operation-tag">{t('imageManagerTool.newTag')}</Label>
                 <Input
                   id="image-operation-tag"
@@ -2850,10 +2881,17 @@ export default function ImageManagerTool({
                     );
                   }}
                 />
-              </div>
+              </form>
             ) : null}
             {operationDialog?.type === 'pull-image' ? (
-              <div className="grid gap-2">
+              <form
+                className="grid gap-2"
+                id={operationFormID}
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  submitOperation();
+                }}
+              >
                 <Label htmlFor="image-operation-reference">
                   {t('imageManagerTool.imageReference')}
                 </Label>
@@ -2872,16 +2910,23 @@ export default function ImageManagerTool({
                     );
                   }}
                 />
-              </div>
+              </form>
             ) : null}
             {operationDialog?.type === 'push' && operationDialog.changes.length > 1 ? (
-              <div className="max-h-36 overflow-y-auto rounded-md border border-border bg-muted/40 px-3 py-2">
+              <form
+                className="max-h-36 overflow-y-auto rounded-md border border-border bg-muted/40 px-3 py-2"
+                id={operationFormID}
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  submitOperation();
+                }}
+              >
                 {operationDialog.changes.map((change) => (
                   <code key={change.source} className="block break-all font-mono text-xs leading-5">
                     {change.source}
                   </code>
                 ))}
-              </div>
+              </form>
             ) : null}
             {operationError ? (
               <p className="m-0 text-xs text-destructive" role="alert">
@@ -2899,7 +2944,7 @@ export default function ImageManagerTool({
               >
                 {t('imageManagerTool.cancel')}
               </Button>
-              <Button disabled={busy !== null} onClick={submitOperation}>
+              <Button type="submit" form={operationFormID} disabled={busy !== null}>
                 {busy ? <Spinner data-icon="inline-start" /> : null}
                 {t('imageManagerTool.confirm')}
               </Button>

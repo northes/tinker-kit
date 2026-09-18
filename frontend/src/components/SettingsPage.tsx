@@ -392,7 +392,14 @@ function SSHKnownHostsDialog({
           </DialogHeader>
           <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5 [padding-inline-end:var(--overlay-scrollbar-hit-size)]">
             {editing ? (
-              <div className="grid gap-4">
+              <form
+                className="grid gap-4"
+                id="ssh-known-hosts-form"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  if (canSave && !saving) void save();
+                }}
+              >
                 {error ? (
                   <p className="m-0 text-xs text-destructive" role="alert">
                     {error}
@@ -455,7 +462,7 @@ function SSHKnownHostsDialog({
                     }}
                   />
                 </div>
-              </div>
+              </form>
             ) : loading ? (
               <div className="flex min-h-32 flex-col items-center justify-center gap-2 text-center text-sm text-muted-foreground">
                 <Spinner className="size-6 text-primary motion-reduce:animate-none" />
@@ -554,7 +561,7 @@ function SSHKnownHostsDialog({
                 >
                   {t('common.cancel')}
                 </Button>
-                <Button disabled={saving || !canSave} onClick={() => void save()}>
+                <Button type="submit" form="ssh-known-hosts-form" disabled={saving || !canSave}>
                   {saving ? <Spinner data-icon="inline-start" /> : null}
                   {t('common.save')}
                 </Button>
