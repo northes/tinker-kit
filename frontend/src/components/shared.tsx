@@ -29,6 +29,7 @@ export type ToolId =
   | 'qrcode'
   | 'image'
   | 'image-manager'
+  | 'service-manager'
   | 'ssh-files';
 export type PendingAction = {
   tool: ToolId;

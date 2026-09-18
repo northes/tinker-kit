@@ -69,8 +69,9 @@ export function toHistoryItem(item: StoredHistoryItem): HistoryItem | null {
     item.tool === 'url' ||
     item.tool === 'qrcode' ||
     item.tool === 'image' ||
-    item.tool === 'image-manager'
-    || item.tool === 'ssh-files'
+    item.tool === 'image-manager' ||
+    item.tool === 'service-manager' ||
+    item.tool === 'ssh-files'
     ? { ...item, tool: item.tool, detail: normalizeHistoryDetail(item.detail) }
     : null;
 }
@@ -111,6 +112,7 @@ export function HistoryIcon({ tool }: { tool: ToolId }) {
     <ImageIcon weight="duotone" />
   ) : tool === 'image-manager' ? (
     <Package weight="duotone" />
+  ) : tool === 'service-manager' ? (
     <HardDrives weight="duotone" />
   ) : tool === 'ssh-files' ? (
     <FolderSimple weight="duotone" />
@@ -170,7 +172,7 @@ function endOfDayMs(date: Date) {
   return end.getTime();
 }
 const historyTools: Array<{ id: ToolId; nameKey: string }> = (
-  ['json', 'time', 'text', 'base64', 'diff', 'jwt', 'url', 'qrcode', 'image', 'image-manager', 'ssh-files'] as const
+  ['json', 'time', 'text', 'base64', 'diff', 'jwt', 'url', 'qrcode', 'image', 'image-manager', 'service-manager', 'ssh-files'] as const
 ).map((id) => ({ id, nameKey: `tools.${id}.name` }));
 
 export default function HistoryPage({

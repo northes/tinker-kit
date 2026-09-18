@@ -590,6 +590,13 @@ func validateConfigForSave(cfg Config, allowDanglingRefs ...bool) error {
 			}
 		}
 	}
+	for index, target := range cfg.ServiceTargets {
+		if target.Kind == "ssh" && target.SSHProfileID != "" {
+			if _, ok := profiles[target.SSHProfileID]; !ok {
+				return fmt.Errorf("服务目标（第 %d 项）引用的 SSH 配置不存在", index+1)
+			}
+		}
+	}
 	return nil
 }
 

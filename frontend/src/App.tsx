@@ -223,6 +223,7 @@ const defaultSettings: Settings = {
     { id: 'url', enabled: true },
     { id: 'qrcode', enabled: true },
     { id: 'image-manager', enabled: true },
+    { id: 'service-manager', enabled: true },
     { id: 'ssh-files', enabled: true },
   ],
   themeMode: 'dark',
@@ -262,6 +263,7 @@ const defaultSettings: Settings = {
   sshProfilesVersion: 1,
   sshProfiles: [],
   fileSources: [],
+  serviceTargets: [{ id: 'local', name: '本机', kind: 'local', sshProfileID: '' }],
 };
 const JsonTool = lazy(() => import('./components/JsonTool'));
 const TimeTool = lazy(() => import('./components/TimeTool'));
@@ -274,6 +276,7 @@ const QrCodeTool = lazy(() => import('./components/QrCodeTool'));
 const ImageTool = lazy(() => import('./components/ImageTool'));
 const ImageManagerTool = lazy(() => import('./components/ImageManagerTool'));
 const ImageManagerDetailPage = lazy(() => import('./components/ImageManagerDetailPage'));
+const ServiceManagerTool = lazy(() => import('./components/ServiceManagerTool'));
 const SshFilesTool = lazy(() => import('./components/SshFilesTool'));
 const SettingsPage = lazy(() => import('./components/SettingsPage'));
 const HistoryPage = lazy(() => import('./components/HistoryPage'));
@@ -348,6 +351,13 @@ const tools: ToolDefinition[] = [
     descriptionKey: 'tools.image-manager.description',
     icon: Package,
     keywords: 'docker image manager ssh container 镜像 管理 容器 推送 删除',
+  },
+  {
+    id: 'service-manager' as const,
+    nameKey: 'tools.service-manager.name',
+    descriptionKey: 'tools.service-manager.description',
+    icon: HardDrives,
+    keywords: 'docker compose container pm2 systemd service ssh 日志 容器 服务 管理',
   },
   {
     id: 'ssh-files' as const,
@@ -454,6 +464,14 @@ const paletteItems: PaletteItem[] = [
     icon: Package,
     keywords: 'docker image manager ssh 镜像 管理 容器 打开工具',
     page: 'image-manager',
+  },
+  {
+    id: 'open:service-manager',
+    labelKey: 'commands.openServiceManager',
+    groupKey: 'groups.tools',
+    icon: HardDrives,
+    keywords: 'docker compose container pm2 systemd ssh 服务 容器 日志 打开工具',
+    page: 'service-manager',
   },
   {
     id: 'open:ssh-files',
@@ -2021,6 +2039,15 @@ function AppShell() {
                   />
                 </Suspense>
               ) : null}
+            </div>
+            <div
+              className={`tool-slot h-full min-h-0 overflow-hidden${page === 'service-manager' ? '' : ' is-hidden absolute inset-0 invisible pointer-events-none'}`}
+            >
+              {visited.has('service-manager') && (
+                <Suspense fallback={null}>
+                  <ServiceManagerTool active={page === 'service-manager'} record={record} />
+                </Suspense>
+              )}
             </div>
             <div
               className={`tool-slot h-full min-h-0 overflow-hidden${page === 'ssh-files' ? '' : ' is-hidden absolute inset-0 invisible pointer-events-none'}`}

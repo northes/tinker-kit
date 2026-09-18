@@ -68,7 +68,7 @@ import { toast } from './ui/toast';
 
 type SSHProfileContextValue = {
   profiles: SSHProfile[];
-  reload: () => Promise<void>;
+  reload: () => Promise<SSHProfile[]>;
   openManager: () => void;
 };
 
@@ -158,8 +158,9 @@ export function SSHProfileProvider({ children }: { children: ReactNode }) {
   const [managerOpen, setManagerOpen] = useState(false);
 
   const reload = useCallback(async () => {
-    const next = await GetSSHProfiles();
-    setProfiles(next ?? []);
+    const next = (await GetSSHProfiles()) ?? [];
+    setProfiles(next);
+    return next;
   }, []);
 
   useEffect(() => {

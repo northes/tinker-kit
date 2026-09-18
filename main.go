@@ -92,6 +92,7 @@ func main() {
 	updateService := NewUpdateService(currentVersion)
 	fileService := NewFileService(cfgService)
 	imageService := NewImageService(cfgService)
+	serviceManagerService := NewServiceManagerService(cfgService)
 	dockService := dock.New()
 	isQuitting := false
 	app := application.New(application.Options{
@@ -108,6 +109,7 @@ func main() {
 			application.NewService(updateService),
 			application.NewService(fileService),
 			application.NewService(imageService),
+			application.NewService(serviceManagerService),
 			application.NewService(dockService),
 		},
 		Mac: application.MacOptions{
@@ -117,6 +119,10 @@ func main() {
 	imageService.setEventEmitter(func(name string, data any) {
 		_ = app.Event.Emit(name, data)
 	})
+	serviceManagerService.setEventEmitter(func(name string, data any) {
+		_ = app.Event.Emit(name, data)
+	})
+	serviceManagerService.start()
 	fileService.setEventEmitter(func(name string, data any) {
 		_ = app.Event.Emit(name, data)
 	})
@@ -141,6 +147,7 @@ func main() {
 	updateService.start(app.Updater, cfgService.Get().AutoCheckUpdates)
 	app.OnShutdown(updateService.stopScheduler)
 	app.OnShutdown(imageService.shutdown)
+	app.OnShutdown(serviceManagerService.shutdown)
 
 	window := app.Window.NewWithOptions(application.WebviewWindowOptions{
 		Name:             appName,

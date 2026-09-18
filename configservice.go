@@ -42,6 +42,7 @@ type Config struct {
 	// SSHConnections 仅作为旧调用方的内存兼容形状保留；新配置和新调用方使用 SSHProfiles。
 	SSHConnections []SSHConnection `json:"-"`
 	FileSources    []FileSource    `json:"fileSources"`
+	ServiceTargets []ServiceTarget `json:"serviceTargets"`
 }
 
 type SidebarToolConfig struct {
@@ -49,7 +50,7 @@ type SidebarToolConfig struct {
 	Enabled bool   `json:"enabled"`
 }
 
-var defaultSidebarToolIDs = []string{"json", "time", "text", "base64", "diff", "jwt", "url", "qrcode", "image-manager", "ssh-files"}
+var defaultSidebarToolIDs = []string{"json", "time", "text", "base64", "diff", "jwt", "url", "qrcode", "image-manager", "service-manager", "ssh-files"}
 
 type ImageSource struct {
 	ID           string `json:"id"`
@@ -119,6 +120,10 @@ func defaultImageSources() []ImageSource {
 	return []ImageSource{{ID: localImageSourceID, Name: "本机", Kind: "local"}}
 }
 
+func defaultServiceTargets() []ServiceTarget {
+	return []ServiceTarget{{ID: "local", Name: "本机", Kind: "local"}}
+}
+
 func defaultSidebarTools() []SidebarToolConfig {
 	tools := make([]SidebarToolConfig, 0, len(defaultSidebarToolIDs))
 	for _, id := range defaultSidebarToolIDs {
@@ -159,7 +164,7 @@ type historyStored struct {
 }
 
 func defaultConfig() Config {
-	return Config{TrayMatchEnabled: true, TrayMatchTools: []string{"json", "time", "text", "base64", "diff", "jwt", "url"}, AutoOverwrite: true, AutoCheckUpdates: true, Language: "zh-CN", SidebarMode: "full", SidebarTools: defaultSidebarTools(), ThemeMode: "dark", LightTheme: "default-light", DarkTheme: "default-dark", DiffClipboardTargetMode: "alternate", CodeEditorFontSize: 16, TimeResultOrder: []string{"local", "dateTime", "dateOnly", "timeOnly", "zonedIso8601", "rfc3339", "utc", "compact", "underscore", "unixSeconds", "unixMilliseconds", "unixNanoseconds"}, JsonAutoFormatOnFill: true, JsonAutoFormatOnFillMigrated: true, ImageSources: defaultImageSources(), SSHProfilesVersion: currentSSHProfilesVersion, SSHProfiles: []SSHProfile{}, SSHConnections: []SSHConnection{}, FileSources: []FileSource{}}
+	return Config{TrayMatchEnabled: true, TrayMatchTools: []string{"json", "time", "text", "base64", "diff", "jwt", "url"}, AutoOverwrite: true, AutoCheckUpdates: true, Language: "zh-CN", SidebarMode: "full", SidebarTools: defaultSidebarTools(), ThemeMode: "dark", LightTheme: "default-light", DarkTheme: "default-dark", DiffClipboardTargetMode: "alternate", CodeEditorFontSize: 16, TimeResultOrder: []string{"local", "dateTime", "dateOnly", "timeOnly", "zonedIso8601", "rfc3339", "utc", "compact", "underscore", "unixSeconds", "unixMilliseconds", "unixNanoseconds"}, JsonAutoFormatOnFill: true, JsonAutoFormatOnFillMigrated: true, ImageSources: defaultImageSources(), SSHProfilesVersion: currentSSHProfilesVersion, SSHProfiles: []SSHProfile{}, SSHConnections: []SSHConnection{}, FileSources: []FileSource{}, ServiceTargets: defaultServiceTargets()}
 }
 
 func normalizeThemeID(theme string, defaultID string, legacyID string) string {
@@ -197,6 +202,18 @@ func sidebarToolsEqual(a []SidebarToolConfig, b []SidebarToolConfig) bool {
 }
 
 func imageSourcesEqual(a []ImageSource, b []ImageSource) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
+func serviceTargetsEqual(a []ServiceTarget, b []ServiceTarget) bool {
 	if len(a) != len(b) {
 		return false
 	}
@@ -484,6 +501,48 @@ func normalizeImageSources(
 	return result
 }
 
+// normalizeServiceTargets 保证本机目标始终存在，并清理重复或非法的目标；已失效的
+// SSH 引用会被保留，交由界面展示并修复（与镜像/文件来源一致）。
+func normalizeServiceTargets(
+	targets []ServiceTarget,
+	sshProfileNames map[string]string,
+) []ServiceTarget {
+	result := defaultServiceTargets()
+	seen := map[string]bool{"local": true}
+	for _, target := range targets {
+		target.ID = strings.TrimSpace(target.ID)
+		target.Name = strings.TrimSpace(target.Name)
+		target.Kind = strings.TrimSpace(strings.ToLower(target.Kind))
+		target.SSHProfileID = strings.TrimSpace(target.SSHProfileID)
+		if target.Kind == "" && target.ID == "local" {
+			target.Kind = "local"
+		}
+		if target.Kind != "ssh" {
+			continue
+		}
+		if target.SSHProfileID == "" && strings.HasPrefix(target.ID, "ssh:") {
+			target.SSHProfileID = strings.TrimPrefix(target.ID, "ssh:")
+		}
+		if target.SSHProfileID == "" {
+			continue
+		}
+		target.ID = "ssh:" + target.SSHProfileID
+		target.Kind = "ssh"
+		if seen[target.ID] {
+			continue
+		}
+		seen[target.ID] = true
+		if name := sshProfileNames[target.SSHProfileID]; name != "" && (target.Name == "" || target.Name == target.SSHProfileID) {
+			target.Name = name
+		}
+		if target.Name == "" {
+			target.Name = target.SSHProfileID
+		}
+		result = append(result, target)
+	}
+	return result
+}
+
 // imageSourceIdentifier 返回用于错误提示的来源标识，优先 Name，其次 ID。
 func imageSourceIdentifier(source ImageSource) string {
 	if name := strings.TrimSpace(source.Name); name != "" {
@@ -583,6 +642,7 @@ func normalizeConfig(cfg Config) Config {
 			cfg.FileSources[index].SSHConnectionID = ""
 		}
 	}
+	cfg.ServiceTargets = normalizeServiceTargets(cfg.ServiceTargets, sshProfileNameMap(cfg.SSHProfiles))
 	validSidebarTool := make(map[string]bool, len(defaultSidebarToolIDs))
 	for _, id := range defaultSidebarToolIDs {
 		validSidebarTool[id] = true
@@ -770,7 +830,7 @@ func NewConfigService() *ConfigService {
 			}
 
 			cfg = normalizeConfig(cfg)
-			if legacySSHReset || hasLegacyTheme || !hasDockerCLIPath || !hasImageSources || beforeNormalize.ThemeMode != cfg.ThemeMode || beforeNormalize.LightTheme != cfg.LightTheme || beforeNormalize.DarkTheme != cfg.DarkTheme || !stringSlicesEqual(beforeNormalize.TrayMatchTools, cfg.TrayMatchTools) || beforeNormalize.CodeEditorFontSize != cfg.CodeEditorFontSize || !sidebarToolsEqual(beforeNormalize.SidebarTools, cfg.SidebarTools) || !imageSourcesEqual(beforeNormalize.ImageSources, cfg.ImageSources) || beforeNormalize.DockerCLIPath != cfg.DockerCLIPath {
+			if legacySSHReset || hasLegacyTheme || !hasDockerCLIPath || !hasImageSources || beforeNormalize.ThemeMode != cfg.ThemeMode || beforeNormalize.LightTheme != cfg.LightTheme || beforeNormalize.DarkTheme != cfg.DarkTheme || !stringSlicesEqual(beforeNormalize.TrayMatchTools, cfg.TrayMatchTools) || beforeNormalize.CodeEditorFontSize != cfg.CodeEditorFontSize || !sidebarToolsEqual(beforeNormalize.SidebarTools, cfg.SidebarTools) || !imageSourcesEqual(beforeNormalize.ImageSources, cfg.ImageSources) || !serviceTargetsEqual(beforeNormalize.ServiceTargets, cfg.ServiceTargets) || beforeNormalize.DockerCLIPath != cfg.DockerCLIPath {
 				if normalized, marshalErr := json.Marshal(cfg); marshalErr == nil {
 					_ = writeConfigAtomically(path, normalized)
 				}
@@ -833,6 +893,7 @@ func (s *ConfigService) Save(cfg Config) error {
 	cfg.SSHProfiles = copySSHProfiles(s.cfg.SSHProfiles)
 	cfg.SSHConnections = append([]SSHConnection(nil), s.cfg.SSHConnections...)
 	cfg.FileSources = copyFileSources(s.cfg.FileSources)
+	cfg.ServiceTargets = copyServiceTargets(s.cfg.ServiceTargets)
 	// 删除 SSH 配置后，工具引用可以暂时悬空；镜像/文件来源定向接口会在写入新引用前
 	// 校验配置，而设置页快照仍应能保存无关设置，交由界面修复悬空来源。
 	if err := validateConfigForSave(cfg, true); err != nil {

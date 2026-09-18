@@ -25,6 +25,35 @@ export interface Config {
     "sshProfilesVersion": number;
     "sshProfiles": SSHProfile[] | null;
     "fileSources": FileSource[] | null;
+    "serviceTargets": ServiceTarget[] | null;
+}
+
+export interface DockerComposeGroup {
+    "id": string;
+    "name": string;
+    "containers": DockerContainer[] | null;
+}
+
+export interface DockerContainer {
+    "id": string;
+    "name": string;
+    "image": string;
+    "status": string;
+    "running": boolean;
+    "createdAt": string;
+    "ports": string[] | null;
+    "labels": { [_ in string]?: string } | null;
+    "composeProject"?: string;
+    "composeService"?: string;
+}
+
+export interface DockerContainerDetail {
+    "container": DockerContainer;
+    "command": string[] | null;
+    "entrypoint": string[] | null;
+    "mounts": string[] | null;
+    "networks": string[] | null;
+    "restartPolicy": string;
 }
 
 export interface DockerDeleteFailure {
@@ -281,6 +310,38 @@ export interface ImageTaskSnapshot {
     "tasks": ImageTask[] | null;
 }
 
+export interface LogMonitor {
+    "id": string;
+    "targetID": string;
+    "resource": ServiceResourceRef;
+    "state": string;
+    "error"?: string;
+    "truncated": boolean;
+}
+
+export interface PM2Process {
+    "id": string;
+    "name": string;
+    "status": string;
+    "pid": number;
+    "restarts": number;
+    "uptime": number;
+    "cpu": number;
+    "memory": number;
+    "script": string;
+    "cwd": string;
+    "interpreter": string;
+}
+
+export interface PM2ProcessDetail {
+    "process": PM2Process;
+}
+
+export interface QueryLogBufferRequest {
+    "monitorIDs": string[] | null;
+    "filter": ServiceLogFilter;
+}
+
 export interface RegistryDescriptor {
     "mediaType": string;
     "digest": string;
@@ -385,9 +446,86 @@ export interface SSHProfile {
     "originUpdatedAt": string;
 }
 
+export interface ServiceActionItemResult {
+    "id": string;
+    "name": string;
+    "error"?: string;
+}
+
+export interface ServiceActionRequest {
+    "targetID": string;
+    "resource": ServiceResourceRef;
+    "action": string;
+}
+
+export interface ServiceActionResult {
+    "succeeded": ServiceActionItemResult[] | null;
+    "failed": ServiceActionItemResult[] | null;
+}
+
+export interface ServiceInventory {
+    "target": ServiceTarget;
+    "docker": ServiceRuntimeStatus;
+    "pm2": ServiceRuntimeStatus;
+    "systemd": ServiceRuntimeStatus;
+    "dockerGroups": DockerComposeGroup[] | null;
+    "containers": DockerContainer[] | null;
+    "pm2Processes": PM2Process[] | null;
+    "systemUnits": SystemdUnit[] | null;
+}
+
+export interface ServiceLogFilter {
+    "query": string;
+    "regex": boolean;
+    "caseSensitive": boolean;
+    "streams": string[] | null;
+}
+
+export interface ServiceLogLine {
+    "sequence": number;
+    "monitorID": string;
+    "runtime": string;
+    "resourceID": string;
+    "name": string;
+    "timestamp"?: string;
+    "receivedAt": string;
+    "stream": string;
+    "text": string;
+}
+
+export interface ServiceLogSnapshot {
+    "lines": ServiceLogLine[] | null;
+    "maxSequence": number;
+    "truncated": boolean;
+}
+
+export interface ServiceResourceRef {
+    "runtime": string;
+    "id": string;
+    "scope"?: string;
+    "name"?: string;
+}
+
+export interface ServiceRuntimeStatus {
+    "available": boolean;
+    "error"?: string;
+}
+
+export interface ServiceTarget {
+    "id": string;
+    "name": string;
+    "kind": string;
+    "sshProfileID"?: string;
+}
+
 export interface SidebarToolConfig {
     "id": string;
     "enabled": boolean;
+}
+
+export interface StartLogMonitorsRequest {
+    "targetID": string;
+    "resources": ServiceResourceRef[] | null;
 }
 
 /**
@@ -397,4 +535,21 @@ export interface SystemInfo {
     "os": string;
     "version": string;
     "arch": string;
+}
+
+export interface SystemdUnit {
+    "id": string;
+    "name": string;
+    "description": string;
+    "loadState": string;
+    "activeState": string;
+    "subState": string;
+    "scope": string;
+}
+
+export interface SystemdUnitDetail {
+    "unit": SystemdUnit;
+    "mainPID": number;
+    "execStart": string;
+    "fragmentPath": string;
 }
