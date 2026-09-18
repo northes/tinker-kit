@@ -96,7 +96,8 @@ func (s *SSHProfileService) TestSSHProfile(profile SSHProfile) error {
 	return config.TestSSHProfile(profile)
 }
 
-// normalizeSSHProfile 应用默认值，但不会静默改变已保存配置的认证语义。
+// normalizeSSHProfile 应用默认值并校验连接字段，但不会静默改变已保存配置的认证语义。
+// ID 是持久化身份，不属于连接参数：未保存的草稿允许为空，由保存和列表校验负责。
 func normalizeSSHProfile(profile SSHProfile) (SSHProfile, error) {
 	profile.ID = strings.TrimSpace(profile.ID)
 	profile.Name = strings.TrimSpace(profile.Name)
@@ -111,9 +112,6 @@ func normalizeSSHProfile(profile SSHProfile) (SSHProfile, error) {
 	}
 	if profile.Origin != "manual" && profile.Origin != "ssh-config" {
 		return SSHProfile{}, errors.New("SSH 配置来源无效")
-	}
-	if !validConfigValue(profile.ID, 128) {
-		return SSHProfile{}, errors.New("SSH 配置 ID 无效")
 	}
 	if profile.Name == "" {
 		profile.Name = profile.OriginAlias
@@ -165,6 +163,9 @@ func normalizeSSHProfiles(profiles []SSHProfile) []SSHProfile {
 		if err != nil {
 			continue
 		}
+		if !validConfigValue(normalized.ID, 128) {
+			continue
+		}
 		if _, ok := seen[normalized.ID]; ok {
 			continue
 		}
@@ -180,6 +181,9 @@ func validateSSHProfiles(profiles []SSHProfile) error {
 		normalized, err := normalizeSSHProfile(profile)
 		if err != nil {
 			return fmt.Errorf("SSH 配置无效（第 %d 项）：%v", index+1, err)
+		}
+		if !validConfigValue(normalized.ID, 128) {
+			return fmt.Errorf("SSH 配置 ID 无效（第 %d 项）", index+1)
 		}
 		if _, ok := seen[normalized.ID]; ok {
 			return fmt.Errorf("SSH 配置 ID 重复: %q", normalized.ID)
@@ -239,6 +243,9 @@ func (s *ConfigService) saveSSHProfile(profile SSHProfile, allowImportedUpdate b
 		normalized, err = normalizeSSHProfile(profile)
 		if err != nil {
 			return err
+		}
+		if !validConfigValue(normalized.ID, 128) {
+			return errors.New("SSH 配置 ID 无效")
 		}
 		for index := range profiles {
 			if profiles[index].ID == normalized.ID {

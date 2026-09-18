@@ -59,6 +59,41 @@ func TestNormalizeSSHProfileValidation(t *testing.T) {
 	}
 }
 
+func TestNormalizeSSHProfileAllowsEmptyID(t *testing.T) {
+	draft, err := normalizeSSHProfile(SSHProfile{
+		Host:     "dev.example.com",
+		Username: "deploy",
+		Password: "secret",
+	})
+	if err != nil {
+		t.Fatalf("未保存的 SSH 配置草稿不应要求 ID: %v", err)
+	}
+	if draft.ID != "" || draft.Name != "dev.example.com" {
+		t.Fatalf("草稿默认值错误: %#v", draft)
+	}
+}
+
+func TestSSHProfileIDRequiredForPersistence(t *testing.T) {
+	if err := validateSSHProfiles([]SSHProfile{{
+		Host:     "dev.example.com",
+		Username: "deploy",
+		Password: "secret",
+	}}); err == nil {
+		t.Fatal("持久化列表缺少 SSH 配置 ID 时应失败")
+	}
+	service := &ConfigService{
+		path: filepath.Join(t.TempDir(), "config.json"),
+		cfg:  normalizeConfig(defaultConfig()),
+	}
+	saved, err := service.SaveSSHProfile(SSHProfile{Host: "dev.example.com", Username: "deploy", Password: "secret"})
+	if err != nil {
+		t.Fatalf("保存缺少 ID 的草稿应自动生成 ID: %v", err)
+	}
+	if saved.ID == "" {
+		t.Fatal("保存后应生成 SSH 配置 ID")
+	}
+}
+
 func TestResolveSSHConfigProfileParsesExpandedOutput(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
