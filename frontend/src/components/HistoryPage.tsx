@@ -1,16 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Button } from './ui/button';
 import { DataTable } from './ui/data-table';
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from './ui/alert-dialog';
+import { ConfirmDialog } from './ConfirmDialog';
 import {
   Select,
   SelectContent,
@@ -132,31 +123,21 @@ export function ClearHistoryDialog({
 }) {
   const { t } = useTranslation();
   return (
-    <AlertDialog
+    <ConfirmDialog
       open={open}
-      onOpenChange={(o) => {
-        if (!o) onClose();
+      onOpenChange={(next) => {
+        if (!next) onClose();
       }}
-    >
-      <AlertDialogContent>
-        <AlertDialogHeader>
-          <AlertDialogTitle>{t('clearHistoryDialog.title')}</AlertDialogTitle>
-          <AlertDialogDescription>{t('clearHistoryDialog.body')}</AlertDialogDescription>
-        </AlertDialogHeader>
-        <AlertDialogFooter>
-          <AlertDialogCancel onClick={onClose}>{t('clearHistoryDialog.cancel')}</AlertDialogCancel>
-          <AlertDialogAction
-            onClick={() => {
-              onConfirm();
-              onClose();
-            }}
-            variant="destructive"
-          >
-            {t('clearHistoryDialog.confirm')}
-          </AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
+      title={t('clearHistoryDialog.title')}
+      description={t('clearHistoryDialog.body')}
+      cancelLabel={t('clearHistoryDialog.cancel')}
+      confirmLabel={t('clearHistoryDialog.confirm')}
+      destructive
+      onConfirm={() => {
+        onConfirm();
+        onClose();
+      }}
+    />
   );
 }
 

@@ -61,16 +61,6 @@ import {
   type PendingAction,
   type ToolId,
 } from './shared';
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from './ui/alert-dialog';
 import { Badge } from './ui/badge';
 import { Button } from './ui/button';
 import { Checkbox } from './ui/checkbox';
@@ -107,6 +97,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
 import { toast } from './ui/toast';
 import { SSHProfileSelect } from './SSHProfileSelect';
 import { useSSHProfiles } from './SSHProfileManagerDialog';
+import { ConfirmDialog } from './ConfirmDialog';
 
 const LOCAL_SOURCE_ID = 'local';
 const MANAGE_SOURCES_VALUE = '__manage-sources__';
@@ -3232,122 +3223,105 @@ export default function ImageManagerTool({
           </DialogFooter>
         </DialogContent>
       </Dialog>
-      <AlertDialog
+      <ConfirmDialog
         open={confirm !== null}
         onOpenChange={(open) => {
-          if (!open && !busy) setConfirm(null);
+          if (!open) setConfirm(null);
         }}
+        title={
+          confirm?.type === 'removeSource'
+            ? t('imageManagerTool.removeSourceConfirmTitle')
+            : t('imageManagerTool.deleteConfirmTitle')
+        }
+        confirmLabel={
+          confirm?.type === 'removeSource'
+            ? t('imageManagerTool.removeSource')
+            : t('imageManagerTool.confirm')
+        }
+        cancelLabel={t('imageManagerTool.cancel')}
+        destructive
+        busy={busy !== null}
+        onConfirm={confirmAction}
       >
-        <AlertDialogContent className="min-w-0 max-w-[calc(100vw-2rem)] sm:max-w-md">
-          <AlertDialogHeader className="min-w-0">
-            <AlertDialogTitle>
-              {confirm?.type === 'removeSource'
-                ? t('imageManagerTool.removeSourceConfirmTitle')
-                : t('imageManagerTool.deleteConfirmTitle')}
-            </AlertDialogTitle>
-            <AlertDialogDescription
-              render={<div />}
-              className="min-w-0 max-w-full text-left whitespace-normal break-words [overflow-wrap:anywhere]"
-            >
-              {confirm?.type === 'removeSource' ? (
-                <p className="m-0">
-                  {t('imageManagerTool.removeSourceConfirmBody', { name: confirm.name })}
-                </p>
-              ) : confirm?.type === 'delete' ? (
-                confirm.sourceKind === 'registry' ? (
-                  <div className="flex min-w-0 flex-col gap-3">
-                    <p className="m-0">{t('imageManagerTool.registryDeleteConfirmSummary')}</p>
-                    <div className="min-w-0 rounded-md border border-border bg-muted/40 px-3 py-2">
-                      {registryConfirmDigests.length > 0 ? (
-                        <div className="space-y-1.5">
-                          {registryConfirmDigests.map((digest) => (
-                            <div key={digest} className="flex min-w-0 items-start gap-2">
-                              <code className="min-w-0 flex-1 break-all font-mono text-xs leading-5 text-foreground">
-                                {digest}
-                              </code>
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                size="icon-xs"
-                                className="flex-none"
-                                title={t('imageManagerTool.copyDigest')}
-                                aria-label={t('imageManagerTool.copyDigest')}
-                                onClick={() => void copyDigest(digest)}
-                              >
-                                {copiedDigest === digest ? (
-                                  <Check aria-hidden="true" />
-                                ) : (
-                                  <Copy aria-hidden="true" />
-                                )}
-                              </Button>
-                            </div>
-                          ))}
-                        </div>
-                      ) : (
-                        <p className="m-0 mt-2 text-xs text-muted-foreground">
-                          {t('imageManagerTool.registryDeleteDigestPending')}
-                        </p>
-                      )}
-                    </div>
-                    {registryConfirmTags.length > 0 ? (
-                      <div className="min-w-0">
-                        <div className="text-[10px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
-                          {t('imageManagerTool.registryDeleteTags')}
-                        </div>
-                        <div className="mt-1.5 flex max-h-32 min-w-0 flex-wrap gap-1.5 overflow-y-auto pr-1">
-                          {registryConfirmTags.map((tag, index) => (
-                            <button
-                              type="button"
-                              key={`${tag}-${index}`}
-                              className="group inline-flex min-w-0 max-w-full items-start gap-1.5 rounded-md border border-border bg-muted/40 px-1.5 py-0.5 text-left text-foreground outline-none transition-colors hover:bg-muted focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
-                              title={t('imageManagerTool.copyTag')}
-                              aria-label={t('imageManagerTool.copyTag')}
-                              onClick={() => void copyTag(tag)}
-                            >
-                              {copiedTag === tag ? (
-                                <Check size={13} className="mt-0.5 shrink-0" aria-hidden="true" />
-                              ) : (
-                                <Copy size={13} className="mt-0.5 shrink-0" aria-hidden="true" />
-                              )}
-                              <code className="min-w-0 break-all font-mono text-xs leading-5">
-                                {tag}
-                              </code>
-                            </button>
-                          ))}
-                        </div>
+        {confirm?.type === 'removeSource' ? (
+          <p className="m-0">
+            {t('imageManagerTool.removeSourceConfirmBody', { name: confirm.name })}
+          </p>
+        ) : confirm?.type === 'delete' ? (
+          confirm.sourceKind === 'registry' ? (
+            <div className="flex min-w-0 flex-col gap-3">
+              <p className="m-0">{t('imageManagerTool.registryDeleteConfirmSummary')}</p>
+              <div className="min-w-0 rounded-md border border-border bg-muted/40 px-3 py-2">
+                {registryConfirmDigests.length > 0 ? (
+                  <div className="space-y-1.5">
+                    {registryConfirmDigests.map((digest) => (
+                      <div key={digest} className="flex min-w-0 items-start gap-2">
+                        <code className="min-w-0 flex-1 break-all font-mono text-xs leading-5 text-foreground">
+                          {digest}
+                        </code>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon-xs"
+                          className="flex-none"
+                          title={t('imageManagerTool.copyDigest')}
+                          aria-label={t('imageManagerTool.copyDigest')}
+                          onClick={() => void copyDigest(digest)}
+                        >
+                          {copiedDigest === digest ? (
+                            <Check aria-hidden="true" />
+                          ) : (
+                            <Copy aria-hidden="true" />
+                          )}
+                        </Button>
                       </div>
-                    ) : null}
-                    <p className="m-0 text-xs text-muted-foreground">
-                      {t('imageManagerTool.registryDeleteGCHint')}
-                    </p>
+                    ))}
                   </div>
                 ) : (
-                  <p className="m-0">
-                    {confirm.ids.length > 1
-                      ? t('imageManagerTool.deleteConfirmManyBody', { count: confirm.ids.length })
-                      : t('imageManagerTool.deleteConfirmBody', { name: confirm.name })}
+                  <p className="m-0 mt-2 text-xs text-muted-foreground">
+                    {t('imageManagerTool.registryDeleteDigestPending')}
                   </p>
-                )
+                )}
+              </div>
+              {registryConfirmTags.length > 0 ? (
+                <div className="min-w-0">
+                  <div className="text-[10px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
+                    {t('imageManagerTool.registryDeleteTags')}
+                  </div>
+                  <div className="mt-1.5 flex max-h-32 min-w-0 flex-wrap gap-1.5 overflow-y-auto pr-1">
+                    {registryConfirmTags.map((tag, index) => (
+                      <button
+                        type="button"
+                        key={`${tag}-${index}`}
+                        className="group inline-flex min-w-0 max-w-full items-start gap-1.5 rounded-md border border-border bg-muted/40 px-1.5 py-0.5 text-left text-foreground outline-none transition-colors hover:bg-muted focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+                        title={t('imageManagerTool.copyTag')}
+                        aria-label={t('imageManagerTool.copyTag')}
+                        onClick={() => void copyTag(tag)}
+                      >
+                        {copiedTag === tag ? (
+                          <Check size={13} className="mt-0.5 shrink-0" aria-hidden="true" />
+                        ) : (
+                          <Copy size={13} className="mt-0.5 shrink-0" aria-hidden="true" />
+                        )}
+                        <code className="min-w-0 break-all font-mono text-xs leading-5">{tag}</code>
+                      </button>
+                    ))}
+                  </div>
+                </div>
               ) : null}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={busy !== null}>
-              {t('imageManagerTool.cancel')}
-            </AlertDialogCancel>
-            <AlertDialogAction
-              variant="destructive"
-              disabled={busy !== null}
-              onClick={confirmAction}
-            >
-              {busy ? <Spinner data-icon="inline-start" /> : null}
-              {confirm?.type === 'removeSource'
-                ? t('imageManagerTool.removeSource')
-                : t('imageManagerTool.confirm')}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+              <p className="m-0 text-xs text-muted-foreground">
+                {t('imageManagerTool.registryDeleteGCHint')}
+              </p>
+            </div>
+          ) : (
+            <p className="m-0">
+              {confirm.ids.length > 1
+                ? t('imageManagerTool.deleteConfirmManyBody', { count: confirm.ids.length })
+                : t('imageManagerTool.deleteConfirmBody', { name: confirm.name })}
+            </p>
+          )
+        ) : null}
+      </ConfirmDialog>
     </Reveal>
   );
 }

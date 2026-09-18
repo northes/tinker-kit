@@ -31,6 +31,7 @@ import {
   SaveSSHProfile,
   TestSSHProfile,
 } from '../../bindings/changeme/sshprofileservice';
+import { ConfirmDialog } from './ConfirmDialog';
 import { Badge } from './ui/badge';
 import { Button } from './ui/button';
 import {
@@ -816,28 +817,18 @@ function SSHProfileManagerDialog({
           </DialogFooter>
         </DialogContent>
       </Dialog>
-      <AlertDialog
+      <ConfirmDialog
         open={deleteTarget !== null}
         onOpenChange={(nextOpen) => {
-          if (!nextOpen && !busy) setDeleteTarget(null);
+          if (!nextOpen) setDeleteTarget(null);
         }}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>{t('sshProfiles.deleteTitle')}</AlertDialogTitle>
-            <AlertDialogDescription>
-              {t('sshProfiles.deleteDescription', { name: deleteTarget?.name ?? '' })}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={busy}>{t('common.cancel')}</AlertDialogCancel>
-            <AlertDialogAction variant="destructive" disabled={busy} onClick={() => void remove()}>
-              {busy ? <Spinner data-icon="inline-start" /> : null}
-              {t('sshProfiles.deleteConfirm')}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+        title={t('sshProfiles.deleteTitle')}
+        description={t('sshProfiles.deleteDescription', { name: deleteTarget?.name ?? '' })}
+        confirmLabel={t('sshProfiles.deleteConfirm')}
+        destructive
+        busy={busy}
+        onConfirm={() => void remove()}
+      />
       <AlertDialog
         open={discardAction !== null}
         onOpenChange={(nextOpen) => {

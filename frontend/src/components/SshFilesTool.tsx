@@ -145,6 +145,7 @@ import {
   StartFileUpload,
 } from '../../bindings/changeme/fileservice';
 import { SSHProfileSelect } from './SSHProfileSelect';
+import { ConfirmDialog } from './ConfirmDialog';
 import { useSSHProfiles } from './SSHProfileManagerDialog';
 import { toast } from './ui/toast';
 
@@ -3001,83 +3002,55 @@ export default function SshFilesTool({ active }: Props) {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-      <AlertDialog
+      <ConfirmDialog
         open={manageConfirm !== null}
         onOpenChange={(open) => {
           if (!open) setManageConfirm(null);
         }}
-      >
-        <AlertDialogContent className="min-w-0 max-w-[calc(100vw-32px)] sm:max-w-md">
-          <AlertDialogHeader>
-            <AlertDialogTitle>
-              {manageConfirm?.type === 'removeSource'
-                ? t('sshFilesTool.removeSourceTitle')
-                : manageConfirm?.type === 'discardManage' ||
-                    manageConfirm?.type === 'discardAndCreate'
-                  ? t('sshFilesTool.discardManageTitle')
-                  : manageConfirm?.type === 'discardNavigate'
-                    ? t('sshFilesTool.discardEditTitle')
-                    : t('sshFilesTool.discardDraftTitle')}
-            </AlertDialogTitle>
-            <AlertDialogDescription
-              className={manageConfirm?.type === 'removeSource' ? undefined : 'text-xs leading-5'}
-            >
-              {manageConfirm?.type === 'removeSource'
-                ? t('sshFilesTool.removeSourceConfirm', { name: manageConfirm.source.name })
-                : manageConfirm?.type === 'discardManage' ||
-                    manageConfirm?.type === 'discardAndCreate'
-                  ? t('sshFilesTool.discardManageConfirm')
-                  : manageConfirm?.type === 'discardNavigate'
-                    ? t('sshFilesTool.discardEditConfirm')
-                    : t('sshFilesTool.discardDraftConfirm')}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
-            <AlertDialogAction
-              variant={manageConfirm?.type === 'removeSource' ? 'destructive' : 'default'}
-              onClick={confirmManageAction}
-            >
-              {manageConfirm?.type === 'removeSource'
-                ? t('sshFilesTool.removeSourceAction')
-                : manageConfirm?.type === 'discardManage' ||
-                    manageConfirm?.type === 'discardAndCreate'
-                  ? t('sshFilesTool.discardManageAction')
-                  : manageConfirm?.type === 'discardNavigate'
-                    ? t('sshFilesTool.discardEditAction')
-                    : t('sshFilesTool.discardDraftAction')}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-      <AlertDialog
+        title={
+          manageConfirm?.type === 'removeSource'
+            ? t('sshFilesTool.removeSourceTitle')
+            : manageConfirm?.type === 'discardManage' || manageConfirm?.type === 'discardAndCreate'
+              ? t('sshFilesTool.discardManageTitle')
+              : manageConfirm?.type === 'discardNavigate'
+                ? t('sshFilesTool.discardEditTitle')
+                : t('sshFilesTool.discardDraftTitle')
+        }
+        description={
+          manageConfirm?.type === 'removeSource'
+            ? t('sshFilesTool.removeSourceConfirm', { name: manageConfirm.source.name })
+            : manageConfirm?.type === 'discardManage' || manageConfirm?.type === 'discardAndCreate'
+              ? t('sshFilesTool.discardManageConfirm')
+              : manageConfirm?.type === 'discardNavigate'
+                ? t('sshFilesTool.discardEditConfirm')
+                : t('sshFilesTool.discardDraftConfirm')
+        }
+        confirmLabel={
+          manageConfirm?.type === 'removeSource'
+            ? t('sshFilesTool.removeSourceAction')
+            : manageConfirm?.type === 'discardManage' || manageConfirm?.type === 'discardAndCreate'
+              ? t('sshFilesTool.discardManageAction')
+              : manageConfirm?.type === 'discardNavigate'
+                ? t('sshFilesTool.discardEditAction')
+                : t('sshFilesTool.discardDraftAction')
+        }
+        destructive={manageConfirm?.type === 'removeSource'}
+        onConfirm={confirmManageAction}
+      />
+      <ConfirmDialog
         open={missingFavoritePath !== null}
         onOpenChange={(open) => {
-          if (!open && !favoritesSaving) setMissingFavoritePath(null);
+          if (!open) setMissingFavoritePath(null);
         }}
-      >
-        <AlertDialogContent className="min-w-0 max-w-[calc(100vw-32px)] sm:max-w-md">
-          <AlertDialogHeader>
-            <AlertDialogTitle>{t('sshFilesTool.favoritePathMissingTitle')}</AlertDialogTitle>
-            <AlertDialogDescription className="text-xs leading-5">
-              {t('sshFilesTool.favoritePathMissingDescription', {
-                path: missingFavoritePath?.path ?? '',
-              })}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={favoritesSaving}>{t('common.cancel')}</AlertDialogCancel>
-            <AlertDialogAction
-              variant="destructive"
-              disabled={favoritesSaving}
-              onClick={() => void removeMissingFavoritePath()}
-            >
-              {favoritesSaving ? <Spinner data-icon="inline-start" /> : null}
-              {t('sshFilesTool.removeFavoritePath')}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+        title={t('sshFilesTool.favoritePathMissingTitle')}
+        description={t('sshFilesTool.favoritePathMissingDescription', {
+          path: missingFavoritePath?.path ?? '',
+        })}
+        confirmLabel={t('sshFilesTool.removeFavoritePath')}
+        destructive
+        busy={favoritesSaving}
+        onConfirm={() => void removeMissingFavoritePath()}
+      />
       <Dialog
         open={uploadOpen}
         onOpenChange={(open) => {
@@ -3413,56 +3386,35 @@ export default function SshFilesTool({ active }: Props) {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-      <AlertDialog
+      <ConfirmDialog
         open={deletePaths !== null}
         onOpenChange={(open) => {
-          if (!open && !operationRunning) {
+          if (!open) {
             setDeletePaths(null);
             setOperationError('');
           }
         }}
+        title={t('sshFilesTool.deleteTitle')}
+        descriptionClassName="grid gap-2"
+        error={operationError ? `${t('sshFilesTool.operationFailed')}: ${operationError}` : null}
+        confirmLabel={t('sshFilesTool.deleteAction')}
+        destructive
+        busy={operationRunning}
+        onConfirm={() => void executeDelete()}
       >
-        <AlertDialogContent className="min-w-0 max-w-[calc(100vw-32px)] sm:max-w-md">
-          <AlertDialogHeader className="w-full min-w-0">
-            <AlertDialogTitle>{t('sshFilesTool.deleteTitle')}</AlertDialogTitle>
-            <AlertDialogDescription
-              render={<div />}
-              className="grid w-full min-w-0 gap-2 text-xs leading-5"
+        <p className="m-0">{t('sshFilesTool.deleteDesc', { count: deletePaths?.length ?? 0 })}</p>
+        <ol className="m-0 w-full max-h-40 list-none space-y-1 overflow-y-auto overscroll-contain font-mono text-[11px]">
+          {deletePaths?.map((path, index) => (
+            <li
+              key={`${path}-${index}`}
+              className="flex w-full min-w-0 items-start gap-2 rounded-md border border-border/60 bg-background/60 px-2 py-1.5"
             >
-              <p className="m-0">
-                {t('sshFilesTool.deleteDesc', { count: deletePaths?.length ?? 0 })}
-              </p>
-              <ol className="m-0 w-full max-h-40 list-none space-y-1 overflow-y-auto overscroll-contain font-mono text-[11px]">
-                {deletePaths?.map((path, index) => (
-                  <li
-                    key={`${path}-${index}`}
-                    className="flex w-full min-w-0 items-start gap-2 rounded-md border border-border/60 bg-background/60 px-2 py-1.5"
-                  >
-                    <span className="shrink-0 text-muted-foreground">{index + 1}.</span>
-                    <span className="min-w-0 flex-1 break-all">{path}</span>
-                  </li>
-                ))}
-              </ol>
-              {operationError ? (
-                <span className="break-words text-destructive" role="alert">
-                  {t('sshFilesTool.operationFailed')}: {operationError}
-                </span>
-              ) : null}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={operationRunning}>{t('common.cancel')}</AlertDialogCancel>
-            <AlertDialogAction
-              variant="destructive"
-              disabled={operationRunning || deletePaths === null}
-              onClick={() => void executeDelete()}
-            >
-              {operationRunning ? <Spinner data-icon="inline-start" /> : null}
-              {t('sshFilesTool.deleteAction')}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+              <span className="shrink-0 text-muted-foreground">{index + 1}.</span>
+              <span className="min-w-0 flex-1 break-all">{path}</span>
+            </li>
+          ))}
+        </ol>
+      </ConfirmDialog>
       <Dialog open={tasksOpen} onOpenChange={setTasksOpen}>
         <DialogContent className="max-w-lg">
           <DialogHeader>

@@ -65,6 +65,7 @@ import { Label } from './ui/label';
 import { Spinner } from './ui/spinner';
 import { Textarea } from './ui/textarea';
 import { useSSHProfiles } from './SSHProfileManagerDialog';
+import { ConfirmDialog } from './ConfirmDialog';
 
 const TRAY_MATCH_DEFAULT_TOOLS: readonly ToolId[] = [
   'json',
@@ -574,45 +575,24 @@ function SSHKnownHostsDialog({
           </DialogFooter>
         </DialogContent>
       </Dialog>
-      <AlertDialog
+      <ConfirmDialog
         open={deleteTarget !== null}
         onOpenChange={(next) => {
-          if (!next && !deleting) {
+          if (!next) {
             setDeleteTarget(null);
             setDeleteError('');
           }
         }}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>{t('settings.sshKnownHostsDeleteTitle')}</AlertDialogTitle>
-            <AlertDialogDescription>
-              {deleteTarget
-                ? t('settings.sshKnownHostsDeleteDesc', { hosts: deleteTarget.hosts })
-                : null}
-              {deleteError ? (
-                <span className="mt-2 block text-xs text-destructive" role="alert">
-                  {deleteError}
-                </span>
-              ) : null}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={deleting}>{t('common.cancel')}</AlertDialogCancel>
-            <AlertDialogAction
-              variant="destructive"
-              disabled={deleting}
-              onClick={(event) => {
-                event.preventDefault();
-                void confirmDelete();
-              }}
-            >
-              {deleting ? <Spinner data-icon="inline-start" /> : null}
-              {t('settings.sshKnownHostsDeleteConfirm')}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+        title={t('settings.sshKnownHostsDeleteTitle')}
+        description={
+          deleteTarget ? t('settings.sshKnownHostsDeleteDesc', { hosts: deleteTarget.hosts }) : null
+        }
+        error={deleteError}
+        confirmLabel={t('settings.sshKnownHostsDeleteConfirm')}
+        destructive
+        busy={deleting}
+        onConfirm={() => void confirmDelete()}
+      />
     </>
   );
 }

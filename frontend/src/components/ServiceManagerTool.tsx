@@ -50,16 +50,7 @@ import {
 } from './shared';
 import { useSSHProfiles } from './SSHProfileManagerDialog';
 import { SSHProfileSelect } from './SSHProfileSelect';
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from './ui/alert-dialog';
+import { ConfirmDialog } from './ConfirmDialog';
 import { Badge } from './ui/badge';
 import { Button } from './ui/button';
 import { Checkbox } from './ui/checkbox';
@@ -157,6 +148,10 @@ export default function ServiceManagerTool({
   const [targetDraftError, setTargetDraftError] = useState('');
   const [targetSaveError, setTargetSaveError] = useState('');
   const [pendingRemove, setPendingRemove] = useState<ServiceTarget | null>(null);
+  const [pendingAction, setPendingAction] = useState<{
+    resource: ServiceResourceRef;
+    action: string;
+  } | null>(null);
   const monitorsRef = useRef<LogMonitor[]>([]);
   monitorsRef.current = monitors;
 
@@ -302,17 +297,20 @@ export default function ServiceManagerTool({
     setTargetID(next);
     void Promise.all(old.map((item) => StopLogMonitor(item.id).catch(() => undefined)));
   };
-  const act = async (resource: ServiceResourceRef, action: string) => {
-    if (
-      (action === 'delete' || action.startsWith('disable')) &&
-      !window.confirm(
-        t('serviceManagerTool.confirmAction', {
-          action: t(`serviceManagerTool.actions.${action}`),
-          name: resource.name || resource.id,
-        }),
-      )
-    )
+  const act = (resource: ServiceResourceRef, action: string) => {
+    if (action === 'delete' || action.startsWith('disable')) {
+      setPendingAction({ resource, action });
       return;
+    }
+    void performAction(resource, action);
+  };
+  const confirmPendingAction = async () => {
+    const pending = pendingAction;
+    if (!pending) return;
+    await performAction(pending.resource, pending.action);
+    setPendingAction(null);
+  };
+  const performAction = async (resource: ServiceResourceRef, action: string) => {
     const key = `${resourceKey(resource)}:${action}`;
     setBusy(key);
     try {
@@ -756,27 +754,39 @@ export default function ServiceManagerTool({
           </DialogFooter>
         </DialogContent>
       </Dialog>
-      <AlertDialog
+      <ConfirmDialog
         open={pendingRemove !== null}
         onOpenChange={(open) => {
           if (!open) setPendingRemove(null);
         }}
-      >
-        <AlertDialogContent className="min-w-0 max-w-[calc(100vw-2rem)] sm:max-w-md">
-          <AlertDialogHeader>
-            <AlertDialogTitle>{t('serviceManagerTool.removeTargetTitle')}</AlertDialogTitle>
-            <AlertDialogDescription>
-              {t('serviceManagerTool.removeTargetBody', { name: pendingRemove?.name ?? '' })}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
-            <AlertDialogAction variant="destructive" onClick={confirmRemoveTarget}>
-              {t('serviceManagerTool.removeTarget')}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+        title={t('serviceManagerTool.removeTargetTitle')}
+        description={t('serviceManagerTool.removeTargetBody', { name: pendingRemove?.name ?? '' })}
+        confirmLabel={t('serviceManagerTool.removeTarget')}
+        destructive
+        onConfirm={confirmRemoveTarget}
+      />
+      <ConfirmDialog
+        open={pendingAction !== null}
+        onOpenChange={(open) => {
+          if (!open) setPendingAction(null);
+        }}
+        title={pendingAction ? t(`serviceManagerTool.actions.${pendingAction.action}`) : ''}
+        description={
+          pendingAction
+            ? t('serviceManagerTool.confirmAction', {
+                action: t(`serviceManagerTool.actions.${pendingAction.action}`),
+                name: pendingAction.resource.name || pendingAction.resource.id,
+              })
+            : ''
+        }
+        confirmLabel={pendingAction ? t(`serviceManagerTool.actions.${pendingAction.action}`) : ''}
+        destructive
+        busy={
+          pendingAction !== null &&
+          busy === `${resourceKey(pendingAction.resource)}:${pendingAction.action}`
+        }
+        onConfirm={() => void confirmPendingAction()}
+      />
     </Reveal>
   );
 }
