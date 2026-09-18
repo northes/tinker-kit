@@ -2426,7 +2426,7 @@ export default function ImageManagerTool({
               ref={imageListRef}
               className="min-h-0 flex-1 overflow-auto overscroll-contain [padding-inline-end:var(--overlay-scrollbar-hit-size)]"
             >
-              <Table className="min-w-[640px]" containerClassName="overflow-visible">
+              <Table className="min-w-[640px] table-fixed" containerClassName="overflow-visible">
                 <TableHeader className="sticky top-0 z-10 bg-background">
                   <TableRow>
                     <TableHead className="w-10 whitespace-nowrap">
@@ -2437,7 +2437,7 @@ export default function ImageManagerTool({
                         aria-label={t('imageManagerTool.selectAll')}
                       />
                     </TableHead>
-                    <TableHead className="whitespace-nowrap">
+                    <TableHead className="w-[110px] whitespace-nowrap">
                       {t('imageManagerTool.columnId')}
                     </TableHead>
                     <TableHead
@@ -2453,7 +2453,7 @@ export default function ImageManagerTool({
                       {sortableHeader('name', t('imageManagerTool.columnName'))}
                     </TableHead>
                     <TableHead
-                      className="whitespace-nowrap"
+                      className="w-[104px] whitespace-nowrap"
                       aria-sort={
                         sortKey === 'size'
                           ? sortDirection === 'asc'
@@ -2465,7 +2465,7 @@ export default function ImageManagerTool({
                       {sortableHeader('size', t('imageManagerTool.columnSize'))}
                     </TableHead>
                     <TableHead
-                      className="whitespace-nowrap"
+                      className="w-[160px] whitespace-nowrap"
                       aria-sort={
                         sortKey === 'createdAt'
                           ? sortDirection === 'asc'
