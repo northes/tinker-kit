@@ -13,6 +13,8 @@ import {
   CheckCircle,
   DotsThreeOutlineVertical,
   DownloadSimple,
+  Eye,
+  EyeClosed,
   MagnifyingGlass,
   PencilSimple,
   Plus,
@@ -58,6 +60,7 @@ import {
   DropdownMenuTrigger,
 } from './ui/dropdown-menu';
 import { Input } from './ui/input';
+import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from './ui/input-group';
 import { Label } from './ui/label';
 import { Spinner } from './ui/spinner';
 import { Textarea } from './ui/textarea';
@@ -103,6 +106,45 @@ function errorMessage(error: unknown) {
     if (typeof message === 'string') return message;
   }
   return String(error);
+}
+
+// 密码类输入：右侧按钮切换明文显示，开启时保留焦点与已输入内容。
+function PasswordInput({
+  id,
+  value,
+  disabled,
+  onChange,
+}: {
+  id: string;
+  value: string;
+  disabled?: boolean;
+  onChange: (value: string) => void;
+}) {
+  const { t } = useTranslation();
+  const [visible, setVisible] = useState(false);
+  return (
+    <InputGroup>
+      <InputGroupInput
+        id={id}
+        type={visible ? 'text' : 'password'}
+        value={value}
+        disabled={disabled}
+        onChange={(event) => onChange(event.target.value)}
+      />
+      <InputGroupAddon align="inline-end">
+        <InputGroupButton
+          size="icon-xs"
+          variant="ghost"
+          disabled={disabled}
+          aria-pressed={visible}
+          aria-label={t(visible ? 'sshProfiles.hidePassword' : 'sshProfiles.showPassword')}
+          onClick={() => setVisible((current) => !current)}
+        >
+          {visible ? <EyeClosed /> : <Eye />}
+        </InputGroupButton>
+      </InputGroupAddon>
+    </InputGroup>
+  );
 }
 
 export function useSSHProfiles() {
@@ -676,12 +718,11 @@ function SSHProfileManagerDialog({
                   {authMode === 'password' ? (
                     <div className="grid gap-1.5">
                       <Label htmlFor="ssh-profile-password">{t('sshProfiles.password')}</Label>
-                      <Input
+                      <PasswordInput
                         id="ssh-profile-password"
-                        type="password"
                         value={draft.password}
                         disabled={imported}
-                        onChange={(event) => setField('password', event.target.value)}
+                        onChange={(value) => setField('password', value)}
                       />
                     </div>
                   ) : (
@@ -713,12 +754,11 @@ function SSHProfileManagerDialog({
                         <Label htmlFor="ssh-profile-key-passphrase">
                           {t('sshProfiles.keyPassphrase')}
                         </Label>
-                        <Input
+                        <PasswordInput
                           id="ssh-profile-key-passphrase"
-                          type="password"
                           value={draft.keyPassphrase}
                           disabled={imported}
-                          onChange={(event) => setField('keyPassphrase', event.target.value)}
+                          onChange={(value) => setField('keyPassphrase', value)}
                         />
                       </div>
                     </>

@@ -940,6 +940,8 @@
     "port": "Port",
     "username": "Username",
     "password": "Password",
+    "showPassword": "Show password",
+    "hidePassword": "Hide password",
     "privateKey": "Private key (optional)",
     "privateKeyPath": "Private key path (optional)",
     "keyPassphrase": "Key passphrase (optional)",

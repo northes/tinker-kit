@@ -940,6 +940,8 @@
     "port": "Port",
     "username": "Username",
     "password": "Password",
+    "showPassword": "显示密码",
+    "hidePassword": "隐藏密码",
     "privateKey": "私钥内容（可选）",
     "privateKeyPath": "私钥路径（可选）",
     "keyPassphrase": "私钥密码（可选）",
