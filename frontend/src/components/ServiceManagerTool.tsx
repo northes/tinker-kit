@@ -3,15 +3,19 @@ import { useVirtualizer } from '@tanstack/react-virtual';
 import { Events } from '@wailsio/runtime';
 import {
   ArrowsClockwise,
+  ArrowCounterClockwise,
+  Asterisk,
   CaretDown,
   CircleNotch,
-  ClockCounterClockwise,
+  Eraser,
   GearSix,
   Pause,
   PencilSimple,
   Play,
   Plus,
   Power,
+  Stop,
+  TextAa,
   Trash,
   WarningCircle,
 } from '@phosphor-icons/react';
@@ -53,7 +57,6 @@ import { SSHProfileSelect } from './SSHProfileSelect';
 import { ConfirmDialog } from './ConfirmDialog';
 import { Badge } from './ui/badge';
 import { Button } from './ui/button';
-import { Checkbox } from './ui/checkbox';
 import {
   Dialog,
   DialogContent,
@@ -85,6 +88,7 @@ import {
 } from './ui/select';
 import { Spinner } from './ui/spinner';
 import { toast } from './ui/toast';
+import { ToggleGroup, ToggleGroupItem } from './ui/toggle-group';
 
 const MANAGE_TARGETS_VALUE = '__manage-targets__';
 const LOCAL_TARGET: ServiceTarget = { id: 'local', name: 'local', kind: 'local' };
@@ -171,8 +175,6 @@ export default function ServiceManagerTool({
   const [selection, setSelection] = useState<Selection | null>(null);
   const [busy, setBusy] = useState('');
   const [monitors, setMonitors] = useState<LogMonitor[]>([]);
-  const [viewMode, setViewMode] = useState<'single' | 'merged'>('single');
-  const [visibleMonitorIDs, setVisibleMonitorIDs] = useState<string[]>([]);
   const [logDraft, setLogDraft] = useState('');
   const [logQuery, setLogQuery] = useState('');
   const [regex, setRegex] = useState(false);
@@ -202,7 +204,6 @@ export default function ServiceManagerTool({
     void Promise.all(active.map((item) => StopLogMonitor(item.id).catch(() => undefined)));
     setMonitors([]);
     setSelection(null);
-    setVisibleMonitorIDs([]);
     setLines([]);
     setInventory(null);
     setTargetID('local');
@@ -231,6 +232,15 @@ export default function ServiceManagerTool({
     setMonitors(items);
   };
 
+  const monitoredByResource = useMemo(
+    () => new Map(monitors.map((item) => [monitorResourceKey(item), item])),
+    [monitors],
+  );
+  const selectedMonitor = selection
+    ? monitoredByResource.get(resourceKey(selection.resource))
+    : undefined;
+  const activeMonitorID = selectedMonitor?.id;
+
   useEffect(() => {
     void GetServiceTargets()
       .then((items) => syncTargets(items ?? []))
@@ -249,13 +259,11 @@ export default function ServiceManagerTool({
     const off = Events.On('service-manager:logs', (event) => {
       const data = event.data as LogEvent;
       const incoming = data?.lines ?? [];
-      if (!incoming.length) return;
+      if (!incoming.length || !activeMonitorID) return;
       setLines((current) => {
-        const visible = new Set(visibleMonitorIDs);
         const accepted = incoming.filter(
           (line) =>
-            (!visible.size || visible.has(line.monitorID)) &&
-            matchesLog(line, logQuery, regex, caseSensitive),
+            line.monitorID === activeMonitorID && matchesLog(line, logQuery, regex, caseSensitive),
         );
         if (!accepted.length) return current;
         const ids = new Set(current.map((line) => line.sequence));
@@ -269,12 +277,12 @@ export default function ServiceManagerTool({
       off();
       offState();
     };
-  }, [visibleMonitorIDs, logQuery, regex, caseSensitive, targetID]);
+  }, [activeMonitorID, logQuery, regex, caseSensitive, targetID]);
   useEffect(() => {
     const run = async () => {
       try {
         const snapshot = await QueryLogBuffer({
-          monitorIDs: visibleMonitorIDs,
+          monitorIDs: activeMonitorID ? [activeMonitorID] : [],
           filter: { query: logQuery, regex, caseSensitive, streams: [] },
         });
         setLines(snapshot.lines ?? []);
@@ -288,7 +296,7 @@ export default function ServiceManagerTool({
       }
     };
     void run();
-  }, [visibleMonitorIDs, logQuery, regex, caseSensitive]);
+  }, [activeMonitorID, logQuery, regex, caseSensitive]);
   useEffect(() => {
     if (!selection || selection.kind === 'group') {
       setDetail(null);
@@ -307,18 +315,6 @@ export default function ServiceManagerTool({
   }, [selection, targetID]);
 
   const selectedTarget = targets.find((target) => target.id === targetID);
-  const monitoredByResource = useMemo(
-    () => new Map(monitors.map((item) => [monitorResourceKey(item), item])),
-    [monitors],
-  );
-  const monitoredVisible = useMemo(
-    () =>
-      monitors.filter((item) => !visibleMonitorIDs.length || visibleMonitorIDs.includes(item.id)),
-    [monitors, visibleMonitorIDs],
-  );
-  const selectedMonitor = selection
-    ? monitoredByResource.get(resourceKey(selection.resource))
-    : undefined;
 
   const selectTarget = (next: string | null) => {
     if (!next || next === targetID) return;
@@ -329,7 +325,6 @@ export default function ServiceManagerTool({
     )
       return;
     setSelection(null);
-    setVisibleMonitorIDs([]);
     setLines([]);
     // 立即清空旧主机列表并进入 loading，旧主机的日志监控在后台停止。
     setInventory(null);
@@ -386,17 +381,14 @@ export default function ServiceManagerTool({
       setBusy('');
     }
   };
-  const monitor = async (resources: ServiceResourceRef[]) => {
+  const monitor = async (resource: ServiceResourceRef) => {
     try {
-      const created = (await StartLogMonitors({ targetID, resources })) ?? [];
-      const ids = created.map((item) => item.id);
+      const created = (await StartLogMonitors({ targetID, resources: [resource] })) ?? [];
       setMonitors((current) => {
         const all = new Map(current.map((item) => [item.id, item]));
         created.forEach((item) => all.set(item.id, item));
         return [...all.values()];
       });
-      if (viewMode === 'single' && ids[0]) setVisibleMonitorIDs([ids[0]]);
-      else setVisibleMonitorIDs((current) => [...new Set([...current, ...ids])]);
     } catch (error) {
       toast.add({
         title: t('serviceManagerTool.monitorFailed'),
@@ -405,16 +397,14 @@ export default function ServiceManagerTool({
       });
     }
   };
-  const toggleVisible = (monitorID: string, enabled: boolean) =>
-    setVisibleMonitorIDs((current) =>
-      enabled ? [...new Set([...current, monitorID])] : current.filter((id) => id !== monitorID),
-    );
   const stop = async (monitorID: string) => {
     await StopLogMonitor(monitorID);
     await loadMonitors();
   };
   const clear = async (monitorID: string) => {
     await ClearLogBuffer(monitorID);
+    setLines([]);
+    setTruncated(false);
     await loadMonitors();
   };
   const selectedTargetMissing =
@@ -701,7 +691,6 @@ export default function ServiceManagerTool({
             search={search}
             selection={selection}
             onSelect={setSelection}
-            onMonitor={monitor}
             monitored={monitoredByResource}
             t={t}
           />
@@ -711,11 +700,6 @@ export default function ServiceManagerTool({
                 selection={selection}
                 detail={detail}
                 monitor={selectedMonitor}
-                viewMode={viewMode}
-                setViewMode={setViewMode}
-                monitors={monitoredVisible}
-                visibleMonitorIDs={visibleMonitorIDs}
-                toggleVisible={toggleVisible}
                 lines={lines}
                 truncated={truncated}
                 logDraft={logDraft}
@@ -868,7 +852,6 @@ function ResourceList({
   search,
   selection,
   onSelect,
-  onMonitor,
   monitored,
   t,
 }: {
@@ -877,10 +860,17 @@ function ResourceList({
   search: string;
   selection: Selection | null;
   onSelect: (next: Selection) => void;
-  onMonitor: (items: ServiceResourceRef[]) => void;
   monitored: Map<string, LogMonitor>;
   t: ReturnType<typeof useTranslation>['t'];
 }) {
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
+  const toggleGroup = (id: string) =>
+    setCollapsedGroups((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
   if (!inventory)
     return (
       <div className="grid h-full place-items-center">
@@ -928,6 +918,7 @@ function ResourceList({
     );
     if (!visibleContainers.length) return null;
     const resource = { runtime: 'docker-compose', id: item.id, name: item.name };
+    const collapsed = collapsedGroups.has(item.id);
     return (
       <div key={item.id}>
         <div
@@ -939,35 +930,38 @@ function ResourceList({
             if (event.key === 'Enter') onSelect({ resource, kind: 'group' });
           }}
         >
-          <CaretDown weight="bold" />
-          {t('serviceManagerTool.composeGroup', { name: item.name })}
           <Button
+            type="button"
             variant="ghost"
             size="icon-xs"
-            className="ml-auto"
-            title={t('serviceManagerTool.monitorGroup')}
+            className="flex-none"
+            aria-expanded={!collapsed}
+            aria-label={t(
+              collapsed ? 'serviceManagerTool.expandGroup' : 'serviceManagerTool.collapseGroup',
+            )}
             onClick={(event) => {
               event.stopPropagation();
-              onMonitor(
-                containers.map((container) => ({
-                  runtime: 'docker',
-                  id: container.id,
-                  name: container.name,
-                })),
-              );
+              toggleGroup(item.id);
             }}
+            onKeyDown={(event) => event.stopPropagation()}
           >
-            <ClockCounterClockwise weight="duotone" />
+            <CaretDown
+              weight="bold"
+              className={`transition-transform ${collapsed ? '-rotate-90' : ''}`}
+            />
           </Button>
+          {t('serviceManagerTool.composeGroup', { name: item.name })}
         </div>
-        {visibleContainers.map((container) =>
-          row(
-            { runtime: 'docker', id: container.id, name: container.name },
-            'container',
-            container.status,
-            container.image,
-          ),
-        )}
+        {collapsed
+          ? null
+          : visibleContainers.map((container) =>
+              row(
+                { runtime: 'docker', id: container.id, name: container.name },
+                'container',
+                container.status,
+                container.image,
+              ),
+            )}
       </div>
     );
   };
@@ -1066,11 +1060,6 @@ function ResourcePanel({
   selection,
   detail,
   monitor,
-  viewMode,
-  setViewMode,
-  monitors,
-  visibleMonitorIDs,
-  toggleVisible,
   lines,
   truncated,
   logDraft,
@@ -1090,11 +1079,6 @@ function ResourcePanel({
   selection: Selection;
   detail: Record<string, unknown> | null;
   monitor?: LogMonitor;
-  viewMode: 'single' | 'merged';
-  setViewMode: (value: 'single' | 'merged') => void;
-  monitors: LogMonitor[];
-  visibleMonitorIDs: string[];
-  toggleVisible: (id: string, enabled: boolean) => void;
   lines: ServiceLogLine[];
   truncated: boolean;
   logDraft: string;
@@ -1104,7 +1088,7 @@ function ResourcePanel({
   setRegex: (value: boolean) => void;
   caseSensitive: boolean;
   setCaseSensitive: (value: boolean) => void;
-  onMonitor: (items: ServiceResourceRef[]) => void;
+  onMonitor: (resource: ServiceResourceRef) => void;
   onStop: (id: string) => void;
   onClear: (id: string) => void;
   onAction: (resource: ServiceResourceRef, action: string) => void;
@@ -1116,157 +1100,206 @@ function ResourcePanel({
     resource.runtime === 'systemd'
       ? ['start', 'stop', 'restart', 'disable', 'disable-now']
       : ['start', 'stop', 'restart', 'delete'];
-  const activeMonitorIDs = viewMode === 'merged' ? visibleMonitorIDs : monitor ? [monitor.id] : [];
+  const activeMonitorIDs = monitor ? [monitor.id] : [];
+  const [confirmingClear, setConfirmingClear] = useState(false);
   return (
-    <div className="grid h-full min-h-0 grid-rows-[auto_auto_minmax(0,1fr)]">
-      <div className="border-b px-4 py-3">
-        <div className="flex items-center gap-2">
-          <div className="min-w-0 flex-1">
-            <h2 className="truncate text-sm font-semibold">{resource.name || resource.id}</h2>
-            <p className="mt-0.5 truncate text-xs text-muted-foreground">
-              {resource.runtime}
-              {resource.scope ? ` · ${resource.scope}` : ''}
-            </p>
-          </div>
-          {actions.map((action) => (
-            <Button
-              key={action}
-              variant={
-                action === 'delete' || action.startsWith('disable') ? 'destructive' : 'outline'
-              }
-              size="icon-xs"
-              disabled={busy === `${resourceKey(resource)}:${action}`}
-              title={t(`serviceManagerTool.actions.${action}`)}
-              onClick={() => onAction(resource, action)}
-            >
-              {action === 'start' ? (
-                <Play weight="duotone" />
-              ) : action === 'stop' ? (
-                <Pause weight="duotone" />
-              ) : action === 'restart' ? (
-                <ArrowsClockwise weight="duotone" />
-              ) : action === 'delete' ? (
-                <Trash weight="duotone" />
-              ) : (
-                <Power weight="duotone" />
-              )}
-            </Button>
-          ))}
-        </div>
-        {detail ? (
-          <pre className="mt-2 max-h-24 overflow-auto whitespace-pre-wrap break-all text-[11px] text-muted-foreground">
-            {JSON.stringify(detail, null, 2)}
-          </pre>
-        ) : null}
-        <div className="mt-3 flex flex-wrap gap-2">
-          {selection.kind !== 'group' ? (
-            monitor ? (
-              <>
-                <Button variant="outline" size="sm" onClick={() => void onStop(monitor.id)}>
-                  {t('serviceManagerTool.stopMonitor')}
-                </Button>
-                <Button variant="outline" size="sm" onClick={() => void onClear(monitor.id)}>
-                  {t('serviceManagerTool.clearLogs')}
-                </Button>
-              </>
-            ) : (
-              <Button size="sm" onClick={() => onMonitor([resource])}>
-                {t('serviceManagerTool.monitor')}
+    <>
+      <div className="grid h-full min-h-0 grid-rows-[auto_auto_minmax(0,1fr)]">
+        <div className="border-b px-4 py-3">
+          <div className="flex items-center gap-2">
+            <div className="min-w-0 flex-1">
+              <h2 className="truncate text-sm font-semibold">{resource.name || resource.id}</h2>
+              <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                {resource.runtime}
+                {resource.scope ? ` · ${resource.scope}` : ''}
+              </p>
+            </div>
+            {actions.map((action) => (
+              <Button
+                key={action}
+                variant={
+                  action === 'delete' || action.startsWith('disable') ? 'destructive' : 'outline'
+                }
+                size="icon-xs"
+                disabled={busy === `${resourceKey(resource)}:${action}`}
+                title={t(`serviceManagerTool.actions.${action}`)}
+                onClick={() => onAction(resource, action)}
+              >
+                {action === 'start' ? (
+                  <Play weight="duotone" />
+                ) : action === 'stop' ? (
+                  <Pause weight="duotone" />
+                ) : action === 'restart' ? (
+                  <ArrowCounterClockwise weight="duotone" />
+                ) : action === 'delete' ? (
+                  <Trash weight="duotone" />
+                ) : (
+                  <Power weight="duotone" />
+                )}
               </Button>
-            )
-          ) : null}
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => setViewMode(viewMode === 'single' ? 'merged' : 'single')}
-          >
-            {t(
-              viewMode === 'single'
-                ? 'serviceManagerTool.mergedView'
-                : 'serviceManagerTool.singleView',
-            )}
-          </Button>
-        </div>
-      </div>
-      <div className="border-b px-4 py-2">
-        <div className="flex items-center gap-2">
-          <Input
-            className="h-8"
-            value={logDraft}
-            onChange={(event) => setLogDraft(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === 'Enter') applyFilter();
-            }}
-            placeholder={t('serviceManagerTool.logFilter')}
-          />
-          <Button variant="outline" size="sm" onClick={applyFilter}>
-            {t('serviceManagerTool.apply')}
-          </Button>
-          <Button
-            variant={regex ? 'secondary' : 'ghost'}
-            size="sm"
-            onClick={() => setRegex(!regex)}
-          >
-            {t('serviceManagerTool.regex')}
-          </Button>
-          <Button
-            variant={caseSensitive ? 'secondary' : 'ghost'}
-            size="sm"
-            onClick={() => setCaseSensitive(!caseSensitive)}
-          >
-            {t('serviceManagerTool.caseSensitive')}
-          </Button>
-        </div>
-        {viewMode === 'merged' && monitors.length > 0 ? (
-          <div className="mt-2 flex flex-wrap gap-2">
-            {monitors.map((item) => (
-              <label key={item.id} className="flex items-center gap-1 text-xs">
-                <Checkbox
-                  checked={visibleMonitorIDs.includes(item.id)}
-                  onCheckedChange={(checked) => toggleVisible(item.id, checked === true)}
-                />
-                {item.resource.name || item.resource.id}
-              </label>
             ))}
           </div>
-        ) : null}
-        {truncated ? (
-          <p className="mt-2 text-xs text-amber-600">{t('serviceManagerTool.logsTruncated')}</p>
-        ) : null}
+          {detail ? (
+            <pre className="mt-2 max-h-24 overflow-auto whitespace-pre-wrap break-all text-[11px] text-muted-foreground">
+              {JSON.stringify(detail, null, 2)}
+            </pre>
+          ) : null}
+        </div>
+        <div className="border-b px-4 py-2">
+          <div className="flex items-center gap-2">
+            {selection.kind !== 'group' ? (
+              monitor && monitor.state === 'monitoring' ? (
+                <Button
+                  variant="outline"
+                  size="icon-sm"
+                  className="flex-none"
+                  title={t('serviceManagerTool.stopMonitor')}
+                  aria-label={t('serviceManagerTool.stopMonitor')}
+                  onClick={() => void onStop(monitor.id)}
+                >
+                  <Stop weight="duotone" />
+                </Button>
+              ) : (
+                <Button
+                  variant="outline"
+                  size="icon-sm"
+                  className="flex-none"
+                  title={t('serviceManagerTool.monitor')}
+                  aria-label={t('serviceManagerTool.monitor')}
+                  onClick={() => onMonitor(resource)}
+                >
+                  <Play weight="duotone" />
+                </Button>
+              )
+            ) : null}
+            <Input
+              className="h-8"
+              value={logDraft}
+              onChange={(event) => setLogDraft(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') applyFilter();
+              }}
+              placeholder={t('serviceManagerTool.logFilter')}
+            />
+            <Button variant="outline" size="sm" onClick={applyFilter}>
+              {t('serviceManagerTool.apply')}
+            </Button>
+            <ToggleGroup
+              multiple
+              variant="outline"
+              size="sm"
+              value={[regex ? 'regex' : '', caseSensitive ? 'case' : ''].filter(Boolean)}
+              onValueChange={(value) => {
+                setRegex(value.includes('regex'));
+                setCaseSensitive(value.includes('case'));
+              }}
+            >
+              <ToggleGroupItem
+                value="regex"
+                title={t('serviceManagerTool.regex')}
+                aria-label={t('serviceManagerTool.regex')}
+              >
+                <Asterisk weight="duotone" />
+              </ToggleGroupItem>
+              <ToggleGroupItem
+                value="case"
+                title={t('serviceManagerTool.caseSensitive')}
+                aria-label={t('serviceManagerTool.caseSensitive')}
+              >
+                <TextAa weight="duotone" />
+              </ToggleGroupItem>
+            </ToggleGroup>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              className="ml-auto flex-none text-muted-foreground hover:text-destructive"
+              disabled={!monitor}
+              title={t('serviceManagerTool.clearLogs')}
+              aria-label={t('serviceManagerTool.clearLogs')}
+              onClick={() => setConfirmingClear(true)}
+            >
+              <Eraser weight="duotone" />
+            </Button>
+          </div>
+          {truncated ? (
+            <p className="mt-2 text-xs text-amber-600">{t('serviceManagerTool.logsTruncated')}</p>
+          ) : null}
+        </div>
+        <LogList
+          key={monitor?.id ?? 'none'}
+          lines={lines.filter((line) => activeMonitorIDs.includes(line.monitorID))}
+        />
       </div>
-      <LogList lines={lines.filter((line) => activeMonitorIDs.includes(line.monitorID))} />
-    </div>
+      <ConfirmDialog
+        open={confirmingClear}
+        onOpenChange={setConfirmingClear}
+        title={t('serviceManagerTool.clearLogsTitle')}
+        description={t('serviceManagerTool.clearLogsConfirm')}
+        confirmLabel={t('serviceManagerTool.clearLogs')}
+        destructive
+        onConfirm={() => {
+          if (monitor) void onClear(monitor.id);
+          setConfirmingClear(false);
+        }}
+      />
+    </>
   );
 }
+const LOG_GRID = 'grid grid-cols-[11rem_10rem_minmax(0,1fr)] items-start gap-3 px-3';
 function LogList({ lines }: { lines: ServiceLogLine[] }) {
+  const { t } = useTranslation();
   const parentRef = useRef<HTMLDivElement>(null);
+  const stickToBottom = useRef(true);
   const virtualizer = useVirtualizer({
     count: lines.length,
     getScrollElement: () => parentRef.current,
     estimateSize: () => 24,
     overscan: 20,
   });
+  const handleScroll = () => {
+    const el = parentRef.current;
+    if (!el) return;
+    stickToBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight <= 8;
+  };
+  const lastSequence = lines.length ? lines[lines.length - 1].sequence : 0;
+  useEffect(() => {
+    if (!stickToBottom.current || lines.length === 0) return;
+    virtualizer.scrollToIndex(lines.length - 1, { align: 'end' });
+  }, [lastSequence, lines.length, virtualizer]);
   return (
-    <div ref={parentRef} className="min-h-0 overflow-auto font-mono text-xs">
-      <div style={{ height: virtualizer.getTotalSize(), width: '100%', position: 'relative' }}>
-        {virtualizer.getVirtualItems().map((row) => {
-          const line = lines[row.index];
-          return (
-            <div
-              key={line.sequence}
-              ref={virtualizer.measureElement}
-              data-index={row.index}
-              className="absolute left-0 w-full border-b px-3 py-1 whitespace-pre"
-              style={{ transform: `translateY(${row.start}px)` }}
-            >
-              <span className="mr-2 text-muted-foreground">
-                {line.timestamp || formatDate(line.receivedAt)}
-              </span>
-              <span className="mr-2 text-primary">{line.name}</span>
-              <span>{line.text}</span>
-            </div>
-          );
-        })}
+    <div className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)]">
+      <div
+        className={`${LOG_GRID} border-b py-1 text-[10px] font-medium tracking-[.04em] text-muted-foreground uppercase`}
+      >
+        <span>{t('serviceManagerTool.logTime')}</span>
+        <span>{t('serviceManagerTool.logService')}</span>
+        <span>{t('serviceManagerTool.logContent')}</span>
+      </div>
+      <div
+        ref={parentRef}
+        onScroll={handleScroll}
+        className="min-h-0 overflow-x-hidden overflow-y-auto font-mono text-xs"
+      >
+        <div style={{ height: virtualizer.getTotalSize(), width: '100%', position: 'relative' }}>
+          {virtualizer.getVirtualItems().map((row) => {
+            const line = lines[row.index];
+            return (
+              <div
+                key={line.sequence}
+                ref={virtualizer.measureElement}
+                data-index={row.index}
+                className={`absolute left-0 w-full border-b py-1 ${LOG_GRID}`}
+                style={{ transform: `translateY(${row.start}px)` }}
+              >
+                <span className="truncate text-muted-foreground">
+                  {line.timestamp || formatDate(line.receivedAt)}
+                </span>
+                <span className="truncate text-primary">{line.name}</span>
+                <span className="break-all whitespace-pre-wrap">{line.text}</span>
+              </div>
+            );
+          })}
+        </div>
       </div>
     </div>
   );
