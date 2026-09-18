@@ -33,6 +33,7 @@ import {
   Image as ImageIcon,
   Key,
   LinkSimple,
+  Package,
   QrCode,
   TextAa,
   Trash,
@@ -109,6 +110,7 @@ export function HistoryIcon({ tool }: { tool: ToolId }) {
   ) : tool === 'image' ? (
     <ImageIcon weight="duotone" />
   ) : tool === 'image-manager' ? (
+    <Package weight="duotone" />
     <HardDrives weight="duotone" />
   ) : tool === 'ssh-files' ? (
     <FolderSimple weight="duotone" />

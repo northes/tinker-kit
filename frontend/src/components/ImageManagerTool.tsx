@@ -12,7 +12,6 @@ import {
   Copy,
   DownloadSimple,
   GearSix,
-  HardDrives,
   IdentificationCard,
   ListDashes,
   MagnifyingGlass,
@@ -773,7 +772,7 @@ export function ImageManagerDetailView({
             </div>
           ) : error ? (
             <div className="flex h-auto min-h-0 flex-1 flex-col items-center justify-center gap-2 text-center">
-              <HardDrives size={28} weight="duotone" className="text-muted-foreground" />
+              <Package size={28} weight="duotone" className="text-muted-foreground" />
               <div className="text-sm font-medium text-foreground">
                 {t('imageManagerTool.loadFailed')}
               </div>
@@ -2423,7 +2422,7 @@ export default function ImageManagerTool({
             </div>
           ) : contentViewState === 'error' ? (
             <div className="flex h-auto min-h-0 flex-1 flex-col items-center justify-center gap-2 text-center">
-              <HardDrives size={28} weight="duotone" className="text-muted-foreground" />
+              <Package size={28} weight="duotone" className="text-muted-foreground" />
               <div className="text-sm font-medium text-foreground">
                 {t('imageManagerTool.loadFailed')}
               </div>
@@ -2442,7 +2441,7 @@ export default function ImageManagerTool({
             </div>
           ) : contentViewState === 'empty' || contentViewState === 'no-results' ? (
             <div className="flex h-auto min-h-0 flex-1 flex-col items-center justify-center gap-2 text-center">
-              <HardDrives size={28} weight="duotone" className="text-muted-foreground" />
+              <Package size={28} weight="duotone" className="text-muted-foreground" />
               <div className="text-sm font-medium text-foreground">
                 {contentViewState === 'no-results'
                   ? t('imageManagerTool.searchNoResults')
