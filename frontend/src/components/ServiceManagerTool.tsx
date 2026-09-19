@@ -6,7 +6,6 @@ import {
   ArrowCounterClockwise,
   Asterisk,
   CaretDown,
-  CircleNotch,
   Eraser,
   GearSix,
   Info,
@@ -889,9 +888,7 @@ function ResourceList({
           ) : null}
         </span>
         <Badge variant={statusVariant(status)}>{status || '—'}</Badge>
-        {monitor?.state === 'monitoring' ? (
-          <CircleNotch className="size-3.5 animate-spin text-primary" />
-        ) : null}
+        {monitor?.state === 'monitoring' ? <Spinner className="size-3.5 text-primary" /> : null}
       </button>
     );
   };

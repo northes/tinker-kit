@@ -1,6 +1,7 @@
-import { cn } from '@/lib/utils';
 import { SpinnerIcon } from '@phosphor-icons/react';
 import { useTranslation } from 'react-i18next';
+
+import { cn } from '@/lib/utils';
 
 function Spinner({ className, ...props }: React.ComponentProps<'svg'>) {
   const { t } = useTranslation();
