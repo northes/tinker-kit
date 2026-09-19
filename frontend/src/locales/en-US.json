@@ -941,6 +941,7 @@
     "logTime": "Time",
     "logService": "Service",
     "logContent": "Content",
+    "scrollToBottom": "Scroll to bottom",
     "apply": "Apply",
     "regex": "Regex",
     "caseSensitive": "Match case",

@@ -941,6 +941,7 @@
     "logTime": "时间",
     "logService": "服务",
     "logContent": "内容",
+    "scrollToBottom": "滚动到底部",
     "apply": "应用",
     "regex": "正则",
     "caseSensitive": "区分大小写",

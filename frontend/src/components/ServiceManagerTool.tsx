@@ -1450,6 +1450,7 @@ function LogList({ lines }: { lines: ServiceLogLine[] }) {
   const { t } = useTranslation();
   const parentRef = useRef<HTMLDivElement>(null);
   const stickToBottom = useRef(true);
+  const [atBottom, setAtBottom] = useState(true);
   const virtualizer = useVirtualizer({
     count: lines.length,
     getScrollElement: () => parentRef.current,
@@ -1459,7 +1460,17 @@ function LogList({ lines }: { lines: ServiceLogLine[] }) {
   const handleScroll = () => {
     const el = parentRef.current;
     if (!el) return;
-    stickToBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight <= 8;
+    const next = el.scrollHeight - el.scrollTop - el.clientHeight <= 8;
+    stickToBottom.current = next;
+    setAtBottom(next);
+  };
+  const scrollToBottom = () => {
+    const el = parentRef.current;
+    if (!el) return;
+    stickToBottom.current = true;
+    setAtBottom(true);
+    if (lines.length) virtualizer.scrollToIndex(lines.length - 1, { align: 'end' });
+    else el.scrollTop = el.scrollHeight;
   };
   const lastSequence = lines.length ? lines[lines.length - 1].sequence : 0;
   useEffect(() => {
@@ -1475,31 +1486,46 @@ function LogList({ lines }: { lines: ServiceLogLine[] }) {
         <span>{t('serviceManagerTool.logService')}</span>
         <span>{t('serviceManagerTool.logContent')}</span>
       </div>
-      <div
-        ref={parentRef}
-        onScroll={handleScroll}
-        className="min-h-0 overflow-x-hidden overflow-y-auto font-mono text-xs"
-      >
-        <div style={{ height: virtualizer.getTotalSize(), width: '100%', position: 'relative' }}>
-          {virtualizer.getVirtualItems().map((row) => {
-            const line = lines[row.index];
-            return (
-              <div
-                key={line.sequence}
-                ref={virtualizer.measureElement}
-                data-index={row.index}
-                className={`absolute left-0 w-full border-b py-1 ${LOG_GRID}`}
-                style={{ transform: `translateY(${row.start}px)` }}
-              >
-                <span className="truncate text-muted-foreground">
-                  {line.timestamp || formatDate(line.receivedAt)}
-                </span>
-                <span className="truncate text-primary">{line.name}</span>
-                <span className="break-all whitespace-pre-wrap">{line.text}</span>
-              </div>
-            );
-          })}
+      <div className="relative min-h-0">
+        <div
+          ref={parentRef}
+          onScroll={handleScroll}
+          className="h-full min-h-0 overflow-x-hidden overflow-y-auto font-mono text-xs"
+        >
+          <div style={{ height: virtualizer.getTotalSize(), width: '100%', position: 'relative' }}>
+            {virtualizer.getVirtualItems().map((row) => {
+              const line = lines[row.index];
+              return (
+                <div
+                  key={line.sequence}
+                  ref={virtualizer.measureElement}
+                  data-index={row.index}
+                  className={`absolute left-0 w-full border-b py-1 ${LOG_GRID}`}
+                  style={{ transform: `translateY(${row.start}px)` }}
+                >
+                  <span className="truncate text-muted-foreground">
+                    {line.timestamp || formatDate(line.receivedAt)}
+                  </span>
+                  <span className="truncate text-primary">{line.name}</span>
+                  <span className="break-all whitespace-pre-wrap">{line.text}</span>
+                </div>
+              );
+            })}
+          </div>
         </div>
+        {!atBottom && lines.length ? (
+          <Button
+            type="button"
+            variant="outline"
+            size="icon-sm"
+            className="absolute right-3 bottom-3 z-10 rounded-full bg-card shadow-md hover:bg-muted dark:bg-card dark:hover:bg-muted"
+            title={t('serviceManagerTool.scrollToBottom')}
+            aria-label={t('serviceManagerTool.scrollToBottom')}
+            onClick={scrollToBottom}
+          >
+            <CaretDown weight="duotone" />
+          </Button>
+        ) : null}
       </div>
     </div>
   );
