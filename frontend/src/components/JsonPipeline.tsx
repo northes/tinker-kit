@@ -26,7 +26,6 @@ import {
   useSortable,
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable';
-import { CSS } from '@dnd-kit/utilities';
 import { Button } from './ui/button';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from './ui/dialog';
 import {
@@ -378,8 +377,10 @@ function PipelineRuleRow({
     transition,
     isDragging,
   } = useSortable({ id: item.id });
+  // 纵向列表排序只允许垂直位移：dnd-kit 的 transform 仍会带上指针的 x 偏移，
+  // 直接透传会让被拖动项横向溢出容器，出现横向滚动条。
   const style = {
-    transform: CSS.Translate.toString(transform),
+    transform: transform ? `translate3d(0, ${Math.round(transform.y)}px, 0)` : undefined,
     transition,
     zIndex: isDragging ? 1 : undefined,
   };
@@ -824,7 +825,7 @@ export function PipelinePanel({
       </span>
       <div
         ref={listRef}
-        className="json-pipeline-list min-h-0 flex-1 overflow-auto [scrollbar-gutter:auto]"
+        className="json-pipeline-list min-h-0 flex-1 overflow-x-hidden overflow-y-auto [scrollbar-gutter:auto]"
       >
         {rules.length === 0 ? (
           <div className="json-pipeline-empty flex min-h-[74px] items-center justify-center text-[11px] text-muted-foreground">
