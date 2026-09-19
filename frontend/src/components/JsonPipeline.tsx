@@ -206,6 +206,7 @@ function PathField({
   field,
   completionRef,
   template = false,
+  className = '',
   onCreate,
 }: {
   label: string;
@@ -217,6 +218,7 @@ function PathField({
   field: string;
   completionRef: MutableRefObject<PipelineCompletionContext>;
   template?: boolean;
+  className?: string;
   onCreate?: (view: EditorView) => void;
 }) {
   const { t } = useTranslation();
@@ -245,7 +247,9 @@ function PathField({
   };
   return (
     <>
-      <div className="json-pipeline-field flex min-w-0 items-center gap-2 @max-[520px]/pipeline-rules:items-stretch @max-[520px]/pipeline-rules:flex-col @max-[520px]/pipeline-rules:gap-[5px]">
+      <div
+        className={`json-pipeline-field flex min-w-0 items-center gap-2 @max-[520px]/pipeline-rules:items-stretch @max-[520px]/pipeline-rules:flex-col @max-[520px]/pipeline-rules:gap-[5px] ${className}`.trim()}
+      >
         <span className="w-[86px] min-w-[86px] whitespace-nowrap font-mono text-[10px] font-medium leading-none tracking-[.02em] text-muted-foreground @max-[520px]/pipeline-rules:w-auto @max-[520px]/pipeline-rules:min-w-0">
           {label}
         </span>
@@ -527,6 +531,7 @@ function PipelineRuleRow({
               itemId={item.id}
               field="filterValue"
               completionRef={completionRef}
+              className="col-span-2 @max-[520px]/pipeline-rules:col-span-1"
             />
           </div>
         )}{' '}
