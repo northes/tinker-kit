@@ -141,10 +141,22 @@ function statusVariant(value: string) {
       ? 'destructive'
       : 'secondary';
 }
-function formatDate(value: string) {
-  if (!value) return '—';
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
+function logDate(line: ServiceLogLine) {
+  const date = new Date(line.timestamp || line.receivedAt);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+const pad2 = (value: number) => String(value).padStart(2, '0');
+function dayKeyOf(date: Date) {
+  return `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}`;
+}
+function logTime(line: ServiceLogLine) {
+  const date = logDate(line);
+  if (!date) return line.timestamp || line.receivedAt || '';
+  return `${pad2(date.getHours())}:${pad2(date.getMinutes())}:${pad2(date.getSeconds())}`;
+}
+function logDayKey(line: ServiceLogLine) {
+  const date = logDate(line);
+  return date ? dayKeyOf(date) : '';
 }
 function targetLabel(target: ServiceTarget, t: ReturnType<typeof useTranslation>['t']) {
   return target.kind === 'local' ? t('serviceManagerTool.localTarget') : target.name;
@@ -1480,6 +1492,13 @@ function LogList({ lines }: { lines: ServiceLogLine[] }) {
   const [viewport, setViewport] = useState<HTMLElement | null>(null);
   const stickToBottom = useRef(true);
   const [atBottom, setAtBottom] = useState(true);
+  const [activeDay, setActiveDay] = useState('');
+  const dayKeys = useMemo(() => lines.map(logDayKey), [lines]);
+  const multiDay = useMemo(() => dayKeys.some((key) => key !== dayKeys[0]), [dayKeys]);
+  const showDate = multiDay || (dayKeys.length > 0 && dayKeys[0] !== dayKeyOf(new Date()));
+  const dayKeysRef = useRef(dayKeys);
+  const showDateRef = useRef(showDate);
+  const updateScrollStateRef = useRef<() => void>(() => {});
   const virtualizer = useVirtualizer({
     count: lines.length,
     getScrollElement: () => viewport,
@@ -1492,11 +1511,40 @@ function LogList({ lines }: { lines: ServiceLogLine[] }) {
       const next = viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight <= 8;
       stickToBottom.current = next;
       setAtBottom(next);
+      if (!showDateRef.current) {
+        setActiveDay('');
+        return;
+      }
+      const keys = dayKeysRef.current;
+      const cache = virtualizer.measurementsCache;
+      let lo = 0;
+      let hi = cache.length - 1;
+      let index = 0;
+      while (lo <= hi) {
+        const mid = (lo + hi) >> 1;
+        if (cache[mid].start <= viewport.scrollTop) {
+          index = mid;
+          lo = mid + 1;
+        } else {
+          hi = mid - 1;
+        }
+      }
+      const day = keys[index] ?? '';
+      setActiveDay((current) => (current === day ? current : day));
     };
+    updateScrollStateRef.current = update;
     update();
     viewport.addEventListener('scroll', update, { passive: true });
-    return () => viewport.removeEventListener('scroll', update);
-  }, [viewport]);
+    return () => {
+      viewport.removeEventListener('scroll', update);
+      updateScrollStateRef.current = () => {};
+    };
+  }, [viewport, virtualizer]);
+  useEffect(() => {
+    dayKeysRef.current = dayKeys;
+    showDateRef.current = showDate;
+    updateScrollStateRef.current();
+  }, [dayKeys, showDate]);
   const scrollToBottom = () => {
     stickToBottom.current = true;
     setAtBottom(true);
@@ -1534,9 +1582,7 @@ function LogList({ lines }: { lines: ServiceLogLine[] }) {
                   className={`absolute left-0 w-full border-b py-1 ${LOG_GRID}`}
                   style={{ transform: `translateY(${row.start}px)` }}
                 >
-                  <WheelText className="text-muted-foreground">
-                    {line.timestamp || formatDate(line.receivedAt)}
-                  </WheelText>
+                  <WheelText className="text-muted-foreground">{logTime(line)}</WheelText>
                   <WheelText className="text-primary">{line.name}</WheelText>
                   <span className="break-all whitespace-pre-wrap">{line.text}</span>
                 </div>
@@ -1544,6 +1590,13 @@ function LogList({ lines }: { lines: ServiceLogLine[] }) {
             })}
           </div>
         </ScrollArea>
+        {showDate && activeDay ? (
+          <div className="pointer-events-none absolute inset-x-0 top-0 z-10 px-3 pt-0.5">
+            <span className="inline-block rounded bg-popover/90 px-1.5 py-0.5 font-mono text-[10px] font-medium text-muted-foreground ring-1 ring-border">
+              {activeDay}
+            </span>
+          </div>
+        ) : null}
         {!atBottom && lines.length ? (
           <Button
             type="button"
