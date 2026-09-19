@@ -20,6 +20,7 @@ import {
 import { CSS } from '@dnd-kit/utilities';
 import { Clock, Copy, DotsSixVertical, Eye, EyeClosed, GpsFix, Globe } from '@phosphor-icons/react';
 import { Button } from './ui/button';
+import { ScrollArea } from './ui/scroll-area';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
 import {
@@ -498,7 +499,7 @@ export default function TimeTool({
                     {t(editing ? 'timeTool.done' : 'timeTool.edit')}
                   </Button>
                 </div>
-                <div className="min-h-0 overflow-x-hidden overflow-y-auto">
+                <ScrollArea className="min-h-0" options={{ overflow: { x: 'hidden' } }}>
                   {/* 预览和编辑共用上下文，保持拖拽回调注册稳定。 */}
                   {editing || parsed ? (
                     <DndContext
@@ -542,20 +543,18 @@ export default function TimeTool({
                       <span className="text-[11px]">{t('timeTool.emptyHint')}</span>
                     </div>
                   )}
-                </div>
+                </ScrollArea>
               </div>
             </TabsContent>
-            <TabsContent
-              value="dateCalculator"
-              keepMounted
-              className="min-h-0 min-w-0 overflow-y-auto [padding-inline-end:var(--overlay-scrollbar-hit-size)]"
-            >
-              <DateCalculator
-                record={record}
-                pending={pending}
-                clearPending={clearPending}
-                onActivate={() => setMode('dateCalculator')}
-              />
+            <TabsContent value="dateCalculator" keepMounted className="min-h-0 min-w-0">
+              <ScrollArea className="h-full [padding-inline-end:var(--overlay-scrollbar-size)]" options={{ overflow: { x: 'hidden' } }}>
+                <DateCalculator
+                  record={record}
+                  pending={pending}
+                  clearPending={clearPending}
+                  onActivate={() => setMode('dateCalculator')}
+                />
+              </ScrollArea>
             </TabsContent>
           </Tabs>
         </ToolLayoutContent>

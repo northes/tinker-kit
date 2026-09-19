@@ -9,6 +9,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import { ScrollArea } from '@/components/ui/scroll-area';
 
 interface DataTableProps<TData, TValue> {
   columns: ColumnDef<TData, TValue>[];
@@ -30,7 +31,7 @@ export function DataTable<TData, TValue>({
   });
 
   return (
-    <div className="min-h-0 flex-1 overflow-auto">
+    <ScrollArea className="min-h-0 flex-1 [padding-inline-end:var(--overlay-scrollbar-size)]">
       <Table containerClassName="overflow-visible">
         <TableHeader className="sticky top-0 z-10 bg-background">
           {table.getHeaderGroups().map((headerGroup) => (
@@ -78,6 +79,6 @@ export function DataTable<TData, TValue>({
           )}
         </TableBody>
       </Table>
-    </div>
+    </ScrollArea>
   );
 }

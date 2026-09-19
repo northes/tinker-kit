@@ -62,6 +62,7 @@ import {
   type ToolId,
 } from './shared';
 import { Badge } from './ui/badge';
+import { ScrollArea } from './ui/scroll-area';
 import { Button } from './ui/button';
 import { Checkbox } from './ui/checkbox';
 import {
@@ -773,7 +774,7 @@ export function ImageManagerDetailView({
               <div className="max-w-md text-xs text-muted-foreground">{error}</div>
             </div>
           ) : detail ? (
-            <div className="h-full min-h-0 overflow-x-hidden overflow-y-auto [padding-inline-end:var(--overlay-scrollbar-hit-size)]">
+            <ScrollArea className="h-full min-h-0 [padding-inline-end:var(--overlay-scrollbar-size)]" options={{ overflow: { x: 'hidden' } }}>
               <section aria-labelledby="image-detail-metadata" className="mt-3">
                 <h3
                   id="image-detail-metadata"
@@ -805,8 +806,8 @@ export function ImageManagerDetailView({
                                 {value}
                               </span>
                             </div>
-                          ))}
-                        </div>
+                    ))}
+                    </div>
                       )}
                     </dd>
                   </div>
@@ -825,7 +826,7 @@ export function ImageManagerDetailView({
                     {t('imageManagerTool.layersEmpty')}
                   </p>
                 ) : (
-                  <div className="mt-2 overflow-x-auto border-y border-border">
+                  <ScrollArea className="mt-2 border-y border-border">
                     <Table className="min-w-[42rem] text-[11px]">
                       <TableHeader>
                         <TableRow>
@@ -856,7 +857,7 @@ export function ImageManagerDetailView({
                         ))}
                       </TableBody>
                     </Table>
-                  </div>
+                  </ScrollArea>
                 )}
               </section>
 
@@ -878,17 +879,17 @@ export function ImageManagerDetailView({
                   {t('imageManagerTool.detailRawManifest')}
                 </h3>
                 {rawManifest ? (
-                  <pre className="mt-2 max-h-[32rem] overflow-auto whitespace-pre-wrap break-all border-y border-border p-3 font-mono text-[11px] leading-5 text-foreground">
+                  <ScrollArea element="pre" className="mt-2 max-h-[32rem] whitespace-pre-wrap break-all border-y border-border p-3 font-mono text-[11px] leading-5 text-foreground">
                     {rawManifest}
-                  </pre>
+                  </ScrollArea>
                 ) : (
                   <p className="mt-2 text-[12px] text-muted-foreground">
                     {t('imageManagerTool.rawManifestEmpty')}
                   </p>
                 )}
-              </section>
-            </div>
-          ) : null}
+               </section>
+             </ScrollArea>
+           ) : null}
         </ToolLayoutContent>
       </ToolLayout>
     </Reveal>
@@ -1411,10 +1412,10 @@ export default function ImageManagerTool({
     return next.map((item) => item.row);
   }, [i18n.language, indexedRows, search, sortDirection, sortKey]);
   // 只渲染可视区域的行：列表可达上千条，全量 DOM 会让工具切换与滚动明显卡顿。
-  const imageListRef = useRef<HTMLDivElement | null>(null);
+  const [imageListViewport, setImageListViewport] = useState<HTMLElement | null>(null);
   const imageRowVirtualizer = useVirtualizer({
     count: filteredRows.length,
-    getScrollElement: () => imageListRef.current,
+    getScrollElement: () => imageListViewport,
     estimateSize: () => 37,
     overscan: 12,
   });
@@ -2453,9 +2454,9 @@ export default function ImageManagerTool({
               </div>
             </div>
           ) : (
-            <div
-              ref={imageListRef}
-              className="min-h-0 flex-1 overflow-auto overscroll-contain [padding-inline-end:var(--overlay-scrollbar-hit-size)]"
+            <ScrollArea
+              className="min-h-0 flex-1 overscroll-contain [padding-inline-end:var(--overlay-scrollbar-size)]"
+              onViewport={setImageListViewport}
             >
               <Table className="min-w-[640px] table-fixed" containerClassName="overflow-visible">
                 <TableHeader className="sticky top-0 z-10 bg-background">
@@ -2701,7 +2702,7 @@ export default function ImageManagerTool({
                   ) : null}
                 </TableBody>
               </Table>
-            </div>
+            </ScrollArea>
           )}
         </ToolLayoutContent>
         <ToolLayoutFooter>
@@ -2911,8 +2912,9 @@ export default function ImageManagerTool({
               </form>
             ) : null}
             {operationDialog?.type === 'push' && operationDialog.changes.length > 1 ? (
-              <form
-                className="max-h-36 overflow-y-auto rounded-md border border-border bg-muted/40 px-3 py-2"
+              <ScrollArea
+                element="form"
+                className="max-h-36 rounded-md border border-border bg-muted/40 px-3 py-2"
                 id={operationFormID}
                 onSubmit={(event) => {
                   event.preventDefault();
@@ -2924,7 +2926,7 @@ export default function ImageManagerTool({
                     {change.source}
                   </code>
                 ))}
-              </form>
+              </ScrollArea>
             ) : null}
             {operationError ? (
               <p className="m-0 text-xs text-destructive" role="alert">
@@ -2956,7 +2958,7 @@ export default function ImageManagerTool({
               <DialogDescription>{t('imageManagerTool.backgroundTasksDesc')}</DialogDescription>
             </DialogHeader>
             <div className="min-h-0 max-h-[55vh] overflow-hidden">
-              <div className="min-h-0 max-h-[55vh] overflow-x-hidden overflow-y-auto overscroll-contain [padding-inline-end:var(--overlay-scrollbar-hit-size)] [scrollbar-gutter:auto]">
+              <ScrollArea className="min-h-0 max-h-[55vh] overscroll-contain [padding-inline-end:var(--overlay-scrollbar-size)]" options={{ overflow: { x: 'hidden' } }}>
                 {visibleTasks.length === 0 ? (
                   <div className="py-8 text-center text-xs text-muted-foreground">
                     {t('imageManagerTool.backgroundTasksEmpty')}
@@ -3044,10 +3046,10 @@ export default function ImageManagerTool({
                         </div>
                       );
                     })
-                )}
+                  )}
+                </ScrollArea>
               </div>
-            </div>
-            <DialogFooter>
+              <DialogFooter>
               <Button variant="outline" onClick={() => setTasksOpen(false)}>
                 {t('imageManagerTool.cancel')}
               </Button>
@@ -3073,7 +3075,7 @@ export default function ImageManagerTool({
             <DialogTitle>{t('imageManagerTool.manageSourcesTitle')}</DialogTitle>
             <DialogDescription>{t('imageManagerTool.manageSourcesDesc')}</DialogDescription>
           </DialogHeader>
-          <div className="min-h-0 min-w-0 flex-1 overflow-auto overscroll-contain [padding-inline-end:var(--overlay-scrollbar-hit-size)]">
+          <ScrollArea className="min-h-0 min-w-0 flex-1 overscroll-contain [padding-inline-end:var(--overlay-scrollbar-size)]">
             <Tabs
               value={manageTab}
               onValueChange={(value) => {
@@ -3210,9 +3212,9 @@ export default function ImageManagerTool({
               <p className="m-0 pt-3 text-sm text-destructive" role="alert">
                 {sourceSaveError}
               </p>
-            ) : null}
-          </div>
-          <DialogFooter className="flex-none">
+             ) : null}
+           </ScrollArea>
+           <DialogFooter className="flex-none">
             <Button variant="outline" disabled={savingSources} onClick={() => setManageOpen(false)}>
               {t('imageManagerTool.cancel')}
             </Button>
@@ -3288,7 +3290,8 @@ export default function ImageManagerTool({
                   <div className="text-[10px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
                     {t('imageManagerTool.registryDeleteTags')}
                   </div>
-                  <div className="mt-1.5 flex max-h-32 min-w-0 flex-wrap gap-1.5 overflow-y-auto pr-1">
+                  <ScrollArea className="mt-1.5 max-h-32 min-w-0 pr-1">
+                    <div className="flex flex-wrap gap-1.5">
                     {registryConfirmTags.map((tag, index) => (
                       <button
                         type="button"
@@ -3307,6 +3310,7 @@ export default function ImageManagerTool({
                       </button>
                     ))}
                   </div>
+                  </ScrollArea>
                 </div>
               ) : null}
               <p className="m-0 text-xs text-muted-foreground">

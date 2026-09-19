@@ -47,6 +47,8 @@
     "date-fns": "^4.4.0",
     "i18next": "^26.3.6",
     "jsqr": "^1.4.0",
+    "overlayscrollbars": "^2.16.0",
+    "overlayscrollbars-react": "^0.5.6",
     "pinyin-pro": "^3.28.2",
     "qrcode": "^1.5.4",
     "react": "^19.2.8",

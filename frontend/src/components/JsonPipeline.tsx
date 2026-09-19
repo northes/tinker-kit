@@ -27,6 +27,7 @@ import {
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable';
 import { Button } from './ui/button';
+import { ScrollArea } from './ui/scroll-area';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from './ui/dialog';
 import {
   Select,
@@ -760,7 +761,7 @@ export function PipelinePanel({
   const { t } = useTranslation();
   const completionRef = useRef<PipelineCompletionContext>(context);
   completionRef.current = context;
-  const listRef = useRef<HTMLDivElement>(null);
+  const [listViewport, setListViewport] = useState<HTMLElement | null>(null);
   const editorViews = useRef(new Map<string, EditorView>());
   const focusItemIdRef = useRef(focusItemId);
   focusItemIdRef.current = focusItemId;
@@ -806,9 +807,8 @@ export function PipelinePanel({
   const focusAddedItem = (id: string, view: EditorView) => {
     editorViews.current.set(id, view);
     if (focusItemIdRef.current !== id) return;
-    const list = listRef.current;
-    if (!list) return;
-    list.scrollTop = list.scrollHeight;
+    if (!listViewport) return;
+    listViewport.scrollTop = listViewport.scrollHeight;
     view.dispatch({ selection: { anchor: view.state.doc.length } });
     view.focus();
     onFocusHandled();
@@ -823,9 +823,10 @@ export function PipelinePanel({
       <span className="json-pane-label flex-none font-mono text-[10px] font-medium leading-none tracking-[.04em] text-muted-foreground uppercase">
         {t('jsonTool.pipeline.rules')}
       </span>
-      <div
-        ref={listRef}
-        className="json-pipeline-list min-h-0 flex-1 overflow-x-hidden overflow-y-auto [scrollbar-gutter:auto]"
+      <ScrollArea
+        className="json-pipeline-list min-h-0 flex-1 [padding-inline-end:var(--overlay-scrollbar-size)]"
+        options={{ overflow: { x: 'hidden' } }}
+        onViewport={setListViewport}
       >
         {rules.length === 0 ? (
           <div className="json-pipeline-empty flex min-h-[74px] items-center justify-center text-[11px] text-muted-foreground">
@@ -854,7 +855,7 @@ export function PipelinePanel({
             </SortableContext>
           </DndContext>
         )}
-      </div>
+      </ScrollArea>
     </section>
   );
 }

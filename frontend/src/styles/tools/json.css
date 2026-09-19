@@ -54,7 +54,6 @@
   min-height: 0;
   min-width: 0;
   overflow: auto;
-  padding-inline-end: var(--overlay-scrollbar-hit-size);
 }
 /* Top-level: 38px top clears the toggle button */
 .json-table-layer > .json-table-preview,

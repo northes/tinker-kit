@@ -4,7 +4,7 @@
   --app-titlebar-item-offset: 1px;
   --app-titlebar-toggle-offset: 1px;
   --code-editor-font-size: 12px;
-  --overlay-scrollbar-hit-size: 12px;
+  --overlay-scrollbar-size: 12px;
   font-synthesis: none;
   -webkit-font-smoothing: antialiased;
 }
@@ -42,32 +42,21 @@ textarea,
 [role='switch'] {
   --wails-draggable: no-drag;
 }
-* {
+/* 浮层与命令面板内部滚动：保留滚动能力，但不显示滚动条。 */
+.no-scrollbar {
   scrollbar-width: none;
 }
-*::-webkit-scrollbar {
-  width: 0;
-  height: 0;
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
 }
-.overlay-scroll-thumb::after {
-  content: '';
-  display: block;
-  border-radius: 999px;
-  background: color-mix(in oklch, var(--muted-foreground) 42%, transparent);
-}
-.overlay-scroll-thumb:hover::after,
-.overlay-scroll-thumb:active::after,
-.overlay-scroll-thumb:focus-visible::after {
-  background: color-mix(in oklch, var(--muted-foreground) 68%, transparent);
-  box-shadow: 0 0 0 1px var(--ring);
-}
-.overlay-scroll-thumb-y::after {
-  width: 6px;
-  height: 100%;
-  margin-left: auto;
-}
-.overlay-scroll-thumb-x::after {
-  width: 100%;
-  height: 6px;
-  margin-top: auto;
+/* OverlayScrollbars 主题：命中区与预留宽度同为 --overlay-scrollbar-size，视觉滑块 6px。 */
+.os-scrollbar {
+  --os-size: var(--overlay-scrollbar-size);
+  --os-padding-perpendicular: 3px;
+  --os-padding-axis: 3px;
+  --os-handle-border-radius: 999px;
+  --os-handle-min-size: 24px;
+  --os-handle-bg: color-mix(in oklch, var(--muted-foreground) 42%, transparent);
+  --os-handle-bg-hover: color-mix(in oklch, var(--muted-foreground) 68%, transparent);
+  --os-handle-bg-active: color-mix(in oklch, var(--muted-foreground) 68%, transparent);
 }

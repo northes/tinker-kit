@@ -22,6 +22,7 @@ import {
     type ImageOutputFormat,
 } from '../lib/image-output';
 import {Button} from './ui/button';
+import {ScrollArea} from './ui/scroll-area';
 import {
     ColorPicker,
     ColorPickerAlphaSlider,
@@ -1386,8 +1387,10 @@ export default function ImageTool({
                                 )}
                             </div>
                         </div>
-                        <div
-                            className="image-tool-controls flex h-full min-h-0 min-w-0 flex-col overflow-x-hidden overflow-y-auto border-border max-[700px]:border-t min-[701px]:border-l [padding-inline-end:var(--overlay-scrollbar-hit-size)]">
+                        <ScrollArea
+                            className="image-tool-controls h-full min-h-0 min-w-0 border-border max-[700px]:border-t min-[701px]:border-l [padding-inline-end:var(--overlay-scrollbar-size)]"
+                            options={{ overflow: { x: 'hidden' } }}>
+                            <div className="flex min-h-0 flex-col">
                             <div className="flex flex-col gap-2 py-2.5 pl-3 max-[700px]:pl-0">
                                 <dl
                                     className="image-tool-meta m-0 flex min-w-0 flex-wrap items-baseline gap-y-0.5 text-[11px] leading-4 text-muted-foreground"
@@ -1721,7 +1724,8 @@ export default function ImageTool({
                                     </dl>
                                 </section>
                             </div>
-                        </div>
+                            </div>
+                        </ScrollArea>
                     </div>
                 </ToolLayoutContent>
                 <ToolLayoutFooter>

@@ -33,6 +33,7 @@ import {
 } from '../../bindings/changeme/sshprofileservice';
 import { ConfirmDialog } from './ConfirmDialog';
 import { Badge } from './ui/badge';
+import { ScrollArea } from './ui/scroll-area';
 import { Button } from './ui/button';
 import {
   AlertDialog,
@@ -426,7 +427,7 @@ function SSHProfileManagerDialog({
               <span className="min-w-0 break-words">{listError}</span>
             </div>
           ) : null}
-          <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5 [padding-inline-end:var(--overlay-scrollbar-hit-size)]">
+          <ScrollArea className="min-h-0 flex-1 px-6 py-5 [padding-inline-end:var(--overlay-scrollbar-size)]">
             {view === 'list' ? (
               <div className="grid gap-6">
                 <div className="relative flex w-full items-center">
@@ -798,9 +799,9 @@ function SSHProfileManagerDialog({
                   ) : null}
                 </div>
               </div>
-            )}
-          </div>
-          <DialogFooter className="mx-0 mb-0 flex-none rounded-b-xl px-6 py-4">
+             )}
+           </ScrollArea>
+           <DialogFooter className="mx-0 mb-0 flex-none rounded-b-xl px-6 py-4">
             <Button
               variant="outline"
               onClick={() => (view === 'list' ? requestClose(false) : requestBack())}

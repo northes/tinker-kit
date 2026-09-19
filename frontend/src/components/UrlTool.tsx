@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Button } from './ui/button';
+import { ScrollArea } from './ui/scroll-area';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { Switch } from './ui/switch';
@@ -210,7 +211,7 @@ export default function UrlTool({
                 }}
               />
             </div>
-            <div className="min-h-0 min-w-0 overflow-auto">
+            <ScrollArea className="min-h-0 min-w-0">
               {parts ? (
                 <>
                   <UrlPart
@@ -407,7 +408,7 @@ export default function UrlTool({
                   </span>
                 </div>
               )}
-            </div>
+            </ScrollArea>
           </div>
         </ToolLayoutContent>
         <ToolLayoutFooter>

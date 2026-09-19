@@ -10,6 +10,7 @@ import {
   type ReactElement,
 } from 'react';
 import { Button } from './ui/button';
+import { ScrollArea } from './ui/scroll-area';
 import { Switch } from './ui/switch';
 import {
   AlertDialog,
@@ -391,7 +392,7 @@ function SSHKnownHostsDialog({
               {t(editing ? 'settings.sshKnownHostsEditDesc' : 'settings.sshKnownHostsDialogDesc')}
             </DialogDescription>
           </DialogHeader>
-          <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5 [padding-inline-end:var(--overlay-scrollbar-hit-size)]">
+          <ScrollArea className="min-h-0 flex-1 px-6 py-5 [padding-inline-end:var(--overlay-scrollbar-size)]">
             {editing ? (
               <form
                 className="grid gap-4"
@@ -546,10 +547,10 @@ function SSHKnownHostsDialog({
                     </div>
                   </div>
                 ))}
-              </div>
-            )}
-          </div>
-          <DialogFooter className="mx-0 mb-0 flex-none rounded-b-xl px-6 py-4">
+               </div>
+             )}
+           </ScrollArea>
+           <DialogFooter className="mx-0 mb-0 flex-none rounded-b-xl px-6 py-4">
             {editing ? (
               <>
                 <Button

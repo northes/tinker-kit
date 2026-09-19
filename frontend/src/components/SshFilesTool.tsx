@@ -62,6 +62,7 @@ import {
   type Icon,
 } from '@phosphor-icons/react';
 import { Badge } from './ui/badge';
+import { ScrollArea } from './ui/scroll-area';
 import { Button } from './ui/button';
 import { Checkbox } from './ui/checkbox';
 import {
@@ -1770,10 +1771,10 @@ export default function SshFilesTool({ active }: Props) {
     });
   }, [entries, i18n.language, sizeValues, sortDirection, sortKey]);
   // 只渲染可视区域的行：远端目录可能很大，全量渲染会拖慢滚动与切换。
-  const fileListRef = useRef<HTMLDivElement | null>(null);
+  const [fileListViewport, setFileListViewport] = useState<HTMLElement | null>(null);
   const fileRowVirtualizer = useVirtualizer({
     count: sortedEntries.length,
-    getScrollElement: () => fileListRef.current,
+    getScrollElement: () => fileListViewport,
     estimateSize: () => 33,
     overscan: 12,
   });
@@ -2105,7 +2106,8 @@ export default function SshFilesTool({ active }: Props) {
             </form>
           ) : (
             <>
-              <div className="flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto py-1">
+              <ScrollArea className="min-w-0 flex-1 py-1" options={{ overflow: { x: 'scroll', y: 'hidden' } }}>
+                <div className="flex items-center gap-0.5">
                 {breadcrumbs.map((crumb, index) => (
                   <span key={crumb.path} className="flex items-center whitespace-nowrap">
                     <button
@@ -2122,7 +2124,8 @@ export default function SshFilesTool({ active }: Props) {
                     ) : null}
                   </span>
                 ))}
-              </div>
+                </div>
+              </ScrollArea>
               <Button
                 variant="ghost"
                 size="icon-sm"
@@ -2218,16 +2221,19 @@ export default function SshFilesTool({ active }: Props) {
           <ContextMenuTrigger
             render={
               <div
-                ref={fileListRef}
                 id="ssh-files-drop-zone"
                 data-file-drop-target
                 data-over={fileDrag.over ? 'true' : undefined}
                 aria-busy={isLoading}
                 {...fileDrag.dragProps}
-                className="group/file-drop relative min-h-0 flex-1 overflow-auto [scrollbar-gutter:auto]"
+                className="group/file-drop relative min-h-0 flex-1"
               />
             }
           >
+            <ScrollArea
+              className="h-full [padding-inline-end:var(--overlay-scrollbar-size)]"
+              onViewport={setFileListViewport}
+            >
             {fileDrag.over ? (
               <span className="sr-only" role="status">
                 {t('fileDrop.release')}
@@ -2633,6 +2639,7 @@ export default function SshFilesTool({ active }: Props) {
                 </TableBody>
               </Table>
             )}
+            </ScrollArea>
           </ContextMenuTrigger>
           <ContextMenuContent className="min-w-44">
             <ContextMenuGroup>
@@ -2807,7 +2814,7 @@ export default function SshFilesTool({ active }: Props) {
               <span className="min-w-0 break-words">{manageFeedback.message}</span>
             </div>
           ) : null}
-          <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5 [padding-inline-end:var(--overlay-scrollbar-hit-size)]">
+          <ScrollArea className="min-h-0 flex-1 px-6 py-5 [padding-inline-end:var(--overlay-scrollbar-size)]">
             {manageView === 'list' ? (
               <div className="min-w-0 flex flex-col gap-4">
                 <div className="flex items-center justify-end gap-3">
@@ -2972,9 +2979,9 @@ export default function SshFilesTool({ active }: Props) {
                   </div>
                 </div>
               </form>
-            )}
-          </div>
-          <DialogFooter className="mx-0 mb-0 flex-none rounded-b-xl px-6 py-4">
+             )}
+           </ScrollArea>
+           <DialogFooter className="mx-0 mb-0 flex-none rounded-b-xl px-6 py-4">
             <Button
               variant="outline"
               disabled={savingManage}
@@ -3104,9 +3111,9 @@ export default function SshFilesTool({ active }: Props) {
                   {uploadPaths.length}
                 </span>
               </div>
-              <div
+              <ScrollArea
                 id="ssh-upload-items"
-                className="max-h-32 overflow-y-auto rounded-md border border-border bg-muted/20 px-3 py-2 text-xs"
+                className="max-h-32 rounded-md border border-border bg-muted/20 px-3 py-2 text-xs"
               >
                 {uploadPaths.map((item) => (
                   <div key={item} className="flex min-w-0 items-center gap-2 py-1">
@@ -3116,7 +3123,7 @@ export default function SshFilesTool({ active }: Props) {
                     </span>
                   </div>
                 ))}
-              </div>
+              </ScrollArea>
             </div>
             <div className="grid gap-1.5">
               <Label htmlFor="ssh-upload-target" className="text-xs text-muted-foreground">
@@ -3348,13 +3355,15 @@ export default function SshFilesTool({ active }: Props) {
                   count: operationConflict?.conflicts.length ?? 0,
                 })}
               </p>
-              <ul className="m-0 w-full max-h-40 list-none space-y-1 overflow-y-auto overscroll-contain rounded-md border border-border bg-muted/20 p-2 font-mono text-[11px]">
+              <ScrollArea className="w-full max-h-40 overscroll-contain rounded-md border border-border bg-muted/20 p-2">
+                <ul className="m-0 list-none space-y-1 font-mono text-[11px]">
                 {operationConflict?.conflicts.map((path) => (
                   <li key={path} className="w-full break-all">
                     {path}
                   </li>
                 ))}
-              </ul>
+                </ul>
+              </ScrollArea>
               <p className="m-0 text-[10px] leading-4 text-muted-foreground">
                 {t('sshFilesTool.operationConflictKeepHint')}
               </p>
@@ -3403,7 +3412,8 @@ export default function SshFilesTool({ active }: Props) {
         onConfirm={() => void executeDelete()}
       >
         <p className="m-0">{t('sshFilesTool.deleteDesc', { count: deletePaths?.length ?? 0 })}</p>
-        <ol className="m-0 w-full max-h-40 list-none space-y-1 overflow-y-auto overscroll-contain font-mono text-[11px]">
+        <ScrollArea className="w-full max-h-40 overscroll-contain">
+          <ol className="m-0 list-none space-y-1 font-mono text-[11px]">
           {deletePaths?.map((path, index) => (
             <li
               key={`${path}-${index}`}
@@ -3413,7 +3423,8 @@ export default function SshFilesTool({ active }: Props) {
               <span className="min-w-0 flex-1 break-all">{path}</span>
             </li>
           ))}
-        </ol>
+          </ol>
+        </ScrollArea>
       </ConfirmDialog>
       <Dialog open={tasksOpen} onOpenChange={setTasksOpen}>
         <DialogContent className="max-w-lg">
@@ -3422,7 +3433,7 @@ export default function SshFilesTool({ active }: Props) {
             <DialogDescription>{t('sshFilesTool.tasksDesc')}</DialogDescription>
           </DialogHeader>
           <div className="min-h-0 max-h-[55vh] overflow-hidden">
-            <div className="min-h-0 max-h-[55vh] overflow-x-hidden overflow-y-auto overscroll-contain [padding-inline-end:var(--overlay-scrollbar-hit-size)] [scrollbar-gutter:auto]">
+            <ScrollArea className="min-h-0 max-h-[55vh] overscroll-contain [padding-inline-end:var(--overlay-scrollbar-size)]" options={{ overflow: { x: 'hidden' } }}>
               {tasks.length ? (
                 <div>
                   {tasks
@@ -3485,10 +3496,10 @@ export default function SshFilesTool({ active }: Props) {
                 <div className="py-8 text-center text-xs text-muted-foreground">
                   {t('sshFilesTool.noTasks')}
                 </div>
-              )}
-            </div>
-          </div>
-          <DialogFooter>
+               )}
+             </ScrollArea>
+           </div>
+           <DialogFooter>
             <Button variant="outline" onClick={() => setTasksOpen(false)}>
               {t('common.close')}
             </Button>

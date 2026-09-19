@@ -33,10 +33,6 @@
     "hideTool": "Hide {{name}}",
     "movedTool": "{{name}} moved to position {{position}} of {{count}}"
   },
-  "scrollbar": {
-    "vertical": "Vertical scrollbar",
-    "horizontal": "Horizontal scrollbar"
-  },
   "fileDrop": {
     "release": "Release to import"
   },

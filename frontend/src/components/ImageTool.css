@@ -131,7 +131,7 @@
   flex: none;
 }
 
-.image-tool-controls {
+.image-tool-controls [data-overlayscrollbars-viewport] {
   overscroll-behavior: contain;
 }
 

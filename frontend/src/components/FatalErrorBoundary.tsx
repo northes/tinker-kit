@@ -7,6 +7,7 @@ import { GetSystemInfo } from '../../bindings/changeme/systeminfoservice';
 import { GetCurrentVersion } from '../../bindings/changeme/updateservice';
 import { GITHUB_REPO_URL } from '../repositoryUrl';
 import { Button } from './ui/button';
+import { ScrollArea } from './ui/scroll-area';
 
 type FatalErrorBoundaryProps = { children: React.ReactNode };
 type FatalErrorBoundaryState = { error: Error | null };
@@ -127,9 +128,9 @@ function CrashScreen({ error, onReload }: { error: Error; onReload: () => void }
             <div>
               <dt className="font-medium text-foreground">{t('crash.error')}</dt>
               <dd className="mt-1 flex items-start gap-2">
-                <pre className="min-w-0 flex-1 max-h-32 overflow-auto whitespace-pre-wrap">
+                <ScrollArea element="pre" className="min-w-0 flex-1 max-h-32 whitespace-pre-wrap">
                   {errorText}
-                </pre>
+                </ScrollArea>
                 <Button
                   type="button"
                   variant="ghost"

@@ -88,8 +88,8 @@ import {
 import { parseTimeInput } from './utils/time';
 import { parseSupportedUrl } from './utils/url';
 import { toast, Toaster } from './components/ui/toast';
+import { ScrollArea } from './components/ui/scroll-area';
 import UpdatePill from './components/UpdatePill';
-import OverlayScrollbar from './components/OverlayScrollbar';
 import {
   AppendHistory,
   ClearHistory,
@@ -1798,7 +1798,6 @@ function AppShell() {
   return (
     <>
       <Toaster />
-      <OverlayScrollbar />
       <div className="app-shell relative grid h-dvh grid-rows-[var(--app-titlebar-height)_minmax(0,1fr)] bg-background">
         <div className="ambient pointer-events-none absolute inset-0 z-0" />
         <header
@@ -2171,9 +2170,11 @@ function AppShell() {
                 {t('matchDialog.bodySuffix')}
               </p>
               {matchDialog ? (
-                <code className="mt-2 block h-24 overflow-y-auto rounded-md border bg-muted/30 px-2 py-1 text-xs leading-5 break-all whitespace-pre-wrap">
-                  {matchDialog.input}
-                </code>
+                <ScrollArea className="mt-2 h-24 rounded-md border bg-muted/30 px-2 py-1">
+                  <code className="block text-xs leading-5 break-all whitespace-pre-wrap">
+                    {matchDialog.input}
+                  </code>
+                </ScrollArea>
               ) : null}
             </AlertDialogDescription>
           </AlertDialogHeader>

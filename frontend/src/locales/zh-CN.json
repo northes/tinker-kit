@@ -33,10 +33,6 @@
     "hideTool": "隐藏{{name}}",
     "movedTool": "{{name}} 已移到第 {{position}} 位，共 {{count}} 项"
   },
-  "scrollbar": {
-    "vertical": "垂直滚动条",
-    "horizontal": "水平滚动条"
-  },
   "fileDrop": {
     "release": "松开即可导入"
   },

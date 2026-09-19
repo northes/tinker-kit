@@ -56,6 +56,7 @@ import { useSSHProfiles } from './SSHProfileManagerDialog';
 import { SSHProfileSelect } from './SSHProfileSelect';
 import { ConfirmDialog } from './ConfirmDialog';
 import { Badge } from './ui/badge';
+import { ScrollArea } from './ui/scroll-area';
 import { Button } from './ui/button';
 import { Checkbox } from './ui/checkbox';
 import {
@@ -787,7 +788,7 @@ export default function ServiceManagerTool({
             <DialogTitle>{t('serviceManagerTool.manageTargetsTitle')}</DialogTitle>
             <DialogDescription>{t('serviceManagerTool.manageTargetsDesc')}</DialogDescription>
           </DialogHeader>
-          <div className="min-h-0 min-w-0 flex-1 overflow-auto overscroll-contain [padding-inline-end:var(--overlay-scrollbar-hit-size)]">
+          <ScrollArea className="min-h-0 min-w-0 flex-1 overscroll-contain [padding-inline-end:var(--overlay-scrollbar-size)]">
             <div className="flex items-center justify-between gap-3">
               <span className="text-sm font-medium text-foreground">
                 {t('serviceManagerTool.targets')}
@@ -842,7 +843,7 @@ export default function ServiceManagerTool({
                 {targetSaveError}
               </p>
             ) : null}
-          </div>
+          </ScrollArea>
           <DialogFooter className="flex-none">
             <Button variant="outline" disabled={savingTargets} onClick={() => setManageOpen(false)}>
               {t('common.cancel')}
@@ -904,7 +905,7 @@ export default function ServiceManagerTool({
                 : ''}
             </DialogDescription>
           </DialogHeader>
-          <div className="min-h-0 flex-1 overflow-auto overscroll-contain [padding-inline-end:var(--overlay-scrollbar-hit-size)]">
+          <ScrollArea className="min-h-0 flex-1 overscroll-contain [padding-inline-end:var(--overlay-scrollbar-size)]">
             <div className="divide-y divide-border">
               {(monitorDialog?.containers ?? []).map((container) => (
                 <Label
@@ -924,7 +925,7 @@ export default function ServiceManagerTool({
                 </Label>
               ))}
             </div>
-          </div>
+          </ScrollArea>
           <DialogFooter className="flex-none">
             <Button variant="outline" onClick={() => setMonitorDialog(null)}>
               {t('common.cancel')}
@@ -1078,7 +1079,7 @@ function ResourceList({
     matchesStatusFilter(statuses, 'systemd', unit.activeState),
   );
   return (
-    <div className="h-full min-h-0 overflow-y-auto">
+    <ScrollArea className="h-full min-h-0">
       {runtimeFiltered(statuses, 'docker') ? (
         <>
           {inventory.docker.available ? (
@@ -1147,7 +1148,7 @@ function ResourceList({
           )}
         </>
       ) : null}
-    </div>
+    </ScrollArea>
   );
 }
 function RuntimeError({ name, error }: { name: string; error?: string }) {
@@ -1412,7 +1413,7 @@ function ResourceInfoDialog({
           <DialogTitle>{resource.name || resource.id}</DialogTitle>
           <DialogDescription>{t('serviceManagerTool.info')}</DialogDescription>
         </DialogHeader>
-        <div className="min-h-0 flex-1 overflow-auto rounded-md border border-border bg-muted/20 p-3">
+        <ScrollArea className="min-h-0 flex-1 rounded-md border border-border bg-muted/20 p-3">
           {loading ? (
             <div className="flex h-full items-center justify-center gap-2 text-xs text-muted-foreground">
               <Spinner />
@@ -1427,7 +1428,7 @@ function ResourceInfoDialog({
               {JSON.stringify(detail, null, 2)}
             </pre>
           )}
-        </div>
+        </ScrollArea>
         <DialogFooter className="flex-none">
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             {t('common.close')}
@@ -1448,29 +1449,31 @@ function ResourceInfoDialog({
 const LOG_GRID = 'grid grid-cols-[11rem_10rem_minmax(0,1fr)] items-start gap-3 px-3';
 function LogList({ lines }: { lines: ServiceLogLine[] }) {
   const { t } = useTranslation();
-  const parentRef = useRef<HTMLDivElement>(null);
+  const [viewport, setViewport] = useState<HTMLElement | null>(null);
   const stickToBottom = useRef(true);
   const [atBottom, setAtBottom] = useState(true);
   const virtualizer = useVirtualizer({
     count: lines.length,
-    getScrollElement: () => parentRef.current,
+    getScrollElement: () => viewport,
     estimateSize: () => 24,
     overscan: 20,
   });
-  const handleScroll = () => {
-    const el = parentRef.current;
-    if (!el) return;
-    const next = el.scrollHeight - el.scrollTop - el.clientHeight <= 8;
-    stickToBottom.current = next;
-    setAtBottom(next);
-  };
+  useEffect(() => {
+    if (!viewport) return;
+    const update = () => {
+      const next = viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight <= 8;
+      stickToBottom.current = next;
+      setAtBottom(next);
+    };
+    update();
+    viewport.addEventListener('scroll', update, { passive: true });
+    return () => viewport.removeEventListener('scroll', update);
+  }, [viewport]);
   const scrollToBottom = () => {
-    const el = parentRef.current;
-    if (!el) return;
     stickToBottom.current = true;
     setAtBottom(true);
     if (lines.length) virtualizer.scrollToIndex(lines.length - 1, { align: 'end' });
-    else el.scrollTop = el.scrollHeight;
+    else if (viewport) viewport.scrollTop = viewport.scrollHeight;
   };
   const lastSequence = lines.length ? lines[lines.length - 1].sequence : 0;
   useEffect(() => {
@@ -1487,10 +1490,10 @@ function LogList({ lines }: { lines: ServiceLogLine[] }) {
         <span>{t('serviceManagerTool.logContent')}</span>
       </div>
       <div className="relative min-h-0">
-        <div
-          ref={parentRef}
-          onScroll={handleScroll}
-          className="h-full min-h-0 overflow-x-hidden overflow-y-auto font-mono text-xs"
+        <ScrollArea
+          className="h-full min-h-0 font-mono text-xs [padding-inline-end:var(--overlay-scrollbar-size)]"
+          options={{ overflow: { x: 'hidden' } }}
+          onViewport={setViewport}
         >
           <div style={{ height: virtualizer.getTotalSize(), width: '100%', position: 'relative' }}>
             {virtualizer.getVirtualItems().map((row) => {
@@ -1512,7 +1515,7 @@ function LogList({ lines }: { lines: ServiceLogLine[] }) {
               );
             })}
           </div>
-        </div>
+        </ScrollArea>
         {!atBottom && lines.length ? (
           <Button
             type="button"
