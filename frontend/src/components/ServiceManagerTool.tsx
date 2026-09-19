@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { Events } from '@wailsio/runtime';
 import {
@@ -1446,7 +1446,35 @@ function ResourceInfoDialog({
     </Dialog>
   );
 }
-const LOG_GRID = 'grid grid-cols-[11rem_10rem_minmax(0,1fr)] items-start gap-3 px-3';
+const LOG_GRID =
+  'grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,5fr)] items-start gap-3 px-3';
+// 单元格内容超出宽度时，纵向滚轮转为横向滚动；未溢出时让事件冒泡给列表。
+function WheelText({ children, className = '' }: { children: ReactNode; className?: string }) {
+  const ref = useRef<HTMLSpanElement>(null);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const onWheel = (event: WheelEvent) => {
+      const { deltaX, deltaY, deltaMode } = event;
+      if (event.ctrlKey || (deltaX === 0 && deltaY === 0)) return;
+      if (el.scrollWidth <= el.clientWidth) return;
+      const scale = deltaMode === 1 ? 16 : deltaMode === 2 ? el.clientWidth : 1;
+      const delta = Math.abs(deltaX) > Math.abs(deltaY) ? deltaX : deltaY;
+      el.scrollLeft += delta * scale;
+      event.preventDefault();
+    };
+    el.addEventListener('wheel', onWheel, { passive: false });
+    return () => el.removeEventListener('wheel', onWheel);
+  }, []);
+  return (
+    <span
+      ref={ref}
+      className={`no-scrollbar block overflow-x-auto whitespace-nowrap ${className}`}
+    >
+      {children}
+    </span>
+  );
+}
 function LogList({ lines }: { lines: ServiceLogLine[] }) {
   const { t } = useTranslation();
   const [viewport, setViewport] = useState<HTMLElement | null>(null);
@@ -1506,10 +1534,10 @@ function LogList({ lines }: { lines: ServiceLogLine[] }) {
                   className={`absolute left-0 w-full border-b py-1 ${LOG_GRID}`}
                   style={{ transform: `translateY(${row.start}px)` }}
                 >
-                  <span className="truncate text-muted-foreground">
+                  <WheelText className="text-muted-foreground">
                     {line.timestamp || formatDate(line.receivedAt)}
-                  </span>
-                  <span className="truncate text-primary">{line.name}</span>
+                  </WheelText>
+                  <WheelText className="text-primary">{line.name}</WheelText>
                   <span className="break-all whitespace-pre-wrap">{line.text}</span>
                 </div>
               );
