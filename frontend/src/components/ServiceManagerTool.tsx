@@ -57,6 +57,7 @@ import { SSHProfileSelect } from './SSHProfileSelect';
 import { ConfirmDialog } from './ConfirmDialog';
 import { Badge } from './ui/badge';
 import { Button } from './ui/button';
+import { Checkbox } from './ui/checkbox';
 import {
   Dialog,
   DialogContent,
@@ -192,6 +193,11 @@ export default function ServiceManagerTool({
     resource: ServiceResourceRef;
     action: string;
   } | null>(null);
+  const [monitorDialog, setMonitorDialog] = useState<{
+    resource: ServiceResourceRef;
+    containers: DockerContainer[];
+  } | null>(null);
+  const [monitorSelection, setMonitorSelection] = useState<Set<string>>(new Set());
   const monitorsRef = useRef<LogMonitor[]>([]);
   monitorsRef.current = monitors;
 
@@ -235,10 +241,25 @@ export default function ServiceManagerTool({
     () => new Map(monitors.map((item) => [monitorResourceKey(item), item])),
     [monitors],
   );
-  const selectedMonitor = selection
-    ? monitoredByResource.get(resourceKey(selection.resource))
-    : undefined;
-  const activeMonitorID = selectedMonitor?.id;
+  // Compose 组选中时聚合其所有容器的监控；单资源沿用资源键匹配。
+  const selectedMonitors = useMemo(() => {
+    if (!selection) return [] as LogMonitor[];
+    if (selection.kind === 'group') {
+      const group = inventory?.dockerGroups?.find((item) => item.id === selection.resource.id);
+      const ids = new Set((group?.containers ?? []).map((item) => item.id));
+      return monitors.filter(
+        (item) => item.resource.runtime === 'docker' && ids.has(item.resource.id),
+      );
+    }
+    const found = monitoredByResource.get(resourceKey(selection.resource));
+    return found ? [found] : [];
+  }, [selection, inventory, monitors, monitoredByResource]);
+  const activeMonitorIDs = useMemo(
+    () => selectedMonitors.map((item) => item.id),
+    [selectedMonitors],
+  );
+  const activeMonitorKey = activeMonitorIDs.join(',');
+  const monitoring = selectedMonitors.some((item) => item.state === 'monitoring');
 
   useEffect(() => {
     void GetServiceTargets()
@@ -258,11 +279,12 @@ export default function ServiceManagerTool({
     const off = Events.On('service-manager:logs', (event) => {
       const data = event.data as LogEvent;
       const incoming = data?.lines ?? [];
-      if (!incoming.length || !activeMonitorID) return;
+      if (!incoming.length || !activeMonitorKey) return;
       setLines((current) => {
         const accepted = incoming.filter(
           (line) =>
-            line.monitorID === activeMonitorID && matchesLog(line, logQuery, regex, caseSensitive),
+            activeMonitorIDs.includes(line.monitorID) &&
+            matchesLog(line, logQuery, regex, caseSensitive),
         );
         if (!accepted.length) return current;
         const ids = new Set(current.map((line) => line.sequence));
@@ -276,12 +298,12 @@ export default function ServiceManagerTool({
       off();
       offState();
     };
-  }, [activeMonitorID, logQuery, regex, caseSensitive, targetID]);
+  }, [activeMonitorKey, logQuery, regex, caseSensitive, targetID]);
   useEffect(() => {
     const run = async () => {
       try {
         const snapshot = await QueryLogBuffer({
-          monitorIDs: activeMonitorID ? [activeMonitorID] : [],
+          monitorIDs: activeMonitorIDs,
           filter: { query: logQuery, regex, caseSensitive, streams: [] },
         });
         setLines(snapshot.lines ?? []);
@@ -295,7 +317,7 @@ export default function ServiceManagerTool({
       }
     };
     void run();
-  }, [activeMonitorID, logQuery, regex, caseSensitive]);
+  }, [activeMonitorKey, logQuery, regex, caseSensitive]);
 
   const selectedTarget = targets.find((target) => target.id === targetID);
 
@@ -364,9 +386,13 @@ export default function ServiceManagerTool({
       setBusy('');
     }
   };
-  const monitor = async (resource: ServiceResourceRef) => {
+  const startMonitors = async (resources: ServiceResourceRef[]) => {
+    if (!resources.length) {
+      toast.add({ title: t('serviceManagerTool.monitorFailed'), type: 'error' });
+      return;
+    }
     try {
-      const created = (await StartLogMonitors({ targetID, resources: [resource] })) ?? [];
+      const created = (await StartLogMonitors({ targetID, resources })) ?? [];
       setMonitors((current) => {
         const all = new Map(current.map((item) => [item.id, item]));
         created.forEach((item) => all.set(item.id, item));
@@ -380,12 +406,47 @@ export default function ServiceManagerTool({
       });
     }
   };
-  const stop = async (monitorID: string) => {
-    await StopLogMonitor(monitorID);
+  const monitor = async (resource: ServiceResourceRef) => {
+    const containers =
+      resource.runtime === 'docker-compose'
+        ? (inventory?.dockerGroups?.find((item) => item.id === resource.id)?.containers ?? [])
+        : [];
+    // Compose 组有多个容器时先让用户选择要监控哪些，默认全选。
+    if (containers.length > 1) {
+      setMonitorSelection(new Set(containers.map((item) => item.id)));
+      setMonitorDialog({ resource, containers });
+      return;
+    }
+    const resources =
+      resource.runtime === 'docker-compose'
+        ? containers.map(
+            (item) => ({ runtime: 'docker', id: item.id, name: item.name }) as ServiceResourceRef,
+          )
+        : [resource];
+    await startMonitors(resources);
+  };
+  const toggleMonitorContainer = (id: string, checked: boolean) =>
+    setMonitorSelection((current) => {
+      const next = new Set(current);
+      if (checked) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+  const confirmMonitorSelection = async () => {
+    const dialog = monitorDialog;
+    if (!dialog) return;
+    const resources = dialog.containers
+      .filter((item) => monitorSelection.has(item.id))
+      .map((item) => ({ runtime: 'docker', id: item.id, name: item.name }) as ServiceResourceRef);
+    setMonitorDialog(null);
+    await startMonitors(resources);
+  };
+  const stop = async () => {
+    await Promise.all(activeMonitorIDs.map((id) => StopLogMonitor(id).catch(() => undefined)));
     await loadMonitors();
   };
-  const clear = async (monitorID: string) => {
-    await ClearLogBuffer(monitorID);
+  const clear = async () => {
+    await Promise.all(activeMonitorIDs.map((id) => ClearLogBuffer(id).catch(() => undefined)));
     setLines([]);
     setTruncated(false);
     await loadMonitors();
@@ -682,7 +743,8 @@ export default function ServiceManagerTool({
               <ResourcePanel
                 selection={selection}
                 targetID={targetID}
-                monitor={selectedMonitor}
+                monitorIDs={activeMonitorIDs}
+                monitoring={monitoring}
                 lines={lines}
                 truncated={truncated}
                 logDraft={logDraft}
@@ -825,6 +887,57 @@ export default function ServiceManagerTool({
         }
         onConfirm={() => void confirmPendingAction()}
       />
+      <Dialog
+        open={monitorDialog !== null}
+        onOpenChange={(open) => {
+          if (!open) setMonitorDialog(null);
+        }}
+      >
+        <DialogContent className="flex max-h-[calc(100dvh-2rem)] min-h-0 flex-col sm:max-w-md">
+          <DialogHeader className="flex-none">
+            <DialogTitle>{t('serviceManagerTool.monitorSelectTitle')}</DialogTitle>
+            <DialogDescription>
+              {monitorDialog
+                ? t('serviceManagerTool.monitorSelectDesc', {
+                    name: monitorDialog.resource.name || monitorDialog.resource.id,
+                  })
+                : ''}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="min-h-0 flex-1 overflow-auto overscroll-contain [padding-inline-end:var(--overlay-scrollbar-hit-size)]">
+            <div className="divide-y divide-border">
+              {(monitorDialog?.containers ?? []).map((container) => (
+                <Label
+                  key={container.id}
+                  htmlFor={`monitor-container-${container.id}`}
+                  className="cursor-pointer gap-2 py-2 font-normal"
+                >
+                  <Checkbox
+                    id={`monitor-container-${container.id}`}
+                    checked={monitorSelection.has(container.id)}
+                    onCheckedChange={(checked) =>
+                      toggleMonitorContainer(container.id, checked === true)
+                    }
+                  />
+                  <span className="min-w-0 flex-1 truncate">{container.name || container.id}</span>
+                  <Badge variant={statusVariant(container.status)}>{container.status || '—'}</Badge>
+                </Label>
+              ))}
+            </div>
+          </div>
+          <DialogFooter className="flex-none">
+            <Button variant="outline" onClick={() => setMonitorDialog(null)}>
+              {t('common.cancel')}
+            </Button>
+            <Button
+              disabled={monitorSelection.size === 0}
+              onClick={() => void confirmMonitorSelection()}
+            >
+              {t('serviceManagerTool.monitor')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Reveal>
   );
 }
@@ -931,7 +1044,16 @@ function ResourceList({
               className={`transition-transform ${collapsed ? '-rotate-90' : ''}`}
             />
           </Button>
-          {t('serviceManagerTool.composeGroup', { name: item.name })}
+          <span className="min-w-0 flex-1 truncate">
+            {t('serviceManagerTool.composeGroup', { name: item.name })}
+          </span>
+          {containers.some(
+            (container) =>
+              monitored.get(resourceKey({ runtime: 'docker', id: container.id }))?.state ===
+              'monitoring',
+          ) ? (
+            <Spinner className="size-3.5 flex-none text-primary" />
+          ) : null}
         </div>
         {collapsed
           ? null
@@ -1040,7 +1162,8 @@ function RuntimeError({ name, error }: { name: string; error?: string }) {
 function ResourcePanel({
   selection,
   targetID,
-  monitor,
+  monitorIDs,
+  monitoring,
   lines,
   truncated,
   logDraft,
@@ -1059,7 +1182,8 @@ function ResourcePanel({
 }: {
   selection: Selection;
   targetID: string;
-  monitor?: LogMonitor;
+  monitorIDs: string[];
+  monitoring: boolean;
   lines: ServiceLogLine[];
   truncated: boolean;
   logDraft: string;
@@ -1070,8 +1194,8 @@ function ResourcePanel({
   caseSensitive: boolean;
   setCaseSensitive: (value: boolean) => void;
   onMonitor: (resource: ServiceResourceRef) => void;
-  onStop: (id: string) => void;
-  onClear: (id: string) => void;
+  onStop: () => void;
+  onClear: () => void;
   onAction: (resource: ServiceResourceRef, action: string) => void;
   busy: string;
   t: ReturnType<typeof useTranslation>['t'];
@@ -1081,7 +1205,6 @@ function ResourcePanel({
     resource.runtime === 'systemd'
       ? ['start', 'stop', 'restart', 'disable', 'disable-now']
       : ['start', 'stop', 'restart', 'delete'];
-  const activeMonitorIDs = monitor ? [monitor.id] : [];
   const [confirmingClear, setConfirmingClear] = useState(false);
   const [infoOpen, setInfoOpen] = useState(false);
   return (
@@ -1135,31 +1258,29 @@ function ResourcePanel({
         </div>
         <div className="border-b px-4 py-2">
           <div className="flex items-center gap-2">
-            {selection.kind !== 'group' ? (
-              monitor && monitor.state === 'monitoring' ? (
-                <Button
-                  variant="outline"
-                  size="icon-sm"
-                  className="flex-none"
-                  title={t('serviceManagerTool.stopMonitor')}
-                  aria-label={t('serviceManagerTool.stopMonitor')}
-                  onClick={() => void onStop(monitor.id)}
-                >
-                  <Stop weight="duotone" />
-                </Button>
-              ) : (
-                <Button
-                  variant="outline"
-                  size="icon-sm"
-                  className="flex-none"
-                  title={t('serviceManagerTool.monitor')}
-                  aria-label={t('serviceManagerTool.monitor')}
-                  onClick={() => onMonitor(resource)}
-                >
-                  <Play weight="duotone" />
-                </Button>
-              )
-            ) : null}
+            {monitoring ? (
+              <Button
+                variant="outline"
+                size="icon-sm"
+                className="flex-none"
+                title={t('serviceManagerTool.stopMonitor')}
+                aria-label={t('serviceManagerTool.stopMonitor')}
+                onClick={() => void onStop()}
+              >
+                <Stop weight="duotone" />
+              </Button>
+            ) : (
+              <Button
+                variant="outline"
+                size="icon-sm"
+                className="flex-none"
+                title={t('serviceManagerTool.monitor')}
+                aria-label={t('serviceManagerTool.monitor')}
+                onClick={() => onMonitor(resource)}
+              >
+                <Play weight="duotone" />
+              </Button>
+            )}
             <Input
               className="h-8"
               value={logDraft}
@@ -1201,7 +1322,7 @@ function ResourcePanel({
               variant="ghost"
               size="icon-sm"
               className="ml-auto flex-none text-muted-foreground hover:text-destructive"
-              disabled={!monitor}
+              disabled={!monitorIDs.length}
               title={t('serviceManagerTool.clearLogs')}
               aria-label={t('serviceManagerTool.clearLogs')}
               onClick={() => setConfirmingClear(true)}
@@ -1214,8 +1335,8 @@ function ResourcePanel({
           ) : null}
         </div>
         <LogList
-          key={monitor?.id ?? 'none'}
-          lines={lines.filter((line) => activeMonitorIDs.includes(line.monitorID))}
+          key={monitorIDs.join(',') || 'none'}
+          lines={lines.filter((line) => monitorIDs.includes(line.monitorID))}
         />
       </div>
       <ConfirmDialog
@@ -1226,7 +1347,7 @@ function ResourcePanel({
         confirmLabel={t('serviceManagerTool.clearLogs')}
         destructive
         onConfirm={() => {
-          if (monitor) void onClear(monitor.id);
+          if (monitorIDs.length) void onClear();
           setConfirmingClear(false);
         }}
       />

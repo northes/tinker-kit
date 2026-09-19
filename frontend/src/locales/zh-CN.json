@@ -931,6 +931,8 @@
     "expandGroup": "展开分组",
     "collapseGroup": "折叠分组",
     "monitor": "开始监控日志",
+    "monitorSelectTitle": "选择要监控的服务",
+    "monitorSelectDesc": "勾选 {{name}} 中需要监控日志的容器",
     "stopMonitor": "停止监控",
     "clearLogs": "清空日志",
     "clearLogsTitle": "清空日志？",

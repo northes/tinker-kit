@@ -931,6 +931,8 @@
     "expandGroup": "Expand group",
     "collapseGroup": "Collapse group",
     "monitor": "Monitor logs",
+    "monitorSelectTitle": "Select services to monitor",
+    "monitorSelectDesc": "Choose which containers of {{name}} to stream logs from",
     "stopMonitor": "Stop monitoring",
     "clearLogs": "Clear logs",
     "clearLogsTitle": "Clear logs?",
