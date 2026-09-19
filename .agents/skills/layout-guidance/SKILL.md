@@ -1,12 +1,12 @@
 ---
 name: layout-guidance
-description: 仅在改工具页布局/高度链、CodeMirror 尺寸与交互、浮层与 footer 对齐、列表勾选与批量操作、弹窗表单提交等 UI 细节或 OverlayScrollbar 时使用。纯颜色或文案修改不要使用本 skill。
+description: 仅在改工具页布局/高度链、CodeMirror 尺寸与交互、浮层与 footer 对齐、列表勾选与批量操作、弹窗表单提交等 UI 细节或 `ScrollArea` 滚动容器时使用。纯颜色或文案修改不要使用本 skill。
 user-invocable: false
 ---
 
 # 布局指导
 
-布局优先保证数据流、尺寸链、滚动责任和状态保留，再处理视觉细节。工具页面必须遵循现有 `ToolLayout` 与 `Reveal` 结构，不创建平行布局系统。本项目滚动条以本节和 [overlay-scrollbar.md](./overlay-scrollbar.md) 为准，不要改成 `ScrollArea`。
+布局优先保证数据流、尺寸链、滚动责任和状态保留，再处理视觉细节。工具页面必须遵循现有 `ToolLayout` 与 `Reveal` 结构，不创建平行布局系统。本项目滚动条统一使用 OverlayScrollbars 的 `ScrollArea`，以本节和 [overlay-scrollbar.md](./overlay-scrollbar.md) 为准。
 
 ## 工具页布局
 
@@ -90,9 +90,9 @@ user-invocable: false
 - 勾选框列保持默认箭头光标（`cursor-default`），不要出现手型或文本光标。
 - 多选后右键菜单作用于整个选择集时，操作项使用批量文案；批量入口放在该右键菜单，不要再在 footer 增加“批量操作”下拉。
 
-## 自绘滚动条
+## 滚动条
 
-仅在修改 `OverlayScrollbar`、`ScrollableContent` 或 `ToolLayoutScrollableContent` 时读取 [overlay-scrollbar.md](./overlay-scrollbar.md)。
+仅在新增或修改滚动容器（`ScrollArea`、`ToolLayoutScrollableContent`、浮层滚动层等）时读取 [overlay-scrollbar.md](./overlay-scrollbar.md)。
 
 ## 静态检查
 
