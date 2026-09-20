@@ -1062,6 +1062,13 @@ function paletteToolId(item: PaletteItem): ToolId | null {
     return item.page;
   return null;
 }
+
+function toolSlotClass(active: boolean) {
+  return active
+    ? 'tool-slot relative isolate z-10 h-full min-h-0 overflow-hidden bg-background'
+    : 'tool-slot absolute inset-0 isolate z-0 h-full min-h-0 overflow-hidden invisible opacity-0 pointer-events-none is-hidden';
+}
+
 function isHiddenFocusTarget(el: HTMLElement) {
   return Boolean(el.closest('.is-hidden, [hidden], [inert], [aria-hidden="true"]'));
 }
@@ -1859,9 +1866,7 @@ function AppShell() {
             ref={workspaceRef}
           >
             {' '}
-            <div
-              className={`tool-slot h-full min-h-0 overflow-hidden${page === 'json' ? '' : ' is-hidden absolute inset-0 invisible pointer-events-none'}`}
-            >
+            <div className={toolSlotClass(page === 'json')}>
               {visited.has('json') && (
                 <Suspense fallback={null}>
                   <JsonTool
@@ -1878,9 +1883,7 @@ function AppShell() {
                 </Suspense>
               )}
             </div>
-            <div
-              className={`tool-slot h-full min-h-0 overflow-hidden${page === 'time' ? '' : ' is-hidden absolute inset-0 invisible pointer-events-none'}`}
-            >
+            <div className={toolSlotClass(page === 'time')}>
               {visited.has('time') && (
                 <Suspense fallback={null}>
                   <TimeTool
@@ -1897,9 +1900,7 @@ function AppShell() {
                 </Suspense>
               )}
             </div>
-            <div
-              className={`tool-slot h-full min-h-0 overflow-hidden${page === 'text' ? '' : ' is-hidden absolute inset-0 invisible pointer-events-none'}`}
-            >
+            <div className={toolSlotClass(page === 'text')}>
               {visited.has('text') && (
                 <Suspense fallback={null}>
                   <TextTool
@@ -1916,9 +1917,7 @@ function AppShell() {
                 </Suspense>
               )}
             </div>
-            <div
-              className={`tool-slot h-full min-h-0 overflow-hidden${page === 'base64' ? '' : ' is-hidden absolute inset-0 invisible pointer-events-none'}`}
-            >
+            <div className={toolSlotClass(page === 'base64')}>
               {visited.has('base64') && (
                 <Suspense fallback={null}>
                   <Base64Tool
@@ -1931,9 +1930,7 @@ function AppShell() {
                 </Suspense>
               )}
             </div>
-            <div
-              className={`tool-slot h-full min-h-0 overflow-hidden${page === 'diff' ? '' : ' is-hidden absolute inset-0 invisible pointer-events-none'}`}
-            >
+            <div className={toolSlotClass(page === 'diff')}>
               {visited.has('diff') && (
                 <Suspense fallback={null}>
                   <DiffTool
@@ -1950,9 +1947,7 @@ function AppShell() {
                 </Suspense>
               )}
             </div>
-            <div
-              className={`tool-slot h-full min-h-0 overflow-hidden${page === 'jwt' ? '' : ' is-hidden absolute inset-0 invisible pointer-events-none'}`}
-            >
+            <div className={toolSlotClass(page === 'jwt')}>
               {visited.has('jwt') && (
                 <Suspense fallback={null}>
                   <JwtTool
@@ -1964,9 +1959,7 @@ function AppShell() {
                 </Suspense>
               )}
             </div>
-            <div
-              className={`tool-slot h-full min-h-0 overflow-hidden${page === 'url' ? '' : ' is-hidden absolute inset-0 invisible pointer-events-none'}`}
-            >
+            <div className={toolSlotClass(page === 'url')}>
               {visited.has('url') && (
                 <Suspense fallback={null}>
                   <UrlTool
@@ -1979,9 +1972,7 @@ function AppShell() {
                 </Suspense>
               )}
             </div>
-            <div
-              className={`tool-slot h-full min-h-0 overflow-hidden${page === 'qrcode' ? '' : ' is-hidden absolute inset-0 invisible pointer-events-none'}`}
-            >
+            <div className={toolSlotClass(page === 'qrcode')}>
               {visited.has('qrcode') && (
                 <Suspense fallback={null}>
                   <QrCodeTool
@@ -1993,9 +1984,7 @@ function AppShell() {
                 </Suspense>
               )}
             </div>
-            <div
-              className={`tool-slot h-full min-h-0 overflow-hidden${page === 'image' ? '' : ' is-hidden absolute inset-0 invisible pointer-events-none'}`}
-            >
+            <div className={toolSlotClass(page === 'image')}>
               {visited.has('image') && (
                 <Suspense fallback={null}>
                   <ImageTool
@@ -2007,9 +1996,7 @@ function AppShell() {
                 </Suspense>
               )}
             </div>
-            <div
-              className={`tool-slot h-full min-h-0 overflow-hidden${page === 'image-manager' ? '' : ' is-hidden absolute inset-0 invisible pointer-events-none'}`}
-            >
+            <div className={toolSlotClass(page === 'image-manager')}>
               {visited.has('image-manager') && (
                 <Suspense fallback={null}>
                   <ImageManagerTool
@@ -2024,9 +2011,7 @@ function AppShell() {
                 </Suspense>
               )}
             </div>
-            <div
-              className={`tool-slot h-full min-h-0 overflow-hidden${page === 'image-manager-detail' ? '' : ' is-hidden absolute inset-0 invisible pointer-events-none'}`}
-            >
+            <div className={toolSlotClass(page === 'image-manager-detail')}>
               {visited.has('image-manager-detail') && imageDetailRoute ? (
                 <Suspense fallback={null}>
                   <ImageManagerDetailPage
@@ -2040,27 +2025,21 @@ function AppShell() {
                 </Suspense>
               ) : null}
             </div>
-            <div
-              className={`tool-slot h-full min-h-0 overflow-hidden${page === 'service-manager' ? '' : ' is-hidden absolute inset-0 invisible pointer-events-none'}`}
-            >
+            <div className={toolSlotClass(page === 'service-manager')}>
               {visited.has('service-manager') && (
                 <Suspense fallback={null}>
                   <ServiceManagerTool active={page === 'service-manager'} record={record} />
                 </Suspense>
               )}
             </div>
-            <div
-              className={`tool-slot h-full min-h-0 overflow-hidden${page === 'ssh-files' ? '' : ' is-hidden absolute inset-0 invisible pointer-events-none'}`}
-            >
+            <div className={toolSlotClass(page === 'ssh-files')}>
               {visited.has('ssh-files') && (
                 <Suspense fallback={null}>
                   <SshFilesTool active={page === 'ssh-files'} />
                 </Suspense>
               )}
             </div>
-            <div
-              className={`tool-slot h-full min-h-0 overflow-hidden${page === 'settings' ? '' : ' is-hidden absolute inset-0 invisible pointer-events-none'}`}
-            >
+            <div className={toolSlotClass(page === 'settings')}>
               {page === 'settings' && (
                 <Suspense fallback={null}>
                   <SettingsPage
@@ -2076,9 +2055,7 @@ function AppShell() {
                 </Suspense>
               )}
             </div>
-            <div
-              className={`tool-slot h-full min-h-0 overflow-hidden${page === 'history' ? '' : ' is-hidden absolute inset-0 invisible pointer-events-none'}`}
-            >
+            <div className={toolSlotClass(page === 'history')}>
               {visited.has('history') && (
                 <Suspense fallback={null}>
                   <HistoryPage
