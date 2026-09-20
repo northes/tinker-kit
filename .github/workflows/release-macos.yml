@@ -105,6 +105,30 @@ jobs:
           name: frontend-build
           path: frontend
 
+      - name: 写入 build/config.yml 应用版本
+        env:
+          APP_VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          python3 - <<'PY'
+          import os, re, pathlib
+          version = os.environ['APP_VERSION']
+          path = pathlib.Path('build/config.yml')
+          text = path.read_text(encoding='utf-8')
+          updated, count = re.subn(
+              r'(?m)^(\s*version:\s*")[^"]*("(?:\s*#.*)?)$',
+              lambda match: f'{match.group(1)}{version}{match.group(2)}',
+              text,
+              count=1,
+          )
+          if count != 1:
+              raise SystemExit('build/config.yml: info.version not found')
+          path.write_text(updated, encoding='utf-8')
+          print(f'build/config.yml info.version -> {version}')
+          PY
+
+      - name: 同步构建资源
+        run: wails3 task common:update:build-assets
+
       - name: 构建应用包
         run: wails3 task darwin:package:universal APP_VERSION=${{ steps.version.outputs.version }} PREBUILT_FRONTEND=true
 
