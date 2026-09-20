@@ -180,6 +180,7 @@
       "ruleActions": "流水线步骤操作",
       "importConfig": "导入流水线",
       "exportConfig": "导出流水线",
+      "importExport": "导入 / 导出",
       "imported": "流水线配置已导入",
       "exported": "流水线配置已复制到剪贴板",
       "importFailed": "导入流水线失败",

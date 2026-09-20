@@ -40,7 +40,6 @@ import {
   DownloadSimple,
   Table as TableIcon,
   Trash,
-  UploadSimple,
 } from '@phosphor-icons/react';
 import {
   formatJsonPreserve,
@@ -830,18 +829,17 @@ export default function JsonTool({
       label={t('jsonTool.pipeline.ruleActions')}
       actions={[
         {
-          key: 'import',
-          label: t('jsonTool.pipeline.importConfig'),
-          icon: UploadSimple,
-          variant: 'secondary',
-          onPress: () => void importPipeline(),
-        },
-        {
-          key: 'export',
-          label: t('jsonTool.pipeline.exportConfig'),
-          icon: DownloadSimple,
-          variant: 'secondary',
-          onPress: () => void exportPipeline(),
+          key: 'importExport',
+          label: t('jsonTool.pipeline.importExport'),
+          type: 'menu',
+          options: [
+            { key: 'import', label: t('jsonTool.pipeline.importConfig') },
+            { key: 'export', label: t('jsonTool.pipeline.exportConfig') },
+          ],
+          onSelect: (value) => {
+            if (value === 'import') void importPipeline();
+            else if (value === 'export') void exportPipeline();
+          },
         },
         {
           key: 'add',

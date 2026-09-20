@@ -178,6 +178,7 @@
       "ruleActions": "Pipeline step actions",
       "importConfig": "Import pipeline",
       "exportConfig": "Export pipeline",
+      "importExport": "Import / export",
       "imported": "Pipeline config imported",
       "exported": "Pipeline config copied to clipboard",
       "importFailed": "Pipeline import failed",
