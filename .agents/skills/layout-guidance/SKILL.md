@@ -29,6 +29,7 @@ user-invocable: false
 - 监听用 `ViewPlugin` 跟随实例生命周期注册/卸载（引用计数），没有可见编辑器时不抢占按键；DOM 到实例的查找用 `EditorView.findFromDOM`，不要自建映射表。
 - 打开面板后需要设置面板内部状态（如展开替换行）时，在面板构造函数用模块级 `WeakMap<EditorView, Panel>` 记录实例并调用其方法；不要打开后再查询面板 DOM 或模拟点击。
 - 编辑器工具的主输入统一使用共享 CodeMirror 配置，不额外实现 textarea 历史或撤销拦截。
+- 在 CodeMirror 上叠加提示或可点击内容（如空态「打开」链接）时，不要用固定内边距定位：自带 `placeholder` 强制 `pointer-events: none` 且带 `aria-hidden`，不可交互。改用绝对定位浮层，并用 `view.coordsAtPos(0)` 实测正文坐标，自动避开行号槽、内容内边距和滚动；浮层 `pointer-events-none`，仅可点击元素 `pointer-events-auto`。
 - 纯 input/textarea 的程序化变更使用共享 `useHistory`；键盘撤销需要处理 `Mod/Ctrl+Z`、重做快捷键和 IME composing 状态。
 - pending action 必须先校验所属 `tool`，避免常驻挂载后多个工具抢消费同一操作。
 - 切页滚动复位使用 `useLayoutEffect`；workspace 滚动容器增加 `overflow-x: hidden`。

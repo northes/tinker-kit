@@ -44,6 +44,26 @@ user-invocable: false
 - 排序优先级为当前工具功能、导航命令、其他工具功能，组内再按匹配分数。
 - 不消费输入的切换命令必须在 pending effect 中先处理并 `return`，不能先把空输入写回编辑器。
 
+## 文件拖入与打开
+
+工具需要接收本地文件时，统一使用 `frontend/src/components/fileDrop.tsx`，不要各自实现 HTML5 drop、隐藏 `<input type=file>` 或 window 级监听：
+
+- `useFileDrop({ id, enabled, pick, onPaths, onError })` 同时接入 Wails 原生拖入事件 `files-dropped` 与 Wails 文件选择器 `Dialogs.OpenFile`，两者都以本地路径回调 `onPaths`。把返回的 `dropProps` 展开到一个常驻的 drop target 容器（`enabled=false` 时不注册），用 `over` 做悬停反馈。
+- 每个工具使用唯一 `id`（连同 `data-file-drop-target` 由 `dropProps` 提供）；只有当前可见工具会被命中，常驻挂载的隐藏页不会误触发。
+- 空态使用共享 `FileDropEmpty`：`onChooseFile` 传 `fileDrop.pick`，`over` 传 `fileDrop.over`。
+- 剪贴板文件粘贴使用共享 `useClipboardFilePaste({ enabled, accept, onFile })`，不要各自监听 `paste`。
+- 按路径读取内容使用共享 `readLocalFile(path, maxBytes)`（Go `FileService.ReadFile`，返回 data URL 与元数据）；文本工具用 `dataUrlToText`，剪贴板文件用 `fileToDataUrl`。
+- 拖入与选择器都产出路径，因此不要再依赖 `dataTransfer.files` 或隐藏 file input。
+- 打开成功后必须弹 toast，并把后端返回的文件名带进文案（例如 `jsonTool.fileLoaded`）。
+
+## 空态提示与「打开」链接
+
+支持打开文件的工具，空态提示文案统一为「粘贴、打开或拖入文件」，其中「打开」必须是可点击的链接，点击调用同一个 `fileDrop.pick`，不要只写成纯文本。文案走 i18n（如 `jsonTool.placeholder` 用 `<open>…</open>` 标记链接），通过 react-i18next 的 `<Trans components={{ open: <button … /> }} />` 渲染。
+
+- 与行号共存：CodeMirror 自带的 `placeholder` 强制 `pointer-events: none` 且带 `aria-hidden`，无法直接放可点击链接；改用绝对定位浮层渲染提示。
+- 浮层必须避开行号槽/内容内边距/滚动：不要写固定内边距，用 `view.coordsAtPos(0)` 实测坐标相对编辑器容器定位，并在编辑器创建、内容变空、容器尺寸变化时重新测量。参考 `JsonTool.tsx` 的 `measureHint`。
+- 浮层整体 `pointer-events-none`，仅链接按钮 `pointer-events-auto`，保证点击空白区域仍能聚焦编辑器；链接是真实 `<button>`，保留键盘可访问性。
+
 ## 托盘和剪贴板匹配
 
 若新工具支持托盘识别，必须同时更新：

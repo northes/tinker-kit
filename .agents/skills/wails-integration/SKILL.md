@@ -21,7 +21,8 @@ Go 层是桌面壳层和服务边界。修改这些边界前先确认现有数�
 
 ## 事件与托盘
 
-- Go 到前端使用 `app.Event.Emit`，前端使用生成的 `Events.On` 订阅。现有事件包括 `navigate`、`tray:analyze` 和 `mouse:navigate`；新增事件前先确认不能复用已有事件。
+- Go 到前端使用 `app.Event.Emit`，前端使用生成的 `Events.On` 订阅。现有事件包括 `navigate`、`tray:analyze`、`mouse:navigate`、`files-dropped` 和 `ssh-files:tasks`；新增事件前先确认不能复用已有事件。
+- 窗口启用 `EnableFileDrop`；`main.go` 将原生拖入统一转成 `files-dropped` 事件（`files` 路径数组 + `details` 元素信息），触发元素需带 `data-file-drop-target`。前端订阅与选择器封装在 `frontend/src/components/fileDrop.tsx` 的 `useFileDrop`，新增文件接收能力不要另建监听或事件。
 - 托盘左键唤回窗口；右键在 `trayMatchEnabled` 开启时分析剪贴板，关闭时展开菜单。设置菜单先唤回窗口再发出 `navigate`。事件名和 payload 必须与 `App.tsx` 的订阅一致。
 - 托盘附件窗口不要使用 `tray.ShowWindow()`，沿用现有 `showFromTray`：显示窗口、聚焦，并在需要时临时提升层级后恢复普通层级，使窗口回到保存的位置。
 - 普通关闭窗口只隐藏窗口并取消关闭事件；只有托盘“退出”或明确的真实退出流程才调用 `app.Quit()`。窗口关闭前必须保存最新 bounds。
@@ -44,6 +45,7 @@ Go 层是桌面壳层和服务边界。修改这些边界前先确认现有数�
   ```
 
 - Go 结构体变更后检查生成的 TypeScript 类型和调用方，不要用手写兼容类型掩盖绑定不同步。
+- `FileService.ReadFile(path, maxBytes)` 按路径读取本地文件为 data URL 与元数据，是拖入与文件选择器的共用读取入口；`ReadImageFile` 保持图片专用校验。新增文件读取能力优先复用 `ReadFile`。
 - 不要根据过时 README 使用旧的 `wails3 dev` 流程。
 - 修改 `build/config.yml` 的 `info` 或 `fileAssociations` 后运行 `wails3 task common:update:build-assets`，并检查生成的资源变化。
 - 当前 `build/config.yml` 的资源元数据仍含模板占位信息；修改这些字段时以配置文件为准，并接受更新任务会重新生成相关资源。
