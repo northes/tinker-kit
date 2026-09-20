@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -317,4 +318,63 @@ func TestQueryPipelineCompletionOnErroredFilterStage(t *testing.T) {
 	if !labels["active"] || !labels["name"] {
 		t.Fatalf("itemPath completion missing keys: %#v", item.Items)
 	}
+}
+
+func TestQueryPipelineCompletionOffersWildcard(t *testing.T) {
+	// 数组根节点元素数超过补全上限，通配不能被截断。
+	parts := make([]string, 200)
+	for index := range parts {
+		parts[index] = strconv.Itoa(index)
+	}
+	arrayItems := completionLabelsFor(t, "["+strings.Join(parts, ",")+"]", "$[")
+	if !hasCompletionLabel(arrayItems, "[*]") {
+		t.Fatalf("array bracket completion missing [*]: %d items", len(arrayItems))
+	}
+	if !hasCompletionLabel(arrayItems, "[0]") {
+		t.Fatal("array bracket completion missing [0]")
+	}
+
+	// 对象根节点同样支持按通配展开值。
+	objectItems := completionLabelsFor(t, `{"a":1,"b":2}`, "$[")
+	if !hasCompletionLabel(objectItems, "[*]") {
+		t.Fatalf("object bracket completion missing [*]: %#v", objectItems)
+	}
+	if !hasCompletionLabel(objectItems, "['a']") {
+		t.Fatalf("object bracket completion missing ['a']: %#v", objectItems)
+	}
+}
+
+func completionLabelsFor(t *testing.T, source, prefix string) []CompletionOption {
+	t.Helper()
+	service := NewJSONPipelineService()
+	t.Cleanup(service.shutdown)
+	events := make(chan PipelineResultPayload, 8)
+	service.setEventEmitter(func(_ string, data any) {
+		if payload, ok := data.(PipelineResultPayload); ok {
+			events <- payload
+		}
+	})
+	info := service.OpenPipelineSession()
+	update := service.UpdatePipelineState(UpdatePipelineStateRequest{
+		SessionID: info.SessionID, MutationID: 1, Source: &source,
+		Pipeline: []PipelineItem{{ID: "e", Enabled: true, Type: "extract", Path: "$"}},
+	})
+	if !update.Accepted {
+		t.Fatalf("update rejected: %#v", update)
+	}
+	waitForResult(t, events)
+	response := service.QueryPipelineCompletion(QueryPipelineCompletionRequest{
+		SessionID: info.SessionID, DocID: update.DocID, PipelineID: update.PipelineID,
+		ItemID: "e", Field: "path", Prefix: prefix,
+	})
+	return response.Items
+}
+
+func hasCompletionLabel(items []CompletionOption, label string) bool {
+	for _, item := range items {
+		if item.Label == label {
+			return true
+		}
+	}
+	return false
 }

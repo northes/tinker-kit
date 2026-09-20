@@ -187,12 +187,16 @@ func completionOptionsForNode(node *JSONValue, split completionPathSplit) []Comp
 			}
 			return filterCompletionOptions(options, filter)
 		}
+		// 通配放最前：数组很长时也不会被补全上限截断。
+		options = append(options, CompletionOption{Label: "[*]", Apply: "[*]", Type: "keyword"})
 		for index := range node.Arr {
 			label := "[" + strconv.Itoa(index) + "]"
 			options = append(options, CompletionOption{Label: label, Apply: label, Type: "keyword"})
 		}
-		options = append(options, CompletionOption{Label: "[*]", Apply: "[*]", Type: "keyword"})
 		return filterCompletionOptions(options, filter)
+	}
+	if split.inBracket {
+		options = append(options, CompletionOption{Label: "[*]", Apply: "[*]", Type: "keyword"})
 	}
 	for _, member := range node.Obj {
 		if split.inBracket {

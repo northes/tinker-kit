@@ -166,15 +166,18 @@ export function pathCompletions(root: unknown | (() => unknown), template = fals
               : context.pos;
         return { from: itemFrom, to: end, options, filter: false };
       }
-      const options = node
-        .map((_, i) => ({ label: `[${i}]`, apply: `[${i}]`, type: 'keyword' }))
-        .concat({ label: '[*]', apply: '[*]', type: 'keyword' })
-        .filter((o) => !filter || fuzzyCompletionMatch(o.label.slice(1, -1), filter));
+      const options = [
+        { label: '[*]', apply: '[*]', type: 'keyword' },
+        ...node.map((_, i) => ({ label: `[${i}]`, apply: `[${i}]`, type: 'keyword' })),
+      ].filter((o) => !filter || fuzzyCompletionMatch(o.label.slice(1, -1), filter));
       return { from, to: end, options, filter: false };
     }
     const keys = Object.keys(node);
     const options = inBracket
-      ? keys.map((k) => ({ label: `['${k}']`, apply: `['${k}']`, type: 'property' }))
+      ? [
+          { label: '[*]', apply: '[*]', type: 'keyword' },
+          ...keys.map((k) => ({ label: `['${k}']`, apply: `['${k}']`, type: 'property' })),
+        ]
       : keys.map((k) => ({ label: k, apply: k, type: 'property' }));
     const filtered = options.filter((o) => !filter || fuzzyCompletionMatch(o.label, filter));
     if (!filtered.length) return null;
