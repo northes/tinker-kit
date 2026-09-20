@@ -117,9 +117,6 @@
   color: var(--muted-foreground) !important;
   font-style: italic;
 }
-.diff-merge-host .cm-scroller::-webkit-scrollbar:vertical {
-  display: none;
-}
 @container (max-width:700px) {
   .diff-merge-host .cm-line {
     padding-left: 9px;
