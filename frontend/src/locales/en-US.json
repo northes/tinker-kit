@@ -395,6 +395,12 @@
     "title": "Text Toolkit",
     "actions": "Text actions",
     "input": "Input",
+    "placeholder": "Paste, <open>open</open>, or drop a file",
+    "openFile": "Open file",
+    "openFileTitle": "Open text file",
+    "filterText": "Text files",
+    "openFileFailed": "Failed to read file",
+    "fileLoaded": "Opened {{name}}",
     "alwaysShowSearch": "Always show search bar",
     "case": "Case",
     "caseModes": {

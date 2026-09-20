@@ -1,10 +1,10 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Popover, PopoverContent, PopoverTitle, PopoverTrigger } from './ui/popover';
 import { Button } from './ui/button';
 import { Checkbox } from './ui/checkbox';
 import { Label } from './ui/label';
-import { useTranslation } from 'react-i18next';
-import { Copy, Trash } from '@phosphor-icons/react';
+import { Trans, useTranslation } from 'react-i18next';
+import { Copy, Trash, UploadSimple } from '@phosphor-icons/react';
 import CodeMirror from '@uiw/react-codemirror';
 import { EditorView } from '@codemirror/view';
 import { closeSearchPanel, openSearchPanel } from '@codemirror/search';
@@ -21,7 +21,10 @@ import {
   useFocusOnActivate,
 } from './shared';
 import { toast } from './ui/toast';
+import { dataUrlToText, readLocalFile, useFileDrop } from './fileDrop';
 import '../styles/tools/editor.css';
+
+const MAX_OPEN_BYTES = 10 * 1024 * 1024;
 
 const CJK_CHAR = /[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]/u;
 const CJK_WORD = /[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]+/gu;
@@ -171,6 +174,62 @@ export default function TextTool({
   const inputView = useRef<EditorView | null>(null);
   const alwaysShowSearchChangeRef = useRef(onAlwaysShowSearchChange);
   alwaysShowSearchChangeRef.current = onAlwaysShowSearchChange;
+  const paneRef = useRef<HTMLDivElement>(null);
+  const [hintPos, setHintPos] = useState<{ left: number; top: number } | null>(null);
+  const showHint = value.length === 0;
+  // 浮层需要避开行号槽，直接取位置 0 的实际坐标作为提示起点。
+  const measureHint = useCallback(() => {
+    const pane = paneRef.current;
+    const view = inputView.current;
+    if (!pane || !view) return;
+    const coords = view.coordsAtPos(0);
+    if (!coords) return;
+    const box = pane.getBoundingClientRect();
+    setHintPos({ left: coords.left - box.left, top: coords.top - box.top });
+  }, []);
+  useLayoutEffect(() => {
+    if (!showHint) {
+      setHintPos(null);
+      return;
+    }
+    const frame = requestAnimationFrame(measureHint);
+    const pane = paneRef.current;
+    const ro = new ResizeObserver(measureHint);
+    if (pane) ro.observe(pane);
+    return () => {
+      cancelAnimationFrame(frame);
+      ro.disconnect();
+    };
+  }, [showHint, value, measureHint]);
+  const loadPath = useCallback(
+    async (path: string) => {
+      try {
+        const data = await readLocalFile(path, MAX_OPEN_BYTES);
+        setValue(dataUrlToText(data.dataURL));
+        toast.add({ title: t('textTool.fileLoaded', { name: data.name }) });
+      } catch {
+        toast.add({ title: t('textTool.openFileFailed'), type: 'error' });
+      }
+    },
+    [t],
+  );
+  const fileDrop = useFileDrop({
+    id: 'text-drop-zone',
+    enabled: active,
+    pick: {
+      Title: t('textTool.openFileTitle'),
+      ButtonText: t('textTool.openFile'),
+      Filters: [
+        { DisplayName: t('textTool.filterText'), Pattern: '*.txt;*.md;*.json;*.csv;*.log' },
+      ],
+      AllowsOtherFiletypes: true,
+    },
+    onPaths: (paths) => {
+      const path = paths[0];
+      if (path) void loadPath(path);
+    },
+    onError: () => toast.add({ title: t('textTool.openFileFailed'), type: 'error' }),
+  });
   useFocusOnActivate(active, () => inputView.current?.focus());
   const stats = useMemo(() => analyzeText(value), [value]);
   const apply = (action: string, fn: (input: string) => string) => {
@@ -246,31 +305,71 @@ export default function TextTool({
       <ToolLayout>
         <ToolLayoutHeader title={t('textTool.title')} />
         <ToolLayoutContent className="grid grid-rows-[minmax(0,1fr)_auto] gap-3">
-          <div className="flex min-h-0 min-w-0 flex-col gap-2 font-mono text-[10px] font-medium uppercase tracking-[.04em] text-muted-foreground">
+          <div
+            className="flex min-h-0 min-w-0 flex-col gap-2 font-mono text-[10px] font-medium uppercase tracking-[.04em] text-muted-foreground"
+            {...fileDrop.dropProps}
+          >
             <span className="flex min-w-0 items-center justify-between gap-2">
               <span>{t('textTool.input')}</span>
-              <Label className="min-w-0 gap-1.5 text-[11px] font-normal normal-case tracking-normal text-muted-foreground">
-                <Checkbox
-                  checked={alwaysShowSearch}
-                  onCheckedChange={(checked) => onAlwaysShowSearchChange(checked === true)}
-                />
-                <span>{t('textTool.alwaysShowSearch')}</span>
-              </Label>
+              <span className="flex min-w-0 items-center gap-3">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-7 flex-none gap-1.5 px-2 text-[11px]"
+                  onClick={() => void fileDrop.pick()}
+                >
+                  <UploadSimple data-icon="inline-start" weight="duotone" />
+                  {t('textTool.openFile')}
+                </Button>
+                <Label className="min-w-0 gap-1.5 text-[11px] font-normal normal-case tracking-normal text-muted-foreground">
+                  <Checkbox
+                    checked={alwaysShowSearch}
+                    onCheckedChange={(checked) => onAlwaysShowSearchChange(checked === true)}
+                  />
+                  <span>{t('textTool.alwaysShowSearch')}</span>
+                </Label>
+              </span>
             </span>
-            <CodeMirror
-              className="min-h-0 flex-1 overflow-hidden rounded-lg border border-border bg-card [&_.cm-editor]:h-full [&_.cm-editor.cm-focused]:outline-none [&_.cm-scroller]:overflow-auto"
-              height="100%"
-              value={value}
-              onChange={setValue}
-              onCreateEditor={(view) => {
-                view.contentDOM.setAttribute('aria-label', t('textTool.input'));
-                inputView.current = view;
-                setEditorReady(true);
-              }}
-              theme={quietEditorTheme}
-              extensions={editorExtensions}
-              basicSetup={editorBasicSetup}
-            />
+            <div ref={paneRef} className="relative flex min-h-0 min-w-0 flex-1">
+              <CodeMirror
+                className="min-h-0 flex-1 overflow-hidden rounded-lg border border-border bg-card [&_.cm-editor]:h-full [&_.cm-editor.cm-focused]:outline-none [&_.cm-scroller]:overflow-auto"
+                height="100%"
+                value={value}
+                onChange={setValue}
+                onCreateEditor={(view) => {
+                  view.contentDOM.setAttribute('aria-label', t('textTool.input'));
+                  inputView.current = view;
+                  setEditorReady(true);
+                  requestAnimationFrame(measureHint);
+                }}
+                theme={quietEditorTheme}
+                extensions={editorExtensions}
+                basicSetup={editorBasicSetup}
+              />
+              {showHint && hintPos ? (
+                <div
+                  className="pointer-events-none absolute z-[1] font-[monospace] text-[length:var(--code-editor-font-size)] leading-[1.4] normal-case tracking-normal text-muted-foreground"
+                  style={{ left: hintPos.left, top: hintPos.top }}
+                >
+                  <Trans
+                    i18nKey="textTool.placeholder"
+                    components={{
+                      open: (
+                        <button
+                          type="button"
+                          className="pointer-events-auto cursor-pointer border-0 bg-transparent p-0 font-[inherit] text-primary underline underline-offset-2"
+                          onClick={(event) => {
+                            event.preventDefault();
+                            void fileDrop.pick();
+                          }}
+                        />
+                      ),
+                    }}
+                  />
+                </div>
+              ) : null}
+            </div>
           </div>
           <div className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-1">
             <StatLink

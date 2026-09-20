@@ -395,6 +395,12 @@
     "title": "文本工具集",
     "actions": "文本操作",
     "input": "输入",
+    "placeholder": "粘贴、<open>打开</open>或拖入文件",
+    "openFile": "打开文件",
+    "openFileTitle": "打开文本文件",
+    "filterText": "文本文件",
+    "openFileFailed": "无法读取文件",
+    "fileLoaded": "已打开 {{name}}",
     "alwaysShowSearch": "始终显示搜索栏",
     "case": "大小写",
     "caseModes": {
