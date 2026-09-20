@@ -49,7 +49,7 @@ const diffTheme = EditorView.theme({
   },
   '.cm-scroller': {
     height: '100%!important',
-    overflowY: 'visible!important',
+    overflow: 'auto!important',
   },
   '.cm-content': { padding: '9px 0 20px' },
   '.cm-line': { padding: '0 12px 0 8px' },
@@ -334,6 +334,7 @@ function DiffMerge({
     merge.b.contentDOM.setAttribute('aria-label', bLabel);
     const scrollA = merge.a.scrollDOM,
       scrollB = merge.b.scrollDOM;
+    const suppressedUntil: { a: number; b: number } = { a: 0, b: 0 };
     let syncSource: 'a' | 'b' | null = null;
     let rafId: number | null = null;
     let disposed = false;
@@ -346,18 +347,28 @@ function DiffMerge({
         const currentSource = syncSource;
         syncSource = null;
         const sourceScroll = currentSource === 'a' ? scrollA : scrollB;
-        const targetScroll = currentSource === 'a' ? scrollB : scrollA;
+        const targetSide: 'a' | 'b' = currentSource === 'a' ? 'b' : 'a';
+        const targetScroll = targetSide === 'a' ? scrollA : scrollB;
         if (
           targetScroll.scrollTop === sourceScroll.scrollTop &&
           targetScroll.scrollLeft === sourceScroll.scrollLeft
         )
           return;
+        // 两侧内容长度不同，较短一侧会被钳制；忽略这次同步触发的 scroll 事件，
+        // 否则钳制后的值会回灌给较长一侧，表现为滚动中跳回顶部。
+        suppressedUntil[targetSide] = performance.now() + 80;
         targetScroll.scrollTop = sourceScroll.scrollTop;
         targetScroll.scrollLeft = sourceScroll.scrollLeft;
       });
     };
-    const onScrollA = () => scheduleSync('a');
-    const onScrollB = () => scheduleSync('b');
+    const onScrollA = () => {
+      if (performance.now() < suppressedUntil.a) return;
+      scheduleSync('a');
+    };
+    const onScrollB = () => {
+      if (performance.now() < suppressedUntil.b) return;
+      scheduleSync('b');
+    };
     scrollA.addEventListener('scroll', onScrollA, { passive: true });
     scrollB.addEventListener('scroll', onScrollB, { passive: true });
     const onPaneDown = (view: EditorView) => (event: MouseEvent) => {
