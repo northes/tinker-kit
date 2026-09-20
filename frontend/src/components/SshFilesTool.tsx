@@ -2742,7 +2742,7 @@ export default function SshFilesTool({ active }: Props) {
               <Warning size={16} weight="duotone" className="mt-0.5 shrink-0" />
               <div className="grid min-w-0 gap-2">
                 <p className="m-0 leading-5">{t('sshFilesTool.uploadOverwriteWarning')}</p>
-                <label className="flex min-w-0 items-start gap-2 text-foreground">
+                <label className="flex min-w-0 items-center gap-2 text-foreground">
                   <Checkbox
                     id="ssh-upload-allow-overwrite"
                     checked={allowOverwrite}
