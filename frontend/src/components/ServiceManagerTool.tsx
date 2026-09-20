@@ -135,7 +135,7 @@ function monitorResourceKey(monitor: LogMonitor) {
 }
 function statusVariant(value: string) {
   return /running|active|online/i.test(value)
-    ? 'default'
+    ? 'success'
     : /failed|dead|exited/i.test(value)
       ? 'destructive'
       : 'secondary';
