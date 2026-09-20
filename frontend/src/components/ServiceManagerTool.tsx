@@ -1498,7 +1498,6 @@ function LogList({ lines }: { lines: ServiceLogLine[] }) {
   const showDate = multiDay || (dayKeys.length > 0 && dayKeys[0] !== dayKeyOf(new Date()));
   const dayKeysRef = useRef(dayKeys);
   const showDateRef = useRef(showDate);
-  const updateScrollStateRef = useRef<() => void>(() => {});
   const virtualizer = useVirtualizer({
     count: lines.length,
     getScrollElement: () => viewport,
@@ -1532,30 +1531,43 @@ function LogList({ lines }: { lines: ServiceLogLine[] }) {
       const day = keys[index] ?? '';
       setActiveDay((current) => (current === day ? current : day));
     };
-    updateScrollStateRef.current = update;
     update();
     viewport.addEventListener('scroll', update, { passive: true });
-    return () => {
-      viewport.removeEventListener('scroll', update);
-      updateScrollStateRef.current = () => {};
-    };
+    return () => viewport.removeEventListener('scroll', update);
   }, [viewport, virtualizer]);
   useEffect(() => {
     dayKeysRef.current = dayKeys;
     showDateRef.current = showDate;
-    updateScrollStateRef.current();
+    if (!showDate) setActiveDay('');
   }, [dayKeys, showDate]);
   const scrollToBottom = () => {
     stickToBottom.current = true;
     setAtBottom(true);
+    if (!viewport) return;
     if (lines.length) virtualizer.scrollToIndex(lines.length - 1, { align: 'end' });
-    else if (viewport) viewport.scrollTop = viewport.scrollHeight;
+    requestAnimationFrame(() => {
+      viewport.scrollTop = viewport.scrollHeight;
+    });
   };
   const lastSequence = lines.length ? lines[lines.length - 1].sequence : 0;
   useEffect(() => {
-    if (!stickToBottom.current || lines.length === 0) return;
+    if (!viewport || !stickToBottom.current || lines.length === 0) return;
     virtualizer.scrollToIndex(lines.length - 1, { align: 'end' });
-  }, [lastSequence, lines.length, virtualizer]);
+    // 动态行高在测量后总高度还会增长，连续几帧贴底以跟上测量结果。
+    let cancelled = false;
+    let frame = 0;
+    let raf = 0;
+    const pin = () => {
+      if (cancelled) return;
+      viewport.scrollTop = viewport.scrollHeight;
+      if (frame++ < 2) raf = requestAnimationFrame(pin);
+    };
+    raf = requestAnimationFrame(pin);
+    return () => {
+      cancelled = true;
+      cancelAnimationFrame(raf);
+    };
+  }, [lastSequence, lines.length, viewport, virtualizer]);
   return (
     <div className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)]">
       <div
