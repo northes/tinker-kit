@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { Events } from '@wailsio/runtime';
 import {
@@ -768,6 +768,7 @@ export default function ServiceManagerTool({
                 logDraft={logDraft}
                 setLogDraft={setLogDraft}
                 applyFilter={() => setLogQuery(logDraft)}
+                query={logQuery}
                 regex={regex}
                 setRegex={setRegex}
                 caseSensitive={caseSensitive}
@@ -1172,6 +1173,7 @@ function ResourcePanel({
   logDraft,
   setLogDraft,
   applyFilter,
+  query,
   regex,
   setRegex,
   caseSensitive,
@@ -1192,6 +1194,7 @@ function ResourcePanel({
   logDraft: string;
   setLogDraft: (value: string) => void;
   applyFilter: () => void;
+  query: string;
   regex: boolean;
   setRegex: (value: boolean) => void;
   caseSensitive: boolean;
@@ -1204,6 +1207,10 @@ function ResourcePanel({
   t: ReturnType<typeof useTranslation>['t'];
 }) {
   const resource = selection.resource;
+  const visibleLines = useMemo(
+    () => lines.filter((line) => monitorIDs.includes(line.monitorID)),
+    [lines, monitorIDs],
+  );
   const actions =
     resource.runtime === 'systemd'
       ? ['start', 'stop', 'restart', 'disable', 'disable-now']
@@ -1337,10 +1344,7 @@ function ResourcePanel({
             <p className="mt-2 text-xs text-amber-600">{t('serviceManagerTool.logsTruncated')}</p>
           ) : null}
         </div>
-        <LogList
-          key={monitorIDs.join(',') || 'none'}
-          lines={lines.filter((line) => monitorIDs.includes(line.monitorID))}
-        />
+        <LogList lines={visibleLines} query={query} regex={regex} caseSensitive={caseSensitive} />
       </div>
       <ConfirmDialog
         open={confirmingClear}
@@ -1474,7 +1478,17 @@ function WheelText({ children, className = '' }: { children: ReactNode; classNam
     </span>
   );
 }
-function LogList({ lines }: { lines: ServiceLogLine[] }) {
+function LogList({
+  lines,
+  query,
+  regex,
+  caseSensitive,
+}: {
+  lines: ServiceLogLine[];
+  query: string;
+  regex: boolean;
+  caseSensitive: boolean;
+}) {
   const { t } = useTranslation();
   const [viewport, setViewport] = useState<HTMLElement | null>(null);
   const stickToBottom = useRef(true);
@@ -1485,12 +1499,20 @@ function LogList({ lines }: { lines: ServiceLogLine[] }) {
   const showDate = multiDay || (dayKeys.length > 0 && dayKeys[0] !== dayKeyOf(new Date()));
   const dayKeysRef = useRef(dayKeys);
   const showDateRef = useRef(showDate);
+  const getItemKey = useCallback((index: number) => lines[index].sequence, [lines]);
   const virtualizer = useVirtualizer({
     count: lines.length,
     getScrollElement: () => viewport,
+    getItemKey,
     estimateSize: () => 24,
     overscan: 20,
   });
+  const virtualRows = virtualizer.getVirtualItems();
+  const paddingTop = virtualRows.length > 0 ? virtualRows[0].start : 0;
+  const paddingBottom =
+    virtualRows.length > 0
+      ? virtualizer.getTotalSize() - virtualRows[virtualRows.length - 1].end
+      : 0;
   useEffect(() => {
     if (!viewport) return;
     const update = () => {
@@ -1570,23 +1592,26 @@ function LogList({ lines }: { lines: ServiceLogLine[] }) {
           options={{ overflow: { x: 'hidden' } }}
           onViewport={setViewport}
         >
-          <div style={{ height: virtualizer.getTotalSize(), width: '100%', position: 'relative' }}>
-            {virtualizer.getVirtualItems().map((row) => {
+          <div className="w-full">
+            {paddingTop > 0 ? <div style={{ height: paddingTop }} /> : null}
+            {virtualRows.map((row) => {
               const line = lines[row.index];
               return (
                 <div
-                  key={line.sequence}
+                  key={row.key}
                   ref={virtualizer.measureElement}
                   data-index={row.index}
-                  className={`absolute left-0 w-full border-b py-1 ${LOG_GRID}`}
-                  style={{ transform: `translateY(${row.start}px)` }}
+                  className={`w-full border-b py-1 ${LOG_GRID}`}
                 >
                   <WheelText className="text-muted-foreground">{logTime(line)}</WheelText>
                   <WheelText className="text-primary">{line.name}</WheelText>
-                  <span className="break-all whitespace-pre-wrap">{line.text}</span>
+                  <span className="break-all whitespace-pre-wrap">
+                    {highlightLogText(line.text, query, regex, caseSensitive)}
+                  </span>
                 </div>
               );
             })}
+            {paddingBottom > 0 ? <div style={{ height: paddingBottom }} /> : null}
           </div>
         </ScrollArea>
         {showDate && activeDay ? (
@@ -1612,6 +1637,41 @@ function LogList({ lines }: { lines: ServiceLogLine[] }) {
       </div>
     </div>
   );
+}
+function highlightLogText(
+  text: string,
+  query: string,
+  regex: boolean,
+  caseSensitive: boolean,
+): ReactNode {
+  if (!query) return text;
+  const source = regex ? query : query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  let pattern: RegExp;
+  try {
+    pattern = new RegExp(source, caseSensitive ? 'g' : 'gi');
+  } catch {
+    return text;
+  }
+  const nodes: ReactNode[] = [];
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+  let key = 0;
+  while ((match = pattern.exec(text)) !== null) {
+    if (!match[0]) {
+      pattern.lastIndex += 1;
+      continue;
+    }
+    if (match.index > lastIndex) nodes.push(text.slice(lastIndex, match.index));
+    nodes.push(
+      <mark key={key++} className="rounded-[2px] bg-warning/30 text-foreground">
+        {match[0]}
+      </mark>,
+    );
+    lastIndex = match.index + match[0].length;
+  }
+  if (!nodes.length) return text;
+  if (lastIndex < text.length) nodes.push(text.slice(lastIndex));
+  return nodes;
 }
 function matchesLog(line: ServiceLogLine, query: string, regex: boolean, caseSensitive: boolean) {
   if (!query) return true;
