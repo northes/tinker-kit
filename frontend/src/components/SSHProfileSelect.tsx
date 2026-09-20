@@ -43,6 +43,7 @@ export function SSHProfileSelect({
         },
       ]
     : profiles;
+  const empty = options.length === 0;
 
   return (
     <div className={cn('flex items-center gap-2', className)}>
@@ -50,10 +51,12 @@ export function SSHProfileSelect({
         items={options.map((profile) => ({ value: profile.id, label: profile.name }))}
         value={value || null}
         onValueChange={(next) => onValueChange(next || '')}
-        disabled={disabled}
+        disabled={disabled || empty}
       >
         <SelectTrigger id={id} className="min-w-0 flex-1">
-          <SelectValue placeholder={placeholder ?? t('sshProfiles.title')} />
+          <SelectValue
+            placeholder={empty ? t('sshProfiles.empty') : (placeholder ?? t('sshProfiles.title'))}
+          />
         </SelectTrigger>
         <SelectContent>
           <SelectGroup>

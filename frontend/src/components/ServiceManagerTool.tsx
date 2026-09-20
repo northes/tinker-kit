@@ -10,9 +10,7 @@ import {
   GearSix,
   Info,
   Pause,
-  PencilSimple,
   Play,
-  Plus,
   Power,
   Stop,
   TextAa,
@@ -91,6 +89,7 @@ import {
 import { Spinner } from './ui/spinner';
 import { toast } from './ui/toast';
 import { ToggleGroup, ToggleGroupItem } from './ui/toggle-group';
+import { TargetHostManagerDialog } from './TargetHostManagerDialog';
 
 const MANAGE_TARGETS_VALUE = '__manage-targets__';
 const LOCAL_TARGET: ServiceTarget = { id: 'local', name: 'local', kind: 'local' };
@@ -618,6 +617,12 @@ export default function ServiceManagerTool({
       return next;
     });
   };
+  void targetSaveError;
+  void newTarget;
+  void editTarget;
+  void confirmRemoveTarget;
+  void saveTargets;
+  void renderTargetForm;
   const clearStatusFilter = () => setStatusFilter(new Set());
 
   return (
@@ -782,101 +787,86 @@ export default function ServiceManagerTool({
           </section>
         </ToolLayoutContent>
       </ToolLayout>
-      <Dialog
+      <TargetHostManagerDialog<ServiceTarget, ServiceTarget>
         open={manageOpen}
-        onOpenChange={(open) => {
-          setManageOpen(open);
-          if (!open) {
-            setEditingTarget(null);
-            setTargetDraftError('');
+        onOpenChange={setManageOpen}
+        items={targets.filter((item) => item.kind === 'ssh')}
+        itemKey={(item) => item.id}
+        itemName={(item) => item.name}
+        createDraft={() =>
+          ({ id: '', name: '', kind: 'ssh', sshProfileID: profiles[0]?.id ?? '' }) as ServiceTarget
+        }
+        toDraft={(item) => ({ ...item })}
+        commitDraft={(draft, previous) => {
+          const profile = profiles.find((item) => item.id === draft.sshProfileID);
+          if (!profile) return t('serviceManagerTool.sshProfileRequired');
+          const next = {
+            id: draft.id || `ssh:${profile.id}`,
+            name: draft.name.trim() || profile.name,
+            kind: 'ssh',
+            sshProfileID: profile.id,
+          } as ServiceTarget;
+          return [...previous.filter((item) => item.id !== draft.id && item.id !== next.id), next];
+        }}
+        saveItems={async (managed) => {
+          setSavingTargets(true);
+          try {
+            await SaveServiceTargets([LOCAL_TARGET, ...managed]);
+            syncTargets((await GetServiceTargets()) ?? []);
+          } finally {
+            setSavingTargets(false);
           }
         }}
-      >
-        <DialogContent
-          className="flex max-h-[calc(100dvh-2rem)] min-h-0 flex-col sm:max-w-lg"
-          showCloseButton
-        >
-          <DialogHeader className="flex-none">
-            <DialogTitle>{t('serviceManagerTool.manageTargetsTitle')}</DialogTitle>
-            <DialogDescription>{t('serviceManagerTool.manageTargetsDesc')}</DialogDescription>
-          </DialogHeader>
-          <ScrollArea className="min-h-0 min-w-0 flex-1 overscroll-contain [padding-inline-end:var(--overlay-scrollbar-size)]">
-            <div className="flex items-center justify-between gap-3">
-              <span className="text-sm font-medium text-foreground">
-                {t('serviceManagerTool.targets')}
-              </span>
-              <Button variant="outline" size="sm" disabled={!profiles.length} onClick={newTarget}>
-                <Plus data-icon="inline-start" /> {t('serviceManagerTool.addTarget')}
-              </Button>
+        saving={savingTargets}
+        renderMeta={(item) => (
+          <>
+            <span>{t('serviceManagerTool.targetKindSsh')}</span>
+            {!profiles.some((profile) => profile.id === item.sshProfileID) ? (
+              <Badge variant="destructive" className="h-4 text-[9px]">
+                {t('serviceManagerTool.sshProfileMissing')}
+              </Badge>
+            ) : null}
+          </>
+        )}
+        renderForm={({ draft, setDraft }) => (
+          <>
+            <div className="grid gap-1.5">
+              <Label>{t('serviceManagerTool.targetName')}</Label>
+              <Input
+                value={draft.name}
+                onChange={(event) => setDraft({ ...draft, name: event.target.value })}
+              />
             </div>
-            {draftTargets.filter((item) => item.kind === 'ssh').length > 0 ? (
-              <div className="mt-2 divide-y divide-border">
-                {draftTargets
-                  .filter((item) => item.kind === 'ssh')
-                  .map((item) => (
-                    <div key={item.id} className="flex items-center justify-between gap-3 py-2">
-                      <div className="min-w-0">
-                        <div className="truncate text-sm text-foreground">{item.name}</div>
-                        <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
-                          <span>{t('serviceManagerTool.targetKindSsh')}</span>
-                          {!profiles.some((profile) => profile.id === item.sshProfileID) ? (
-                            <Badge variant="destructive" className="h-4 text-[9px]">
-                              {t('serviceManagerTool.sshProfileMissing')}
-                            </Badge>
-                          ) : null}
-                        </div>
-                      </div>
-                      <div className="flex flex-none gap-1">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          aria-label={t('serviceManagerTool.editTarget')}
-                          onClick={() => editTarget(item)}
-                        >
-                          <PencilSimple />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="text-muted-foreground hover:text-destructive"
-                          aria-label={t('serviceManagerTool.removeTarget')}
-                          onClick={() => setPendingRemove(item)}
-                        >
-                          <Trash />
-                        </Button>
-                      </div>
-                    </div>
-                  ))}
-              </div>
-            ) : null}
-            {renderTargetForm()}
-            {targetSaveError ? (
-              <p className="m-0 pt-3 text-sm text-destructive" role="alert">
-                {targetSaveError}
-              </p>
-            ) : null}
-          </ScrollArea>
-          <DialogFooter className="flex-none">
-            <Button variant="outline" disabled={savingTargets} onClick={() => setManageOpen(false)}>
-              {t('common.cancel')}
-            </Button>
-            <Button disabled={savingTargets} onClick={() => void saveTargets()}>
-              {savingTargets ? <Spinner data-icon="inline-start" /> : null}
-              {t('common.save')}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-      <ConfirmDialog
-        open={pendingRemove !== null}
-        onOpenChange={(open) => {
-          if (!open) setPendingRemove(null);
+            <div className="grid gap-1.5">
+              <Label>{t('serviceManagerTool.targetSSHProfile')}</Label>
+              <SSHProfileSelect
+                value={draft.sshProfileID ?? ''}
+                onValueChange={(sshProfileID) => setDraft({ ...draft, sshProfileID })}
+                placeholder={t('serviceManagerTool.selectSSHProfile')}
+              />
+            </div>
+          </>
+        )}
+        strings={{
+          title: t('serviceManagerTool.manageTargetsTitle'),
+          description: t('serviceManagerTool.manageTargetsDesc'),
+          listTitle: t('serviceManagerTool.targets'),
+          add: t('serviceManagerTool.addTarget'),
+          edit: t('serviceManagerTool.editTarget'),
+          remove: t('serviceManagerTool.removeTarget'),
+          empty: t('serviceManagerTool.targetHostsEmpty'),
+          emptyHint: t('serviceManagerTool.targetHostsEmptyHint'),
+          save: t('common.save'),
+          done: t('common.done'),
+          back: t('common.cancel'),
+          discardTitle: t('serviceManagerTool.discardTargetsTitle'),
+          discardDescription: t('serviceManagerTool.discardTargetsDescription'),
+          discardConfirm: t('serviceManagerTool.discardTargetsConfirm'),
+          removeTitle: t('serviceManagerTool.removeTargetTitle'),
+          removeDescription: (name) => t('serviceManagerTool.removeTargetBody', { name }),
+          formTitle: (editing) =>
+            editing ? t('serviceManagerTool.editTarget') : t('serviceManagerTool.addTarget'),
         }}
-        title={t('serviceManagerTool.removeTargetTitle')}
-        description={t('serviceManagerTool.removeTargetBody', { name: pendingRemove?.name ?? '' })}
-        confirmLabel={t('serviceManagerTool.removeTarget')}
-        destructive
-        onConfirm={confirmRemoveTarget}
       />
       <ConfirmDialog
         open={pendingAction !== null}
@@ -1479,10 +1469,7 @@ function WheelText({ children, className = '' }: { children: ReactNode; classNam
     return () => el.removeEventListener('wheel', onWheel);
   }, []);
   return (
-    <span
-      ref={ref}
-      className={`no-scrollbar block overflow-x-auto whitespace-nowrap ${className}`}
-    >
+    <span ref={ref} className={`no-scrollbar block overflow-x-auto whitespace-nowrap ${className}`}>
       {children}
     </span>
   );

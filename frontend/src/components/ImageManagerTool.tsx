@@ -17,7 +17,6 @@ import {
   MagnifyingGlass,
   Package,
   PencilSimple,
-  Plus,
   Trash,
   UploadSimple,
 } from '@phosphor-icons/react';
@@ -94,11 +93,11 @@ import {
 } from './ui/select';
 import { Spinner } from './ui/spinner';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
 import { toast } from './ui/toast';
 import { SSHProfileSelect } from './SSHProfileSelect';
 import { useSSHProfiles } from './SSHProfileManagerDialog';
 import { ConfirmDialog } from './ConfirmDialog';
+import { TargetHostManagerDialog } from './TargetHostManagerDialog';
 
 const LOCAL_SOURCE_ID = 'local';
 const MANAGE_SOURCES_VALUE = '__manage-sources__';
@@ -774,7 +773,10 @@ export function ImageManagerDetailView({
               <div className="max-w-md text-xs text-muted-foreground">{error}</div>
             </div>
           ) : detail ? (
-            <ScrollArea className="h-full min-h-0 [padding-inline-end:var(--overlay-scrollbar-size)]" options={{ overflow: { x: 'hidden' } }}>
+            <ScrollArea
+              className="h-full min-h-0 [padding-inline-end:var(--overlay-scrollbar-size)]"
+              options={{ overflow: { x: 'hidden' } }}
+            >
               <section aria-labelledby="image-detail-metadata" className="mt-3">
                 <h3
                   id="image-detail-metadata"
@@ -806,8 +808,8 @@ export function ImageManagerDetailView({
                                 {value}
                               </span>
                             </div>
-                    ))}
-                    </div>
+                          ))}
+                        </div>
                       )}
                     </dd>
                   </div>
@@ -879,7 +881,10 @@ export function ImageManagerDetailView({
                   {t('imageManagerTool.detailRawManifest')}
                 </h3>
                 {rawManifest ? (
-                  <ScrollArea element="pre" className="mt-2 max-h-[32rem] whitespace-pre-wrap break-all border-y border-border p-3 font-mono text-[11px] leading-5 text-foreground">
+                  <ScrollArea
+                    element="pre"
+                    className="mt-2 max-h-[32rem] whitespace-pre-wrap break-all border-y border-border p-3 font-mono text-[11px] leading-5 text-foreground"
+                  >
                     {rawManifest}
                   </ScrollArea>
                 ) : (
@@ -887,9 +892,9 @@ export function ImageManagerDetailView({
                     {t('imageManagerTool.rawManifestEmpty')}
                   </p>
                 )}
-               </section>
-             </ScrollArea>
-           ) : null}
+              </section>
+            </ScrollArea>
+          ) : null}
         </ToolLayoutContent>
       </ToolLayout>
     </Reveal>
@@ -1764,6 +1769,40 @@ export default function ImageManagerTool({
       setSavingSources(false);
     }
   };
+
+  const saveManagedSources = async (managed: ImageSource[]) => {
+    const nextSources = [
+      bindingSource({ ...LOCAL_SOURCE, id: LOCAL_SOURCE_ID, kind: 'local' } as ManagedImageSource),
+      ...managed.map((item) => bindingSource(item as ManagedImageSource)),
+    ];
+    const invalid = nextSources.find((item) =>
+      item.kind === 'ssh'
+        ? !item.sshProfileID.trim() || !profiles.some((profile) => profile.id === item.sshProfileID)
+        : item.kind === 'registry'
+          ? !item.registryURL.trim()
+          : false,
+    );
+    if (invalid)
+      throw new Error(
+        t(
+          invalid.kind === 'ssh'
+            ? 'imageManagerTool.sshProfileRequired'
+            : 'imageManagerTool.registryURLRequired',
+        ),
+      );
+    setSavingSources(true);
+    try {
+      await onSettingsChange({ dockerCLIPath: cliPath, imageSources: nextSources });
+    } finally {
+      setSavingSources(false);
+    }
+  };
+  void manageTab;
+  void sourceSaveError;
+  void newSource;
+  void editSource;
+  void renderEditForm;
+  void saveSources;
 
   const toggleAll = (checked: boolean) => {
     setSelected(checked ? new Set(filteredRows.map((row) => row.key)) : new Set());
@@ -2958,7 +2997,10 @@ export default function ImageManagerTool({
               <DialogDescription>{t('imageManagerTool.backgroundTasksDesc')}</DialogDescription>
             </DialogHeader>
             <div className="min-h-0 max-h-[55vh] overflow-hidden">
-              <ScrollArea className="min-h-0 max-h-[55vh] overscroll-contain [padding-inline-end:var(--overlay-scrollbar-size)]" options={{ overflow: { x: 'hidden' } }}>
+              <ScrollArea
+                className="min-h-0 max-h-[55vh] overscroll-contain [padding-inline-end:var(--overlay-scrollbar-size)]"
+                options={{ overflow: { x: 'hidden' } }}
+              >
                 {visibleTasks.length === 0 ? (
                   <div className="py-8 text-center text-xs text-muted-foreground">
                     {t('imageManagerTool.backgroundTasksEmpty')}
@@ -3046,10 +3088,10 @@ export default function ImageManagerTool({
                         </div>
                       );
                     })
-                  )}
-                </ScrollArea>
-              </div>
-              <DialogFooter>
+                )}
+              </ScrollArea>
+            </div>
+            <DialogFooter>
               <Button variant="outline" onClick={() => setTasksOpen(false)}>
                 {t('imageManagerTool.cancel')}
               </Button>
@@ -3057,174 +3099,177 @@ export default function ImageManagerTool({
           </DialogContent>
         </Dialog>
       </ToolLayout>
-      <Dialog
+      <TargetHostManagerDialog<ImageSource, SourceDraft>
         open={manageOpen}
-        onOpenChange={(open) => {
-          setManageOpen(open);
-          if (!open) {
-            setEditingSource(null);
-            setSourceDraftError('');
+        onOpenChange={setManageOpen}
+        items={sources.filter((item) => !isLocalSource(item))}
+        itemKey={(item) => item.id}
+        itemName={(item) => sourceDisplayName(item, t, profiles)}
+        createDraft={() => ({ id: '', name: '', kind: 'ssh', sshProfileID: '' }) as SourceDraft}
+        toDraft={(item) => ({ ...(item as ManagedImageSource) }) as SourceDraft}
+        commitDraft={async (draft, previous) => {
+          const kind = draft.kind as 'ssh' | 'registry';
+          if (kind === 'ssh' && !draft.sshProfileID?.trim())
+            return t('imageManagerTool.sshProfileRequired');
+          try {
+            const id = draft.id?.trim() || `${kind}:${crypto.randomUUID()}`;
+            const next = await ValidateImageSource(sourceCandidate(draft, id));
+            return [
+              ...previous.filter((item) => item.id !== draft.id && item.id !== next.id),
+              next,
+            ];
+          } catch (error) {
+            return errorMessage(error) || t('imageManagerTool.sourceInvalid');
           }
         }}
-      >
-        <DialogContent
-          className="flex max-h-[calc(100dvh-2rem)] min-h-0 flex-col sm:max-w-lg"
-          showCloseButton
-        >
-          <DialogHeader className="flex-none">
-            <DialogTitle>{t('imageManagerTool.manageSourcesTitle')}</DialogTitle>
-            <DialogDescription>{t('imageManagerTool.manageSourcesDesc')}</DialogDescription>
-          </DialogHeader>
-          <ScrollArea className="min-h-0 min-w-0 flex-1 overscroll-contain [padding-inline-end:var(--overlay-scrollbar-size)]">
-            <Tabs
-              value={manageTab}
-              onValueChange={(value) => {
-                setManageTab(value as 'ssh' | 'registry');
+        saveItems={saveManagedSources}
+        saving={savingSources}
+        renderMeta={(item) => (
+          <>
+            <span>
+              {item.kind === 'registry'
+                ? t('imageManagerTool.kindRegistry')
+                : t('imageManagerTool.kindSsh')}
+            </span>
+            {sourceMissingSSHProfile(item, profiles) ? (
+              <Badge variant="destructive" className="h-4 text-[9px]">
+                {t('imageManagerTool.sshProfileMissing')}
+              </Badge>
+            ) : null}
+          </>
+        )}
+        renderForm={({ draft, setDraft }) => (
+          <>
+            <div className="grid gap-1.5">
+              <Label>{t('imageManagerTool.sourceKind')}</Label>
+              <div className="flex w-fit gap-1">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={draft.kind === 'ssh' ? 'secondary' : 'ghost'}
+                  onClick={() =>
+                    setDraft({
+                      ...draft,
+                      kind: 'ssh',
+                      registryURL: '',
+                      registryUsername: '',
+                      registryPassword: '',
+                    })
+                  }
+                >
+                  {t('imageManagerTool.kindSsh')}
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={draft.kind === 'registry' ? 'secondary' : 'ghost'}
+                  onClick={() => setDraft({ ...draft, kind: 'registry', sshProfileID: '' })}
+                >
+                  {t('imageManagerTool.kindRegistry')}
+                </Button>
+              </div>
+            </div>
+            <div className="grid gap-1.5">
+              <Label htmlFor="target-host-name">{t('imageManagerTool.sourceName')}</Label>
+              <Input
+                id="target-host-name"
+                value={draft.name ?? ''}
+                onChange={(event) => setDraft({ ...draft, name: event.target.value })}
+              />
+            </div>
+            {draft.kind === 'ssh' ? (
+              <div className="grid gap-1.5">
+                <Label>{t('imageManagerTool.sshProfile')}</Label>
+                <SSHProfileSelect
+                  value={draft.sshProfileID ?? ''}
+                  onValueChange={(sshProfileID) => setDraft({ ...draft, sshProfileID })}
+                  placeholder={t('imageManagerTool.selectSSHProfile')}
+                />
+              </div>
+            ) : (
+              <>
+                <div className="grid gap-1.5">
+                  <Label>{t('imageManagerTool.registryURL')}</Label>
+                  <Input
+                    value={draft.registryURL ?? ''}
+                    onChange={(event) => setDraft({ ...draft, registryURL: event.target.value })}
+                  />
+                </div>
+                <div className="grid gap-1.5 sm:grid-cols-2">
+                  <div className="grid gap-1.5">
+                    <Label>{t('imageManagerTool.registryUsername')}</Label>
+                    <Input
+                      value={draft.registryUsername ?? ''}
+                      onChange={(event) =>
+                        setDraft({ ...draft, registryUsername: event.target.value })
+                      }
+                    />
+                  </div>
+                  <div className="grid gap-1.5">
+                    <Label>{t('imageManagerTool.registryPassword')}</Label>
+                    <Input
+                      type="password"
+                      value={draft.registryPassword ?? ''}
+                      onChange={(event) =>
+                        setDraft({ ...draft, registryPassword: event.target.value })
+                      }
+                    />
+                  </div>
+                </div>
+              </>
+            )}
+          </>
+        )}
+        renderFormActions={(draft) =>
+          draft.kind === 'registry' ? (
+            <Button
+              type="button"
+              variant="outline"
+              disabled={testingSource}
+              onClick={() => {
+                setTestingSource(true);
+                void TestImageSourceConnection(sourceCandidate(draft))
+                  .then(() =>
+                    toast.add({
+                      title: t('imageManagerTool.connectionSucceeded'),
+                      type: 'success',
+                    }),
+                  )
+                  .catch((error) =>
+                    toast.add({
+                      title: errorMessage(error) || t('imageManagerTool.connectionFailed'),
+                      type: 'error',
+                    }),
+                  )
+                  .finally(() => setTestingSource(false));
               }}
-              orientation="horizontal"
-              className="flex-col min-w-0 gap-4"
             >
-              <TabsList className="w-full">
-                <TabsTrigger value="ssh">{t('imageManagerTool.manageTabSsh')}</TabsTrigger>
-                <TabsTrigger value="registry">
-                  {t('imageManagerTool.manageTabRegistry')}
-                </TabsTrigger>
-              </TabsList>
-
-              <TabsContent value="ssh" className="flex min-w-0 flex-col gap-4">
-                <div className="flex items-center justify-between gap-3">
-                  <span className="text-sm font-medium text-foreground">
-                    {t('imageManagerTool.sources')}
-                  </span>
-                  <Button variant="outline" size="sm" onClick={() => newSource('ssh')}>
-                    <Plus data-icon="inline-start" /> {t('imageManagerTool.addSource')}
-                  </Button>
-                </div>
-                {draftSources.filter((item) => item.kind === 'ssh').length > 0 ? (
-                  <div className="divide-y divide-border">
-                    {draftSources
-                      .filter((item) => item.kind === 'ssh')
-                      .map((item) => (
-                        <div key={item.id} className="flex items-center justify-between gap-3 py-2">
-                          <div className="min-w-0">
-                            <div className="truncate text-sm text-foreground">
-                              {sourceDisplayName(item, t, profiles)}
-                            </div>
-                            <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
-                              <span>{t('imageManagerTool.kindSsh')}</span>
-                              {sourceMissingSSHProfile(item, profiles) ? (
-                                <Badge variant="destructive" className="h-4 text-[9px]">
-                                  {t('imageManagerTool.sshProfileMissing')}
-                                </Badge>
-                              ) : null}
-                            </div>
-                          </div>
-                          <div className="flex flex-none gap-1">
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              aria-label={t('imageManagerTool.editSource')}
-                              onClick={() => editSource(item)}
-                            >
-                              <PencilSimple />
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="text-muted-foreground hover:text-destructive"
-                              aria-label={t('imageManagerTool.removeSource')}
-                              onClick={() =>
-                                setConfirm({
-                                  type: 'removeSource',
-                                  id: item.id,
-                                  name: sourceDisplayName(item, t, profiles),
-                                })
-                              }
-                            >
-                              <Trash />
-                            </Button>
-                          </div>
-                        </div>
-                      ))}
-                  </div>
-                ) : null}
-
-                {editingSource?.kind === 'ssh' ? renderEditForm() : null}
-              </TabsContent>
-
-              <TabsContent value="registry" className="flex min-w-0 flex-col gap-4">
-                <div className="flex items-center justify-between gap-3">
-                  <span className="text-sm font-medium text-foreground">
-                    {t('imageManagerTool.sources')}
-                  </span>
-                  <Button variant="outline" size="sm" onClick={() => newSource('registry')}>
-                    <Plus data-icon="inline-start" /> {t('imageManagerTool.addRegistry')}
-                  </Button>
-                </div>
-                {draftSources.filter((item) => item.kind === 'registry').length > 0 ? (
-                  <div className="divide-y divide-border">
-                    {draftSources
-                      .filter((item) => item.kind === 'registry')
-                      .map((item) => (
-                        <div key={item.id} className="flex items-center justify-between gap-3 py-2">
-                          <div className="min-w-0">
-                            <div className="truncate text-sm text-foreground">
-                              {sourceDisplayName(item, t, profiles)}
-                            </div>
-                            <div className="text-[10px] text-muted-foreground">
-                              {t('imageManagerTool.kindRegistry')}
-                            </div>
-                          </div>
-                          <div className="flex flex-none gap-1">
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              aria-label={t('imageManagerTool.editSource')}
-                              onClick={() => editSource(item)}
-                            >
-                              <PencilSimple />
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="text-muted-foreground hover:text-destructive"
-                              aria-label={t('imageManagerTool.removeSource')}
-                              onClick={() =>
-                                setConfirm({
-                                  type: 'removeSource',
-                                  id: item.id,
-                                  name: sourceDisplayName(item, t, profiles),
-                                })
-                              }
-                            >
-                              <Trash />
-                            </Button>
-                          </div>
-                        </div>
-                      ))}
-                  </div>
-                ) : null}
-
-                {editingSource?.kind === 'registry' ? renderEditForm() : null}
-              </TabsContent>
-            </Tabs>
-            {sourceSaveError ? (
-              <p className="m-0 pt-3 text-sm text-destructive" role="alert">
-                {sourceSaveError}
-              </p>
-             ) : null}
-           </ScrollArea>
-           <DialogFooter className="flex-none">
-            <Button variant="outline" disabled={savingSources} onClick={() => setManageOpen(false)}>
-              {t('imageManagerTool.cancel')}
+              {testingSource ? <Spinner data-icon="inline-start" /> : null}
+              {t('imageManagerTool.testConnection')}
             </Button>
-            <Button disabled={savingSources} onClick={() => void saveSources()}>
-              {savingSources ? <Spinner data-icon="inline-start" /> : null}
-              {t('imageManagerTool.saveSources')}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+          ) : null
+        }
+        strings={{
+          title: t('imageManagerTool.manageSourcesTitle'),
+          description: t('imageManagerTool.manageSourcesDesc'),
+          listTitle: t('imageManagerTool.targetHosts'),
+          add: t('imageManagerTool.addTargetHost'),
+          edit: t('imageManagerTool.editTargetHost'),
+          remove: t('imageManagerTool.removeTargetHost'),
+          empty: t('imageManagerTool.targetHostsEmpty'),
+          emptyHint: t('imageManagerTool.targetHostsEmptyHint'),
+          save: t('common.save'),
+          done: t('common.done'),
+          back: t('common.cancel'),
+          discardTitle: t('imageManagerTool.discardTargetsTitle'),
+          discardDescription: t('imageManagerTool.discardTargetsDescription'),
+          discardConfirm: t('imageManagerTool.discardTargetsConfirm'),
+          removeTitle: t('imageManagerTool.removeSourceConfirmTitle'),
+          removeDescription: (name) => t('imageManagerTool.removeSourceConfirmBody', { name }),
+          formTitle: (editing) =>
+            editing ? t('imageManagerTool.editTargetHost') : t('imageManagerTool.addTargetHost'),
+        }}
+      />
       <ConfirmDialog
         open={confirm !== null}
         onOpenChange={(open) => {
@@ -3292,24 +3337,26 @@ export default function ImageManagerTool({
                   </div>
                   <ScrollArea className="mt-1.5 max-h-32 min-w-0 pr-1">
                     <div className="flex flex-wrap gap-1.5">
-                    {registryConfirmTags.map((tag, index) => (
-                      <button
-                        type="button"
-                        key={`${tag}-${index}`}
-                        className="group inline-flex min-w-0 max-w-full items-start gap-1.5 rounded-md border border-border bg-muted/40 px-1.5 py-0.5 text-left text-foreground outline-none transition-colors hover:bg-muted focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
-                        title={t('imageManagerTool.copyTag')}
-                        aria-label={t('imageManagerTool.copyTag')}
-                        onClick={() => void copyTag(tag)}
-                      >
-                        {copiedTag === tag ? (
-                          <Check size={13} className="mt-0.5 shrink-0" aria-hidden="true" />
-                        ) : (
-                          <Copy size={13} className="mt-0.5 shrink-0" aria-hidden="true" />
-                        )}
-                        <code className="min-w-0 break-all font-mono text-xs leading-5">{tag}</code>
-                      </button>
-                    ))}
-                  </div>
+                      {registryConfirmTags.map((tag, index) => (
+                        <button
+                          type="button"
+                          key={`${tag}-${index}`}
+                          className="group inline-flex min-w-0 max-w-full items-start gap-1.5 rounded-md border border-border bg-muted/40 px-1.5 py-0.5 text-left text-foreground outline-none transition-colors hover:bg-muted focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+                          title={t('imageManagerTool.copyTag')}
+                          aria-label={t('imageManagerTool.copyTag')}
+                          onClick={() => void copyTag(tag)}
+                        >
+                          {copiedTag === tag ? (
+                            <Check size={13} className="mt-0.5 shrink-0" aria-hidden="true" />
+                          ) : (
+                            <Copy size={13} className="mt-0.5 shrink-0" aria-hidden="true" />
+                          )}
+                          <code className="min-w-0 break-all font-mono text-xs leading-5">
+                            {tag}
+                          </code>
+                        </button>
+                      ))}
+                    </div>
                   </ScrollArea>
                 </div>
               ) : null}
