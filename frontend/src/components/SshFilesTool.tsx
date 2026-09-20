@@ -743,10 +743,13 @@ export default function SshFilesTool({ active }: Props) {
   const pendingFavoritePathRef = useRef<MissingFavoritePath | null>(null);
   const currentPathRef = useRef(currentPath);
   const directoryLoadKeyRef = useRef('');
+  const sourcesLoadedRef = useRef(false);
 
   const cancelLoading = useCallback(() => {
     const kind = loadingKindRef.current;
     if (!kind) return;
+    // 目录加载被中断时清空已加载标记，返回该工具时会重新加载。
+    if (kind === 'directory') directoryLoadKeyRef.current = '';
     sourcesRequestRef.current++;
     directoryRequestRef.current++;
     searchRequestRef.current++;
@@ -834,6 +837,7 @@ export default function SshFilesTool({ active }: Props) {
       setSourceID((current) =>
         nextSources?.some((item) => item.id === current) ? current : nextSources?.[0]?.id || '',
       );
+      sourcesLoadedRef.current = true;
     } catch (reason) {
       if (requestID !== sourcesRequestRef.current) return;
       throw reason;
@@ -1023,6 +1027,7 @@ export default function SshFilesTool({ active }: Props) {
       cancelLoading();
       return;
     }
+    if (sourcesLoadedRef.current) return;
     resetSearchState();
     void loadSources().catch((reason) => setError(errorMessage(reason)));
   }, [active, cancelLoading, loadSources, resetSearchState]);
@@ -1041,10 +1046,7 @@ export default function SshFilesTool({ active }: Props) {
   }, [active, applyTaskSnapshot]);
 
   useEffect(() => {
-    if (!active || !sourceID) {
-      if (!active) directoryLoadKeyRef.current = '';
-      return;
-    }
+    if (!active || !sourceID) return;
     if (manageOpen) return;
     if (!sourceUsable) {
       directoryLoadKeyRef.current = directoryLoadKey;
