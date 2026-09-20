@@ -2,9 +2,6 @@
   --diff-added-bg: color-mix(in srgb, var(--success) 18%, transparent);
   --diff-removed-bg: color-mix(in srgb, var(--destructive) 18%, transparent);
 }
-.diff-merge-host:focus-within {
-  box-shadow: inset 0 0 0 1px var(--ring);
-}
 .diff-merge-host .cm-mergeView {
   height: 100% !important;
   min-height: 0;

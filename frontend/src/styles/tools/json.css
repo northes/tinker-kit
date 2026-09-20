@@ -12,9 +12,6 @@
   border-radius: var(--radius);
   background: var(--card);
 }
-.json-cm:focus-within {
-  border-color: var(--muted-foreground);
-}
 .json-pane-editor {
   isolation: isolate;
 }
@@ -149,9 +146,6 @@
   border-color: var(--input);
   border-radius: var(--radius);
   background: var(--card);
-}
-.json-pipeline-path-cm:focus-within {
-  border-color: var(--ring);
 }
 .json-pipeline-path-cm .cm-editor {
   height: 100% !important;

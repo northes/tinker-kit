@@ -255,7 +255,7 @@ function PathField({
         </span>
         <div className="relative min-w-0 flex-1">
           <CodeMirror
-            className="json-cm json-pipeline-path-cm w-full overflow-visible rounded-lg border border-input bg-card focus-within:border-ring"
+            className="json-cm json-pipeline-path-cm w-full overflow-visible rounded-lg border border-input bg-card"
             height="30px"
             value={value}
             placeholder={placeholder}
