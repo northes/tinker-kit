@@ -597,3 +597,26 @@ func TestConfigServiceLoadsDropsInvalidImageSource(t *testing.T) {
 		t.Fatalf("加载应静默丢弃无效来源并保留本地来源: %#v", cfg.ImageSources)
 	}
 }
+
+func TestImageSidebarToolIsFirstClass(t *testing.T) {
+	inDefaults := false
+	for _, id := range defaultSidebarToolIDs {
+		if id == "image" {
+			inDefaults = true
+		}
+	}
+	if !inDefaults {
+		t.Fatal("默认侧边栏工具缺少 image")
+	}
+
+	cfg := normalizeConfig(Config{SidebarTools: []SidebarToolConfig{{ID: "image", Enabled: true}}})
+	kept := false
+	for _, tool := range cfg.SidebarTools {
+		if tool.ID == "image" {
+			kept = true
+		}
+	}
+	if !kept {
+		t.Fatalf("规范化丢弃了 image 侧边栏工具: %#v", cfg.SidebarTools)
+	}
+}
