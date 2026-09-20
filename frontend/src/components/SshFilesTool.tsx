@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Dialogs, Events } from '@wailsio/runtime';
+import { Events } from '@wailsio/runtime';
 import { useTranslation } from 'react-i18next';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import {
@@ -122,7 +122,7 @@ import {
   ToolLayoutToolbar,
   useCheckboxDragSelect,
 } from './shared';
-import { useFileDragOver } from './FileDropEmpty';
+import { useFileDrop } from './fileDrop';
 import type {
   FileSource,
   FileTask,
@@ -755,7 +755,6 @@ export default function SshFilesTool({ active }: Props) {
   const loadingKindRef = useRef<LoadingKind | null>(null);
   const loadingCallsRef = useRef(new Set<CancellableCall>());
   const pendingFavoritePathRef = useRef<MissingFavoritePath | null>(null);
-  const sourceIDRef = useRef(sourceID);
   const currentPathRef = useRef(currentPath);
   const directoryLoadKeyRef = useRef('');
   const manageBaselineRef = useRef<ManagedFileSource[]>([]);
@@ -809,9 +808,6 @@ export default function SshFilesTool({ active }: Props) {
         showHidden ? '1' : '0',
       ].join('\0')
     : '';
-  const fileDrag = useFileDragOver({
-    enabled: active && sourceUsable && !loadingSources && !loading && !searching,
-  });
   const breadcrumbs = useMemo(() => {
     const parts = currentPath.split('/').filter(Boolean);
     return [
@@ -1012,9 +1008,8 @@ export default function SshFilesTool({ active }: Props) {
   };
 
   useEffect(() => {
-    sourceIDRef.current = sourceID;
     currentPathRef.current = currentPath;
-  }, [currentPath, sourceID]);
+  }, [currentPath]);
 
   const openUploadDialog = useCallback((paths: string[], target: string) => {
     if (!paths.length) return;
@@ -1024,6 +1019,20 @@ export default function SshFilesTool({ active }: Props) {
     setAllowOverwrite(false);
     setUploadOpen(true);
   }, []);
+
+  const fileDrop = useFileDrop({
+    id: 'ssh-files-drop-zone',
+    enabled: active && sourceUsable && !loadingSources && !loading && !searching,
+    pick: {
+      Title: t('sshFilesTool.chooseUpload'),
+      ButtonText: t('sshFilesTool.choose'),
+      CanChooseFiles: true,
+      CanChooseDirectories: true,
+      AllowsMultipleSelection: true,
+    },
+    onPaths: (paths) => openUploadDialog(paths, currentPathRef.current),
+    onError: (reason) => setError(errorMessage(reason)),
+  });
 
   useEffect(() => {
     if (!active) {
@@ -1042,39 +1051,10 @@ export default function SshFilesTool({ active }: Props) {
     const offTasks = Events.On('ssh-files:tasks', (event) =>
       applyTaskSnapshot(event.data as FileTaskSnapshot),
     );
-    const offDrop = Events.On('files-dropped', (event) => {
-      const data = event.data as unknown as {
-        files?: string[];
-        details?: { id?: string };
-      };
-      const currentSourceID = sourceIDRef.current;
-      const currentRemotePath = currentPathRef.current;
-      const paths = data.files ?? [];
-      if (
-        data.details?.id !== 'ssh-files-drop-zone' ||
-        !currentSourceID ||
-        !paths.length ||
-        !sourceUsable ||
-        loadingSources ||
-        loading ||
-        searching
-      )
-        return;
-      openUploadDialog(paths, currentRemotePath);
-    });
     return () => {
       offTasks();
-      offDrop();
     };
-  }, [
-    active,
-    applyTaskSnapshot,
-    loading,
-    loadingSources,
-    openUploadDialog,
-    searching,
-    sourceUsable,
-  ]);
+  }, [active, applyTaskSnapshot]);
 
   useEffect(() => {
     if (!active || !sourceID) {
@@ -1527,23 +1507,6 @@ export default function SshFilesTool({ active }: Props) {
     const result = await runRemoteOperation('delete', deletePaths, '');
     if (result.status === 'completed') {
       setDeletePaths(null);
-    }
-  };
-
-  const selectUploadPaths = async () => {
-    if (!sourceUsable) return;
-    try {
-      const result = await Dialogs.OpenFile({
-        Title: t('sshFilesTool.chooseUpload'),
-        ButtonText: t('sshFilesTool.choose'),
-        CanChooseFiles: true,
-        CanChooseDirectories: true,
-        AllowsMultipleSelection: true,
-      });
-      const paths = Array.isArray(result) ? result : result ? [result] : [];
-      openUploadDialog(paths, currentPath);
-    } catch (reason) {
-      setError(errorMessage(reason));
     }
   };
 
@@ -2039,7 +2002,7 @@ export default function SshFilesTool({ active }: Props) {
               variant="default"
               className="h-[30px] flex-none px-[11px] text-[11px]"
               disabled={!sourceUsable || isLoading}
-              onClick={() => void selectUploadPaths()}
+              onClick={() => void fileDrop.pick()}
             >
               <UploadSimple data-icon="inline-start" size={14} />
               {t('sshFilesTool.upload')}
@@ -2221,11 +2184,9 @@ export default function SshFilesTool({ active }: Props) {
           <ContextMenuTrigger
             render={
               <div
-                id="ssh-files-drop-zone"
-                data-file-drop-target
-                data-over={fileDrag.over ? 'true' : undefined}
+                data-over={fileDrop.over ? 'true' : undefined}
                 aria-busy={isLoading}
-                {...fileDrag.dragProps}
+                {...fileDrop.dropProps}
                 className="group/file-drop relative min-h-0 flex-1"
               />
             }
@@ -2234,7 +2195,7 @@ export default function SshFilesTool({ active }: Props) {
               className="h-full [padding-inline-end:var(--overlay-scrollbar-size)]"
               onViewport={setFileListViewport}
             >
-            {fileDrag.over ? (
+            {fileDrop.over ? (
               <span className="sr-only" role="status">
                 {t('fileDrop.release')}
               </span>

@@ -74,3 +74,53 @@ func TestReadImageFileRejectsMissingPath(t *testing.T) {
 		t.Fatalf("不存在路径的错误信息不清晰: %v", err)
 	}
 }
+
+func TestReadFileReturnsDataURLAndMetadata(t *testing.T) {
+	root := t.TempDir()
+	content := []byte(`{"ok":true}`)
+	path := filepath.Join(root, "sample.json")
+	if err := os.WriteFile(path, content, 0o600); err != nil {
+		t.Fatalf("创建测试文件失败: %v", err)
+	}
+
+	got, err := (&FileService{}).ReadFile(path, 0)
+	if err != nil {
+		t.Fatalf("读取有效文件失败: %v", err)
+	}
+	if got.Name != "sample.json" {
+		t.Fatalf("文件名为 %q，期望 sample.json", got.Name)
+	}
+	if got.Size != int64(len(content)) {
+		t.Fatalf("文件大小为 %d，期望 %d", got.Size, len(content))
+	}
+	want := "data:application/json;base64," + base64.StdEncoding.EncodeToString(content)
+	if got.DataURL != want {
+		t.Fatalf("data URL 为 %q，期望 %q", got.DataURL, want)
+	}
+}
+
+func TestReadFileRejectsOversizedFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "large.txt")
+	if err := os.WriteFile(path, []byte("0123456789"), 0o600); err != nil {
+		t.Fatalf("创建测试文件失败: %v", err)
+	}
+
+	if _, err := (&FileService{}).ReadFile(path, 4); err == nil {
+		t.Fatal("超过大小限制时应返回错误")
+	} else if !strings.Contains(err.Error(), "超过大小限制") {
+		t.Fatalf("大小限制错误信息不清晰: %v", err)
+	}
+}
+
+func TestReadFileRejectsDirectory(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "folder")
+	if err := os.Mkdir(path, 0o700); err != nil {
+		t.Fatalf("创建测试目录失败: %v", err)
+	}
+
+	if _, err := (&FileService{}).ReadFile(path, 0); err == nil {
+		t.Fatal("读取目录时应返回错误")
+	} else if !strings.Contains(err.Error(), "不是普通文件") {
+		t.Fatalf("目录错误信息不清晰: %v", err)
+	}
+}

@@ -20,7 +20,12 @@ import {
   type ToolId,
 } from './shared';
 import { toast } from './ui/toast';
-import FileDropEmpty, { hasFileTransfer } from './FileDropEmpty';
+import FileDropEmpty, {
+  fileToDataUrl,
+  readLocalFile,
+  useClipboardFilePaste,
+  useFileDrop,
+} from './fileDrop';
 import '../styles/tools/editor.css';
 
 const MAX_BYTES = 10 * 1024 * 1024;
@@ -121,7 +126,6 @@ export default function QrCodeTool({
   const [text, setText] = useState('');
   const [qr, setQr] = useState<{ key: string; url: string } | null>(null);
   const [qrFailed, setQrFailed] = useState(false);
-  const [fileInput, setFileInput] = useState<HTMLInputElement | null>(null);
   const inputView = useRef<EditorView | null>(null);
   const emptyRef = useRef<HTMLButtonElement>(null);
   const consumed = useRef<PendingAction | null>(null);
@@ -185,26 +189,8 @@ export default function QrCodeTool({
     };
   }, [text, qr, textBytes, record, t]);
 
-  const decodeImageFile = useCallback(
-    async (file: File) => {
-      if (!file.type.startsWith('image/')) {
-        toast.add({ title: t('qrTool.unsupported'), type: 'warning' });
-        return;
-      }
-      if (file.size > MAX_BYTES) {
-        toast.add({ title: t('qrTool.tooLarge'), type: 'warning' });
-        return;
-      }
-      const dataUrl = await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(String(reader.result || ''));
-        reader.onerror = () => reject(new Error('read'));
-        reader.readAsDataURL(file);
-      }).catch(() => '');
-      if (!dataUrl) {
-        toast.add({ title: t('qrTool.decodeFailed'), type: 'error' });
-        return;
-      }
+  const applyDecodedImage = useCallback(
+    async (dataUrl: string, name: string, mimeType: string, bytes: number) => {
       try {
         const decoded = await decodeQrFromDataUrl(dataUrl);
         if (decoded === null) {
@@ -213,11 +199,11 @@ export default function QrCodeTool({
         }
         skipRecord.current = true;
         setText(decoded);
-        record('qrcode', t('qrTool.decoded'), bytesLabel(file.size), decoded, '', {
+        record('qrcode', t('qrTool.decoded'), bytesLabel(bytes), decoded, '', {
           mode: 'image',
-          mediaType: file.type,
-          name: file.name,
-          bytes: file.size,
+          mediaType: mimeType,
+          name,
+          bytes,
         });
       } catch {
         toast.add({ title: t('qrTool.decodeFailed'), type: 'error' });
@@ -226,43 +212,55 @@ export default function QrCodeTool({
     [record, t],
   );
 
-  // 粘贴图片自动解析；粘贴文本仍交给编辑器默认行为。
-  useEffect(() => {
-    if (!active) return;
-    const onPaste = (event: ClipboardEvent) => {
-      const file = Array.from(event.clipboardData?.files ?? []).find((f) =>
-        f.type.startsWith('image/'),
-      );
-      if (!file) return;
-      event.preventDefault();
-      void decodeImageFile(file);
-    };
-    window.addEventListener('paste', onPaste);
-    return () => window.removeEventListener('paste', onPaste);
-  }, [active, decodeImageFile]);
+  const decodeImagePath = useCallback(
+    async (path: string) => {
+      try {
+        const data = await readLocalFile(path, MAX_BYTES);
+        await applyDecodedImage(data.dataURL, data.name, data.mimeType, data.size);
+      } catch {
+        toast.add({ title: t('qrTool.decodeFailed'), type: 'error' });
+      }
+    },
+    [applyDecodedImage, t],
+  );
 
-  useEffect(() => {
-    if (!active) return;
-    const dragover = (event: DragEvent) => {
-      const transfer = event.dataTransfer;
-      if (!transfer || !hasFileTransfer(transfer)) return;
-      event.preventDefault();
-      transfer.dropEffect = 'copy';
-    };
-    const drop = (event: DragEvent) => {
-      const transfer = event.dataTransfer;
-      if (!transfer || !hasFileTransfer(transfer)) return;
-      event.preventDefault();
-      const file = transfer.files[0];
-      if (file) void decodeImageFile(file);
-    };
-    window.addEventListener('dragover', dragover);
-    window.addEventListener('drop', drop);
-    return () => {
-      window.removeEventListener('dragover', dragover);
-      window.removeEventListener('drop', drop);
-    };
-  }, [active, decodeImageFile]);
+  const fileDrop = useFileDrop({
+    id: 'qrcode-drop-zone',
+    enabled: active,
+    pick: {
+      Title: t('qrTool.emptyTitle'),
+      ButtonText: t('qrTool.chooseImage'),
+      Filters: [
+        { DisplayName: t('qrTool.filterImages'), Pattern: '*.png;*.jpg;*.jpeg;*.gif;*.webp;*.svg' },
+      ],
+    },
+    onPaths: (paths) => {
+      const path = paths[0];
+      if (path) void decodeImagePath(path);
+    },
+    onError: () => toast.add({ title: t('qrTool.decodeFailed'), type: 'error' }),
+  });
+
+  // 粘贴图片自动解析；粘贴文本仍交给编辑器默认行为。
+  useClipboardFilePaste({
+    enabled: active,
+    accept: (file) => file.type.startsWith('image/'),
+    onFile: (file) => {
+      if (file.size > MAX_BYTES) {
+        toast.add({ title: t('qrTool.tooLarge'), type: 'warning' });
+        return;
+      }
+      void fileToDataUrl(file)
+        .then(async (dataUrl) => {
+          if (dataUrl) {
+            await applyDecodedImage(dataUrl, file.name, file.type, file.size);
+            return;
+          }
+          toast.add({ title: t('qrTool.decodeFailed'), type: 'error' });
+        })
+        .catch(() => toast.add({ title: t('qrTool.decodeFailed'), type: 'error' }));
+    },
+  });
 
   const copy = async () => {
     if (!text) return;
@@ -328,7 +326,10 @@ export default function QrCodeTool({
       <ToolLayout>
         <ToolLayoutHeader title={t('qrTool.title')} subtitle={t('qrTool.subtitle')} />
         <ToolLayoutContent>
-          <div className="grid h-full min-h-0 min-w-0 grid-cols-2 gap-3.5 max-[700px]:grid-cols-1">
+          <div
+            className="grid h-full min-h-0 min-w-0 grid-cols-2 gap-3.5 max-[700px]:grid-cols-1"
+            {...fileDrop.dropProps}
+          >
             <div className={`grid h-full min-h-0 gap-3 ${text ? 'grid-rows-1' : 'grid-rows-2'}`}>
               <div className="min-h-0">
                 <QrTextPane
@@ -347,19 +348,9 @@ export default function QrCodeTool({
                     title={t('qrTool.emptyTitle')}
                     desc={t('qrTool.emptyHint')}
                     actionLabel={t('qrTool.chooseImage')}
-                    onChooseFile={() => fileInput?.click()}
+                    onChooseFile={() => void fileDrop.pick()}
                     actionRef={emptyRef}
-                  />
-                  <input
-                    ref={setFileInput}
-                    className="hidden"
-                    type="file"
-                    accept="image/*"
-                    onChange={(event) => {
-                      const file = event.target.files?.[0];
-                      if (file) void decodeImageFile(file);
-                      event.currentTarget.value = '';
-                    }}
+                    over={fileDrop.over}
                   />
                 </div>
               )}

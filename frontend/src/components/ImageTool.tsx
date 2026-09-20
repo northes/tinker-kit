@@ -10,7 +10,7 @@ import {
     UploadSimple,
 } from '@phosphor-icons/react';
 import {useTranslation} from 'react-i18next';
-import {ReadImageFile} from '../../bindings/changeme/fileservice';
+
 import {SaveBase64File} from '../../bindings/changeme/configservice';
 import {
     blobToDataUrl,
@@ -53,7 +53,7 @@ import {
     useFocusOnActivate,
 } from './shared';
 import {toast} from './ui/toast';
-import FileDropEmpty, {hasFileTransfer, useFileDragOver} from './FileDropEmpty';
+import FileDropEmpty, {readLocalFile, useFileDrop} from './fileDrop';
 import './ImageTool.css';
 
 type SizeMode = 'crop' | 'expand';
@@ -218,11 +218,6 @@ function isWebpUnsupported(error: unknown) {
             error.code === 'encodingFailed' ||
             error.code === 'unsupportedFormat')
     );
-}
-
-function toDataUrl(data: string, mime: string) {
-    if (data.startsWith('data:')) return data;
-    return `data:${mime || 'image/png'};base64,${data.replace(/\s/g, '')}`;
 }
 
 function loadHtmlImage(src: string) {
@@ -496,8 +491,23 @@ export default function ImageTool({
     const [sizeInput, setSizeInput] = useState({w: '', h: ''});
     const sizeInputFocus = useRef<'w' | 'h' | null>(null);
     const [pane, setPane] = useState({w: 0, h: 0});
-    const fileDrag = useFileDragOver();
-    const over = fileDrag.over;
+    const pathLoaderRef = useRef<(path: string) => void>(() => {
+    });
+    const fileDrop = useFileDrop({
+        id: 'image-drop-zone',
+        enabled: active,
+        pick: {
+            Title: t('imageTool.openTitle'),
+            ButtonText: t('imageTool.open'),
+            Filters: [{DisplayName: t('imageTool.filterImages'), Pattern: OPEN_PATTERN}],
+        },
+        onPaths: (paths) => {
+            const path = paths[0];
+            if (path) pathLoaderRef.current(path);
+        },
+        onError: () => toast.add({title: t('imageTool.loadFailed'), type: 'error'}),
+    });
+    const over = fileDrop.over;
     const [sizeSession, setSizeSession] = useState<SizeSession | null>(null);
     const [encodedOutput, setEncodedOutput] = useState<{
         key: string;
@@ -620,10 +630,10 @@ export default function ImageTool({
             setQuality(92);
             setOutputFormat(next ? defaultOutputFormat(next) : 'png');
             setImageSelected(false);
-            fileDrag.clear();
+            fileDrop.clear();
             setSizeSession(null);
         },
-        [fileDrag.clear, invalidateEncodedOutput, pointer.stop],
+        [fileDrop.clear, invalidateEncodedOutput, pointer.stop],
     );
 
     const clearSelection = () => {
@@ -650,76 +660,23 @@ export default function ImageTool({
         [resetImage, t],
     );
 
-    const loadFile = useCallback(
-        async (file: File) => {
-            if (!isSupportedName(file.name, file.type)) {
-                toast.add({title: t('imageTool.unsupported'), type: 'warning'});
-                return;
-            }
-            if (file.size > MAX_BYTES) {
-                toast.add({title: t('imageTool.tooLarge'), type: 'warning'});
-                return;
-            }
-            const dataUrl = await new Promise<string>((resolve, reject) => {
-                const reader = new FileReader();
-                reader.onload = () => resolve(String(reader.result || ''));
-                reader.onerror = () => reject(new Error('read'));
-                reader.readAsDataURL(file);
-            }).catch(() => '');
-            if (!dataUrl) {
-                toast.add({title: t('imageTool.loadFailed'), type: 'error'});
-                return;
-            }
-            await applyLoaded(dataUrl, file.name, file.type);
-        },
-        [applyLoaded, t],
-    );
-
-    useEffect(() => {
-        if (!active) return;
-        const dragover = (event: DragEvent) => {
-            const transfer = event.dataTransfer;
-            if (!transfer || !hasFileTransfer(transfer)) return;
-            event.preventDefault();
-            transfer.dropEffect = 'copy';
-        };
-        const drop = (event: DragEvent) => {
-            const transfer = event.dataTransfer;
-            if (!transfer || !hasFileTransfer(transfer)) return;
-            event.preventDefault();
-            fileDrag.clear();
-            const file = transfer.files[0];
-            if (file) void loadFile(file);
-        };
-        window.addEventListener('dragover', dragover);
-        window.addEventListener('drop', drop);
-        return () => {
-            window.removeEventListener('dragover', dragover);
-            window.removeEventListener('drop', drop);
-        };
-    }, [active, fileDrag.clear, loadFile]);
-
-    const openNative = async () => {
-        try {
-            const path = await Dialogs.OpenFile({
-                Title: t('imageTool.openTitle'),
-                ButtonText: t('imageTool.open'),
-                CanChooseFiles: true,
-                AllowsMultipleSelection: false,
-                Filters: [{DisplayName: t('imageTool.filterImages'), Pattern: OPEN_PATTERN}],
-            });
-            if (!path) return;
+    const loadPath = useCallback(
+        async (path: string) => {
             const name = basename(path);
             if (!isSupportedName(name)) {
                 toast.add({title: t('imageTool.unsupported'), type: 'warning'});
                 return;
             }
-            const data = await ReadImageFile(path);
-            await applyLoaded(toDataUrl(data, mimeFromName(name)), name, mimeFromName(name));
-        } catch {
-            toast.add({title: t('imageTool.loadFailed'), type: 'error'});
-        }
-    };
+            try {
+                const data = await readLocalFile(path, MAX_BYTES);
+                await applyLoaded(data.dataURL, data.name, data.mimeType);
+            } catch {
+                toast.add({title: t('imageTool.loadFailed'), type: 'error'});
+            }
+        },
+        [applyLoaded, t],
+    );
+    pathLoaderRef.current = loadPath;
 
     useEffect(() => {
         if (outputFormat === 'svg' && !svgAllowed) setOutputFormat('png');
@@ -1240,7 +1197,7 @@ export default function ImageTool({
                                 data-empty={source ? undefined : 'true'}
                                 data-over={over ? 'true' : undefined}
                                 data-dragging={pointer.dragging ? 'true' : undefined}
-                                {...fileDrag.dragProps}
+                                {...fileDrop.dropProps}
                                 className="image-tool-stage relative min-h-0 flex-1 overflow-hidden"
                             >
                                 {over ? (
@@ -1254,7 +1211,7 @@ export default function ImageTool({
                                         title={t('imageTool.emptyTitle')}
                                         desc={t('imageTool.emptyHint')}
                                         actionLabel={t('imageTool.chooseFile')}
-                                        onChooseFile={() => void openNative()}
+                                        onChooseFile={() => void fileDrop.pick()}
                                         actionRef={emptyRef}
                                         over={over}
                                         framed={false}
@@ -1379,7 +1336,7 @@ export default function ImageTool({
                                             size="icon-sm"
                                             className="image-tool-replace absolute top-2 right-2 bg-background"
                                             aria-label={t('imageTool.replace')}
-                                            onClick={() => void openNative()}
+                                            onClick={() => void fileDrop.pick()}
                                         >
                                             <UploadSimple weight="duotone"/>
                                         </Button>

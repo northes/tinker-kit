@@ -319,6 +319,16 @@ export interface ImageTaskSnapshot {
     "tasks": ImageTask[] | null;
 }
 
+/**
+ * LocalFile 描述按路径读取到的本地文件内容。
+ */
+export interface LocalFile {
+    "name": string;
+    "mimeType": string;
+    "size": number;
+    "dataURL": string;
+}
+
 export interface LogMonitor {
     "id": string;
     "targetID": string;

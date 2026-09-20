@@ -1,4 +1,12 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -21,7 +29,7 @@ import {
   SelectValue,
 } from './ui/select';
 import { Switch } from './ui/switch';
-import { useTranslation } from 'react-i18next';
+import { Trans, useTranslation } from 'react-i18next';
 import { Clipboard } from '@wailsio/runtime';
 import CodeMirror from '@uiw/react-codemirror';
 import type { Extension } from '@codemirror/state';
@@ -40,6 +48,7 @@ import {
   DownloadSimple,
   Table as TableIcon,
   Trash,
+  UploadSimple,
 } from '@phosphor-icons/react';
 import {
   formatJsonPreserve,
@@ -74,6 +83,7 @@ import type { PipelineItem } from './JsonPipelineEngine';
 import { useBackendPipelineEvaluation } from './useBackendPipelineEvaluation';
 import { GetPipelineResultText } from '../../bindings/changeme/jsonpipelineservice';
 import { pathCompletions as sharedPathCompletions } from './JsonPathCompletion';
+import { dataUrlToText, readLocalFile, useFileDrop } from './fileDrop';
 
 type PathToken = { type: 'key' | 'index' | 'all'; value: string };
 type SourceNode = {
@@ -269,6 +279,8 @@ function matchPath(
   }
 }
 
+const MAX_OPEN_BYTES = 10 * 1024 * 1024;
+
 const CONVERT_EXTENSIONS: Record<JsonConvertFormat, string> = {
   yaml: 'yaml',
   xml: 'xml',
@@ -308,7 +320,7 @@ function JsonEditorPane({
   onCreate,
   theme,
   readOnly = false,
-  placeholder,
+  emptyHint = false,
   cmClassName,
   formatOnPaste,
   tableMode = false,
@@ -317,6 +329,7 @@ function JsonEditorPane({
   onToggleTable,
   tablePreview,
   tableHint,
+  onOpenFile,
 }: {
   label: string;
   value: string;
@@ -325,7 +338,7 @@ function JsonEditorPane({
   onCreate?: (v: EditorView) => void;
   theme: Extension;
   readOnly?: boolean;
-  placeholder?: string;
+  emptyHint?: boolean;
   cmClassName?: string;
   formatOnPaste?: (next: string) => string;
   tableMode?: boolean;
@@ -334,12 +347,44 @@ function JsonEditorPane({
   onToggleTable?: () => void;
   tablePreview?: ReactNode;
   tableHint?: string;
+  onOpenFile?: () => void;
 }) {
   const { t } = useTranslation();
+  const paneRef = useRef<HTMLDivElement>(null);
+  const viewRef = useRef<EditorView | null>(null);
+  const [hintPos, setHintPos] = useState<{ left: number; top: number } | null>(null);
+  const showHint = emptyHint && !readOnly && value.length === 0;
   const formatOnPasteRef = useRef(formatOnPaste);
   formatOnPasteRef.current = formatOnPaste;
   const onChangeRef = useRef(onChange);
   onChangeRef.current = onChange;
+
+  // 浮层需要避开行号槽，直接取位置 0 的实际坐标作为提示起点。
+  const measureHint = useCallback(() => {
+    const pane = paneRef.current;
+    const view = viewRef.current;
+    if (!pane || !view) return;
+    const coords = view.coordsAtPos(0);
+    if (!coords) return;
+    const box = pane.getBoundingClientRect();
+    setHintPos({ left: coords.left - box.left, top: coords.top - box.top });
+  }, []);
+
+  useLayoutEffect(() => {
+    if (!showHint) {
+      setHintPos(null);
+      return;
+    }
+    const frame = requestAnimationFrame(measureHint);
+    const pane = paneRef.current;
+    const ro = new ResizeObserver(measureHint);
+    if (pane) ro.observe(pane);
+    return () => {
+      cancelAnimationFrame(frame);
+      ro.disconnect();
+    };
+  }, [showHint, value, measureHint]);
+
   const pasteExt = useMemo(
     () =>
       EditorView.domEventHandlers({
@@ -369,7 +414,7 @@ function JsonEditorPane({
       <span className="json-pane-label flex-none font-mono text-[10px] font-medium leading-none tracking-[.04em] text-muted-foreground uppercase">
         {label}
       </span>
-      <div className="json-pane-editor relative flex min-h-0 min-w-0 flex-1">
+      <div ref={paneRef} className="json-pane-editor relative flex min-h-0 min-w-0 flex-1">
         {onToggleTable && (
           <Button
             type="button"
@@ -395,13 +440,36 @@ function JsonEditorPane({
           onChange={onChange}
           onCreateEditor={(v) => {
             v.contentDOM.setAttribute('aria-label', label);
+            viewRef.current = v;
+            requestAnimationFrame(measureHint);
             onCreate?.(v);
           }}
           theme={theme}
           editable={!readOnly}
-          placeholder={placeholder}
           extensions={extensions}
         />
+        {showHint && hintPos ? (
+          <div
+            className="pointer-events-none absolute z-[1] font-[monospace] text-[length:var(--code-editor-font-size)] leading-[1.4] text-muted-foreground"
+            style={{ left: hintPos.left, top: hintPos.top }}
+          >
+            <Trans
+              i18nKey="jsonTool.placeholder"
+              components={{
+                open: (
+                  <button
+                    type="button"
+                    className="pointer-events-auto cursor-pointer border-0 bg-transparent p-0 font-[inherit] text-primary underline underline-offset-2"
+                    onClick={(event) => {
+                      event.preventDefault();
+                      onOpenFile?.();
+                    }}
+                  />
+                ),
+              }}
+            />
+          </div>
+        ) : null}
         {tablePreview && (
           <div
             className={`json-table-layer${tableMode && active ? ' is-visible' : ''}`}
@@ -584,6 +652,33 @@ export default function JsonTool({
     else runTransform(pane, minify, false);
   };
   const changeInput = setInput;
+  const loadPath = useCallback(
+    async (path: string) => {
+      try {
+        const data = await readLocalFile(path, MAX_OPEN_BYTES);
+        setInput(dataUrlToText(data.dataURL));
+        toast.add({ title: t('jsonTool.fileLoaded', { name: data.name }) });
+      } catch {
+        toast.add({ title: t('jsonTool.openFileFailed'), type: 'error' });
+      }
+    },
+    [t],
+  );
+  const fileDrop = useFileDrop({
+    id: 'json-drop-zone',
+    enabled: active,
+    pick: {
+      Title: t('jsonTool.openFileTitle'),
+      ButtonText: t('jsonTool.openFile'),
+      Filters: [{ DisplayName: t('jsonTool.filterJson'), Pattern: '*.json;*.json5' }],
+      AllowsOtherFiletypes: true,
+    },
+    onPaths: (paths) => {
+      const path = paths[0];
+      if (path) void loadPath(path);
+    },
+    onError: () => toast.add({ title: t('jsonTool.openFileFailed'), type: 'error' }),
+  });
   const toggleSchema = () => setMode((current) => (current === 'schema' ? 'plain' : 'schema'));
   const togglePipeline = () =>
     setMode((current) => (current === 'pipeline' ? 'plain' : 'pipeline'));
@@ -1046,13 +1141,25 @@ export default function JsonTool({
           className="json-toolbar @max-[700px]/json-page:flex-col @max-[700px]/json-page:items-stretch"
           rightClassName="@max-[700px]/json-page:ml-0"
           left={
-            <Label className="flex h-8 flex-none items-center gap-2 border border-transparent bg-transparent py-0 pr-1.5 text-[11px] text-muted-foreground">
-              <Checkbox
-                checked={autoFormatOnFill}
-                onCheckedChange={(checked) => onAutoFormatOnFillChange(checked)}
-              />
-              <span>{t('jsonTool.autoFormatOnFill')}</span>
-            </Label>
+            <>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-8 flex-none gap-1.5 px-2.5 text-[11px]"
+                onClick={() => void fileDrop.pick()}
+              >
+                <UploadSimple data-icon="inline-start" weight="duotone" />
+                {t('jsonTool.openFile')}
+              </Button>
+              <Label className="flex h-8 flex-none items-center gap-2 border border-transparent bg-transparent py-0 pr-1.5 text-[11px] text-muted-foreground">
+                <Checkbox
+                  checked={autoFormatOnFill}
+                  onCheckedChange={(checked) => onAutoFormatOnFillChange(checked)}
+                />
+                <span>{t('jsonTool.autoFormatOnFill')}</span>
+              </Label>
+            </>
           }
           right={
             <ToolLayoutToolbarGroup>
@@ -1072,7 +1179,18 @@ export default function JsonTool({
           }
         />
         <ToolLayoutContent>
-          <div className="json-content h-full min-h-0 overflow-hidden">
+          <div
+            className="json-content relative h-full min-h-0 overflow-hidden"
+            {...fileDrop.dropProps}
+          >
+            {fileDrop.over ? (
+              <div className="pointer-events-none absolute inset-2 z-30 flex items-center justify-center rounded-lg border border-dashed border-primary bg-primary/10 text-primary">
+                <span className="flex items-center gap-2 text-xs font-medium">
+                  <UploadSimple size={16} weight="duotone" />
+                  {t('fileDrop.release')}
+                </span>
+              </div>
+            ) : null}
             <div
               className={`json-schema-layout relative grid h-full min-h-0 min-w-0 ${jsonGridClass}${pipelineMode ? ' pipeline-layout' : ''}`}
             >
@@ -1090,7 +1208,7 @@ export default function JsonTool({
                   foldExt={foldExt}
                   onCreate={(v) => views.current.set('input', v)}
                   theme={cmTheme}
-                  placeholder={t('jsonTool.placeholder')}
+                  emptyHint
                   cmClassName="json-input-cm"
                   formatOnPaste={autoFormatOnFill ? tryAutoFormat : undefined}
                   tableMode={inputTableMode}
@@ -1099,6 +1217,7 @@ export default function JsonTool({
                   tableHint={t('jsonTool.tablePreviewInvalid')}
                   onToggleTable={() => setInputTableMode((current) => !current)}
                   tablePreview={<JsonTablePreview value={inputPreview.value} t={t} />}
+                  onOpenFile={() => void fileDrop.pick()}
                 />
                 <div
                   className={`json-pipeline-output-slot min-h-0 min-w-0${
@@ -1297,7 +1416,9 @@ export default function JsonTool({
                   {jsonValue ? `${t('jsonTool.valid')} · ${summary(input)}` : t('jsonTool.invalid')}
                 </strong>
               ) : (
-                <strong className="empty">{t('jsonTool.placeholder')}</strong>
+                <strong className="empty">
+                  <Trans i18nKey="jsonTool.placeholder" components={{ open: <span /> }} />
+                </strong>
               )}
             </div>
           </div>

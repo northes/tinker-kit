@@ -20,7 +20,12 @@ import {
   type ToolId,
 } from './shared';
 import { toast } from './ui/toast';
-import FileDropEmpty, { hasFileTransfer } from './FileDropEmpty';
+import FileDropEmpty, {
+  fileToDataUrl,
+  readLocalFile,
+  useClipboardFilePaste,
+  useFileDrop,
+} from './fileDrop';
 import '../styles/tools/editor.css';
 
 type OutputKind = 'text' | 'image' | 'file';
@@ -128,7 +133,6 @@ export default function Base64Tool({
   const [output, setOutput] = useState('');
   const [outputKind, setOutputKind] = useState<OutputKind>('text');
   const [outputFile, setOutputFile] = useState<OutputFile | null>(null);
-  const [fileInput, setFileInput] = useState<HTMLInputElement | null>(null);
   const worker = useRef<Worker | null>(null);
   const consumed = useRef<PendingAction | null>(null);
   const revision = useRef(0);
@@ -232,8 +236,62 @@ export default function Base64Tool({
     await navigator.clipboard?.writeText(output).catch(() => {});
     toast.add({ title: t('toast.copied', { value: bytesLabel(output.length) }) });
   };
-  const load = useCallback(
-    async (file: File) => {
+  const applyFile = useCallback(
+    (info: FileInfo) => {
+      setSourceFile(info);
+      setInput(info.data);
+      record(
+        'base64',
+        t('base64Tool.encoded'),
+        `${info.image ? t('base64Tool.image') : t('base64Tool.file')} · ${bytesLabel(info.size)}`,
+        info.data,
+        info.data.replace(/^data:[^,]+,/, ''),
+        {
+          mode: info.image ? 'image' : 'file',
+          mediaType: info.type,
+          name: info.name,
+          bytes: info.size,
+        },
+      );
+    },
+    [record, t],
+  );
+
+  const loadPath = useCallback(
+    async (path: string) => {
+      try {
+        const data = await readLocalFile(path, MAX_BYTES);
+        applyFile({
+          name: data.name,
+          type: data.mimeType || 'application/octet-stream',
+          size: data.size,
+          data: data.dataURL,
+          image: data.mimeType.startsWith('image/'),
+        });
+      } catch {
+        toast.add({ title: t('base64Tool.invalid'), type: 'error' });
+      }
+    },
+    [applyFile, t],
+  );
+
+  const fileDrop = useFileDrop({
+    id: 'base64-drop-zone',
+    enabled: active,
+    pick: {
+      Title: t('base64Tool.emptyTitle'),
+      ButtonText: t('base64Tool.chooseFile'),
+    },
+    onPaths: (paths) => {
+      const path = paths[0];
+      if (path) void loadPath(path);
+    },
+    onError: () => toast.add({ title: t('base64Tool.invalid'), type: 'error' }),
+  });
+
+  useClipboardFilePaste({
+    enabled: active,
+    onFile: (file) => {
       if (file.size > MAX_BYTES) {
         toast.add({
           title: t('base64Tool.tooLarge', { size: bytesLabel(MAX_BYTES) }),
@@ -241,41 +299,19 @@ export default function Base64Tool({
         });
         return;
       }
-      try {
-        const data = await new Promise<string>((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onerror = () => reject(reader.error);
-          reader.onload = () => resolve(String(reader.result));
-          reader.readAsDataURL(file);
-        });
-        const info = {
-          name: file.name,
-          type: file.type || 'application/octet-stream',
-          size: file.size,
-          data,
-          image: file.type.startsWith('image/'),
-        };
-        setSourceFile(info);
-        setInput(data);
-        record(
-          'base64',
-          t('base64Tool.encoded'),
-          `${info.image ? t('base64Tool.image') : t('base64Tool.file')} · ${bytesLabel(file.size)}`,
-          data,
-          data.replace(/^data:[^,]+,/, ''),
-          {
-            mode: info.image ? 'image' : 'file',
-            mediaType: info.type,
+      void fileToDataUrl(file)
+        .then((data) =>
+          applyFile({
             name: file.name,
-            bytes: file.size,
-          },
-        );
-      } catch {
-        toast.add({ title: t('base64Tool.invalid'), type: 'error' });
-      }
+            type: file.type || 'application/octet-stream',
+            size: file.size,
+            data,
+            image: file.type.startsWith('image/'),
+          }),
+        )
+        .catch(() => toast.add({ title: t('base64Tool.invalid'), type: 'error' }));
     },
-    [record, t],
-  );
+  });
   useEffect(() => {
     if (!pending || pending.tool !== 'base64' || consumed.current === pending) return;
     consumed.current = pending;
@@ -297,27 +333,6 @@ export default function Base64Tool({
     setSourceFile(null);
     setInput(pending.input);
   }, [pending, output]);
-  useEffect(() => {
-    if (!active) return;
-    const dragover = (event: DragEvent) => {
-      const transfer = event.dataTransfer;
-      if (!transfer || !hasFileTransfer(transfer)) return;
-      event.preventDefault();
-      transfer.dropEffect = 'copy';
-    };
-    const drop = (event: DragEvent) => {
-      const file = event.dataTransfer?.files[0];
-      if (!file) return;
-      event.preventDefault();
-      void load(file);
-    };
-    window.addEventListener('dragover', dragover);
-    window.addEventListener('drop', drop);
-    return () => {
-      window.removeEventListener('dragover', dragover);
-      window.removeEventListener('drop', drop);
-    };
-  }, [active, load]);
   const save = async () => {
     if (!outputFile) return;
     try {
@@ -360,16 +375,7 @@ export default function Base64Tool({
     </div>
   ) : (
     <div className={`grid h-full min-h-0 gap-3 ${input ? 'grid-rows-1' : 'grid-rows-2'}`}>
-      <div
-        className="min-h-0"
-        onPaste={(event) => {
-          const file = event.clipboardData.files[0];
-          if (file) {
-            event.preventDefault();
-            void load(file);
-          }
-        }}
-      >
+      <div className="min-h-0">
         <TextPane
           label={t('base64Tool.input')}
           value={input}
@@ -389,17 +395,8 @@ export default function Base64Tool({
             title={t('base64Tool.emptyTitle')}
             desc={t('base64Tool.fileHint')}
             actionLabel={t('base64Tool.chooseFile')}
-            onChooseFile={() => fileInput?.click()}
-          />
-          <input
-            ref={setFileInput}
-            className="hidden"
-            type="file"
-            onChange={(event) => {
-              const file = event.target.files?.[0];
-              if (file) void load(file);
-              event.currentTarget.value = '';
-            }}
+            onChooseFile={() => void fileDrop.pick()}
+            over={fileDrop.over}
           />
         </div>
       )}
@@ -452,7 +449,7 @@ export default function Base64Tool({
       <ToolLayout>
         <ToolLayoutHeader title={t('base64Tool.title')} />
         <ToolLayoutContent className="grid grid-rows-[minmax(0,1fr)_auto] gap-3">
-          <div className="grid h-full min-h-0 grid-cols-2 gap-3.5">
+          <div className="grid h-full min-h-0 grid-cols-2 gap-3.5" {...fileDrop.dropProps}>
             {inputPane}
             {resultPane}
           </div>

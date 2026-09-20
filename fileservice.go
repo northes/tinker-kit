@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"mime"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -123,4 +125,73 @@ func (s *FileService) ReadImageFile(path string) (string, error) {
 	}
 
 	return "data:" + mimeType + ";base64," + base64.StdEncoding.EncodeToString(data), nil
+}
+
+// LocalFile 描述按路径读取到的本地文件内容。
+type LocalFile struct {
+	Name     string `json:"name"`
+	MIMEType string `json:"mimeType"`
+	Size     int64  `json:"size"`
+	DataURL  string `json:"dataURL"`
+}
+
+// ReadFile 按路径读取本地文件，返回可直接用于编辑器和 img/canvas 的 data URL 及元数据。
+// maxBytes <= 0 时使用默认上限 maxImageFileSize。
+func (s *FileService) ReadFile(path string, maxBytes int64) (LocalFile, error) {
+	if strings.TrimSpace(path) == "" {
+		return LocalFile{}, errors.New("文件路径为空")
+	}
+	if maxBytes <= 0 {
+		maxBytes = maxImageFileSize
+	}
+
+	info, err := os.Stat(path)
+	if err != nil {
+		return LocalFile{}, fmt.Errorf("获取文件信息 %q: %w", path, err)
+	}
+	if !info.Mode().IsRegular() {
+		return LocalFile{}, fmt.Errorf("路径 %q 不是普通文件", path)
+	}
+	if info.Size() > maxBytes {
+		return LocalFile{}, fmt.Errorf("文件 %q 超过大小限制（最大 %d 字节）", path, maxBytes)
+	}
+
+	file, err := os.Open(path)
+	if err != nil {
+		return LocalFile{}, fmt.Errorf("打开文件 %q: %w", path, err)
+	}
+	defer file.Close()
+
+	// 打开后再次检查，避免路径在预检查与打开之间发生变化。
+	info, err = file.Stat()
+	if err != nil {
+		return LocalFile{}, fmt.Errorf("获取文件信息 %q: %w", path, err)
+	}
+	if !info.Mode().IsRegular() {
+		return LocalFile{}, fmt.Errorf("路径 %q 不是普通文件", path)
+	}
+
+	data, err := io.ReadAll(io.LimitReader(file, maxBytes+1))
+	if err != nil {
+		return LocalFile{}, fmt.Errorf("读取文件 %q: %w", path, err)
+	}
+	if int64(len(data)) > maxBytes {
+		return LocalFile{}, fmt.Errorf("文件 %q 超过大小限制（最大 %d 字节）", path, maxBytes)
+	}
+
+	name := filepath.Base(path)
+	mimeType := mime.TypeByExtension(strings.ToLower(filepath.Ext(name)))
+	if mimeType == "" {
+		mimeType = http.DetectContentType(data)
+	}
+	if idx := strings.IndexByte(mimeType, ';'); idx >= 0 {
+		mimeType = strings.TrimSpace(mimeType[:idx])
+	}
+
+	return LocalFile{
+		Name:     name,
+		MIMEType: mimeType,
+		Size:     int64(len(data)),
+		DataURL:  "data:" + mimeType + ";base64," + base64.StdEncoding.EncodeToString(data),
+	}, nil
 }
