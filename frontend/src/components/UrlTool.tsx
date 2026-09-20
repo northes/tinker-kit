@@ -153,6 +153,27 @@ export default function UrlTool({
       output,
     );
   };
+  const convert = (mode: string) => {
+    if (!input) return;
+    const run =
+      mode === 'encodeUri'
+        ? encodeURI
+        : mode === 'decodeUri'
+          ? decodeURI
+          : mode === 'decodeComponent'
+            ? decodeURIComponent
+            : encodeURIComponent;
+    let next: string;
+    try {
+      next = run(input);
+    } catch {
+      toast.add({ title: t('urlTool.decodeFailed'), type: 'warning' });
+      return;
+    }
+    if (next === input) return;
+    setInput(next);
+    record('url', t('urlTool.encodeDecode'), t(`urlTool.${mode}`), input, next);
+  };
   useEffect(() => {
     if (!pending || pending.tool !== 'url' || consumed.current === pending) return;
     consumed.current = pending;
@@ -422,6 +443,19 @@ export default function UrlTool({
                 variant: 'tertiary',
                 disabled: !input,
                 onPress: () => setInput(''),
+              },
+              {
+                key: 'convert',
+                label: t('urlTool.encodeDecode'),
+                type: 'menu',
+                disabled: !input,
+                options: [
+                  { key: 'encodeUri', label: t('urlTool.encodeUri'), group: 'encode' },
+                  { key: 'encodeComponent', label: t('urlTool.encodeComponent'), group: 'encode' },
+                  { key: 'decodeUri', label: t('urlTool.decodeUri'), group: 'decode' },
+                  { key: 'decodeComponent', label: t('urlTool.decodeComponent'), group: 'decode' },
+                ],
+                onSelect: (value) => convert(value),
               },
               {
                 key: 'copyInput',
