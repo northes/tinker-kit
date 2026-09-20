@@ -28,9 +28,17 @@ body,
   height: 100%;
   background: var(--background);
 }
+html,
 body {
   overflow: hidden;
+  overscroll-behavior: none;
+}
+body {
   line-height: 1.6;
+}
+/* 固定桌面外壳：任何子元素都不应让文档/外壳产生滚动（例如编辑器搜索选中命中项时）。 */
+.app-shell {
+  overflow: hidden;
 }
 /* 只偏移 Base UI 的内部遮罩；其他 inert 浮层（如 Dialog）保持原定位。 */
 [data-base-ui-inert][role='presentation'] {

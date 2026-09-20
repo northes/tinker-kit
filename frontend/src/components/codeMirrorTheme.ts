@@ -392,6 +392,42 @@ const indentGuideFold = ViewPlugin.fromClass(
   },
 );
 
+// CodeMirror 默认的 scrollIntoView 会向上遍历并滚动所有可滚动祖先，搜索选中
+// 命中项时会把外层工作区/弹窗内容一起滚动，表现为界面整体位移。这里把滚动
+// 限制在编辑器自身的滚动容器内。
+const editorScopedScroll = EditorView.scrollHandler.of((view, range, { x, y, xMargin, yMargin }) => {
+  const scroller = view.scrollDOM;
+  const block = view.lineBlockAt(range.head);
+  const maxTop = Math.max(0, scroller.scrollHeight - scroller.clientHeight);
+  const maxLeft = Math.max(0, scroller.scrollWidth - scroller.clientWidth);
+  const viewTop = scroller.scrollTop;
+  const viewBottom = viewTop + scroller.clientHeight;
+  let nextTop = viewTop;
+  if (y === 'center') nextTop = block.top - (scroller.clientHeight - block.height) / 2;
+  else if (y === 'start') nextTop = block.top - yMargin;
+  else if (y === 'end') nextTop = block.bottom - scroller.clientHeight + yMargin;
+  else if (block.top < viewTop + yMargin) nextTop = block.top - yMargin;
+  else if (block.bottom > viewBottom - yMargin)
+    nextTop = block.bottom - scroller.clientHeight + yMargin;
+  let nextLeft = scroller.scrollLeft;
+  const head = view.coordsAtPos(range.head);
+  if (head) {
+    const rect = scroller.getBoundingClientRect();
+    const left = scroller.scrollLeft + (head.left - rect.left);
+    const right = scroller.scrollLeft + (head.right - rect.left);
+    const viewLeft = scroller.scrollLeft;
+    const viewRight = viewLeft + scroller.clientWidth;
+    if (x === 'center') nextLeft = left - (scroller.clientWidth - (head.right - head.left)) / 2;
+    else if (x === 'start') nextLeft = left - xMargin;
+    else if (x === 'end') nextLeft = right - scroller.clientWidth + xMargin;
+    else if (left < viewLeft + xMargin) nextLeft = left - xMargin;
+    else if (right > viewRight - xMargin) nextLeft = right - scroller.clientWidth + xMargin;
+  }
+  scroller.scrollTop = Math.max(0, Math.min(nextTop, maxTop));
+  scroller.scrollLeft = Math.max(0, Math.min(nextLeft, maxLeft));
+  return true;
+});
+
 export const quietEditorTheme = [
   indentGuides,
   codeFolding(),
@@ -401,6 +437,7 @@ export const quietEditorTheme = [
   syntaxHighlighting(quietSyntax),
   // 所有共享该主题的编辑器统一使用 VSCode 风格的搜索面板。
   appSearchPanel,
+  editorScopedScroll,
 ];
 
 function jsonFoldParseBudget(deadline?: IdleDeadline) {
