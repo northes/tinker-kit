@@ -711,8 +711,7 @@ export default function JsonTool({
     });
   const exportPipeline = async () => {
     try {
-      if (!navigator.clipboard) throw new Error('clipboard');
-      await navigator.clipboard.writeText(serializePipeline(pipelineRules));
+      await Clipboard.SetText(serializePipeline(pipelineRules));
       toast.add({ title: t('jsonTool.pipeline.exported') });
     } catch {
       toast.add({
@@ -756,7 +755,14 @@ export default function JsonTool({
       toast.add({ title: t('jsonTool.pipeline.copyFailed'), type: 'error' });
       return;
     }
-    void navigator.clipboard?.writeText(text).catch(() => {});
+    try {
+      // 后端取值是异步的，await 之后再调 navigator.clipboard 会丢失用户激活导致写入被拒；
+      // 用 Wails 原生剪贴板，失败也能显式提示。
+      await Clipboard.SetText(text);
+    } catch {
+      toast.add({ title: t('jsonTool.pipeline.clipboardWriteFailed'), type: 'error' });
+      return;
+    }
     const bytes = new TextEncoder().encode(text).length;
     toast.add({ title: t('toast.copied', { value: `${bytes} ${t('jsonTool.bytes')}` }) });
     record('json', t('jsonTool.pipeline.copy'), `${bytes} ${t('jsonTool.bytes')}`, input, text);
