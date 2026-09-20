@@ -4,11 +4,6 @@ on:
   push:
     tags:
       - 'v*'
-  workflow_dispatch:
-    inputs:
-      tag:
-        description: 版本标签（例如 v0.2.0）
-        required: true
 
 permissions:
   contents: write
@@ -19,7 +14,7 @@ jobs:
     runs-on: macos-latest
     steps:
       - name: 检出源码
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: 安装 Go
         id: setup-go
@@ -29,7 +24,7 @@ jobs:
           cache: true
 
       - name: 安装 Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: npm
@@ -37,20 +32,20 @@ jobs:
 
       - name: 恢复 Wails CLI 缓存
         id: cache-wails
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/go/bin/wails3
-          key: wails3-${{ runner.os }}-${{ runner.arch }}-go-${{ steps.setup-go.outputs.go-version }}-v3.0.0-beta.9
+          key: wails3-${{ runner.os }}-${{ runner.arch }}-go-${{ steps.setup-go.outputs.go-version }}-v3.0.0-beta.23
 
       - name: 安装 Wails CLI
         if: steps.cache-wails.outputs.cache-hit != 'true'
-        run: go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-beta.9
+        run: go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-beta.23
 
       - name: 构建前端
         run: wails3 task common:build:frontend CI=true BUILD_FLAGS="-tags production"
 
       - name: 上传前端构建产物
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: frontend-build
           path: |
@@ -65,13 +60,13 @@ jobs:
     runs-on: macos-latest
     steps:
       - name: 检出源码
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: 解析版本
         id: version
         shell: bash
         env:
-          RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+          RELEASE_TAG: ${{ github.ref_name }}
         run: |
           version="${RELEASE_TAG#v}"
           if ! [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+([+-][0-9A-Za-z.-]+)?$ ]]; then
@@ -90,17 +85,17 @@ jobs:
 
       - name: 恢复 Wails CLI 缓存
         id: cache-wails
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/go/bin/wails3
-          key: wails3-${{ runner.os }}-${{ runner.arch }}-go-${{ steps.setup-go.outputs.go-version }}-v3.0.0-beta.9
+          key: wails3-${{ runner.os }}-${{ runner.arch }}-go-${{ steps.setup-go.outputs.go-version }}-v3.0.0-beta.23
 
       - name: 安装 Wails CLI
         if: steps.cache-wails.outputs.cache-hit != 'true'
-        run: go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-beta.9
+        run: go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-beta.23
 
       - name: 下载前端构建产物
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v5
         with:
           name: frontend-build
           path: frontend
@@ -137,36 +132,6 @@ jobs:
           /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString ${{ steps.version.outputs.version }}" bin/TinkerKit.app/Contents/Info.plist
           /usr/libexec/PlistBuddy -c "Set :CFBundleVersion ${{ steps.version.outputs.version }}" bin/TinkerKit.app/Contents/Info.plist
 
-      - name: 导入 Apple 签名证书
-        if: ${{ env.APPLE_CERTIFICATE != '' }}
-        uses: apple-actions/import-codesign-certs@v3
-        with:
-          p12-file-base64: ${{ secrets.APPLE_CERTIFICATE }}
-          p12-password: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-        env:
-          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-
-      - name: 签名应用
-        env:
-          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
-        run: |
-          if [ -n "$APPLE_SIGNING_IDENTITY" ]; then
-            codesign --force --deep --options runtime --timestamp --sign "$APPLE_SIGNING_IDENTITY" bin/TinkerKit.app
-          else
-            codesign --force --deep --sign - bin/TinkerKit.app
-          fi
-
-      - name: 公证并装订应用
-        if: ${{ env.APPLE_ID != '' && env.APPLE_APP_PASSWORD != '' && env.APPLE_TEAM_ID != '' }}
-        env:
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-        run: |
-          ditto -c -k --sequesterRsrc --keepParent bin/TinkerKit.app bin/notarize.zip
-          xcrun notarytool submit bin/notarize.zip --apple-id "$APPLE_ID" --password "$APPLE_APP_PASSWORD" --team-id "$APPLE_TEAM_ID" --wait
-          xcrun stapler staple bin/TinkerKit.app
-
       - name: 生成 ZIP 更新包与 DMG 安装包
         shell: bash
         run: |
@@ -180,7 +145,7 @@ jobs:
           mv "bin/$zip" "bin/$dmg" release/
 
       - name: 上传构建产物
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: macos-universal
           path: release/*
@@ -192,12 +157,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: 检出提交历史
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
       - name: 下载全部构建产物
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v5
         with:
           pattern: macos-*
           path: release
@@ -207,7 +172,7 @@ jobs:
         id: release
         shell: bash
         env:
-          RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+          RELEASE_TAG: ${{ github.ref_name }}
         run: |
           version="${RELEASE_TAG#v}"
           tag="v$version"
