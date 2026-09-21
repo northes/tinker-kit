@@ -18,6 +18,7 @@ import {
   WarningCircle,
 } from '@phosphor-icons/react';
 import { useTranslation } from 'react-i18next';
+import { ansiPlainText, parseAnsi, type AnsiSpan } from '../lib/ansi';
 import {
   ClearLogBuffer,
   GetDockerContainerDetail,
@@ -1606,7 +1607,7 @@ function LogList({
                   <WheelText className="text-muted-foreground">{logTime(line)}</WheelText>
                   <WheelText className="text-primary">{line.name}</WheelText>
                   <span className="break-all whitespace-pre-wrap">
-                    {highlightLogText(line.text, query, regex, caseSensitive)}
+                    {renderLogText(line.text, query, regex, caseSensitive)}
                   </span>
                 </div>
               );
@@ -1638,46 +1639,86 @@ function LogList({
     </div>
   );
 }
-function highlightLogText(
+function renderLogText(
   text: string,
   query: string,
   regex: boolean,
   caseSensitive: boolean,
 ): ReactNode {
-  if (!query) return text;
+  const { text: plain, spans } = parseAnsi(text);
+  const ranges = logMatchRanges(plain, query, regex, caseSensitive);
+  if (!ranges.length) {
+    if (spans.length === 1 && !spans[0].className && !spans[0].style) return spans[0].text;
+    return spans.map((span, index) => logSpan(span, span.text, index));
+  }
+  const nodes: ReactNode[] = [];
+  let position = 0;
+  let key = 0;
+  for (const span of spans) {
+    const spanEnd = position + span.text.length;
+    let consumed = 0;
+    for (const range of ranges) {
+      if (range.end <= position) continue;
+      if (range.start >= spanEnd) break;
+      const start = Math.max(range.start, position);
+      const stop = Math.min(range.end, spanEnd);
+      if (start > position + consumed)
+        nodes.push(logSpan(span, span.text.slice(consumed, start - position), key++));
+      nodes.push(logSpan(span, span.text.slice(start - position, stop - position), key++, true));
+      consumed = stop - position;
+    }
+    if (consumed < span.text.length) nodes.push(logSpan(span, span.text.slice(consumed), key++));
+    position = spanEnd;
+  }
+  return nodes;
+}
+function logSpan(span: AnsiSpan, content: string, key: number, marked = false): ReactNode {
+  if (!content) return null;
+  if (marked) {
+    return (
+      <mark key={key} className={`rounded-[2px] bg-warning/30 ${span.className}`}>
+        {content}
+      </mark>
+    );
+  }
+  if (!span.className && !span.style) return content;
+  return (
+    <span key={key} className={span.className || undefined} style={span.style}>
+      {content}
+    </span>
+  );
+}
+function logMatchRanges(
+  text: string,
+  query: string,
+  regex: boolean,
+  caseSensitive: boolean,
+): Array<{ start: number; end: number }> {
+  if (!query) return [];
   const source = regex ? query : query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   let pattern: RegExp;
   try {
     pattern = new RegExp(source, caseSensitive ? 'g' : 'gi');
   } catch {
-    return text;
+    return [];
   }
-  const nodes: ReactNode[] = [];
-  let lastIndex = 0;
+  const ranges: Array<{ start: number; end: number }> = [];
   let match: RegExpExecArray | null;
-  let key = 0;
   while ((match = pattern.exec(text)) !== null) {
     if (!match[0]) {
       pattern.lastIndex += 1;
       continue;
     }
-    if (match.index > lastIndex) nodes.push(text.slice(lastIndex, match.index));
-    nodes.push(
-      <mark key={key++} className="rounded-[2px] bg-warning/30 text-foreground">
-        {match[0]}
-      </mark>,
-    );
-    lastIndex = match.index + match[0].length;
+    ranges.push({ start: match.index, end: match.index + match[0].length });
   }
-  if (!nodes.length) return text;
-  if (lastIndex < text.length) nodes.push(text.slice(lastIndex));
-  return nodes;
+  return ranges;
 }
 function matchesLog(line: ServiceLogLine, query: string, regex: boolean, caseSensitive: boolean) {
   if (!query) return true;
+  const text = ansiPlainText(line.text);
   try {
-    if (regex) return new RegExp(query, caseSensitive ? '' : 'i').test(line.text);
-    return (caseSensitive ? line.text : line.text.toLowerCase()).includes(
+    if (regex) return new RegExp(query, caseSensitive ? '' : 'i').test(text);
+    return (caseSensitive ? text : text.toLowerCase()).includes(
       caseSensitive ? query : query.toLowerCase(),
     );
   } catch {

@@ -30,6 +30,11 @@ tasks:
     cmds:
       - node --experimental-strip-types --test frontend/src/lib/image-tasks.test.mjs
 
+  test:ansi:
+    summary: Checks ANSI log parsing
+    cmds:
+      - node --experimental-strip-types --test frontend/src/lib/ansi.test.mjs
+
   gp:
     summary: push to all remote repos
     cmds:

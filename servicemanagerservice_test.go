@@ -19,6 +19,55 @@ func TestGroupDockerContainersKeepsStandaloneAndCompose(t *testing.T) {
 	}
 }
 
+func TestAppendLogLineKeepsAnsiSequences(t *testing.T) {
+	service := &ServiceManagerService{}
+	monitor := &logMonitorState{
+		LogMonitor: LogMonitor{ID: "monitor-1", Resource: ServiceResourceRef{Runtime: "docker", ID: "0123456789abcdef"}},
+		lines:      []ServiceLogLine{},
+	}
+	service.appendLogLine(monitor, "stdout", "2026-01-02T03:04:05.000000000Z \x1b[90msrvx 0.11.21\x1b[39m")
+	if len(monitor.lines) != 1 {
+		t.Fatalf("期望写入一行日志: %#v", monitor.lines)
+	}
+	line := monitor.lines[0]
+	if line.Timestamp != "2026-01-02T03:04:05.000000000Z" {
+		t.Fatalf("docker 时间戳解析被破坏: %q", line.Timestamp)
+	}
+	if line.Text != "\x1b[90msrvx 0.11.21\x1b[39m" {
+		t.Fatalf("原始控制序列应保留给前端渲染: %q", line.Text)
+	}
+}
+
+func TestServiceLogFilterMatchesVisibleText(t *testing.T) {
+	filter, err := newLogFilter(ServiceLogFilter{Query: "srvx"})
+	if err != nil {
+		t.Fatalf("构造过滤器失败: %v", err)
+	}
+	if !filter(ServiceLogLine{Text: "\x1b[90msrvx\x1b[0m 0.11.21"}) {
+		t.Fatal("查询应命中可见文本，而不是被控制序列隔断")
+	}
+	anchored, err := newLogFilter(ServiceLogFilter{Query: "^srvx", Regex: true})
+	if err != nil {
+		t.Fatalf("构造正则过滤器失败: %v", err)
+	}
+	if !anchored(ServiceLogLine{Text: "\x1b[90msrvx 0.11.21\x1b[0m"}) {
+		t.Fatal("锚点应针对可见文本生效")
+	}
+}
+
+func TestStripAnsiSequencesKeepsPlainText(t *testing.T) {
+	cases := map[string]string{
+		"plain log line":                                      "plain log line",
+		"\x1b[2K\x1b[1;32mOK\x1b[0m":                          "OK",
+		"\x1b]8;;https://example.com\x1b\\link\x1b]8;;\x1b\\": "link",
+	}
+	for input, want := range cases {
+		if got := stripAnsiSequences(input); got != want {
+			t.Fatalf("stripAnsiSequences(%q) = %q, 期望 %q", input, got, want)
+		}
+	}
+}
+
 func TestServiceLogFilterDoesNotMutateOriginalLine(t *testing.T) {
 	line := ServiceLogLine{Text: "ERROR database timeout", Stream: "stderr"}
 	filter, err := newLogFilter(ServiceLogFilter{Query: "timeout", Streams: []string{"stderr"}})

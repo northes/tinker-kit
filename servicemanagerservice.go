@@ -823,6 +823,16 @@ func (s *ServiceManagerService) stream(ctx context.Context, source ImageSource, 
 	}
 	return <-done
 }
+
+// 日志流会带 ANSI 控制序列（颜色、光标等），前端按 SGR 渲染颜色；过滤只应针对可见文本。
+var ansiSequencePattern = regexp.MustCompile("\x1b\\[[0-?]*[ -/]*[@-~]|\x1b\\][^\x07\x1b]*(?:\x07|\x1b\\\\)|\x1b[@-Z\\\\-_]")
+
+func stripAnsiSequences(text string) string {
+	if !strings.ContainsRune(text, '\x1b') {
+		return text
+	}
+	return ansiSequencePattern.ReplaceAllString(text, "")
+}
 func (s *ServiceManagerService) appendLogLine(m *logMonitorState, stream, text string) {
 	line := ServiceLogLine{Sequence: s.sequence.Add(1), MonitorID: m.ID, Runtime: m.Resource.Runtime, ResourceID: m.Resource.ID, Name: m.Resource.Name, ReceivedAt: time.Now().Format(time.RFC3339Nano), Stream: stream, Text: text}
 	if m.Resource.Runtime == "docker" {
@@ -954,10 +964,11 @@ func newLogFilter(f ServiceLogFilter) (func(ServiceLogLine) bool, error) {
 		if query == "" {
 			return true
 		}
+		plain := stripAnsiSequences(line.Text)
 		if re != nil {
-			return re.MatchString(line.Text)
+			return re.MatchString(plain)
 		}
-		text := line.Text
+		text := plain
 		if !f.CaseSensitive {
 			text = strings.ToLower(text)
 		}
