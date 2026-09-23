@@ -36,6 +36,7 @@ import { useTranslation } from 'react-i18next';
 import {
   DndContext,
   closestCenter,
+  DragOverlay,
   KeyboardSensor,
   PointerSensor,
   useSensor,
@@ -2388,7 +2389,7 @@ function SidebarManageRow({
   const style = {
     transform: CSS.Transform.toString(transform),
     transition,
-    zIndex: isDragging ? 1 : undefined,
+    opacity: isDragging ? 0 : undefined,
   };
   return (
     <div
@@ -2398,7 +2399,7 @@ function SidebarManageRow({
       aria-posinset={index + 1}
       aria-setsize={count}
       aria-grabbed={isDragging}
-      className={`flex select-none items-center gap-0.5 rounded-lg border-y-2 border-transparent ${isDragging ? 'bg-muted' : ''} ${enabled ? '' : 'opacity-40'}`}
+      className={`flex select-none items-center gap-0.5 rounded-lg border-y-2 border-transparent ${enabled ? '' : 'opacity-40'}`}
     >
       <Button
         ref={setActivatorNodeRef}
@@ -2449,6 +2450,35 @@ function SidebarManageRow({
   );
 }
 
+function SidebarManagePreview({ tool, enabled }: { tool: ToolDefinition; enabled: boolean }) {
+  const { t } = useTranslation();
+  const name = t(tool.nameKey);
+  return (
+    <div
+      aria-hidden
+      className={`pointer-events-none flex select-none items-center gap-0.5 rounded-lg border-y-2 border-transparent bg-muted shadow-sm ${enabled ? '' : 'opacity-40'}`}
+    >
+      <Button variant="ghost" size="icon-sm" tabIndex={-1} className="flex-none cursor-grabbing">
+        <DotsSixVertical size={16} weight="duotone" />
+      </Button>
+      <div
+        className={`${sidebarItemClassName} pointer-events-none min-w-0 flex-1 hover:bg-transparent`}
+      >
+        <tool.icon data-icon="inline-start" size={17} weight="duotone" />
+        <span className="min-w-0 truncate">{name}</span>
+      </div>
+      <Button
+        variant="ghost"
+        size="icon-sm"
+        tabIndex={-1}
+        className="pointer-events-none flex-none"
+      >
+        {enabled ? <EyeClosed size={16} weight="duotone" /> : <Eye size={16} weight="duotone" />}
+      </Button>
+    </div>
+  );
+}
+
 function Sidebar({
   page,
   onNavigate,
@@ -2468,6 +2498,7 @@ function Sidebar({
 }) {
   const { t } = useTranslation();
   const [liveMessage, setLiveMessage] = useState('');
+  const [activeId, setActiveId] = useState<ToolId | null>(null);
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
@@ -2477,6 +2508,7 @@ function Sidebar({
     return tool ? [{ tool, enabled: item.enabled }] : [];
   });
   const visibleTools = managing ? orderedTools : orderedTools.filter((item) => item.enabled);
+  const activeTool = activeId ? visibleTools.find(({ tool }) => tool.id === activeId) : undefined;
   const announceMove = (id: ToolId, next: SidebarToolConfig[]) => {
     const tool = tools.find((entry) => entry.id === id);
     const position = next.findIndex((item) => item.id === id) + 1;
@@ -2492,130 +2524,142 @@ function Sidebar({
   return (
     <aside
       id="app-sidebar"
-      className="sidebar flex min-h-0 flex-col gap-0.5 overflow-auto border-r border-border bg-background px-3 pb-4"
+      className="sidebar flex min-h-0 flex-col overflow-hidden border-r border-border bg-background"
     >
-      {managing && (
-        <div className="sticky top-0 z-10 mb-1 flex flex-none flex-col gap-2 border-b border-border bg-background py-3">
-          <div className="px-2">
-            <div className="text-xs font-semibold text-foreground">{t('sidebar.manageTitle')}</div>
-            <p
-              id="sidebar-manage-hint"
-              className="m-0 text-[10px] leading-[1.5] text-muted-foreground"
-            >
-              {t('sidebar.manageHint')}
-            </p>
-          </div>
-          <Button id="sidebar-manage-done" className="w-full text-[11px]" onClick={onExitManage}>
-            {t('sidebar.done')}
-          </Button>
-          <div className="sr-only" aria-live="polite" aria-atomic="true">
-            {liveMessage}
-          </div>
-        </div>
-      )}
-      {(managing || visibleTools.length > 0) && (
-        <nav
-          className="flex flex-col gap-0.5"
-          aria-label={managing ? t('sidebar.manageTitle') : t('groups.tools')}
-        >
-          <div className="sidebar-heading my-4 mb-1 px-2 text-[9px] font-medium uppercase tracking-[.08em] text-muted-foreground">
-            {t('groups.tools')}
-          </div>
-          {managing ? (
-            <div role="list" className="flex flex-col gap-0.5">
-              <DndContext
-                sensors={sensors}
-                collisionDetection={closestCenter}
-                onDragEnd={({ active, over }: DragEndEvent) => {
-                  if (!over || active.id === over.id) return;
-                  const from = sidebarTools.findIndex((item) => item.id === String(active.id));
-                  const to = sidebarTools.findIndex((item) => item.id === String(over.id));
-                  if (from < 0 || to < 0) return;
-                  const next = arrayMove(sidebarTools, from, to);
-                  onSidebarToolsChange(next);
-                  announceMove(String(active.id) as ToolId, next);
-                }}
+      <div className="no-scrollbar flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto px-3">
+        {managing && (
+          <div className="sticky top-0 z-10 mb-1 flex flex-none flex-col gap-2 border-b border-border bg-background py-3">
+            <div className="px-2">
+              <div className="text-xs font-semibold text-foreground">
+                {t('sidebar.manageTitle')}
+              </div>
+              <p
+                id="sidebar-manage-hint"
+                className="m-0 text-[10px] leading-[1.5] text-muted-foreground"
               >
-                <SortableContext
-                  items={visibleTools.map(({ tool }) => tool.id)}
-                  strategy={verticalListSortingStrategy}
-                >
-                  {visibleTools.map(({ tool, enabled }, index) => (
-                    <SidebarManageRow
-                      key={tool.id}
-                      tool={tool}
-                      enabled={enabled}
-                      index={index}
-                      count={visibleTools.length}
-                      onMove={(id, delta) => {
-                        const next = moveSidebarToolBy(sidebarTools, id, delta);
-                        if (next === sidebarTools) return;
-                        onSidebarToolsChange(next);
-                        announceMove(id, next);
-                      }}
-                      onToggle={(id) =>
-                        onSidebarToolsChange(
-                          sidebarTools.map((item) =>
-                            item.id === id ? { ...item, enabled: !item.enabled } : item,
-                          ),
-                        )
-                      }
-                    />
-                  ))}
-                </SortableContext>
-              </DndContext>
+                {t('sidebar.manageHint')}
+              </p>
             </div>
-          ) : (
-            visibleTools.map(({ tool }) => (
-              <Button
-                key={tool.id}
-                variant="ghost"
-                className={sidebarItemClassName}
-                aria-current={page === tool.id ? 'page' : undefined}
-                aria-label={t(tool.nameKey)}
-                title={t(tool.nameKey)}
-                onClick={() => onNavigate(tool.id)}
-              >
-                <tool.icon data-icon="inline-start" size={17} weight="duotone" />
-                <span>{t(tool.nameKey)}</span>
-              </Button>
-            ))
-          )}
+            <Button id="sidebar-manage-done" className="w-full text-[11px]" onClick={onExitManage}>
+              {t('sidebar.done')}
+            </Button>
+            <div className="sr-only" aria-live="polite" aria-atomic="true">
+              {liveMessage}
+            </div>
+          </div>
+        )}
+        {(managing || visibleTools.length > 0) && (
+          <nav
+            className="flex flex-col gap-0.5"
+            aria-label={managing ? t('sidebar.manageTitle') : t('groups.tools')}
+          >
+            <div className="sidebar-heading my-4 mb-1 px-2 text-[9px] font-medium uppercase tracking-[.08em] text-muted-foreground">
+              {t('groups.tools')}
+            </div>
+            {managing ? (
+              <div role="list" className="flex flex-col gap-0.5">
+                <DndContext
+                  sensors={sensors}
+                  collisionDetection={closestCenter}
+                  onDragStart={({ active }) => setActiveId(String(active.id) as ToolId)}
+                  onDragCancel={() => setActiveId(null)}
+                  onDragEnd={({ active, over }: DragEndEvent) => {
+                    setActiveId(null);
+                    if (!over || active.id === over.id) return;
+                    const from = sidebarTools.findIndex((item) => item.id === String(active.id));
+                    const to = sidebarTools.findIndex((item) => item.id === String(over.id));
+                    if (from < 0 || to < 0) return;
+                    const next = arrayMove(sidebarTools, from, to);
+                    onSidebarToolsChange(next);
+                    announceMove(String(active.id) as ToolId, next);
+                  }}
+                >
+                  <SortableContext
+                    items={visibleTools.map(({ tool }) => tool.id)}
+                    strategy={verticalListSortingStrategy}
+                  >
+                    {visibleTools.map(({ tool, enabled }, index) => (
+                      <SidebarManageRow
+                        key={tool.id}
+                        tool={tool}
+                        enabled={enabled}
+                        index={index}
+                        count={visibleTools.length}
+                        onMove={(id, delta) => {
+                          const next = moveSidebarToolBy(sidebarTools, id, delta);
+                          if (next === sidebarTools) return;
+                          onSidebarToolsChange(next);
+                          announceMove(id, next);
+                        }}
+                        onToggle={(id) =>
+                          onSidebarToolsChange(
+                            sidebarTools.map((item) =>
+                              item.id === id ? { ...item, enabled: !item.enabled } : item,
+                            ),
+                          )
+                        }
+                      />
+                    ))}
+                  </SortableContext>
+                  <DragOverlay dropAnimation={null}>
+                    {activeTool ? (
+                      <SidebarManagePreview tool={activeTool.tool} enabled={activeTool.enabled} />
+                    ) : null}
+                  </DragOverlay>
+                </DndContext>
+              </div>
+            ) : (
+              visibleTools.map(({ tool }) => (
+                <Button
+                  key={tool.id}
+                  variant="ghost"
+                  className={sidebarItemClassName}
+                  aria-current={page === tool.id ? 'page' : undefined}
+                  aria-label={t(tool.nameKey)}
+                  title={t(tool.nameKey)}
+                  onClick={() => onNavigate(tool.id)}
+                >
+                  <tool.icon data-icon="inline-start" size={17} weight="duotone" />
+                  <span>{t(tool.nameKey)}</span>
+                </Button>
+              ))
+            )}
+          </nav>
+        )}
+        <nav className="flex flex-col gap-0.5" aria-label={t('titlebar.history')}>
+          <div className="sidebar-heading my-4 mb-1 px-2 text-[9px] font-medium uppercase tracking-[.08em] text-muted-foreground">
+            {t('titlebar.history')}
+          </div>
+          <Button
+            variant="ghost"
+            className={sidebarItemClassName}
+            aria-current={page === 'history' ? 'page' : undefined}
+            aria-label={t('titlebar.history')}
+            title={t('titlebar.history')}
+            onClick={() => onNavigate('history')}
+          >
+            <ClockCounterClockwise data-icon="inline-start" size={17} weight="duotone" />
+            <span>{t('titlebar.history')}</span>
+          </Button>
         </nav>
-      )}
-      <nav className="flex flex-col gap-0.5" aria-label={t('titlebar.history')}>
-        <div className="sidebar-heading my-4 mb-1 px-2 text-[9px] font-medium uppercase tracking-[.08em] text-muted-foreground">
-          {t('titlebar.history')}
-        </div>
-        <Button
-          variant="ghost"
-          className={sidebarItemClassName}
-          aria-current={page === 'history' ? 'page' : undefined}
-          aria-label={t('titlebar.history')}
-          title={t('titlebar.history')}
-          onClick={() => onNavigate('history')}
-        >
-          <ClockCounterClockwise data-icon="inline-start" size={17} weight="duotone" />
-          <span>{t('titlebar.history')}</span>
-        </Button>
-      </nav>
-      <nav className="flex flex-col gap-0.5" aria-label={t('groups.system')}>
-        <div className="sidebar-heading my-4 mb-1 px-2 text-[9px] font-medium uppercase tracking-[.08em] text-muted-foreground">
-          {t('groups.system')}
-        </div>
-        <Button
-          variant="ghost"
-          className={sidebarItemClassName}
-          aria-current={page === 'settings' ? 'page' : undefined}
-          aria-label={t('titlebar.settings')}
-          title={t('titlebar.settings')}
-          onClick={() => onNavigate('settings')}
-        >
-          <GearSix data-icon="inline-start" size={17} weight="duotone" />
-          <span>{t('titlebar.settings')}</span>
-        </Button>
-      </nav>
-      <div className="sidebar-footer mt-auto flex-none border-t border-border pt-3">
+        <nav className="mb-3 flex flex-col gap-0.5" aria-label={t('groups.system')}>
+          <div className="sidebar-heading my-4 mb-1 px-2 text-[9px] font-medium uppercase tracking-[.08em] text-muted-foreground">
+            {t('groups.system')}
+          </div>
+          <Button
+            variant="ghost"
+            className={sidebarItemClassName}
+            aria-current={page === 'settings' ? 'page' : undefined}
+            aria-label={t('titlebar.settings')}
+            title={t('titlebar.settings')}
+            onClick={() => onNavigate('settings')}
+          >
+            <GearSix data-icon="inline-start" size={17} weight="duotone" />
+            <span>{t('titlebar.settings')}</span>
+          </Button>
+        </nav>
+      </div>
+      <div className="sidebar-footer mx-3 mt-0.5 flex-none border-t border-border pt-3 pb-4">
         <Button
           variant="ghost"
           className="sidebar-palette flex h-[30px] min-h-0 w-full items-center justify-start gap-2.5 rounded-lg px-2 text-xs text-muted-foreground hover:bg-muted hover:text-foreground [&_svg]:size-[17px]"
