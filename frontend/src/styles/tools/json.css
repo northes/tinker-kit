@@ -92,20 +92,46 @@
 .json-table-data {
   width: max-content;
   min-width: 100%;
+  font-family: var(--font-mono);
   font-size: var(--code-editor-font-size);
+}
+/* Column headers read as the tool's tracked label style, then a single rule
+   separates the head from the data. */
+.json-table-data thead th {
+  height: max(28px, calc(var(--code-editor-font-size) * 1.4 + 8px));
+  padding: 4px 8px;
+  color: var(--muted-foreground);
+  font-size: max(10px, calc(var(--code-editor-font-size) - 2px));
+  font-weight: 500;
+}
+.json-table-data thead tr {
+  border-bottom: 1px solid var(--border);
+}
+/* Body rows keep hairline separators in the same faint tone the schema
+   outline uses, so a long sheet reads as one surface. */
+.json-table-data tbody tr,
+.json-table-key-value tbody tr {
+  border-bottom: 1px solid color-mix(in oklch, var(--border) 62%, transparent);
+}
+.json-table-key-value td,
+.json-table-data td {
+  height: max(28px, calc(var(--code-editor-font-size) * 1.4 + 8px));
+  padding: 4px 8px;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 .json-table-key {
   width: 1%;
+  padding: 4px 8px;
   color: var(--muted-foreground);
   font-family: var(--font-mono);
-  font-size: max(10px, calc(var(--code-editor-font-size) - 2px));
+  font-size: var(--code-editor-font-size);
+  font-weight: 400;
+  white-space: nowrap;
 }
-.json-table-key-value td,
-.json-table-key-value th,
-.json-table-data td,
-.json-table-data th {
-  height: max(30px, calc(var(--code-editor-font-size) * 1.4 + 10px));
-  padding: 5px 9px;
+.json-table-data .is-numeric {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
 }
 .json-table-collapsible {
   cursor: pointer;
@@ -115,8 +141,8 @@
   color: var(--muted-foreground);
 }
 .json-table-child {
-  margin: 5px 0 0 18px;
-  border-left: 1px solid var(--border);
+  margin: 4px 0 2px 16px;
+  border-inline-start: 1px solid color-mix(in oklch, var(--border) 72%, transparent);
 }
 .json-table-container-label {
   font-family: var(--font-mono);
@@ -127,26 +153,21 @@
   font-style: italic;
 }
 .json-table-string {
-  color: var(--chart-2);
+  color: var(--success);
 }
-.json-table-number {
-  color: var(--chart-1);
-}
+.json-table-number,
 .json-table-boolean {
-  color: var(--chart-4);
+  color: var(--warning);
 }
 .json-table-row-index {
   display: inline-block;
   min-width: 20px;
+  padding-inline-end: 2px;
   text-align: right;
   color: var(--muted-foreground);
   font-family: var(--font-mono);
   font-size: max(10px, calc(var(--code-editor-font-size) - 2px));
   line-height: 1;
-}
-.json-table-data td {
-  white-space: normal;
-  word-break: break-word;
 }
 .json-table-empty,
 .json-table-scalar {

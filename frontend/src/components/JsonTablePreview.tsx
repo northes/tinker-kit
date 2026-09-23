@@ -27,7 +27,12 @@ function stopToggle(event: MouseEvent) {
   event.stopPropagation();
 }
 
-function ValueCell({ value, t, depth = 0 }: Props & { depth?: number }) {
+function ValueCell({
+  value,
+  t,
+  depth = 0,
+  numeric = false,
+}: Props & { depth?: number; numeric?: boolean }) {
   const collapsible = isContainer(value);
   const [expanded, setExpanded] = useState(false);
   const toggle = (event: MouseEvent) => {
@@ -36,7 +41,7 @@ function ValueCell({ value, t, depth = 0 }: Props & { depth?: number }) {
   };
   return (
     <TableCell
-      className={collapsible ? 'json-table-collapsible' : undefined}
+      className={collapsible ? 'json-table-collapsible' : numeric ? 'is-numeric' : undefined}
       onClick={collapsible ? toggle : undefined}
     >
       {collapsible ? (
@@ -115,6 +120,24 @@ function ObjectArray({
   stickyHeader = true,
 }: Props & { value: Record<string, unknown>[]; stickyHeader?: boolean }) {
   const keys = useMemo(() => [...new Set(value.flatMap((row) => Object.keys(row)))], [value]);
+  const numericKeys = useMemo(() => {
+    const numeric = new Set<string>();
+    for (const key of keys) {
+      let seenNumber = false;
+      let allNumeric = true;
+      for (const row of value) {
+        const item = row[key];
+        if (item === undefined || item === null) continue;
+        if (typeof item === 'number') seenNumber = true;
+        else {
+          allNumeric = false;
+          break;
+        }
+      }
+      if (seenNumber && allNumeric) numeric.add(key);
+    }
+    return numeric;
+  }, [keys, value]);
   const columns = useMemo<ColumnDef<Record<string, unknown>>[]>(
     () => [
       {
@@ -128,10 +151,12 @@ function ObjectArray({
       ...keys.map((key) => ({
         accessorKey: key,
         header: key,
-        cell: ({ row }) => <ValueCell value={row.original[key]} t={t} />,
+        cell: ({ row }) => (
+          <ValueCell value={row.original[key]} t={t} numeric={numericKeys.has(key)} />
+        ),
       })),
     ],
-    [keys, t],
+    [keys, numericKeys, t],
   );
   const table = useReactTable({ data: value, columns, getCoreRowModel: getCoreRowModel() });
   return (
@@ -141,7 +166,10 @@ function ObjectArray({
           {table.getHeaderGroups().map((group) => (
             <TableRow key={group.id}>
               {group.headers.map((header) => (
-                <TableHead key={header.id}>
+                <TableHead
+                  key={header.id}
+                  className={numericKeys.has(header.column.id) ? 'is-numeric' : undefined}
+                >
                   {flexRender(header.column.columnDef.header, header.getContext())}
                 </TableHead>
               ))}
