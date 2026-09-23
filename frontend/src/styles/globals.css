@@ -103,7 +103,7 @@
         center / 0 no-repeat;
       -webkit-mask-size: 200vmax;
       mask-size: 200vmax;
-      animation: tinkerkit-theme-reveal 500ms cubic-bezier(0.33, 1, 0.68, 1) both;
+      animation: tinkerkit-theme-reveal 750ms cubic-bezier(0.33, 1, 0.68, 1) both;
     }
 
     @keyframes tinkerkit-theme-reveal {
