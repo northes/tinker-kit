@@ -71,19 +71,19 @@
 .json-table-data {
   width: max-content;
   min-width: 100%;
-  font-size: 11px;
+  font-size: var(--code-editor-font-size);
 }
 .json-table-key {
   width: 1%;
   color: var(--muted-foreground);
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: max(10px, calc(var(--code-editor-font-size) - 2px));
 }
 .json-table-key-value td,
 .json-table-key-value th,
 .json-table-data td,
 .json-table-data th {
-  height: 30px;
+  height: max(30px, calc(var(--code-editor-font-size) * 1.4 + 10px));
   padding: 5px 9px;
 }
 .json-table-collapsible {
@@ -99,7 +99,7 @@
 }
 .json-table-container-label {
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: max(10px, calc(var(--code-editor-font-size) - 2px));
 }
 .json-table-null {
   color: var(--muted-foreground);
@@ -120,7 +120,7 @@
   text-align: right;
   color: var(--muted-foreground);
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: max(10px, calc(var(--code-editor-font-size) - 2px));
   line-height: 1;
 }
 .json-table-data td {
