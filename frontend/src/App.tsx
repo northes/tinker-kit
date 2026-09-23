@@ -246,6 +246,7 @@ const defaultSettings: Settings = {
     'unixNanoseconds',
   ],
   hiddenTimeResults: [],
+  timeWeekStart: 'monday',
   jsonAutoFormatOnFill: true,
   jsonAutoFormatOnFillMigrated: true,
   textAlwaysShowSearch: false,
@@ -1890,8 +1891,12 @@ function AppShell() {
                     active={page === 'time'}
                     resultOrder={settings.timeResultOrder ?? []}
                     hiddenResults={settings.hiddenTimeResults ?? []}
+                    weekStart={settings.timeWeekStart === 'sunday' ? 'sunday' : 'monday'}
                     onSaveResults={(timeResultOrder, hiddenTimeResults) =>
                       setSettings((current) => ({ ...current, timeResultOrder, hiddenTimeResults }))
+                    }
+                    onWeekStartChange={(timeWeekStart) =>
+                      setSettings((current) => ({ ...current, timeWeekStart }))
                     }
                     record={record}
                     pending={pending}

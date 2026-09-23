@@ -142,6 +142,25 @@ func TestNormalizeConfigEditorFontSize(t *testing.T) {
 	}
 }
 
+func TestNormalizeConfigTimeWeekStart(t *testing.T) {
+	tests := []struct {
+		in   string
+		want string
+	}{
+		{in: "monday", want: "monday"},
+		{in: "sunday", want: "sunday"},
+		{in: "", want: "monday"},
+		{in: "saturday", want: "monday"},
+	}
+	for _, test := range tests {
+		cfg := defaultConfig()
+		cfg.TimeWeekStart = test.in
+		if got := normalizeConfig(cfg).TimeWeekStart; got != test.want {
+			t.Fatalf("周起始 %q 规范化为 %q，期望 %q", test.in, got, test.want)
+		}
+	}
+}
+
 func TestNormalizeConfigKeepsTrayToolsWhenURLMigrationIsComplete(t *testing.T) {
 	cfg := defaultConfig()
 	cfg.TrayMatchTools = []string{"invalid"}

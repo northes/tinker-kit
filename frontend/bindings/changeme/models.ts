@@ -26,6 +26,7 @@ export interface Config {
     "codeEditorFontSize": number;
     "timeResultOrder": string[] | null;
     "hiddenTimeResults": string[] | null;
+    "timeWeekStart": string;
     "jsonAutoFormatOnFill": boolean;
     "jsonAutoFormatOnFillMigrated": boolean;
     "textAlwaysShowSearch": boolean;

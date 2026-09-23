@@ -32,6 +32,7 @@ type Config struct {
 	CodeEditorFontSize           int                 `json:"codeEditorFontSize"`
 	TimeResultOrder              []string            `json:"timeResultOrder"`
 	HiddenTimeResults            []string            `json:"hiddenTimeResults"`
+	TimeWeekStart                string              `json:"timeWeekStart"`
 	JsonAutoFormatOnFill         bool                `json:"jsonAutoFormatOnFill"`
 	JsonAutoFormatOnFillMigrated bool                `json:"jsonAutoFormatOnFillMigrated"`
 	TextAlwaysShowSearch         bool                `json:"textAlwaysShowSearch"`
@@ -164,7 +165,7 @@ type historyStored struct {
 }
 
 func defaultConfig() Config {
-	return Config{TrayMatchEnabled: true, TrayMatchTools: []string{"json", "time", "text", "base64", "diff", "jwt", "url"}, AutoOverwrite: true, AutoCheckUpdates: true, Language: "zh-CN", SidebarMode: "full", SidebarTools: defaultSidebarTools(), ThemeMode: "dark", LightTheme: "default-light", DarkTheme: "default-dark", DiffClipboardTargetMode: "alternate", CodeEditorFontSize: 16, TimeResultOrder: []string{"local", "dateTime", "dateOnly", "timeOnly", "zonedIso8601", "rfc3339", "utc", "compact", "underscore", "unixSeconds", "unixMilliseconds", "unixNanoseconds"}, JsonAutoFormatOnFill: true, JsonAutoFormatOnFillMigrated: true, ImageSources: defaultImageSources(), SSHProfilesVersion: currentSSHProfilesVersion, SSHProfiles: []SSHProfile{}, SSHConnections: []SSHConnection{}, FileSources: []FileSource{}, ServiceTargets: defaultServiceTargets()}
+	return Config{TrayMatchEnabled: true, TrayMatchTools: []string{"json", "time", "text", "base64", "diff", "jwt", "url"}, AutoOverwrite: true, AutoCheckUpdates: true, Language: "zh-CN", SidebarMode: "full", SidebarTools: defaultSidebarTools(), ThemeMode: "dark", LightTheme: "default-light", DarkTheme: "default-dark", DiffClipboardTargetMode: "alternate", CodeEditorFontSize: 16, TimeResultOrder: []string{"local", "dateTime", "dateOnly", "timeOnly", "zonedIso8601", "rfc3339", "utc", "compact", "underscore", "unixSeconds", "unixMilliseconds", "unixNanoseconds"}, TimeWeekStart: "monday", JsonAutoFormatOnFill: true, JsonAutoFormatOnFillMigrated: true, ImageSources: defaultImageSources(), SSHProfilesVersion: currentSSHProfilesVersion, SSHProfiles: []SSHProfile{}, SSHConnections: []SSHConnection{}, FileSources: []FileSource{}, ServiceTargets: defaultServiceTargets()}
 }
 
 func normalizeThemeID(theme string, defaultID string, legacyID string) string {
@@ -744,6 +745,11 @@ func normalizeConfig(cfg Config) Config {
 		}
 	}
 	cfg.HiddenTimeResults = hidden
+	switch cfg.TimeWeekStart {
+	case "monday", "sunday":
+	default:
+		cfg.TimeWeekStart = "monday"
+	}
 	if !cfg.JsonAutoFormatOnFillMigrated {
 		cfg.JsonAutoFormatOnFill = true
 		cfg.JsonAutoFormatOnFillMigrated = true

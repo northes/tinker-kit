@@ -1,4 +1,4 @@
-import { useEffect, useId, useMemo, useRef, useState } from 'react';
+import { Fragment, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { format } from 'date-fns';
 import { enUS, zhCN } from 'date-fns/locale';
@@ -18,9 +18,30 @@ import {
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { Clock, Copy, DotsSixVertical, Eye, EyeClosed, GpsFix, Globe } from '@phosphor-icons/react';
+import {
+  CaretDown,
+  Clock,
+  Copy,
+  DotsSixVertical,
+  Eye,
+  EyeClosed,
+  GpsFix,
+  Globe,
+} from '@phosphor-icons/react';
 import { Button } from './ui/button';
+import { ButtonGroup } from './ui/button-group';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from './ui/dropdown-menu';
 import { ScrollArea } from './ui/scroll-area';
+import { Separator } from './ui/separator';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
 import {
@@ -54,6 +75,7 @@ import {
   parseTimeInput,
   resolveTimePreset,
   type TimePreset,
+  type TimeWeekStart,
 } from '../utils/time';
 import { toast } from './ui/toast';
 
@@ -73,15 +95,25 @@ const resultIds = [
 ] as const;
 type TimeResultId = (typeof resultIds)[number];
 type TimeToolMode = 'convert' | 'dateCalculator';
-const timePresets: TimePreset[] = [
-  'now',
-  'sevenDaysAgo',
-  'weekMonday',
-  'monthStart',
-  'monthEnd',
-  'yearStart',
-  'yearEnd',
+const timePresetGroups: Array<{ primary: TimePreset; options: TimePreset[] }> = [
+  { primary: 'now', options: ['yesterday', 'tomorrow'] },
+  { primary: 'sevenDaysAgo', options: [] },
+  {
+    primary: 'weekMonday',
+    options: [
+      'weekTuesday',
+      'weekWednesday',
+      'weekThursday',
+      'weekFriday',
+      'weekSaturday',
+      'weekSunday',
+    ],
+  },
+  { primary: 'monthStart', options: ['monthEnd'] },
+  { primary: 'yearStart', options: ['yearEnd'] },
+  { primary: 'dayStart', options: ['dayNoon', 'dayEnd'] },
 ];
+const timePresetSeparators = new Set<TimePreset>(['weekMonday', 'dayStart']);
 function normalizeOrder(order: string[]) {
   const valid = new Set<string>(resultIds),
     seen = new Set<string>(),
@@ -259,7 +291,9 @@ export default function TimeTool({
   active,
   resultOrder,
   hiddenResults,
+  weekStart,
   onSaveResults,
+  onWeekStartChange,
   record,
   pending,
   clearPending,
@@ -267,7 +301,9 @@ export default function TimeTool({
   active: boolean;
   resultOrder: string[];
   hiddenResults: string[];
+  weekStart: TimeWeekStart;
   onSaveResults: (order: string[], hidden: string[]) => void;
+  onWeekStartChange: (weekStart: TimeWeekStart) => void;
   record: (tool: ToolId, action: string, detail: string, input: string) => void;
   pending: PendingAction | null;
   clearPending: () => void;
@@ -315,7 +351,7 @@ export default function TimeTool({
     hidden = new Set(hiddenResults),
     displayedResults = editing ? draftOrder : order.filter((id) => !hidden.has(id));
   const applyTimePreset = (preset: TimePreset) => {
-    const date = resolveTimePreset(preset, new Date(), timeZone);
+    const date = resolveTimePreset(preset, new Date(), timeZone, parsed, weekStart);
     if (!date) return;
     const timestamp = Math.floor(date.getTime() / 1000).toString();
     setInput(timestamp, { isolate: true });
@@ -400,10 +436,10 @@ export default function TimeTool({
               <TabsTrigger value="dateCalculator">{t('timeTool.modes.dateCalculator')}</TabsTrigger>
             </TabsList>
             <TabsContent value="convert" keepMounted className="min-h-0 overflow-hidden">
-              <div className="grid h-full min-h-0 grid-rows-[auto_auto_auto_auto_minmax(0,1fr)]">
+              <div className="grid h-full min-h-0 grid-rows-[auto_auto_auto_auto_minmax(0,1fr)] px-1.5">
                 <Label className="flex flex-col items-stretch gap-2 font-mono text-[10px] font-medium uppercase tracking-[.04em] text-muted-foreground">
                   <span>{t('timeTool.input')}</span>
-                  <div className="flex h-[46px] min-w-0 items-center gap-2.5 rounded-lg border border-border bg-card px-3.5 focus-within:border-muted-foreground">
+                  <div className="flex h-[46px] min-w-0 items-center gap-2.5 rounded-lg border border-border bg-card px-3.5 focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/50">
                     <Clock size={18} weight="duotone" />
                     <Input
                       ref={inputRef}
@@ -420,20 +456,85 @@ export default function TimeTool({
                     {t('timeTool.quickFill')}
                   </span>
                   <div
-                    className="grid grid-cols-[repeat(auto-fit,minmax(6.5rem,1fr))] gap-1.5"
+                    className="flex flex-wrap items-stretch gap-1.5"
                     role="toolbar"
                     aria-label={t('timeTool.quickFill')}
                   >
-                    {timePresets.map((preset) => (
-                      <Button
-                        key={preset}
-                        variant="outline"
-                        size="sm"
-                        className="min-w-0"
-                        onClick={() => applyTimePreset(preset)}
-                      >
-                        {t(`timeTool.presets.${preset}`)}
-                      </Button>
+                    {timePresetGroups.map((group) => (
+                      <Fragment key={group.primary}>
+                        {timePresetSeparators.has(group.primary) ? (
+                          <Separator orientation="vertical" className="mx-0.5" />
+                        ) : null}
+                        {group.options.length === 0 ? (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="min-w-[6.5rem] flex-1"
+                            onClick={() => applyTimePreset(group.primary)}
+                          >
+                            {t(`timeTool.presets.${group.primary}`)}
+                          </Button>
+                        ) : (
+                          <ButtonGroup className="min-w-[6.5rem] flex-1">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="min-w-0 flex-1"
+                              onClick={() => applyTimePreset(group.primary)}
+                            >
+                              {t(`timeTool.presets.${group.primary}`)}
+                            </Button>
+                            <DropdownMenu>
+                              <DropdownMenuTrigger
+                                render={
+                                  <Button
+                                    variant="outline"
+                                    size="icon-sm"
+                                    className="flex-none"
+                                    aria-label={t('timeTool.morePresets', {
+                                      label: t(`timeTool.presets.${group.primary}`),
+                                    })}
+                                  />
+                                }
+                              >
+                                <CaretDown aria-hidden="true" />
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end">
+                                {group.options.map((option) => (
+                                  <DropdownMenuItem
+                                    key={option}
+                                    onClick={() => applyTimePreset(option)}
+                                  >
+                                    {t(`timeTool.presets.${option}`)}
+                                  </DropdownMenuItem>
+                                ))}
+                                {group.primary === 'weekMonday' ? (
+                                  <>
+                                    <DropdownMenuSeparator />
+                                    <DropdownMenuRadioGroup
+                                      value={weekStart}
+                                      onValueChange={(value) => {
+                                        if (value === 'monday' || value === 'sunday')
+                                          onWeekStartChange(value);
+                                      }}
+                                    >
+                                      <DropdownMenuLabel>
+                                        {t('timeTool.weekStart')}
+                                      </DropdownMenuLabel>
+                                      <DropdownMenuRadioItem value="monday">
+                                        {t('timeTool.weekStartMonday')}
+                                      </DropdownMenuRadioItem>
+                                      <DropdownMenuRadioItem value="sunday">
+                                        {t('timeTool.weekStartSunday')}
+                                      </DropdownMenuRadioItem>
+                                    </DropdownMenuRadioGroup>
+                                  </>
+                                ) : null}
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          </ButtonGroup>
+                        )}
+                      </Fragment>
                     ))}
                     <DateTimePickerPopover
                       value={parsed}

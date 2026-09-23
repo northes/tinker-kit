@@ -171,43 +171,104 @@ export function getSystemTimeZone() {
   return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
 }
 export type TimePreset =
-  'now' | 'sevenDaysAgo' | 'weekMonday' | 'monthStart' | 'monthEnd' | 'yearStart' | 'yearEnd';
-function zonedCalendarParts(date: Date, timeZone: string) {
+  | 'now'
+  | 'yesterday'
+  | 'tomorrow'
+  | 'sevenDaysAgo'
+  | 'weekMonday'
+  | 'weekTuesday'
+  | 'weekWednesday'
+  | 'weekThursday'
+  | 'weekFriday'
+  | 'weekSaturday'
+  | 'weekSunday'
+  | 'monthStart'
+  | 'monthEnd'
+  | 'yearStart'
+  | 'yearEnd'
+  | 'dayStart'
+  | 'dayNoon'
+  | 'dayEnd';
+export type TimeWeekStart = 'monday' | 'sunday';
+const weekdayIndex: Partial<Record<TimePreset, number>> = {
+  weekSunday: 0,
+  weekMonday: 1,
+  weekTuesday: 2,
+  weekWednesday: 3,
+  weekThursday: 4,
+  weekFriday: 5,
+  weekSaturday: 6,
+};
+function zonedDateTimeParts(date: Date, timeZone: string) {
   try {
     const parts = new Intl.DateTimeFormat('en-CA', {
         timeZone,
+        hourCycle: 'h23',
         year: 'numeric',
         month: '2-digit',
         day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
       }).formatToParts(date),
       get = (type: string) => Number(parts.find((part) => part.type === type)?.value);
-    return { year: get('year'), month: get('month'), day: get('day') };
+    return {
+      year: get('year'),
+      month: get('month'),
+      day: get('day'),
+      hour: get('hour'),
+      minute: get('minute'),
+      second: get('second'),
+    };
   } catch {
     return null;
   }
 }
-export function resolveTimePreset(preset: TimePreset, now: Date, timeZone: string) {
+export function resolveTimePreset(
+  preset: TimePreset,
+  now: Date,
+  timeZone: string,
+  value: Date | null = null,
+  weekStart: TimeWeekStart = 'monday',
+) {
   if (preset === 'now') return now;
+  if (preset === 'yesterday') return new Date(now.getTime() - 24 * 60 * 60 * 1000);
+  if (preset === 'tomorrow') return new Date(now.getTime() + 24 * 60 * 60 * 1000);
   if (preset === 'sevenDaysAgo') return new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-  const parts = zonedCalendarParts(now, timeZone);
-  if (!parts) return null;
-  const { year, month, day } = parts;
-  if (preset === 'monthStart') return makeDate(year, month, 1, 0, 0, 0, 0, undefined, timeZone);
+  const current = zonedDateTimeParts(value ?? now, timeZone);
+  const today = zonedDateTimeParts(now, timeZone);
+  if (!current || !today) return null;
+  const { hour, minute, second } = current;
+  if (preset === 'dayStart')
+    return makeDate(current.year, current.month, current.day, 0, 0, 0, 0, undefined, timeZone);
+  if (preset === 'dayNoon')
+    return makeDate(current.year, current.month, current.day, 12, 0, 0, 0, undefined, timeZone);
+  if (preset === 'dayEnd')
+    return makeDate(current.year, current.month, current.day, 23, 59, 59, 0, undefined, timeZone);
+  const { year, month, day } = today;
+  if (preset === 'monthStart')
+    return makeDate(year, month, 1, hour, minute, second, 0, undefined, timeZone);
   if (preset === 'monthEnd') {
     const lastDay = new Date(Date.UTC(year, month, 0)).getUTCDate();
-    return makeDate(year, month, lastDay, 23, 59, 59, 0, undefined, timeZone);
+    return makeDate(year, month, lastDay, hour, minute, second, 0, undefined, timeZone);
   }
-  if (preset === 'yearStart') return makeDate(year, 1, 1, 0, 0, 0, 0, undefined, timeZone);
-  if (preset === 'yearEnd') return makeDate(year, 12, 31, 23, 59, 59, 0, undefined, timeZone);
-  const monday = new Date(Date.UTC(year, month - 1, day));
-  monday.setUTCDate(monday.getUTCDate() - ((monday.getUTCDay() + 6) % 7));
+  if (preset === 'yearStart')
+    return makeDate(year, 1, 1, hour, minute, second, 0, undefined, timeZone);
+  if (preset === 'yearEnd')
+    return makeDate(year, 12, 31, hour, minute, second, 0, undefined, timeZone);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  const weekStartDay = weekStart === 'sunday' ? 0 : 1;
+  const targetWeekday = weekdayIndex[preset] ?? weekStartDay;
+  const daysFromWeekStart = (date.getUTCDay() - weekStartDay + 7) % 7;
+  const daysToTarget = (targetWeekday - weekStartDay + 7) % 7;
+  date.setUTCDate(date.getUTCDate() - daysFromWeekStart + daysToTarget);
   return makeDate(
-    monday.getUTCFullYear(),
-    monday.getUTCMonth() + 1,
-    monday.getUTCDate(),
-    0,
-    0,
-    0,
+    date.getUTCFullYear(),
+    date.getUTCMonth() + 1,
+    date.getUTCDate(),
+    hour,
+    minute,
+    second,
     0,
     undefined,
     timeZone,
