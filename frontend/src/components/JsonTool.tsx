@@ -566,6 +566,7 @@ export default function JsonTool({
     mode: 'format' | 'minify';
     pane: 'input' | 'result';
   }>(null);
+  const [repairPrompt, setRepairPrompt] = useState(false);
   const consumed = useRef<PendingAction | null>(null);
   const views = useRef(new Map<string, EditorView>());
   const autoFormatRef = useRef(autoFormatOnFill);
@@ -652,6 +653,17 @@ export default function JsonTool({
   );
   const summary = (v: string) =>
     `${v.split(/\r?\n/).length} ${t('jsonTool.lines')} · ${[...v].length} ${t('jsonTool.characters')}`;
+  const reportTransformFailure = (pane: 'input' | 'result', minify: boolean) => {
+    if (!minify && pane === 'input') {
+      setRepairPrompt(true);
+      return;
+    }
+    toast.add({
+      title: t(minify ? 'jsonTool.minifyFailed' : 'jsonTool.formatFailed'),
+      description: t('jsonTool.invalidJsonDesc'),
+      type: 'error',
+    });
+  };
   const runTransform = (pane: 'input' | 'result', minify: boolean, stripComments: boolean) => {
     const src = pane === 'input' ? input : result;
     const set = pane === 'input' ? setInput : setResult;
@@ -662,11 +674,7 @@ export default function JsonTool({
         try {
           parseJsonWithComments(next);
         } catch {
-          toast.add({
-            title: t('jsonTool.formatFailed'),
-            description: t('jsonTool.invalidJsonDesc'),
-            type: 'error',
-          });
+          reportTransformFailure(pane, minify);
           return;
         }
       } else {
@@ -681,11 +689,7 @@ export default function JsonTool({
         next,
       );
     } catch {
-      toast.add({
-        title: t(minify ? 'jsonTool.minifyFailed' : 'jsonTool.formatFailed'),
-        description: t('jsonTool.invalidJsonDesc'),
-        type: 'error',
-      });
+      reportTransformFailure(pane, minify);
     }
   };
   const requestTransform = (pane: 'input' | 'result', minify: boolean) => {
@@ -1577,6 +1581,30 @@ export default function JsonTool({
               {commentDialog?.mode === 'minify'
                 ? t('jsonTool.minifyClear')
                 : t('jsonTool.clearComments')}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+      <AlertDialog
+        open={repairPrompt}
+        onOpenChange={(open) => {
+          if (!open) setRepairPrompt(false);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t('jsonTool.formatFailed')}</AlertDialogTitle>
+            <AlertDialogDescription>{t('jsonTool.repairPrompt')}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t('jsonTool.cancel')}</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                setRepairPrompt(false);
+                repairInput();
+              }}
+            >
+              {t('jsonTool.repair')}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
