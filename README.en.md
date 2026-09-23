@@ -45,7 +45,9 @@ Download the latest `TinkerKit-<version>-darwin-universal.dmg` from [GitHub Rele
 
 - One Universal build covers both Apple Silicon and Intel — no need to pick an architecture;
 - In-app updates use the matching `-darwin-universal.zip` and `SHA256SUMS` checksum file, so the app can upgrade itself after install;
-- Builds without Apple Developer credentials are ad-hoc signed: on first launch, allow them manually under “System Settings → Privacy & Security”.
+- Builds are ad-hoc signed without an Apple Developer certificate. If the first launch reports “is damaged and can’t be opened” or “unidentified developer”, do either of the following:
+  - Open the DMG and run the `Repair` script (Chinese systems: `修复工具`) first; it clears the quarantine flag and re-signs the app;
+  - Or run `sudo xattr -rd com.apple.quarantine /Applications/TinkerKit.app` in Terminal, then click “Open Anyway” under “System Settings → Privacy & Security”.
 
 ## Quick Start
 
@@ -131,7 +133,7 @@ The workflow builds a Universal package for both Apple Silicon and Intel and upl
 - `TinkerKit-<version>-darwin-universal.zip` — in-app updates;
 - `SHA256SUMS` — file integrity verification.
 
-Signing and notarization are optional: after configuring `APPLE_CERTIFICATE`, `APPLE_CERTIFICATE_PASSWORD`, `APPLE_SIGNING_IDENTITY`, `APPLE_ID`, `APPLE_APP_PASSWORD` and `APPLE_TEAM_ID` in the repository Secrets, the pipeline signs and notarizes automatically; otherwise an ad-hoc signed build is produced for testing only. You can also run the workflow manually from the Actions page and enter a version tag. In-app updates always read the latest GitHub Release of the public `northes/tinker-kit` repository.
+Releases are ad-hoc signed Universal builds (no Apple Developer certificate or notarization yet); the DMG ships a `Repair` / `修复工具` script so first-time installs can get past Gatekeeper. Should formal distribution be needed later, add Developer ID signing and a `notarytool` step to the workflow. In-app updates always read the latest GitHub Release of the public `northes/tinker-kit` repository.
 
 ## Contributing
 

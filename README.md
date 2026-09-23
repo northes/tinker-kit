@@ -45,7 +45,9 @@ TinkerKit 基于 [Wails v3](https://v3.wails.io/) 构建,把日常开发调试�
 
 - Apple Silicon 与 Intel 均为同一 Universal 包,无需区分架构;
 - 应用内更新使用同名 `-darwin-universal.zip` 与 `SHA256SUMS` 校验文件,安装后即可自动升级;
-- 未配置 Apple Developer 证书的构建为 ad-hoc 签名,首次打开需在「系统设置 → 隐私与安全性」中手动允许。
+- 本项目未使用 Apple Developer 证书,安装包为 ad-hoc 签名。若首次打开提示「已损坏,无法打开」或「无法验证开发者」,任选其一:
+  - 打开 DMG,先运行其中的「修复工具」脚本(英文系统为 `Repair`),它会清除隔离标记并重新签名,之后即可正常打开;
+  - 在终端执行 `sudo xattr -rd com.apple.quarantine /Applications/TinkerKit.app`,再到「系统设置 → 隐私与安全性」点击「仍要打开」。
 
 ## 快速上手
 
@@ -131,7 +133,7 @@ git push origin v0.1.0
 - `TinkerKit-<version>-darwin-universal.zip` — 应用内更新;
 - `SHA256SUMS` — 文件完整性校验。
 
-签名与公证可选:在仓库 Secrets 中配置 `APPLE_CERTIFICATE`、`APPLE_CERTIFICATE_PASSWORD`、`APPLE_SIGNING_IDENTITY`、`APPLE_ID`、`APPLE_APP_PASSWORD`、`APPLE_TEAM_ID` 后,流水线自动签名并公证;未配置时生成 ad-hoc 签名包,仅适合测试。也可以从 Actions 页面手动运行工作流并输入版本标签。应用内更新固定读取公开仓库 `northes/tinker-kit` 的最新 GitHub Release。
+构建产物为 ad-hoc 签名的 Universal 包(当前未接入 Apple Developer 证书与公证),DMG 内附带「修复工具」/`Repair` 脚本,供首次安装时绕过 Gatekeeper。若之后需要正式分发,可在工作流中补充 Developer ID 签名与 `notarytool` 公证步骤。应用内更新固定读取公开仓库 `northes/tinker-kit` 的最新 GitHub Release。
 
 ## 贡献
 

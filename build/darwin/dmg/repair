@@ -1,0 +1,38 @@
+#!/bin/bash
+#
+# TinkerKit install helper (English).
+#
+# macOS tags browser downloads with the com.apple.quarantine attribute, so an
+# app that is not notarized with an Apple Developer certificate is blocked by
+# Gatekeeper with an "is damaged" or "unidentified developer" message.
+# This script clears the quarantine flag and re-applies an ad-hoc code
+# signature so the app launches normally.
+
+APP_PATH="/Applications/TinkerKit.app"
+
+clear
+
+if [ ! -d "$APP_PATH" ]; then
+  echo "TinkerKit.app was not found in /Applications."
+  echo "Drag TinkerKit into your Applications folder first, then run this helper again."
+  echo
+  read -n 1 -s -r -p "Press any key to close..."
+  echo
+  exit 1
+fi
+
+echo "TinkerKit install helper"
+echo
+echo "This clears the quarantine flag and re-signs the app."
+echo "Enter your login password when prompted (it stays hidden)."
+echo
+
+sudo xattr -rd com.apple.quarantine "$APP_PATH"
+sudo xattr -rc "$APP_PATH"
+sudo codesign --force --deep --sign - "$APP_PATH"
+
+echo
+echo "Done. TinkerKit can now be opened normally."
+echo
+read -n 1 -s -r -p "Press any key to close..."
+echo

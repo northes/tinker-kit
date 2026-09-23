@@ -159,7 +159,9 @@ tasks:
       DMG_FILE_ICON: '{{.DMG_FILE_ICON | default "build/darwin/icons.icns"}}'
       DMG_WINDOW_WIDTH: '{{.DMG_WINDOW_WIDTH | default "540"}}'
       DMG_WINDOW_HEIGHT: '{{.DMG_WINDOW_HEIGHT | default "380"}}'
-      DMG_FILES: '{{.DMG_FILES | default ""}}'
+      # 附带中英文安装修复脚本：未使用 Apple Developer 证书公证时，用于清除
+      # quarantine 标记并重新 ad-hoc 签名，避免 Gatekeeper 报「已损坏」。
+      DMG_FILES: '{{.DMG_FILES | default "Repair=build/darwin/dmg/repair,修复工具=build/darwin/dmg/repair-zh"}}'
 
 
   create:app:bundle:

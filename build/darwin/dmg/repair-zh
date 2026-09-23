@@ -1,0 +1,35 @@
+#!/bin/bash
+#
+# TinkerKit 安装修复工具（简体中文）。
+#
+# macOS 会给浏览器下载的应用打上 com.apple.quarantine 标记，未使用 Apple Developer
+# 证书公证的应用因此会被 Gatekeeper 拦截，提示「已损坏」或「无法验证开发者」。
+# 本脚本移除隔离标记，并重新做一次 ad-hoc 签名，使应用可以正常打开。
+
+APP_PATH="/Applications/TinkerKit.app"
+
+clear
+
+if [ ! -d "$APP_PATH" ]; then
+  echo "未在「应用程序」中找到 TinkerKit.app。"
+  echo "请先把 TinkerKit 拖入「应用程序」文件夹，再运行本工具。"
+  echo
+  read -n 1 -s -r -p "按任意键关闭窗口..."
+  echo
+  exit 1
+fi
+
+echo "TinkerKit 安装修复工具"
+echo
+echo "将清除应用的隔离标记并重新签名，过程中需要输入开机密码（输入时不可见）。"
+echo
+
+sudo xattr -rd com.apple.quarantine "$APP_PATH"
+sudo xattr -rc "$APP_PATH"
+sudo codesign --force --deep --sign - "$APP_PATH"
+
+echo
+echo "修复完成，现在可以正常打开 TinkerKit。"
+echo
+read -n 1 -s -r -p "按任意键关闭窗口..."
+echo

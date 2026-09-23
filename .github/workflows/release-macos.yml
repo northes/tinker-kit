@@ -127,10 +127,19 @@ jobs:
       - name: 构建应用包
         run: wails3 task darwin:package:universal APP_VERSION=${{ steps.version.outputs.version }} PREBUILT_FRONTEND=true
 
-      - name: 写入应用版本
+      - name: 校验应用版本与签名
+        shell: bash
+        env:
+          APP_VERSION: ${{ steps.version.outputs.version }}
         run: |
-          /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString ${{ steps.version.outputs.version }}" bin/TinkerKit.app/Contents/Info.plist
-          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion ${{ steps.version.outputs.version }}" bin/TinkerKit.app/Contents/Info.plist
+          app="bin/TinkerKit.app"
+          plist="$app/Contents/Info.plist"
+          bundle_version="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$plist")"
+          if [ "$bundle_version" != "$APP_VERSION" ]; then
+            echo "Info.plist 版本 $bundle_version 与标签 $APP_VERSION 不一致" >&2
+            exit 1
+          fi
+          codesign --verify --deep --strict --verbose=2 "$app"
 
       - name: 生成 ZIP 更新包与 DMG 安装包
         shell: bash
