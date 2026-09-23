@@ -1033,36 +1033,59 @@ export default function ImageManagerTool({
   const watchSourceIDRef = useRef<string | null>(null);
   const [taskSnapshot, setTaskSnapshot] = useState<ImageTaskSnapshot | null>(null);
   const tasks = taskSnapshot?.tasks ?? [];
-  // 后台更新会高频推送镜像与任务事件。工具不活跃（例如切到别的工具）时只暂存最新状态、
-  // 不触发渲染，避免隐藏的镜像表持续重渲染而卡住整个应用；回到列表时一次性补齐。
+  // 后台更新会高频推送镜像与任务事件（每张镜像的 create/update、每次进度各一条）。
+  // 事件只写入暂存引用并按帧合并成一次渲染：无论一轮扫描推送多少条事件，每帧最多
+  // setState 一次，主线程不会因逐事件重渲染而占满、阻塞工具切换；工具不活跃（例如
+  // 已切到别的工具）时不排帧，回到列表时一次性补齐。
   const activeRef = useRef(active);
   const pendingImagesRef = useRef(false);
   const pendingTasksRef = useRef<ImageTaskSnapshot | null>(null);
   const rebuildImagesRef = useRef<(() => DockerImage[]) | null>(null);
+  const imageFrameRef = useRef(0);
+  const taskFrameRef = useRef(0);
+  const flushImages = useCallback(() => {
+    imageFrameRef.current = 0;
+    if (!activeRef.current || !pendingImagesRef.current) return;
+    pendingImagesRef.current = false;
+    const rebuild = rebuildImagesRef.current;
+    if (rebuild) setImages(rebuild());
+  }, []);
+  const scheduleImages = useCallback(() => {
+    pendingImagesRef.current = true;
+    if (!activeRef.current || imageFrameRef.current) return;
+    imageFrameRef.current = requestAnimationFrame(flushImages);
+  }, [flushImages]);
+  const flushTasks = useCallback(() => {
+    taskFrameRef.current = 0;
+    if (!activeRef.current || !pendingTasksRef.current) return;
+    const next = pendingTasksRef.current;
+    pendingTasksRef.current = null;
+    setTaskSnapshot((current) => applyImageTaskSnapshot(current, next));
+  }, []);
   // 手动刷新标记：只有用户主动刷新触发的 update 任务完成才提示，
   // 每 2 分钟的定时轮询保持静默。
   const manualRefreshPending = useRef(false);
-  const applyTasks = useCallback((snapshot: ImageTaskSnapshot) => {
-    if (!activeRef.current) {
+  const applyTasks = useCallback(
+    (snapshot: ImageTaskSnapshot) => {
       pendingTasksRef.current = applyImageTaskSnapshot(pendingTasksRef.current, snapshot);
-      return;
-    }
-    setTaskSnapshot((current) => applyImageTaskSnapshot(current, snapshot));
-  }, []);
+      if (!activeRef.current || taskFrameRef.current) return;
+      taskFrameRef.current = requestAnimationFrame(flushTasks);
+    },
+    [flushTasks],
+  );
+  useEffect(
+    () => () => {
+      if (imageFrameRef.current) cancelAnimationFrame(imageFrameRef.current);
+      if (taskFrameRef.current) cancelAnimationFrame(taskFrameRef.current);
+    },
+    [],
+  );
   useEffect(() => {
     activeRef.current = active;
     if (!active) return;
-    if (pendingImagesRef.current) {
-      pendingImagesRef.current = false;
-      const rebuild = rebuildImagesRef.current;
-      if (rebuild) setImages(rebuild());
-    }
-    if (pendingTasksRef.current) {
-      const next = pendingTasksRef.current;
-      pendingTasksRef.current = null;
-      setTaskSnapshot((current) => applyImageTaskSnapshot(current, next));
-    }
-  }, [active]);
+    flushImages();
+    flushTasks();
+  }, [active, flushImages, flushTasks]);
   const [tasksOpen, setTasksOpen] = useState(false);
   const [batchExportStarting, setBatchExportStarting] = useState(false);
   const [pullStarting, setPullStarting] = useState(false);
@@ -1202,13 +1225,6 @@ export default function ImageManagerTool({
     const map = new Map<string, DockerImage>();
     const rebuild = () => Array.from(map.values());
     rebuildImagesRef.current = rebuild;
-    const renderImages = () => {
-      if (!activeRef.current) {
-        pendingImagesRef.current = true;
-        return;
-      }
-      setImages(rebuild());
-    };
 
     setImages([]);
     setSelected(new Set());
@@ -1243,7 +1259,7 @@ export default function ImageManagerTool({
           currentGeneration = payload.generation;
           maxRevision = -1;
           map.clear();
-          renderImages();
+          scheduleImages();
           setHasSnapshot(false);
           setSnapshotUpdatedAt('');
         }
@@ -1302,12 +1318,12 @@ export default function ImageManagerTool({
             map.set(img.id, img);
           }
         }
-        renderImages();
+        scheduleImages();
       } else if (kind === 'create' || kind === 'update') {
         if (payload.image && payload.image.id) {
           const image = payload.image;
           map.set(image.id, image);
-          renderImages();
+          scheduleImages();
         }
       } else if (kind === 'delete') {
         const idsToDelete = payload.imageIDs ?? (payload.imageID ? [payload.imageID] : []);
@@ -1318,7 +1334,7 @@ export default function ImageManagerTool({
           }
         }
         if (changed) {
-          renderImages();
+          scheduleImages();
         }
         setSelected((current) => {
           const next = new Set(current);
@@ -1353,6 +1369,7 @@ export default function ImageManagerTool({
     reloadNonce,
     requestWatchReload,
     restartWatch,
+    scheduleImages,
     source.id,
     sourceConfigKey,
     sourceProfileMissing,
