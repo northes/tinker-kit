@@ -23,6 +23,7 @@ export type ToolId =
   | 'json'
   | 'time'
   | 'text'
+  | 'text-generator'
   | 'base64'
   | 'diff'
   | 'jwt'

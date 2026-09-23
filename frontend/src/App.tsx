@@ -66,6 +66,7 @@ import {
   GitDiff,
   Key,
   HardDrives,
+  HashStraight,
   Image as ImageIcon,
   LinkSimple,
   Package,
@@ -217,6 +218,7 @@ const defaultSettings: Settings = {
     { id: 'json', enabled: true },
     { id: 'time', enabled: true },
     { id: 'text', enabled: true },
+    { id: 'text-generator', enabled: true },
     { id: 'base64', enabled: true },
     { id: 'jwt', enabled: true },
     { id: 'url', enabled: true },
@@ -250,6 +252,7 @@ const defaultSettings: Settings = {
   jsonAutoFormatOnFill: true,
   jsonAutoFormatOnFillMigrated: true,
   textAlwaysShowSearch: false,
+  textGeneratorSources: [],
   dockerCLIPath: '',
   imageSources: [
     {
@@ -270,6 +273,7 @@ const defaultSettings: Settings = {
 const JsonTool = lazy(() => import('./components/JsonTool'));
 const TimeTool = lazy(() => import('./components/TimeTool'));
 const TextTool = lazy(() => import('./components/TextTool'));
+const TextGeneratorTool = lazy(() => import('./components/TextGeneratorTool'));
 const Base64Tool = lazy(() => import('./components/Base64Tool'));
 const DiffTool = lazy(() => import('./components/DiffTool'));
 const JwtTool = lazy(() => import('./components/JwtTool'));
@@ -304,6 +308,13 @@ const tools: ToolDefinition[] = [
     descriptionKey: 'tools.text.description',
     icon: TextAa,
     keywords: 'text count trim spaces lines bytes',
+  },
+  {
+    id: 'text-generator' as const,
+    nameKey: 'tools.text-generator.name',
+    descriptionKey: 'tools.text-generator.description',
+    icon: HashStraight,
+    keywords: 'text random generator uuid password string 文本 随机 生成 UUID',
   },
   {
     id: 'base64' as const,
@@ -345,7 +356,8 @@ const tools: ToolDefinition[] = [
     nameKey: 'tools.image.name',
     descriptionKey: 'tools.image.description',
     icon: ImageIcon,
-    keywords: 'image picture crop expand quality compress png jpg jpeg svg webp 图片 裁剪 扩充 质量 压缩 导出',
+    keywords:
+      'image picture crop expand quality compress png jpg jpeg svg webp 图片 裁剪 扩充 质量 压缩 导出',
   },
   {
     id: 'image-manager' as const,
@@ -482,6 +494,23 @@ const paletteItems: PaletteItem[] = [
     icon: FolderSimple,
     keywords: 'ssh sftp files upload download 文件 上传 下载 目录 打开工具',
     page: 'ssh-files',
+  },
+  {
+    id: 'open:text-generator',
+    labelKey: 'commands.openTextGenerator',
+    groupKey: 'groups.tools',
+    icon: HashStraight,
+    keywords: 'text random generator uuid 文本 随机 生成 打开工具',
+    page: 'text-generator',
+  },
+  {
+    id: 'text-generator:generate',
+    labelKey: 'textGeneratorTool.generate',
+    groupKey: 'tools.text-generator.name',
+    icon: HashStraight,
+    keywords: 'generate random text uuid 生成 随机文本',
+    tool: 'text-generator',
+    action: 'generate',
   },
   {
     id: 'paste',
@@ -1923,6 +1952,22 @@ function AppShell() {
                     alwaysShowSearch={settings.textAlwaysShowSearch === true}
                     onAlwaysShowSearchChange={(textAlwaysShowSearch) =>
                       setSettings((current) => ({ ...current, textAlwaysShowSearch }))
+                    }
+                    record={record}
+                    pending={pending}
+                    clearPending={() => setPending(null)}
+                  />
+                </Suspense>
+              )}
+            </div>
+            <div className={toolSlotClass(page === 'text-generator')}>
+              {visited.has('text-generator') && (
+                <Suspense fallback={null}>
+                  <TextGeneratorTool
+                    active={page === 'text-generator'}
+                    sources={settings.textGeneratorSources ?? []}
+                    onSourcesChange={(textGeneratorSources) =>
+                      setSettings((current) => ({ ...current, textGeneratorSources }))
                     }
                     record={record}
                     pending={pending}

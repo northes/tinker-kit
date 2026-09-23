@@ -69,6 +69,10 @@
       "name": "文本工具集",
       "description": "统计、修剪与规范化文本"
     },
+    "text-generator": {
+      "name": "文本生成",
+      "description": "生成 UUID、自定义字符与随机文本"
+    },
     "base64": {
       "name": "Base64 编解码",
       "description": "文本与图片的 Base64 转换"
@@ -110,6 +114,7 @@
     "openJson": "打开 JSON 工具",
     "openTime": "打开时间转换",
     "openText": "打开文本工具",
+    "openTextGenerator": "打开文本生成",
     "openBase64": "打开 Base64 工具",
     "openDiff": "打开差异对比",
     "openJwt": "打开 JWT 解析",
@@ -474,6 +479,41 @@
     "bytes": "字节数",
     "showDetails": "查看{{label}}明细",
     "subtitle": "测量与规范化纯文本"
+  },
+  "textGeneratorTool": {
+    "title": "文本生成",
+    "subtitle": "从官方或自定义来源生成随机文本",
+    "source": "来源",
+    "uuid": "UUID",
+    "charset": "英文数字",
+    "customSources": "自定义源",
+    "sets": {
+      "uppercase": "大写英文",
+      "lowercase": "小写英文",
+      "digits": "数字",
+      "symbols": "符号"
+    },
+    "length": "长度",
+    "quantity": "数量",
+    "separator": "分隔符",
+    "quote": "引号",
+    "quotes": { "none": "不添加引号", "single": "添加单引号", "double": "添加双引号" },
+    "output": "生成结果",
+    "outputPlaceholder": "点击生成按钮创建文本",
+    "actions": "文本生成操作",
+    "generate": "生成",
+    "manage": "管理",
+    "managerTitle": "管理自定义源",
+    "sourceName": "源名称",
+    "mode": "抽取方式",
+    "modes": { "character": "按字符", "line": "按行" },
+    "content": "内容",
+    "noCustomSources": "暂无自定义源",
+    "deleteTitle": "删除自定义源",
+    "deleteDescription": "确定删除“{{name}}”吗？",
+    "selectOneSet": "请至少选择一种字符",
+    "emptySource": "当前来源没有可用内容",
+    "historyDetail": "{{source}} · {{total}} 个"
   },
   "base64Tool": {
     "title": "Base64 编解码",
@@ -1239,7 +1279,12 @@
     "loading": "加载中",
     "cancel": "取消",
     "save": "保存",
-    "done": "完成"
+    "done": "完成",
+    "add": "新增",
+    "edit": "编辑",
+    "delete": "删除",
+    "copy": "复制",
+    "clear": "清空"
   },
   "sshFilesTool": {
     "title": "SSH 文件管理",

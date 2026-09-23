@@ -639,3 +639,55 @@ func TestImageSidebarToolIsFirstClass(t *testing.T) {
 		t.Fatalf("规范化丢弃了 image 侧边栏工具: %#v", cfg.SidebarTools)
 	}
 }
+
+func TestNormalizeTextGeneratorSources(t *testing.T) {
+	sources := normalizeTextGeneratorSources([]TextGeneratorSource{
+		{ID: " first ", Name: " First ", Content: "abc", Mode: "character"},
+		{ID: "first", Name: "duplicate", Content: "ignored", Mode: "line"},
+		{ID: "second", Name: "Second", Content: "one\ntwo", Mode: "line"},
+		{ID: "third", Name: "Third", Content: "xyz", Mode: "invalid"},
+		{ID: "", Name: "Missing ID", Content: "abc", Mode: "character"},
+		{ID: "empty", Name: "Empty", Content: "", Mode: "character"},
+	})
+	if len(sources) != 3 {
+		t.Fatalf("文本生成源规范化数量为 %d，期望 3: %#v", len(sources), sources)
+	}
+	if sources[0].ID != "first" || sources[0].Name != "First" {
+		t.Fatalf("文本生成源未清理 ID 或名称: %#v", sources[0])
+	}
+	if sources[1].Mode != "line" || sources[2].Mode != "character" {
+		t.Fatalf("文本生成源模式规范化错误: %#v", sources)
+	}
+}
+
+func TestNormalizeConfigAddsTextGeneratorDefaults(t *testing.T) {
+	cfg := normalizeConfig(Config{})
+	if cfg.TextGeneratorSources == nil || len(cfg.TextGeneratorSources) != 0 {
+		t.Fatalf("旧配置未补充空文本生成源: %#v", cfg.TextGeneratorSources)
+	}
+	found := false
+	for _, tool := range cfg.SidebarTools {
+		if tool.ID == "text-generator" {
+			found = tool.Enabled
+		}
+	}
+	if !found {
+		t.Fatalf("旧配置未默认启用文本生成工具: %#v", cfg.SidebarTools)
+	}
+}
+
+func TestConfigServicePersistsTextGeneratorSources(t *testing.T) {
+	root := t.TempDir()
+	service := &ConfigService{path: filepath.Join(root, "config.json"), cfg: normalizeConfig(defaultConfig())}
+	cfg := service.Get()
+	cfg.TextGeneratorSources = []TextGeneratorSource{{
+		ID: "words", Name: "常用词", Content: "alpha\nbeta", Mode: "line",
+	}}
+	if err := service.Save(cfg); err != nil {
+		t.Fatalf("保存文本生成源失败: %v", err)
+	}
+	saved := service.Get()
+	if !reflect.DeepEqual(saved.TextGeneratorSources, cfg.TextGeneratorSources) {
+		t.Fatalf("文本生成源保存后不一致: got %#v want %#v", saved.TextGeneratorSources, cfg.TextGeneratorSources)
+	}
+}

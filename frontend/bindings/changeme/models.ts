@@ -30,6 +30,7 @@ export interface Config {
     "jsonAutoFormatOnFill": boolean;
     "jsonAutoFormatOnFillMigrated": boolean;
     "textAlwaysShowSearch": boolean;
+    "textGeneratorSources": TextGeneratorSource[] | null;
     "dockerCLIPath": string;
     "imageSources": ImageSource[] | null;
     "sshProfilesVersion": number;
@@ -639,6 +640,13 @@ export interface SystemdUnitDetail {
     "mainPID": number;
     "execStart": string;
     "fragmentPath": string;
+}
+
+export interface TextGeneratorSource {
+    "id": string;
+    "name": string;
+    "content": string;
+    "mode": string;
 }
 
 export interface UpdatePipelineStateRequest {

@@ -69,6 +69,10 @@
       "name": "Text Toolkit",
       "description": "Count, trim and normalize text"
     },
+    "text-generator": {
+      "name": "Text Generator",
+      "description": "Generate UUIDs, custom characters, and random text"
+    },
     "base64": {
       "name": "Base64",
       "description": "Convert Base64 text and images"
@@ -110,6 +114,7 @@
     "openJson": "Open JSON tool",
     "openTime": "Open time converter",
     "openText": "Open text tool",
+    "openTextGenerator": "Open text generator",
     "openBase64": "Open Base64",
     "openDiff": "Open diff compare",
     "openJwt": "Open JWT decoder",
@@ -474,6 +479,41 @@
     "bytes": "Bytes",
     "showDetails": "Show {{label}} details",
     "subtitle": "Measure and normalize plain text"
+  },
+  "textGeneratorTool": {
+    "title": "Text Generator",
+    "subtitle": "Generate random text from official or custom sources",
+    "source": "Source",
+    "uuid": "UUID",
+    "charset": "Letters & numbers",
+    "customSources": "Custom sources",
+    "sets": {
+      "uppercase": "Uppercase letters",
+      "lowercase": "Lowercase letters",
+      "digits": "Numbers",
+      "symbols": "Symbols"
+    },
+    "length": "Length",
+    "quantity": "Quantity",
+    "separator": "Separator",
+    "quote": "Quotes",
+    "quotes": { "none": "No quotes", "single": "Single quotes", "double": "Double quotes" },
+    "output": "Generated output",
+    "outputPlaceholder": "Click Generate to create text",
+    "actions": "Text generator actions",
+    "generate": "Generate",
+    "manage": "Manage",
+    "managerTitle": "Manage custom sources",
+    "sourceName": "Source name",
+    "mode": "Selection mode",
+    "modes": { "character": "By character", "line": "By line" },
+    "content": "Content",
+    "noCustomSources": "No custom sources",
+    "deleteTitle": "Delete custom source",
+    "deleteDescription": "Delete “{{name}}”?",
+    "selectOneSet": "Select at least one character set",
+    "emptySource": "The selected source has no usable content",
+    "historyDetail": "{{source}} · {{total}} items"
   },
   "base64Tool": {
     "title": "Base64",
@@ -1239,7 +1279,12 @@
     "loading": "Loading",
     "cancel": "Cancel",
     "save": "Save",
-    "done": "Done"
+    "done": "Done",
+    "add": "Add",
+    "edit": "Edit",
+    "delete": "Delete",
+    "copy": "Copy",
+    "clear": "Clear"
   },
   "sshFilesTool": {
     "title": "SSH Files",

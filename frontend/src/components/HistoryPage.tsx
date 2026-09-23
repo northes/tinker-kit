@@ -19,6 +19,7 @@ import {
   FileCode,
   GitDiff,
   Hash,
+  HashStraight,
   HardDrives,
   FolderSimple,
   Image as ImageIcon,
@@ -54,6 +55,7 @@ export function toHistoryItem(item: StoredHistoryItem): HistoryItem | null {
   return item.tool === 'json' ||
     item.tool === 'time' ||
     item.tool === 'text' ||
+    item.tool === 'text-generator' ||
     item.tool === 'base64' ||
     item.tool === 'diff' ||
     item.tool === 'jwt' ||
@@ -89,6 +91,8 @@ export function HistoryIcon({ tool }: { tool: ToolId }) {
     <BracketsCurly weight="duotone" />
   ) : tool === 'time' ? (
     <Clock weight="duotone" />
+  ) : tool === 'text-generator' ? (
+    <HashStraight weight="duotone" />
   ) : tool === 'base64' ? (
     <FileCode weight="duotone" />
   ) : tool === 'diff' ? (
@@ -153,7 +157,21 @@ function endOfDayMs(date: Date) {
   return end.getTime();
 }
 const historyTools: Array<{ id: ToolId; nameKey: string }> = (
-  ['json', 'time', 'text', 'base64', 'diff', 'jwt', 'url', 'qrcode', 'image', 'image-manager', 'service-manager', 'ssh-files'] as const
+  [
+    'json',
+    'time',
+    'text',
+    'text-generator',
+    'base64',
+    'diff',
+    'jwt',
+    'url',
+    'qrcode',
+    'image',
+    'image-manager',
+    'service-manager',
+    'ssh-files',
+  ] as const
 ).map((id) => ({ id, nameKey: `tools.${id}.name` }));
 
 export default function HistoryPage({

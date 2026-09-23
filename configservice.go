@@ -17,29 +17,30 @@ import (
 )
 
 type Config struct {
-	TrayMatchEnabled             bool                `json:"trayMatchEnabled"`
-	TrayMatchTools               []string            `json:"trayMatchTools"`
-	URLTrayMatchMigrated         bool                `json:"urlTrayMatchMigrated"`
-	AutoOverwrite                bool                `json:"autoOverwrite"`
-	AutoCheckUpdates             bool                `json:"autoCheckUpdates"`
-	Language                     string              `json:"language"`
-	SidebarMode                  string              `json:"sidebarMode"`
-	SidebarTools                 []SidebarToolConfig `json:"sidebarTools"`
-	ThemeMode                    string              `json:"themeMode"`
-	LightTheme                   string              `json:"lightTheme"`
-	DarkTheme                    string              `json:"darkTheme"`
-	DiffClipboardTargetMode      string              `json:"diffClipboardTargetMode"`
-	CodeEditorFontSize           int                 `json:"codeEditorFontSize"`
-	TimeResultOrder              []string            `json:"timeResultOrder"`
-	HiddenTimeResults            []string            `json:"hiddenTimeResults"`
-	TimeWeekStart                string              `json:"timeWeekStart"`
-	JsonAutoFormatOnFill         bool                `json:"jsonAutoFormatOnFill"`
-	JsonAutoFormatOnFillMigrated bool                `json:"jsonAutoFormatOnFillMigrated"`
-	TextAlwaysShowSearch         bool                `json:"textAlwaysShowSearch"`
-	DockerCLIPath                string              `json:"dockerCLIPath"`
-	ImageSources                 []ImageSource       `json:"imageSources"`
-	SSHProfilesVersion           int                 `json:"sshProfilesVersion"`
-	SSHProfiles                  []SSHProfile        `json:"sshProfiles"`
+	TrayMatchEnabled             bool                  `json:"trayMatchEnabled"`
+	TrayMatchTools               []string              `json:"trayMatchTools"`
+	URLTrayMatchMigrated         bool                  `json:"urlTrayMatchMigrated"`
+	AutoOverwrite                bool                  `json:"autoOverwrite"`
+	AutoCheckUpdates             bool                  `json:"autoCheckUpdates"`
+	Language                     string                `json:"language"`
+	SidebarMode                  string                `json:"sidebarMode"`
+	SidebarTools                 []SidebarToolConfig   `json:"sidebarTools"`
+	ThemeMode                    string                `json:"themeMode"`
+	LightTheme                   string                `json:"lightTheme"`
+	DarkTheme                    string                `json:"darkTheme"`
+	DiffClipboardTargetMode      string                `json:"diffClipboardTargetMode"`
+	CodeEditorFontSize           int                   `json:"codeEditorFontSize"`
+	TimeResultOrder              []string              `json:"timeResultOrder"`
+	HiddenTimeResults            []string              `json:"hiddenTimeResults"`
+	TimeWeekStart                string                `json:"timeWeekStart"`
+	JsonAutoFormatOnFill         bool                  `json:"jsonAutoFormatOnFill"`
+	JsonAutoFormatOnFillMigrated bool                  `json:"jsonAutoFormatOnFillMigrated"`
+	TextAlwaysShowSearch         bool                  `json:"textAlwaysShowSearch"`
+	TextGeneratorSources         []TextGeneratorSource `json:"textGeneratorSources"`
+	DockerCLIPath                string                `json:"dockerCLIPath"`
+	ImageSources                 []ImageSource         `json:"imageSources"`
+	SSHProfilesVersion           int                   `json:"sshProfilesVersion"`
+	SSHProfiles                  []SSHProfile          `json:"sshProfiles"`
 	// SSHConnections 仅作为旧调用方的内存兼容形状保留；新配置和新调用方使用 SSHProfiles。
 	SSHConnections []SSHConnection `json:"-"`
 	FileSources    []FileSource    `json:"fileSources"`
@@ -51,7 +52,14 @@ type SidebarToolConfig struct {
 	Enabled bool   `json:"enabled"`
 }
 
-var defaultSidebarToolIDs = []string{"json", "time", "text", "base64", "jwt", "url", "qrcode", "image", "diff", "image-manager", "ssh-files", "service-manager"}
+var defaultSidebarToolIDs = []string{"json", "time", "text", "text-generator", "base64", "jwt", "url", "qrcode", "image", "diff", "image-manager", "ssh-files", "service-manager"}
+
+type TextGeneratorSource struct {
+	ID      string `json:"id"`
+	Name    string `json:"name"`
+	Content string `json:"content"`
+	Mode    string `json:"mode"`
+}
 
 type ImageSource struct {
 	ID           string `json:"id"`
@@ -623,6 +631,7 @@ func normalizeFavoritePaths(paths []string) []string {
 }
 
 func normalizeConfig(cfg Config) Config {
+	cfg.TextGeneratorSources = normalizeTextGeneratorSources(cfg.TextGeneratorSources)
 	cfg.DockerCLIPath = normalizeDockerCLIPath(cfg.DockerCLIPath)
 	if cfg.SSHProfilesVersion == 0 {
 		cfg.SSHProfilesVersion = currentSSHProfilesVersion
@@ -755,6 +764,27 @@ func normalizeConfig(cfg Config) Config {
 		cfg.JsonAutoFormatOnFillMigrated = true
 	}
 	return cfg
+}
+
+func normalizeTextGeneratorSources(sources []TextGeneratorSource) []TextGeneratorSource {
+	if sources == nil {
+		return []TextGeneratorSource{}
+	}
+	result := make([]TextGeneratorSource, 0, len(sources))
+	seen := make(map[string]bool, len(sources))
+	for _, source := range sources {
+		source.ID = strings.TrimSpace(source.ID)
+		source.Name = strings.TrimSpace(source.Name)
+		if source.ID == "" || source.Name == "" || source.Content == "" || seen[source.ID] {
+			continue
+		}
+		if source.Mode != "line" {
+			source.Mode = "character"
+		}
+		seen[source.ID] = true
+		result = append(result, source)
+	}
+	return result
 }
 
 func migrateLegacyTheme(cfg Config, legacyTheme string, hasThemeMode bool) Config {
