@@ -392,19 +392,11 @@
     "emptyHint": "例如：1786358400、08/07 13:54:10 或 2026-08-10T12:00:00Z",
     "subtitle": "无需猜测格式即可转换日期与时间戳",
     "dateCalculator": {
-      "subtitle": "计算两个日期的日历差异，或在日期上加减年月日时分秒",
       "differenceTitle": "计算日期差",
-      "differenceHint": "查看两个日期之间的年月日时分秒",
       "startDate": "开始日期",
       "endDate": "结束日期",
       "differenceResult": "差异",
-      "direction": {
-        "forward": "结束日期在开始日期之后",
-        "backward": "结束日期在开始日期之前",
-        "same": "两个日期相同"
-      },
       "adjustmentTitle": "日期加减",
-      "adjustmentHint": "以基准日期为起点调整日历时间",
       "baseDate": "基准日期",
       "operation": "运算",
       "add": "增加",
@@ -418,7 +410,6 @@
       "invalidDate": "请输入有效的日期和时间",
       "invalidDuration": "请输入大于或等于零的整数",
       "resultOutOfRange": "计算结果超出支持的日期范围",
-      "formatHint": "格式：YYYY-MM-DD HH:mm:ss",
       "units": {
         "years": "年",
         "months": "月",

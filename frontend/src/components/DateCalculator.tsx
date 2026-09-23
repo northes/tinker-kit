@@ -1,22 +1,20 @@
-import { useEffect, useId, useRef, useState } from 'react';
-import { enUS, zhCN } from 'date-fns/locale';
+import { useEffect, useId, useRef, useState, type FocusEvent } from 'react';
 import { CalendarBlank, Copy, Minus, Plus } from '@phosphor-icons/react';
 import { useTranslation } from 'react-i18next';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
-import DateTimePickerPopover from './DateTimePickerPopover';
 import {
   calculateDateDifference,
   calculateDateTime,
   dateDurationUnits,
   formatDateTimeDisplay,
   formatDateTimeLocal,
-  parseDateTimeLocal,
   type DateDuration,
   type DateDurationUnit,
   type DateOperation,
 } from '../utils/dateCalculator';
+import { parseTimeInput } from '../utils/time';
 import type { PendingAction, ToolId } from './shared';
 import { toast } from './ui/toast';
 
@@ -54,46 +52,42 @@ function parseDurationValues(values: Record<DateDurationUnit, string>): DateDura
   return duration;
 }
 
-function localDateTimePickerParts(value: Date) {
-  const formatted = formatDateTimeLocal(value);
-  return {
-    date: new Date(value),
-    time: formatted.slice(11),
-  };
-}
-
-function parseLocalDateTimePicker(date: Date, time: string) {
-  const formatted = formatDateTimeLocal(date);
-  return formatted ? parseDateTimeLocal(`${formatted.slice(0, 10)}T${time}`) : null;
-}
-
 function DateTimeField({
+  id,
   label,
   value,
+  placeholder,
   onChange,
 }: {
+  id: string;
   label: string;
-  value: Date | null;
-  onChange: (value: Date) => void;
+  value: string;
+  placeholder: string;
+  onChange: (value: string) => void;
 }) {
-  const { t, i18n } = useTranslation();
   return (
-    <div className="flex min-w-0 flex-col gap-2 font-mono text-[10px] font-medium tracking-[.04em] text-muted-foreground">
+    <Label
+      htmlFor={id}
+      className="flex min-w-0 flex-col items-stretch gap-2 font-mono text-[10px] font-medium tracking-[.04em] text-muted-foreground"
+    >
       <span>{label}</span>
-      <DateTimePickerPopover
+      <Input
+        id={id}
         value={value}
-        locale={i18n.language === 'zh-CN' ? zhCN : enUS}
-        triggerLabel={label}
-        timeLabel={t('timeTool.dateTimePicker.time')}
-        cancelLabel={t('timeTool.dateTimePicker.cancel')}
-        applyLabel={t('timeTool.dateTimePicker.apply')}
-        getParts={localDateTimePickerParts}
-        parse={parseLocalDateTimePicker}
-        onChange={onChange}
-        showValue
+        placeholder={placeholder}
+        onChange={(event) => onChange(event.target.value)}
+        className="h-[38px] bg-card text-[13px] dark:bg-card"
       />
-    </div>
+    </Label>
   );
+}
+
+function placeCaretAtEnd(event: FocusEvent<HTMLInputElement>) {
+  const input = event.currentTarget;
+  requestAnimationFrame(() => {
+    const end = input.value.length;
+    input.setSelectionRange(end, end);
+  });
 }
 
 function DurationField({
@@ -110,17 +104,16 @@ function DurationField({
   return (
     <Label
       htmlFor={id}
-      className="flex min-w-0 flex-col gap-2 font-mono text-[10px] font-medium tracking-[.04em] text-muted-foreground"
+      className="flex min-w-0 flex-col items-stretch gap-2 font-mono text-[10px] font-medium tracking-[.04em] text-muted-foreground"
     >
       <span>{label}</span>
       <Input
         id={id}
-        type="number"
         inputMode="numeric"
-        min="0"
-        step="1"
+        pattern="[0-9]*"
         value={value}
-        onChange={(event) => onChange(event.target.value)}
+        onChange={(event) => onChange(event.target.value.replace(/[^0-9]/g, ''))}
+        onFocus={placeCaretAtEnd}
         className="h-[38px] bg-card text-right tabular-nums dark:bg-card"
       />
     </Label>
@@ -130,13 +123,11 @@ function DurationField({
 function ResultValue({
   label,
   value,
-  formatHint,
   onCopy,
   copyLabel,
 }: {
   label: string;
   value: string;
-  formatHint?: string;
   onCopy: () => void;
   copyLabel: string;
 }) {
@@ -147,9 +138,6 @@ function ResultValue({
           {label}
         </span>
         <code className="mt-1 block break-words text-sm font-medium text-foreground">{value}</code>
-        {formatHint ? (
-          <span className="mt-1 block text-[10px] text-muted-foreground">{formatHint}</span>
-        ) : null}
       </div>
       <Button
         variant="ghost"
@@ -276,15 +264,21 @@ export default function DateCalculator({
     }
   }, [pending]);
 
-  const startDate = parseDateTimeLocal(differenceStart);
-  const endDate = parseDateTimeLocal(differenceEnd);
+  const startDate = parseTimeInput(differenceStart);
+  const endDate = parseTimeInput(differenceEnd);
   const difference = startDate && endDate ? calculateDateDifference(startDate, endDate) : null;
+  const differenceUnits = difference
+    ? dateDurationUnits.filter((unit) => difference.duration[unit] > 0)
+    : [];
   const differenceText = difference
-    ? dateDurationUnits
+    ? (differenceUnits.length > 0
+        ? differenceUnits
+        : [dateDurationUnits[dateDurationUnits.length - 1]]
+      )
         .map((unit) => `${difference.duration[unit]} ${t(`timeTool.dateCalculator.units.${unit}`)}`)
         .join(' ')
     : '';
-  const parsedBaseDate = parseDateTimeLocal(baseDate);
+  const parsedBaseDate = parseTimeInput(baseDate);
   const duration = parseDurationValues(durationValues);
   const calculatedDate =
     parsedBaseDate && duration ? calculateDateTime(parsedBaseDate, duration, operation) : null;
@@ -307,15 +301,9 @@ export default function DateCalculator({
         : t('timeTool.dateCalculator.resultOutOfRange');
   const differenceInput = JSON.stringify({ start: differenceStart, end: differenceEnd });
   const calculationInput = JSON.stringify({ base: baseDate, operation, duration });
-  const directionLabel = difference
-    ? t(`timeTool.dateCalculator.direction.${difference.direction}`)
-    : '';
 
   return (
-    <div className="min-w-0 pb-4">
-      <p className="mb-5 text-[11px] leading-5 text-muted-foreground">
-        {t('timeTool.dateCalculator.subtitle')}
-      </p>
+    <div className="min-w-0 px-1.5 pb-4">
       <div className="grid min-w-0 grid-cols-[repeat(auto-fit,minmax(17rem,1fr))] gap-x-7 gap-y-8">
         <section className="flex min-w-0 flex-col gap-4 border-b border-border pb-6">
           <div className="flex items-start gap-2.5">
@@ -324,55 +312,38 @@ export default function DateCalculator({
               <h2 className="m-0 text-sm font-medium text-foreground">
                 {t('timeTool.dateCalculator.differenceTitle')}
               </h2>
-              <p className="mt-1 mb-0 text-[10px] leading-4 text-muted-foreground">
-                {t('timeTool.dateCalculator.differenceHint')}
-              </p>
             </div>
           </div>
           <div className="grid min-w-0 gap-3">
             <DateTimeField
+              id={`${idPrefix}-start`}
               label={t('timeTool.dateCalculator.startDate')}
-              value={startDate}
-              onChange={(value) => setDifferenceStart(formatDateTimeLocal(value))}
+              value={differenceStart}
+              placeholder={t('timeTool.placeholder')}
+              onChange={setDifferenceStart}
             />
             <DateTimeField
+              id={`${idPrefix}-end`}
               label={t('timeTool.dateCalculator.endDate')}
-              value={endDate}
-              onChange={(value) => setDifferenceEnd(formatDateTimeLocal(value))}
+              value={differenceEnd}
+              placeholder={t('timeTool.placeholder')}
+              onChange={setDifferenceEnd}
             />
           </div>
           {difference ? (
-            <>
-              <div className="grid grid-cols-3 gap-px border border-border bg-border">
-                {dateDurationUnits.map((unit) => (
-                  <div
-                    key={unit}
-                    className="flex min-h-[62px] min-w-0 flex-col justify-between bg-card px-2.5 py-2"
-                  >
-                    <strong className="text-lg leading-none font-semibold tabular-nums text-foreground">
-                      {difference.duration[unit]}
-                    </strong>
-                    <span className="font-mono text-[10px] text-muted-foreground">
-                      {t(`timeTool.dateCalculator.units.${unit}`)}
-                    </span>
-                  </div>
-                ))}
-              </div>
-              <p className="m-0 text-[10px] text-muted-foreground">{directionLabel}</p>
-              <ResultValue
-                label={t('timeTool.dateCalculator.differenceResult')}
-                value={differenceText}
-                onCopy={() =>
-                  copyResult(
-                    differenceText,
-                    t('timeTool.dateCalculator.copyDifference'),
-                    differenceInput,
-                    dateCalculatorModes.difference,
-                  )
-                }
-                copyLabel={t('timeTool.dateCalculator.copyResult')}
-              />
-            </>
+            <ResultValue
+              label={t('timeTool.dateCalculator.differenceResult')}
+              value={differenceText}
+              onCopy={() =>
+                copyResult(
+                  differenceText,
+                  t('timeTool.dateCalculator.copyDifference'),
+                  differenceInput,
+                  dateCalculatorModes.difference,
+                )
+              }
+              copyLabel={t('timeTool.dateCalculator.copyResult')}
+            />
           ) : (
             <ResultMessage
               message={differenceMessage}
@@ -388,15 +359,14 @@ export default function DateCalculator({
               <h2 className="m-0 text-sm font-medium text-foreground">
                 {t('timeTool.dateCalculator.adjustmentTitle')}
               </h2>
-              <p className="mt-1 mb-0 text-[10px] leading-4 text-muted-foreground">
-                {t('timeTool.dateCalculator.adjustmentHint')}
-              </p>
             </div>
           </div>
           <DateTimeField
+            id={`${idPrefix}-base`}
             label={t('timeTool.dateCalculator.baseDate')}
-            value={parsedBaseDate}
-            onChange={(value) => setBaseDate(formatDateTimeLocal(value))}
+            value={baseDate}
+            placeholder={t('timeTool.placeholder')}
+            onChange={setBaseDate}
           />
           <fieldset className="m-0 grid gap-2 border-0 p-0">
             <legend className="font-mono text-[10px] font-medium tracking-[.04em] text-muted-foreground">
@@ -438,7 +408,6 @@ export default function DateCalculator({
             <ResultValue
               label={t('timeTool.dateCalculator.calculatedResult')}
               value={calculatedDateText}
-              formatHint={t('timeTool.dateCalculator.formatHint')}
               onCopy={() =>
                 copyResult(
                   calculatedDateText,

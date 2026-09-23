@@ -12,14 +12,10 @@ export const dateDurationUnits = [
 export type DateDurationUnit = (typeof dateDurationUnits)[number];
 export type DateDuration = Record<DateDurationUnit, number>;
 export type DateOperation = 'add' | 'subtract';
-export type DateDifferenceDirection = 'forward' | 'backward' | 'same';
 
 export type DateDifference = {
-  direction: DateDifferenceDirection;
   duration: DateDuration;
 };
-
-const dateTimeLocalPattern = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?$/;
 
 function isValidDate(date: Date) {
   return !Number.isNaN(date.getTime());
@@ -86,44 +82,6 @@ function calendarDuration(start: Date, end: Date): DateDuration {
   };
 }
 
-export function parseDateTimeLocal(value: string) {
-  const match = value.trim().match(dateTimeLocalPattern);
-  if (!match) return null;
-
-  const year = Number(match[1]);
-  const month = Number(match[2]);
-  const day = Number(match[3]);
-  const hour = Number(match[4]);
-  const minute = Number(match[5]);
-  const second = Number(match[6] || 0);
-  if (
-    year < 1 ||
-    year > 9999 ||
-    month < 1 ||
-    month > 12 ||
-    day < 1 ||
-    day > 31 ||
-    hour > 23 ||
-    minute > 59 ||
-    second > 59
-  )
-    return null;
-
-  const date = new Date(0);
-  date.setHours(0, 0, 0, 0);
-  date.setFullYear(year, month - 1, day);
-  date.setHours(hour, minute, second, 0);
-  if (!isValidDate(date)) return null;
-  return date.getFullYear() === year &&
-    date.getMonth() === month - 1 &&
-    date.getDate() === day &&
-    date.getHours() === hour &&
-    date.getMinutes() === minute &&
-    date.getSeconds() === second
-    ? date
-    : null;
-}
-
 export function formatDateTimeLocal(date: Date) {
   if (!isSupportedDate(date)) return '';
   return `${pad(date.getFullYear(), 4)}-${pad(date.getMonth() + 1, 2)}-${pad(date.getDate(), 2)}T${pad(date.getHours(), 2)}:${pad(date.getMinutes(), 2)}:${pad(date.getSeconds(), 2)}`;
@@ -138,11 +96,9 @@ export function calculateDateDifference(start: Date, end: Date): DateDifference 
 
   const startTime = start.getTime();
   const endTime = end.getTime();
-  const direction = startTime === endTime ? 'same' : endTime > startTime ? 'forward' : 'backward';
-  const earlier = direction === 'backward' ? end : start;
-  const later = direction === 'backward' ? start : end;
+  const earlier = endTime < startTime ? end : start;
+  const later = endTime < startTime ? start : end;
   return {
-    direction,
     duration: calendarDuration(earlier, later),
   };
 }
