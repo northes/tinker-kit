@@ -68,7 +68,7 @@ TinkerKit 基于 [Wails v3](https://v3.wails.io/) 构建,把日常开发调试�
 
 - macOS
 - Go 1.25+
-- Node.js 22+(仅 `frontend/` 内需要安装依赖)
+- Node.js 24+(仅 `frontend/` 内需要安装依赖)
 - Wails v3 CLI(当前锁定 `v3.0.0-beta.9`):
 
   ```bash

@@ -68,7 +68,7 @@ Download the latest `TinkerKit-<version>-darwin-universal.dmg` from [GitHub Rele
 
 - macOS
 - Go 1.25+
-- Node.js 22+ (dependencies are installed only inside `frontend/`)
+- Node.js 24+ (dependencies are installed only inside `frontend/`)
 - Wails v3 CLI (currently pinned to `v3.0.0-beta.9`):
 
   ```bash

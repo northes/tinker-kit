@@ -14,25 +14,25 @@ jobs:
     runs-on: macos-latest
     steps:
       - name: 检出源码
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
 
       - name: 安装 Go
         id: setup-go
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
           cache: true
 
       - name: 安装 Node.js
-        uses: actions/setup-node@v5
+        uses: actions/setup-node@v7
         with:
-          node-version: 22
+          node-version: 24
           cache: npm
           cache-dependency-path: frontend/package-lock.json
 
       - name: 恢复 Wails CLI 缓存
         id: cache-wails
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: ~/go/bin/wails3
           key: wails3-${{ runner.os }}-${{ runner.arch }}-go-${{ steps.setup-go.outputs.go-version }}-v3.0.0-beta.23
@@ -45,7 +45,7 @@ jobs:
         run: wails3 task common:build:frontend CI=true BUILD_FLAGS="-tags production"
 
       - name: 上传前端构建产物
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v7
         with:
           name: frontend-build
           path: |
@@ -60,7 +60,7 @@ jobs:
     runs-on: macos-latest
     steps:
       - name: 检出源码
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
 
       - name: 解析版本
         id: version
@@ -78,14 +78,14 @@ jobs:
 
       - name: 安装 Go
         id: setup-go
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
           cache: true
 
       - name: 恢复 Wails CLI 缓存
         id: cache-wails
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: ~/go/bin/wails3
           key: wails3-${{ runner.os }}-${{ runner.arch }}-go-${{ steps.setup-go.outputs.go-version }}-v3.0.0-beta.23
@@ -95,7 +95,7 @@ jobs:
         run: go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-beta.23
 
       - name: 下载前端构建产物
-        uses: actions/download-artifact@v5
+        uses: actions/download-artifact@v8
         with:
           name: frontend-build
           path: frontend
@@ -154,7 +154,7 @@ jobs:
           mv "bin/$zip" "bin/$dmg" release/
 
       - name: 上传构建产物
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v7
         with:
           name: macos-universal
           path: release/*
@@ -163,15 +163,15 @@ jobs:
   release:
     name: 发布 GitHub Release
     needs: build
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: 检出提交历史
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
       - name: 下载全部构建产物
-        uses: actions/download-artifact@v5
+        uses: actions/download-artifact@v8
         with:
           pattern: macos-*
           path: release
@@ -214,7 +214,7 @@ jobs:
           sha256sum TinkerKit-* > SHA256SUMS
 
       - name: 创建或更新 Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ steps.release.outputs.tag }}
           body_path: release/RELEASE_NOTES.md
