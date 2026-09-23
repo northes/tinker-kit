@@ -288,7 +288,7 @@ const tools: ToolDefinition[] = [
     nameKey: 'tools.json.name',
     descriptionKey: 'tools.json.description',
     icon: BracketsCurly,
-    keywords: 'json format minify compare schema path',
+    keywords: 'json format minify repair fix compare schema path',
   },
   {
     id: 'time' as const,
@@ -499,6 +499,15 @@ const paletteItems: PaletteItem[] = [
     keywords: 'format pretty indent beautify 格式化 美化',
     tool: 'json',
     action: 'format',
+  },
+  {
+    id: 'json:repair',
+    labelKey: 'jsonTool.repair',
+    groupKey: 'tools.json.name',
+    icon: BracketsCurly,
+    keywords: 'repair fix broken invalid json 修复 修正 损坏 错误',
+    tool: 'json',
+    action: 'repair',
   },
   {
     id: 'json:autoFormatOnFill',

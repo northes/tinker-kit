@@ -109,6 +109,14 @@ export function parseJsonLoose(s: string) {
   return JSON.parse(stripTrailingCommas(stripJsonComments(s)));
 }
 
+/**
+ * 只容忍注释（JSONC）的解析。尾逗号等语法错误不在这里静默改写，
+ * 留给“JSON 修复”显式处理。
+ */
+export function parseJsonWithComments(s: string) {
+  return JSON.parse(stripJsonComments(s));
+}
+
 export function decodeBase64(raw: string): string | null {
   const padded = raw.replace(/-/g, '+').replace(/_/g, '/');
   if (padded.length % 4 === 1) return null;

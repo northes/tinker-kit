@@ -41,6 +41,7 @@ import { EditorView, keymap } from '@codemirror/view';
 import { acceptCompletion } from '@codemirror/autocomplete';
 import { SaveText } from '../../bindings/changeme/fileservice';
 import { JSON_CONVERT_FORMATS, type JsonConvertFormat } from '../lib/json-converter';
+import { repairJson } from '../lib/json-repair';
 import { useDebouncedJsonConversion } from '../hooks/useDebouncedJsonConversion';
 import { jsonFoldParseWarmup, quietEditorTheme } from './codeMirrorTheme';
 import {
@@ -50,11 +51,13 @@ import {
   TreeStructure,
   Trash,
   UploadSimple,
+  Wrench,
 } from '@phosphor-icons/react';
 import {
   formatJsonPreserve,
   hasComments,
   parseJsonLoose,
+  parseJsonWithComments,
   Reveal,
   ToolActionBar,
   ToolLayoutContent,
@@ -304,10 +307,10 @@ function tryAutoFormat(src: string) {
   try {
     if (hasComments(src)) {
       const next = formatJsonPreserve(src);
-      parseJsonLoose(next);
+      parseJsonWithComments(next);
       return next;
     }
-    return JSON.stringify(parseJsonLoose(src), null, 2);
+    return JSON.stringify(parseJsonWithComments(src), null, 2);
   } catch {
     return src;
   }
@@ -573,7 +576,7 @@ export default function JsonTool({
     // 流水线模式下不再在主线程解析输入；输入表格按需使用后端结果。
     if (pipelineMode) return { valid: false as const, value: null };
     try {
-      return { valid: true as const, value: parseJsonLoose(input) };
+      return { valid: true as const, value: parseJsonWithComments(input) };
     } catch {
       return { valid: false as const, value: null };
     }
@@ -582,7 +585,7 @@ export default function JsonTool({
   const inputIsSchema = inputPreview.valid && isJsonSchema(inputPreview.value);
   const resultPreview = useMemo(() => {
     try {
-      return { valid: true, value: parseJsonLoose(result) };
+      return { valid: true, value: parseJsonWithComments(result) };
     } catch {
       return { valid: false, value: null };
     }
@@ -657,7 +660,7 @@ export default function JsonTool({
       if (!minify && !stripComments && hasComments(src)) {
         next = formatJsonPreserve(src);
         try {
-          parseJsonLoose(next);
+          parseJsonWithComments(next);
         } catch {
           toast.add({
             title: t('jsonTool.formatFailed'),
@@ -667,7 +670,7 @@ export default function JsonTool({
           return;
         }
       } else {
-        const v = stripComments ? parseJsonLoose(src) : JSON.parse(src);
+        const v = stripComments ? parseJsonWithComments(src) : JSON.parse(src);
         next = minify ? JSON.stringify(v) : JSON.stringify(v, null, 2);
       }
       set(next);
@@ -689,6 +692,25 @@ export default function JsonTool({
     if (hasComments(pane === 'input' ? input : result))
       setCommentDialog({ mode: minify ? 'minify' : 'format', pane });
     else runTransform(pane, minify, false);
+  };
+  const repairInput = () => {
+    if (!input.trim()) return;
+    try {
+      const { text, changed } = repairJson(input);
+      if (!changed) {
+        toast.add({ title: t('jsonTool.repairNoChange') });
+        return;
+      }
+      setInput(text);
+      toast.add({ title: t('jsonTool.repaired') });
+      record('json', t('jsonTool.repaired'), summary(text), text);
+    } catch {
+      toast.add({
+        title: t('jsonTool.repairFailed'),
+        description: t('jsonTool.repairFailedDesc'),
+        type: 'error',
+      });
+    }
   };
   const changeInput = setInput;
   const loadPath = useCallback(
@@ -944,13 +966,23 @@ export default function JsonTool({
       },
     );
     if (pane === 'input')
-      actions.push({
-        key: 'format',
-        label: t('jsonTool.format'),
-        variant: 'primary',
-        disabled: !value,
-        onPress: () => requestTransform(pane, false),
-      });
+      actions.push(
+        {
+          key: 'repair',
+          label: t('jsonTool.repair'),
+          icon: Wrench,
+          variant: 'secondary',
+          disabled: !value,
+          onPress: repairInput,
+        },
+        {
+          key: 'format',
+          label: t('jsonTool.format'),
+          variant: 'primary',
+          disabled: !value,
+          onPress: () => requestTransform(pane, false),
+        },
+      );
     else
       actions.push({
         key: 'format',
@@ -1091,6 +1123,10 @@ export default function JsonTool({
     }
     if (pending.action === 'clear') {
       pane === 'input' ? changeInput('') : setResult('');
+      return;
+    }
+    if (pending.action === 'repair') {
+      repairInput();
       return;
     }
     if (pending.action === 'format' || pending.action === 'minify') {

@@ -35,6 +35,11 @@ tasks:
     cmds:
       - node --experimental-strip-types --test frontend/src/lib/ansi.test.mjs
 
+  test:json-repair:
+    summary: Checks JSON repair handling
+    cmds:
+      - node --experimental-strip-types --test frontend/src/lib/json-repair.test.mjs
+
   gp:
     summary: push to all remote repos
     cmds:
