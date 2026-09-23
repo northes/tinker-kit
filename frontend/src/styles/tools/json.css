@@ -15,10 +15,12 @@
 .json-pane-editor {
   isolation: isolate;
 }
-.json-pane-editor:has(.json-table-layer.is-visible) .json-cm {
+.json-pane-editor:has(.json-table-layer.is-visible) .json-cm,
+.json-pane-editor:has(.json-schema-layer.is-visible) .json-cm {
   visibility: hidden;
   pointer-events: none;
 }
+.json-schema-preview-toggle,
 .json-table-toggle {
   width: 28px;
   min-width: 28px;
@@ -41,6 +43,25 @@
   transition: opacity 120ms ease;
 }
 .json-table-layer.is-visible {
+  visibility: visible;
+  pointer-events: auto;
+  opacity: 1;
+}
+.json-schema-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  min-height: 0;
+  overflow: hidden;
+  visibility: hidden;
+  pointer-events: none;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--card);
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+.json-schema-layer.is-visible {
   visibility: visible;
   pointer-events: auto;
   opacity: 1;
@@ -130,7 +151,247 @@
 .json-table-empty,
 .json-table-scalar {
   color: var(--muted-foreground);
-  font-size: 11px;
+  font-size: var(--code-editor-font-size);
+}
+.json-schema-preview {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  min-width: 0;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 38px 10px 10px;
+  font-size: var(--code-editor-font-size);
+}
+.json-schema-top {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+}
+.json-schema-header {
+  display: flex;
+  width: 100%;
+  flex-direction: column;
+  gap: 6px;
+  padding: 0 2px 10px;
+  border-bottom: 1px solid var(--border);
+}
+.json-schema-header-main {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+}
+.json-schema-header-title {
+  color: var(--foreground);
+  font-size: var(--code-editor-font-size);
+  font-weight: 600;
+}
+.json-schema-header-stats {
+  color: var(--muted-foreground);
+  font-family: var(--font-mono);
+  font-size: max(10px, calc(var(--code-editor-font-size) - 2px));
+}
+.json-schema-header-dialect {
+  max-width: min(100%, 520px);
+  overflow: hidden;
+  color: var(--muted-foreground);
+  font-family: var(--font-mono);
+  font-size: max(10px, calc(var(--code-editor-font-size) - 2px));
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.json-schema-header-description {
+  max-width: 78ch;
+  margin: 0;
+  color: var(--muted-foreground);
+  line-height: 1.55;
+  white-space: pre-wrap;
+}
+.json-schema-tree {
+  min-height: 0;
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow: auto;
+  padding-top: 4px;
+}
+.json-schema-tree > .json-schema-node {
+  width: max-content;
+  min-width: 100%;
+}
+.json-schema-node-row {
+  display: flex;
+  min-height: max(26px, calc(var(--code-editor-font-size) * 1.4 + 8px));
+  align-items: flex-start;
+  gap: 8px;
+  padding-block: 3px;
+  padding-inline: calc(2px + var(--schema-depth) * 18px) 8px;
+  border-radius: calc(var(--radius) - 4px);
+}
+.json-schema-node-row:hover {
+  background: color-mix(in oklch, var(--muted) 45%, transparent);
+}
+.json-schema-node-toggle-slot {
+  display: flex;
+  width: 20px;
+  min-width: 20px;
+  flex: none;
+  justify-content: center;
+  padding-top: 1px;
+}
+.json-schema-node-toggle {
+  height: 20px;
+}
+.json-schema-node-name {
+  min-width: 112px;
+  flex: 0 0 auto;
+  overflow-wrap: anywhere;
+}
+.json-schema-node-key {
+  color: var(--foreground);
+  font-family: var(--font-mono);
+  font-size: var(--code-editor-font-size);
+}
+.json-schema-node-key.is-root {
+  color: var(--muted-foreground);
+}
+.json-schema-node-name.is-meta .json-schema-node-key {
+  color: var(--muted-foreground);
+}
+/* Type chip tint comes from the data-type accent; text stays foreground for contrast. */
+.json-schema-node-type {
+  display: inline-flex;
+  flex: none;
+  align-self: flex-start;
+  padding: 1px 6px;
+  border-radius: calc(var(--radius) - 5px);
+  background: color-mix(in oklch, var(--schema-accent, var(--muted-foreground)) 14%, transparent);
+  color: var(--foreground);
+  font-family: var(--font-mono);
+  font-size: max(10px, calc(var(--code-editor-font-size) - 2px));
+  font-weight: 500;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+.json-schema-header-main > .json-schema-node-type {
+  align-self: center;
+}
+.json-schema-node-type[data-type='object'],
+.json-schema-node-type[data-type='array'] {
+  --schema-accent: var(--primary);
+}
+.json-schema-node-type[data-type='string'] {
+  --schema-accent: var(--chart-2);
+}
+.json-schema-node-type[data-type='number'] {
+  --schema-accent: var(--chart-1);
+}
+.json-schema-node-type[data-type='boolean'] {
+  --schema-accent: var(--chart-4);
+}
+.json-schema-node-type[data-type='enum'] {
+  --schema-accent: var(--chart-3);
+}
+.json-schema-node-flags {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+}
+.json-schema-node-required {
+  padding: 1px 6px;
+  border-radius: calc(var(--radius) - 5px);
+  background: color-mix(in oklch, var(--foreground) 12%, transparent);
+  color: var(--foreground);
+  font-size: max(10px, calc(var(--code-editor-font-size) - 2px));
+  font-weight: 600;
+  line-height: 1.4;
+}
+.json-schema-node-meta {
+  display: flex;
+  min-width: 0;
+  max-width: 60ch;
+  flex: 1 1 auto;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+}
+.json-schema-chip {
+  display: inline-flex;
+  max-width: 100%;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 6px;
+  border-radius: calc(var(--radius) - 5px);
+  background: var(--muted);
+  color: var(--foreground);
+  font-family: var(--font-mono);
+  font-size: max(10px, calc(var(--code-editor-font-size) - 2px));
+  line-height: 1.4;
+}
+.json-schema-chip-key {
+  color: var(--muted-foreground);
+}
+.json-schema-chip-value {
+  overflow-wrap: anywhere;
+}
+.json-schema-chip.is-count {
+  padding-inline: 0;
+  background: transparent;
+  color: var(--muted-foreground);
+}
+.json-schema-chip.is-ref {
+  border: 0;
+  color: var(--primary);
+  cursor: pointer;
+}
+.json-schema-chip.is-ref:disabled {
+  cursor: progress;
+  opacity: 0.7;
+}
+.json-schema-node-description {
+  max-width: 72ch;
+  margin: 0;
+  padding: 2px 8px 4px;
+  padding-inline-start: calc(30px + var(--schema-depth) * 18px);
+  color: var(--muted-foreground);
+  font-size: max(10px, calc(var(--code-editor-font-size) - 2px));
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+.json-schema-node-title {
+  margin-inline-end: 6px;
+  color: var(--foreground);
+  font-weight: 500;
+}
+.json-schema-node-children {
+  margin-inline-start: calc(12px + var(--schema-depth) * 18px);
+  border-inline-start: 1px solid color-mix(in oklch, var(--border) 80%, transparent);
+}
+.json-schema-node-empty {
+  padding: 2px 8px 5px;
+  padding-inline-start: calc(30px + var(--schema-depth) * 18px);
+  color: var(--muted-foreground);
+  font-size: max(10px, calc(var(--code-editor-font-size) - 2px));
+  font-style: italic;
+  line-height: 1.5;
+}
+.json-schema-ref-error {
+  color: var(--destructive);
+  font-size: max(10px, calc(var(--code-editor-font-size) - 2px));
+}
+.json-schema-mark {
+  padding: 0 1px;
+  border-radius: 2px;
+  background: color-mix(in oklch, var(--warning) 32%, transparent);
+  color: inherit;
+}
+.json-schema-mark.is-current {
+  background: color-mix(in oklch, var(--warning) 58%, transparent);
+  box-shadow: 0 0 0 1px var(--warning);
 }
 .json-cm .cm-editor {
   height: 100%;

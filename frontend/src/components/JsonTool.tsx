@@ -47,6 +47,7 @@ import {
   Copy,
   DownloadSimple,
   Table as TableIcon,
+  TreeStructure,
   Trash,
   UploadSimple,
 } from '@phosphor-icons/react';
@@ -69,6 +70,7 @@ import {
 } from './shared';
 import { toast } from './ui/toast';
 import { JsonErrorPanel } from './JsonErrorPanel';
+import { isJsonSchema, JsonSchemaPreview } from './JsonSchemaPreview';
 import { JsonTablePreview } from './JsonTablePreview';
 import '../styles/tools/editor.css';
 import '../styles/tools/json.css';
@@ -329,6 +331,9 @@ function JsonEditorPane({
   onToggleTable,
   tablePreview,
   tableHint,
+  schemaMode = false,
+  onToggleSchema,
+  schemaPreview,
   onOpenFile,
 }: {
   label: string;
@@ -347,6 +352,9 @@ function JsonEditorPane({
   onToggleTable?: () => void;
   tablePreview?: ReactNode;
   tableHint?: string;
+  schemaMode?: boolean;
+  onToggleSchema?: () => void;
+  schemaPreview?: ReactNode;
   onOpenFile?: () => void;
 }) {
   const { t } = useTranslation();
@@ -415,23 +423,40 @@ function JsonEditorPane({
         {label}
       </span>
       <div ref={paneRef} className="json-pane-editor relative flex min-h-0 min-w-0 flex-1">
-        {onToggleTable && (
-          <Button
-            type="button"
-            variant={tableMode ? 'secondary' : 'ghost'}
-            size="icon-sm"
-            className="json-table-toggle absolute top-2 right-2 z-20"
-            disabled={tableDisabled}
-            aria-label={t('jsonTool.tablePreview')}
-            title={
-              tableDisabled
-                ? tableHint
-                : t(tableMode ? 'jsonTool.tablePreviewOn' : 'jsonTool.tablePreview')
-            }
-            onClick={onToggleTable}
-          >
-            <TableIcon />
-          </Button>
+        {(onToggleTable || onToggleSchema) && (
+          <div className="absolute top-2 right-2 z-20 flex gap-1">
+            {onToggleSchema && (
+              <Button
+                type="button"
+                variant={schemaMode ? 'secondary' : 'ghost'}
+                size="icon-sm"
+                className="json-schema-preview-toggle"
+                aria-label={t('jsonTool.schemaPreview')}
+                title={t(schemaMode ? 'jsonTool.schemaPreviewOn' : 'jsonTool.schemaPreview')}
+                onClick={onToggleSchema}
+              >
+                <TreeStructure weight="duotone" />
+              </Button>
+            )}
+            {onToggleTable && (
+              <Button
+                type="button"
+                variant={tableMode ? 'secondary' : 'ghost'}
+                size="icon-sm"
+                className="json-table-toggle"
+                disabled={tableDisabled}
+                aria-label={t('jsonTool.tablePreview')}
+                title={
+                  tableDisabled
+                    ? tableHint
+                    : t(tableMode ? 'jsonTool.tablePreviewOn' : 'jsonTool.tablePreview')
+                }
+                onClick={onToggleTable}
+              >
+                <TableIcon weight="duotone" />
+              </Button>
+            )}
+          </div>
         )}
         <CodeMirror
           className={`json-cm${cmClassName ? ' ' + cmClassName : ''}`}
@@ -479,6 +504,15 @@ function JsonEditorPane({
             {tablePreview}
           </div>
         )}
+        {schemaPreview && (
+          <div
+            className={`json-schema-layer${schemaMode && active ? ' is-visible' : ''}`}
+            aria-hidden={!schemaMode || !active}
+            {...(!schemaMode || !active ? { inert: true } : {})}
+          >
+            {schemaPreview}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -523,6 +557,7 @@ export default function JsonTool({
   const [pipelineRules, setPipelineRules] = useState<PipelineItem[]>([]);
   const [pipelineFocusId, setPipelineFocusId] = useState<string | null>(null);
   const [inputTableMode, setInputTableMode] = useState(false);
+  const [inputSchemaPreviewMode, setInputSchemaPreviewMode] = useState(false);
   const [resultTableMode, setResultTableMode] = useState(false);
   const [commentDialog, setCommentDialog] = useState<null | {
     mode: 'format' | 'minify';
@@ -544,6 +579,7 @@ export default function JsonTool({
     }
   }, [input, pipelineMode]);
   const jsonValue = inputPreview.valid ? inputPreview.value : null;
+  const inputIsSchema = inputPreview.valid && isJsonSchema(inputPreview.value);
   const resultPreview = useMemo(() => {
     try {
       return { valid: true, value: parseJsonLoose(result) };
@@ -557,6 +593,9 @@ export default function JsonTool({
       setInputTableMode(false);
     }
   }, [input, inputPreview.valid, inputTableMode]);
+  useEffect(() => {
+    if (inputSchemaPreviewMode && !inputIsSchema) setInputSchemaPreviewMode(false);
+  }, [inputIsSchema, inputSchemaPreviewMode]);
   useEffect(() => {
     if (resultTableMode && (!result.trim() || !resultPreview.valid)) {
       setResultTableMode(false);
@@ -680,6 +719,14 @@ export default function JsonTool({
     onError: () => toast.add({ title: t('jsonTool.openFileFailed'), type: 'error' }),
   });
   const toggleSchema = () => setMode((current) => (current === 'schema' ? 'plain' : 'schema'));
+  const toggleInputTable = () => {
+    setInputTableMode((current) => !current);
+    setInputSchemaPreviewMode(false);
+  };
+  const toggleInputSchemaPreview = () => {
+    setInputSchemaPreviewMode((current) => !current);
+    setInputTableMode(false);
+  };
   const togglePipeline = () =>
     setMode((current) => (current === 'pipeline' ? 'plain' : 'pipeline'));
   const toggleConvert = () => setMode((current) => (current === 'convert' ? 'plain' : 'convert'));
@@ -1215,8 +1262,13 @@ export default function JsonTool({
                   active={active}
                   tableDisabled={!input.trim() || !inputPreview.valid}
                   tableHint={t('jsonTool.tablePreviewInvalid')}
-                  onToggleTable={() => setInputTableMode((current) => !current)}
+                  onToggleTable={toggleInputTable}
                   tablePreview={<JsonTablePreview value={inputPreview.value} t={t} />}
+                  schemaMode={inputSchemaPreviewMode}
+                  onToggleSchema={inputIsSchema ? toggleInputSchemaPreview : undefined}
+                  schemaPreview={
+                    inputIsSchema ? <JsonSchemaPreview value={inputPreview.value} /> : null
+                  }
                   onOpenFile={() => void fileDrop.pick()}
                 />
                 <div
