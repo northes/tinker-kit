@@ -143,16 +143,19 @@ tasks:
 
   create:dmg:
     summary: Creates a configurable `.dmg` from the `.app` bundle
+    desc: |
+      Uses tools/dmg so every Finder icon is pinned: wails3 tool package places
+      the extra installer files on top of the app and Applications icons.
     platforms: [darwin]
     cmds:
       - >-
-        wails3 tool package --format dmg --name "{{.APP_NAME}}" --out "{{.BIN_DIR}}"
-        --background "{{.DMG_BACKGROUND}}"
-        --volume-icon "{{.DMG_VOLUME_ICON}}"
-        --file-icon "{{.DMG_FILE_ICON}}"
-        --window-width "{{.DMG_WINDOW_WIDTH}}"
-        --window-height "{{.DMG_WINDOW_HEIGHT}}"
-        {{if .DMG_FILES}}--files "{{.DMG_FILES}}"{{end}}
+        go run ./tools/dmg -name "{{.APP_NAME}}" -out "{{.BIN_DIR}}"
+        -background "{{.DMG_BACKGROUND}}"
+        -volume-icon "{{.DMG_VOLUME_ICON}}"
+        -file-icon "{{.DMG_FILE_ICON}}"
+        -window-width "{{.DMG_WINDOW_WIDTH}}"
+        -window-height "{{.DMG_WINDOW_HEIGHT}}"
+        {{if .DMG_FILES}}-files "{{.DMG_FILES}}"{{end}}
     vars:
       DMG_BACKGROUND: '{{.DMG_BACKGROUND | default "build/darwin/dmg-background.png"}}'
       DMG_VOLUME_ICON: '{{.DMG_VOLUME_ICON | default "build/darwin/icons.icns"}}'

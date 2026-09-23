@@ -4,11 +4,15 @@ go 1.26.0
 
 require (
 	github.com/google/go-containerregistry v0.22.1
+	github.com/leaanthony/dmg v0.0.0-20260731074841-5c28840cf819
 	github.com/pkg/sftp v1.13.11
 	github.com/wailsapp/wails/v3 v3.0.0-beta.23
 )
 
-require github.com/kr/fs v0.1.0 // indirect
+require (
+	github.com/kr/fs v0.1.0 // indirect
+	howett.net/plist v1.0.2-0.20250314012144-ee69052608d9 // indirect
+)
 
 require (
 	github.com/adrg/xdg v0.5.3 // indirect
