@@ -1,8 +1,11 @@
 package main
 
 import (
+	"context"
 	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 )
 
 func TestGroupDockerContainersKeepsStandaloneAndCompose(t *testing.T) {
@@ -114,5 +117,83 @@ func TestSaveServiceTargetsRequiresGlobalSSHProfile(t *testing.T) {
 	}
 	if err := service.SaveServiceTargets([]ServiceTarget{{ID: "ssh:missing", Kind: "ssh", SSHProfileID: "does-not-exist"}}); err == nil {
 		t.Fatal("目标引用不存在的全局 SSH 配置时应失败")
+	}
+}
+
+func TestParseRemoteEnvProbeReadsPathAndCommands(t *testing.T) {
+	out := "welcome to the box\n__TK_PATH__ /home/igcdc/.nvm/versions/node/v22.13.1/bin:/usr/bin\n__TK_CMD__ docker /usr/bin/docker\n__TK_CMD__ pm2 /home/igcdc/.nvm/versions/node/v22.13.1/bin/pm2\n__TK_CMD__ systemctl\n"
+	env, err := parseRemoteEnvProbe(out)
+	if err != nil {
+		t.Fatalf("解析远端环境失败: %v", err)
+	}
+	if env.path != "/home/igcdc/.nvm/versions/node/v22.13.1/bin:/usr/bin" {
+		t.Fatalf("PATH 解析错误: %q", env.path)
+	}
+	if !env.commands["docker"] || !env.commands["pm2"] {
+		t.Fatalf("已存在的命令应被标记: %#v", env.commands)
+	}
+	if env.commands["systemctl"] {
+		t.Fatalf("空路径不应被标记为存在: %#v", env.commands)
+	}
+}
+
+func TestParseRemoteEnvProbeRejectsMissingPath(t *testing.T) {
+	if _, err := parseRemoteEnvProbe("__TK_CMD__ pm2 /usr/bin/pm2\n"); err == nil {
+		t.Fatal("缺少 PATH 时应报错")
+	}
+}
+
+func TestRemoteCommandLinePrependsResolvedPath(t *testing.T) {
+	service := &ServiceManagerService{ctx: context.Background(), remoteEnv: map[string]remoteCommandEnv{}}
+	source := ImageSource{ID: "ssh:p1", Kind: "ssh", SSHHost: "box", SSHUsername: "igcdc", SSHPort: 22}
+	service.remoteEnv[remoteEnvKey(source)] = remoteCommandEnv{
+		path:       "/home/igcdc/.nvm/versions/node/v22.13.1/bin:/usr/bin",
+		commands:   map[string]bool{"pm2": true},
+		resolvedAt: time.Now(),
+	}
+	line, label, err := service.remoteCommandLine(source, "pm2", []string{"jlist"})
+	if err != nil {
+		t.Fatalf("解析命令失败: %v", err)
+	}
+	if label != "pm2" {
+		t.Fatalf("错误信息命令名应为 pm2: %q", label)
+	}
+	if want := "PATH='/home/igcdc/.nvm/versions/node/v22.13.1/bin:/usr/bin' 'pm2' 'jlist'"; line != want {
+		t.Fatalf("命令串 = %q, 期望 %q", line, want)
+	}
+}
+
+func TestRemoteCommandLineReportsMissingCommand(t *testing.T) {
+	service := &ServiceManagerService{ctx: context.Background(), remoteEnv: map[string]remoteCommandEnv{}}
+	source := ImageSource{ID: "ssh:p1", Kind: "ssh", SSHHost: "box", SSHUsername: "igcdc", SSHPort: 22}
+	service.remoteEnv[remoteEnvKey(source)] = remoteCommandEnv{
+		path:       "/usr/bin",
+		commands:   map[string]bool{"pm2": false},
+		resolvedAt: time.Now(),
+	}
+	_, _, err := service.remoteCommandLine(source, "pm2", []string{"jlist"})
+	if err == nil || !strings.Contains(err.Error(), "远端未找到命令 pm2") {
+		t.Fatalf("命令缺失时应给出明确错误: %v", err)
+	}
+}
+
+func TestRemoteCommandLineFallsBackWhenProbeFails(t *testing.T) {
+	service := &ServiceManagerService{ctx: context.Background(), remoteEnv: map[string]remoteCommandEnv{}}
+	source := ImageSource{ID: "ssh:p1", Kind: "ssh", SSHHost: "box"}
+	line, label, err := service.remoteCommandLine(source, "pm2", []string{"jlist"})
+	if err != nil {
+		t.Fatalf("探测失败不应阻断命令: %v", err)
+	}
+	if label != "pm2" || line != "'pm2' 'jlist'" {
+		t.Fatalf("应退回裸命令: line=%q label=%q", line, label)
+	}
+}
+
+func TestBuildRemoteEnvProbeScriptIncludesManagersAndCommands(t *testing.T) {
+	script := buildRemoteEnvProbeScript(remoteCommandNames)
+	for _, want := range []string{".nvm/versions/node/*/bin", ".volta/bin", ".asdf/shims", "__TK_PATH__", "docker", "pm2", "systemctl", "journalctl"} {
+		if !strings.Contains(script, want) {
+			t.Fatalf("探测脚本缺少 %q: %s", want, script)
+		}
 	}
 }

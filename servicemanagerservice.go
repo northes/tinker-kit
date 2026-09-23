@@ -21,7 +21,14 @@ const (
 	serviceCommandTimeout = 20 * time.Second
 	serviceLogBufferBytes = 20 << 20
 	serviceLogTail        = 500
+	remoteEnvProbeTimeout = 8 * time.Second
+	remoteEnvTTL          = 10 * time.Minute
 )
+
+// remoteCommandNames 是需要通过远端环境解析的命令。这些命令可能只存在于
+// 交互式登录 shell 的 PATH 中（典型是 nvm/volta 等版本管理器），非交互式
+// SSH 会话默认 PATH 找不到它们。
+var remoteCommandNames = []string{"docker", "pm2", "systemctl", "journalctl"}
 
 type ServiceTarget struct {
 	ID           string `json:"id"`
@@ -190,18 +197,27 @@ type logMonitorState struct {
 }
 
 type ServiceManagerService struct {
-	config   *ConfigService
-	ctx      context.Context
-	cancel   context.CancelFunc
-	mu       sync.Mutex
-	monitors map[string]*logMonitorState
-	emit     func(string, any)
-	sequence atomic.Uint64
+	config      *ConfigService
+	ctx         context.Context
+	cancel      context.CancelFunc
+	mu          sync.Mutex
+	monitors    map[string]*logMonitorState
+	remoteEnvMu sync.Mutex
+	remoteEnv   map[string]remoteCommandEnv
+	emit        func(string, any)
+	sequence    atomic.Uint64
+}
+
+// remoteCommandEnv 是远端登录 shell 解析出的执行环境：登录 PATH 与命令可解析状态。
+type remoteCommandEnv struct {
+	path       string
+	commands   map[string]bool
+	resolvedAt time.Time
 }
 
 func NewServiceManagerService(config *ConfigService) *ServiceManagerService {
 	ctx, cancel := context.WithCancel(context.Background())
-	return &ServiceManagerService{config: config, ctx: ctx, cancel: cancel, monitors: map[string]*logMonitorState{}}
+	return &ServiceManagerService{config: config, ctx: ctx, cancel: cancel, monitors: map[string]*logMonitorState{}, remoteEnv: map[string]remoteCommandEnv{}}
 }
 func (s *ServiceManagerService) ServiceName() string                    { return "ServiceManagerService" }
 func (s *ServiceManagerService) setEventEmitter(emit func(string, any)) { s.emit = emit }
@@ -313,7 +329,113 @@ func (s *ServiceManagerService) run(ctx context.Context, source ImageSource, com
 		}
 		return out, nil
 	}
-	return runAuthenticatedSSH(ctx, source, command, "zh-CN", args...)
+	name, label, err := s.remoteCommandLine(source, command, args)
+	if err != nil {
+		return nil, err
+	}
+	return runAuthenticatedSSHLine(ctx, source, label, "zh-CN", name)
+}
+
+// remoteCommandLine 返回远端命令的执行串与错误信息用的命令名。它会先用远端
+// 登录 shell 解析出的 PATH 前置，使 nvm/volta 等仅存在于交互式 PATH 的命令
+// 也能被找到；探测失败时退回裸命令，不因探测本身改变可用性。
+func (s *ServiceManagerService) remoteCommandLine(source ImageSource, command string, args []string) (string, string, error) {
+	env, ok := s.remoteCommandEnv(source)
+	if !ok || env.path == "" {
+		return shellJoin(append([]string{command}, args...)), command, nil
+	}
+	if found, checked := env.commands[command]; checked && !found {
+		return "", "", fmt.Errorf("远端未找到命令 %s；请确认已在远端安装并加入登录 shell PATH", command)
+	}
+	return "PATH=" + shellQuote(env.path) + " " + shellJoin(append([]string{command}, args...)), command, nil
+}
+
+// remoteEnvKey 用连接信息标识一次远端环境解析，SSH 配置变化时自动重新探测。
+func remoteEnvKey(source ImageSource) string {
+	return source.ID + "|" + source.SSHHost + "|" + source.SSHUsername + "|" + strconv.Itoa(source.SSHPort)
+}
+
+func (s *ServiceManagerService) remoteCommandEnv(source ImageSource) (remoteCommandEnv, bool) {
+	key := remoteEnvKey(source)
+	s.remoteEnvMu.Lock()
+	cached, ok := s.remoteEnv[key]
+	s.remoteEnvMu.Unlock()
+	if ok && time.Since(cached.resolvedAt) < remoteEnvTTL {
+		return cached, true
+	}
+	probeCtx, cancel := context.WithTimeout(s.ctx, remoteEnvProbeTimeout)
+	defer cancel()
+	env, err := probeRemoteCommandEnv(probeCtx, source)
+	if err != nil {
+		return remoteCommandEnv{}, false
+	}
+	env.resolvedAt = time.Now()
+	s.remoteEnvMu.Lock()
+	s.remoteEnv[key] = env
+	s.remoteEnvMu.Unlock()
+	return env, true
+}
+
+// probeRemoteCommandEnv 通过远端登录 shell 解析 PATH：先取登录 shell 的 PATH，
+// 再补上版本管理器与常见安装目录，最后逐条确认目标命令是否存在。
+func probeRemoteCommandEnv(ctx context.Context, source ImageSource) (remoteCommandEnv, error) {
+	script := buildRemoteEnvProbeScript(remoteCommandNames)
+	var lastErr error
+	for _, sh := range []string{"bash", "zsh", "sh"} {
+		out, err := runAuthenticatedSSH(ctx, source, sh, "zh-CN", "-lc", script)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		if ctx.Err() != nil {
+			return remoteCommandEnv{}, ctx.Err()
+		}
+		env, err := parseRemoteEnvProbe(string(out))
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		return env, nil
+	}
+	if lastErr == nil {
+		lastErr = errors.New("远端 shell 环境探测失败")
+	}
+	return remoteCommandEnv{}, lastErr
+}
+
+func buildRemoteEnvProbeScript(commands []string) string {
+	var b strings.Builder
+	b.WriteString("p=$PATH\n")
+	b.WriteString(`for d in /usr/local/bin /opt/homebrew/bin "$HOME/.local/bin" "$HOME/.asdf/shims" "$HOME/.local/share/fnm/aliases/default/bin" "$HOME/.volta/bin" "$HOME"/.nvm/versions/node/*/bin; do [ -d "$d" ] && p="$d:$p"; done` + "\n")
+	b.WriteString("PATH=$p; export PATH\n")
+	b.WriteString("printf '__TK_PATH__ %s\\n' \"$PATH\"\n")
+	b.WriteString("for c in")
+	for _, command := range commands {
+		b.WriteString(" " + command)
+	}
+	b.WriteString("; do printf '__TK_CMD__ %s %s\\n' \"$c\" \"$(command -v \"$c\" 2>/dev/null)\"; done\n")
+	return b.String()
+}
+
+func parseRemoteEnvProbe(out string) (remoteCommandEnv, error) {
+	env := remoteCommandEnv{commands: map[string]bool{}}
+	for _, line := range strings.Split(out, "\n") {
+		line = strings.TrimSpace(line)
+		if rest, ok := strings.CutPrefix(line, "__TK_PATH__ "); ok {
+			env.path = strings.TrimSpace(rest)
+			continue
+		}
+		if rest, ok := strings.CutPrefix(line, "__TK_CMD__ "); ok {
+			name, path, _ := strings.Cut(rest, " ")
+			if name != "" {
+				env.commands[name] = strings.TrimSpace(path) != ""
+			}
+		}
+	}
+	if env.path == "" {
+		return remoteCommandEnv{}, errors.New("解析远端 shell 环境失败")
+	}
+	return env, nil
 }
 
 func (s *ServiceManagerService) GetServiceInventory(targetID string) ServiceInventory {
@@ -810,7 +932,13 @@ func (s *ServiceManagerService) stream(ctx context.Context, source ImageSource, 
 	reader, writer := io.Pipe()
 	done := make(chan error, 1)
 	go func() {
-		done <- runAuthenticatedSSHCombined(ctx, source, command, "zh-CN", writer, args...)
+		commandLine, label, err := s.remoteCommandLine(source, command, args)
+		if err != nil {
+			done <- err
+			_ = writer.Close()
+			return
+		}
+		done <- runAuthenticatedSSHCombinedLine(ctx, source, label, "zh-CN", commandLine, writer)
 		_ = writer.Close()
 	}()
 	scan := bufio.NewScanner(reader)
