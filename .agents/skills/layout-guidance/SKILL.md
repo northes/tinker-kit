@@ -36,6 +36,15 @@ user-invocable: false
 - flex 中的图标按钮必须显式设置相等的 `width`/`min-width` 和 `flex: none`（或 `flex-shrink: 0`），必要时清除横向 padding，避免窄窗口或长输入压扁按钮。
 - Wails 标题栏拖拽使用 CSS 的 `--wails-draggable: drag/no-drag` 和 `data-wails-drag`，不要用 JavaScript 监听鼠标模拟拖拽。
 
+## 可调整分栏
+
+- `react-resizable-panels` 会按一组 panel `id` 缓存布局；同一组面板在单栏、左右分栏、上下分栏或不同业务模式下有不同约束时，各状态必须使用独立的 `id` 组合，避免关闭模式后复用旧尺寸。React `key` 保持稳定，使 CodeMirror 等子组件不因布局状态变化而重建。
+- 隐藏面板用 `defaultSize={0}`、`minSize={0}`、`maxSize={0}` 表达布局约束；显示时恢复对应模式的默认值、最小值和最大值。显示中的内容面板不要设置 `collapsible`，两侧都必须受 `minSize` 约束，避免某一侧能被拖到 0。
+- 不要在面板约束随模式变化时再通过 `groupRef.setLayout()` 强制同步尺寸。面板注册、约束重算和 effect 的执行顺序会互相覆盖，容易留下空白区域或恢复错误布局。让模式专属 `id` 负责隔离和恢复布局。
+- 面板尺寸为 0 不等于内容一定不可见：panel 外壳可能允许内容溢出。隐藏宿主还要设置 `visibility:hidden`、`pointer-events:none`、`inert` 和 `aria-hidden`；需要保留编辑器状态时不要用条件渲染或 `display:none` 卸载实例。
+- 布局标识和 React 生命周期标识分开设计：`id` 表示当前模式下的布局身份，`key` 表示组件实例身份。不要为了清空布局缓存而改变 `key`，否则会同时丢失编辑器撤销记录、滚动位置和内部状态。
+- 验证至少覆盖：每种模式分别开启和关闭、模式之间直接切换、宽窄屏方向切换、反复往返、分隔条向两端拖到极限，以及重新打开后恢复该模式上次比例。类型检查和构建不能证明这些状态转换正确。
+
 ## 动画与浮层
 
 - `translateY(+12px)` 的入场动画会造成底部瞬时溢出和滚动条闪烁；使用 `.tool-slot` 的 `overflow: hidden` 裁切，或改为向上移动。
@@ -104,4 +113,5 @@ user-invocable: false
 - **滚动容器**：按 [overlay-scrollbar.md](./overlay-scrollbar.md) 检查。
 - **浮层**：Portal 挂载位置、实际滚动层，以及 Dialog 内浮层的滚动与定位关系。
 - **CodeMirror/常驻工具页**：隐藏页面不卸载、撤销历史和滚动位置保留、尺寸链，以及编辑器自身滚动责任。
+- **可调整分栏**：模式专属 panel `id`、稳定 React `key`、隐藏面板 `0/0/0` 约束、可见面板最小尺寸、隐藏宿主不可见，以及各模式开关往返和极限拖拽。
 - **弹窗表单**：字段处于原生 `<form>` 内，页脚提交按钮通过 `form` 关联且为 `type="submit"`，禁用态能阻止回车提交，非提交按钮未被误设为 submit。
