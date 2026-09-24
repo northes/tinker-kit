@@ -541,10 +541,10 @@ function SSHKnownHostsDialog({
                     </div>
                   </div>
                 ))}
-               </div>
-             )}
-           </ScrollArea>
-           <DialogFooter className="mx-0 mb-0 flex-none rounded-b-xl px-6 py-4">
+              </div>
+            )}
+          </ScrollArea>
+          <DialogFooter className="mx-0 mb-0 flex-none rounded-b-xl px-6 py-4">
             {editing ? (
               <>
                 <Button

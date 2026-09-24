@@ -1903,24 +1903,30 @@ export default function SshFilesTool({ active }: Props) {
             </form>
           ) : (
             <>
-              <ScrollArea className="min-w-0 flex-1 py-1" options={{ overflow: { x: 'scroll', y: 'hidden' } }}>
+              <ScrollArea
+                className="min-w-0 flex-1 py-1"
+                options={{ overflow: { x: 'scroll', y: 'hidden' } }}
+              >
                 <div className="flex items-center gap-0.5">
-                {breadcrumbs.map((crumb, index) => (
-                  <span key={crumb.path} className="flex items-center whitespace-nowrap">
-                    <button
-                      type="button"
-                      className={`rounded px-1.5 py-1 hover:bg-accent hover:text-foreground ${index === breadcrumbs.length - 1 ? 'font-medium text-foreground' : 'text-muted-foreground'}`}
-                      disabled={!sourceUsable || isLoading}
-                      aria-current={index === breadcrumbs.length - 1 ? 'page' : undefined}
-                      onClick={() => navigate(crumb.path)}
-                    >
-                      {crumb.label}
-                    </button>
-                    {index < breadcrumbs.length - 1 ? (
-                      <CaretRight size={12} className="mx-0.5 shrink-0 text-muted-foreground/50" />
-                    ) : null}
-                  </span>
-                ))}
+                  {breadcrumbs.map((crumb, index) => (
+                    <span key={crumb.path} className="flex items-center whitespace-nowrap">
+                      <button
+                        type="button"
+                        className={`rounded px-1.5 py-1 hover:bg-accent hover:text-foreground ${index === breadcrumbs.length - 1 ? 'font-medium text-foreground' : 'text-muted-foreground'}`}
+                        disabled={!sourceUsable || isLoading}
+                        aria-current={index === breadcrumbs.length - 1 ? 'page' : undefined}
+                        onClick={() => navigate(crumb.path)}
+                      >
+                        {crumb.label}
+                      </button>
+                      {index < breadcrumbs.length - 1 ? (
+                        <CaretRight
+                          size={12}
+                          className="mx-0.5 shrink-0 text-muted-foreground/50"
+                        />
+                      ) : null}
+                    </span>
+                  ))}
                 </div>
               </ScrollArea>
               <Button
@@ -2029,415 +2035,419 @@ export default function SshFilesTool({ active }: Props) {
               className="h-full [padding-inline-end:var(--overlay-scrollbar-size)]"
               onViewport={setFileListViewport}
             >
-            {fileDrop.over ? (
-              <span className="sr-only" role="status">
-                {t('fileDrop.release')}
-              </span>
-            ) : null}
-            <div
-              aria-hidden="true"
-              className="pointer-events-none absolute inset-2 z-20 flex items-center justify-center rounded-lg border border-dashed border-primary bg-primary/10 px-4 py-3 text-primary opacity-0 group-data-[over=true]/file-drop:opacity-100 group-[.file-drop-target-active]/file-drop:opacity-100"
-            >
-              <span className="flex items-center gap-2 text-xs font-medium">
-                <UploadSimple size={16} weight="duotone" />
-                {t('fileDrop.release')}
-              </span>
-            </div>
-            {loadingSources ? (
-              <div className="flex h-full flex-col items-center justify-center gap-2 p-6 text-center">
-                <Spinner />
-                <span className="text-sm text-muted-foreground">
-                  {t('sshFilesTool.loadingSources')}
+              {fileDrop.over ? (
+                <span className="sr-only" role="status">
+                  {t('fileDrop.release')}
                 </span>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="mt-1 h-7 px-2 text-xs"
-                  onClick={cancelLoading}
-                >
-                  <XCircle data-icon="inline-start" size={14} />
-                  {t('common.cancel')}
-                </Button>
-              </div>
-            ) : loading ? (
-              <div className="flex h-full flex-col items-center justify-center gap-2 p-6 text-center">
-                <Spinner />
-                <span className="text-sm text-muted-foreground">
-                  {searching ? t('sshFilesTool.searching') : t('sshFilesTool.loadingDirectory')}
+              ) : null}
+              <div
+                aria-hidden="true"
+                className="pointer-events-none absolute inset-2 z-20 flex items-center justify-center rounded-lg border border-dashed border-primary bg-primary/10 px-4 py-3 text-primary opacity-0 group-data-[over=true]/file-drop:opacity-100 group-[.file-drop-target-active]/file-drop:opacity-100"
+              >
+                <span className="flex items-center gap-2 text-xs font-medium">
+                  <UploadSimple size={16} weight="duotone" />
+                  {t('fileDrop.release')}
                 </span>
-                <span className="max-w-full truncate font-mono text-[11px] text-muted-foreground/70">
-                  {currentPath}
-                </span>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="mt-1 h-7 px-2 text-xs"
-                  onClick={cancelLoading}
-                >
-                  <XCircle data-icon="inline-start" size={14} />
-                  {t('common.cancel')}
-                </Button>
               </div>
-            ) : loadingCanceled ? (
-              <div className="flex h-full flex-col items-center justify-center gap-2 p-6 text-center">
-                <XCircle size={16} weight="duotone" className="text-muted-foreground" />
-                <span className="text-sm text-muted-foreground">
-                  {t('sshFilesTool.loadingCanceled')}
-                </span>
-                <span className="max-w-full truncate font-mono text-[11px] text-muted-foreground/70">
-                  {t('sshFilesTool.loadingCanceledHint')}
-                </span>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="mt-1 h-7 px-2 text-xs"
-                  onClick={retryCanceledLoading}
-                >
-                  <ArrowClockwise data-icon="inline-start" size={14} />
-                  {t('sshFilesTool.refresh')}
-                </Button>
-              </div>
-            ) : !sourceID ? (
-              <div className="flex h-full flex-col items-center justify-center gap-2 p-6 text-center">
-                <HardDrives size={30} weight="duotone" className="text-muted-foreground" />
-                <div className="text-sm font-medium text-foreground">{t('sshFilesTool.empty')}</div>
-                <div className="max-w-sm text-xs text-muted-foreground">
-                  {t('sshFilesTool.emptyHint')}
+              {loadingSources ? (
+                <div className="flex h-full flex-col items-center justify-center gap-2 p-6 text-center">
+                  <Spinner />
+                  <span className="text-sm text-muted-foreground">
+                    {t('sshFilesTool.loadingSources')}
+                  </span>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="mt-1 h-7 px-2 text-xs"
+                    onClick={cancelLoading}
+                  >
+                    <XCircle data-icon="inline-start" size={14} />
+                    {t('common.cancel')}
+                  </Button>
                 </div>
-                <Button
-                  variant="outline"
-                  className="mt-1 h-8 text-xs"
-                  onClick={() => setManageOpen(true)}
-                >
-                  {t('sshFilesTool.addSource')}
-                </Button>
-              </div>
-            ) : !sourceUsable ? (
-              <div className="flex h-full flex-col items-center justify-center gap-2 p-6 text-center">
-                <Warning size={30} weight="duotone" className="text-destructive" />
-                <div className="text-sm font-medium text-foreground">
-                  {t('sshFilesTool.sshProfileMissing')}
+              ) : loading ? (
+                <div className="flex h-full flex-col items-center justify-center gap-2 p-6 text-center">
+                  <Spinner />
+                  <span className="text-sm text-muted-foreground">
+                    {searching ? t('sshFilesTool.searching') : t('sshFilesTool.loadingDirectory')}
+                  </span>
+                  <span className="max-w-full truncate font-mono text-[11px] text-muted-foreground/70">
+                    {currentPath}
+                  </span>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="mt-1 h-7 px-2 text-xs"
+                    onClick={cancelLoading}
+                  >
+                    <XCircle data-icon="inline-start" size={14} />
+                    {t('common.cancel')}
+                  </Button>
                 </div>
-                <div className="max-w-sm text-xs text-muted-foreground">
-                  {t('sshFilesTool.sshProfileMissingHint')}
+              ) : loadingCanceled ? (
+                <div className="flex h-full flex-col items-center justify-center gap-2 p-6 text-center">
+                  <XCircle size={16} weight="duotone" className="text-muted-foreground" />
+                  <span className="text-sm text-muted-foreground">
+                    {t('sshFilesTool.loadingCanceled')}
+                  </span>
+                  <span className="max-w-full truncate font-mono text-[11px] text-muted-foreground/70">
+                    {t('sshFilesTool.loadingCanceledHint')}
+                  </span>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="mt-1 h-7 px-2 text-xs"
+                    onClick={retryCanceledLoading}
+                  >
+                    <ArrowClockwise data-icon="inline-start" size={14} />
+                    {t('sshFilesTool.refresh')}
+                  </Button>
                 </div>
-              </div>
-            ) : error ? (
-              <div className="flex h-full flex-col items-center justify-center gap-2 p-6 text-center">
-                <XCircle size={30} weight="duotone" className="text-destructive" />
-                <div className="text-sm font-medium text-foreground">
-                  {t(searchActive ? 'sshFilesTool.searchFailed' : 'sshFilesTool.loadFailed')}
+              ) : !sourceID ? (
+                <div className="flex h-full flex-col items-center justify-center gap-2 p-6 text-center">
+                  <HardDrives size={30} weight="duotone" className="text-muted-foreground" />
+                  <div className="text-sm font-medium text-foreground">
+                    {t('sshFilesTool.empty')}
+                  </div>
+                  <div className="max-w-sm text-xs text-muted-foreground">
+                    {t('sshFilesTool.emptyHint')}
+                  </div>
+                  <Button
+                    variant="outline"
+                    className="mt-1 h-8 text-xs"
+                    onClick={() => setManageOpen(true)}
+                  >
+                    {t('sshFilesTool.addSource')}
+                  </Button>
                 </div>
-                <div className="max-w-lg break-words text-xs text-muted-foreground">{error}</div>
-                <Button
-                  variant="outline"
-                  className="mt-1 h-8 text-xs"
-                  onClick={() =>
-                    searchActive && searchQuery
-                      ? void executeSearch(searchQuery)
-                      : void loadDirectory(sourceID, currentPath, showHidden)
-                  }
-                >
-                  <ArrowClockwise data-icon="inline-start" size={14} />
-                  {t('sshFilesTool.refresh')}
-                </Button>
-              </div>
-            ) : entries.length === 0 ? (
-              <div className="flex h-full flex-col items-center justify-center gap-2 p-6 text-center">
-                {searchActive ? (
-                  <MagnifyingGlass size={30} weight="duotone" className="text-muted-foreground" />
-                ) : (
-                  <Folder size={30} weight="duotone" className="text-muted-foreground" />
-                )}
-                <div className="text-sm font-medium text-foreground">
-                  {t(searchActive ? 'sshFilesTool.searchNoResults' : 'sshFilesTool.directoryEmpty')}
+              ) : !sourceUsable ? (
+                <div className="flex h-full flex-col items-center justify-center gap-2 p-6 text-center">
+                  <Warning size={30} weight="duotone" className="text-destructive" />
+                  <div className="text-sm font-medium text-foreground">
+                    {t('sshFilesTool.sshProfileMissing')}
+                  </div>
+                  <div className="max-w-sm text-xs text-muted-foreground">
+                    {t('sshFilesTool.sshProfileMissingHint')}
+                  </div>
                 </div>
-                <div className="max-w-sm text-xs text-muted-foreground">
-                  {t(
-                    searchActive
-                      ? 'sshFilesTool.searchNoResultsHint'
-                      : 'sshFilesTool.directoryEmptyHint',
+              ) : error ? (
+                <div className="flex h-full flex-col items-center justify-center gap-2 p-6 text-center">
+                  <XCircle size={30} weight="duotone" className="text-destructive" />
+                  <div className="text-sm font-medium text-foreground">
+                    {t(searchActive ? 'sshFilesTool.searchFailed' : 'sshFilesTool.loadFailed')}
+                  </div>
+                  <div className="max-w-lg break-words text-xs text-muted-foreground">{error}</div>
+                  <Button
+                    variant="outline"
+                    className="mt-1 h-8 text-xs"
+                    onClick={() =>
+                      searchActive && searchQuery
+                        ? void executeSearch(searchQuery)
+                        : void loadDirectory(sourceID, currentPath, showHidden)
+                    }
+                  >
+                    <ArrowClockwise data-icon="inline-start" size={14} />
+                    {t('sshFilesTool.refresh')}
+                  </Button>
+                </div>
+              ) : entries.length === 0 ? (
+                <div className="flex h-full flex-col items-center justify-center gap-2 p-6 text-center">
+                  {searchActive ? (
+                    <MagnifyingGlass size={30} weight="duotone" className="text-muted-foreground" />
+                  ) : (
+                    <Folder size={30} weight="duotone" className="text-muted-foreground" />
                   )}
+                  <div className="text-sm font-medium text-foreground">
+                    {t(
+                      searchActive ? 'sshFilesTool.searchNoResults' : 'sshFilesTool.directoryEmpty',
+                    )}
+                  </div>
+                  <div className="max-w-sm text-xs text-muted-foreground">
+                    {t(
+                      searchActive
+                        ? 'sshFilesTool.searchNoResultsHint'
+                        : 'sshFilesTool.directoryEmptyHint',
+                    )}
+                  </div>
                 </div>
-              </div>
-            ) : (
-              <Table className="min-w-[840px] text-xs" containerClassName="overflow-visible">
-                <TableHeader className="sticky top-0 z-10 bg-background">
-                  <TableRow className="hover:bg-transparent">
-                    <TableHead className="w-10 px-3 text-[10px] text-muted-foreground">
-                      <Checkbox
-                        checked={entries.length > 0 && selected.length === entries.length}
-                        indeterminate={selected.length > 0 && selected.length < entries.length}
-                        onCheckedChange={(checked) =>
-                          setSelected(checked === true ? entries.map((item) => item.path) : [])
-                        }
-                        aria-label={t(
-                          searchActive
-                            ? 'sshFilesTool.selectAllSearchResults'
-                            : 'sshFilesTool.selectAll',
-                        )}
-                      />
-                    </TableHead>
-                    <TableHead
-                      className="min-w-[280px] text-[10px] text-muted-foreground"
-                      aria-sort={
-                        sortKey === 'name'
-                          ? sortDirection === 'asc'
-                            ? 'ascending'
-                            : 'descending'
-                          : 'none'
-                      }
-                    >
-                      {sortableHeader('name', t('sshFilesTool.name'))}
-                    </TableHead>
-                    <TableHead
-                      className="w-32 text-[10px] text-muted-foreground"
-                      aria-sort={
-                        sortKey === 'size'
-                          ? sortDirection === 'asc'
-                            ? 'ascending'
-                            : 'descending'
-                          : 'none'
-                      }
-                    >
-                      {sortableHeader('size', t('sshFilesTool.size'))}
-                    </TableHead>
-                    <TableHead
-                      className="w-44 text-[10px] text-muted-foreground"
-                      aria-sort={
-                        sortKey === 'modifiedAt'
-                          ? sortDirection === 'asc'
-                            ? 'ascending'
-                            : 'descending'
-                          : 'none'
-                      }
-                    >
-                      {sortableHeader('modifiedAt', t('sshFilesTool.modified'))}
-                    </TableHead>
-                    <TableHead
-                      className="w-44 text-[10px] text-muted-foreground"
-                      aria-sort={
-                        sortKey === 'createdAt'
-                          ? sortDirection === 'asc'
-                            ? 'ascending'
-                            : 'descending'
-                          : 'none'
-                      }
-                    >
-                      {sortableHeader('createdAt', t('sshFilesTool.created'))}
-                    </TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filePaddingTop > 0 ? (
-                    <tr>
-                      <td colSpan={5} style={{ height: filePaddingTop, padding: 0 }} />
-                    </tr>
-                  ) : null}
-                  {fileVirtualRows.map((virtualRow) => {
-                    const entry = sortedEntries[virtualRow.index];
-                    const operationPaths = operationPathsFor(entry.path);
-                    const archiveSelection = operationPaths.every(isArchivePath);
-                    const parentPath = searchActive ? remoteParent(entry.path) : '';
-                    const isEntryFavorite = entry.isDir && favoritePaths.includes(entry.path);
-                    const EntryIcon = entry.isDir
-                      ? isEntryFavorite
-                        ? FolderStar
-                        : Folder
-                      : remoteFileIcon(entry.path);
-                    return (
-                      <ContextMenu key={entry.path}>
-                        <ContextMenuTrigger
-                          render={
-                            <TableRow
-                              ref={fileRowVirtualizer.measureElement}
-                              data-index={virtualRow.index}
-                              data-row-key={entry.path}
-                              data-state={selected.includes(entry.path) ? 'selected' : undefined}
-                              className="group select-none border-border/60"
-                            />
+              ) : (
+                <Table className="min-w-[840px] text-xs" containerClassName="overflow-visible">
+                  <TableHeader className="sticky top-0 z-10 bg-background">
+                    <TableRow className="hover:bg-transparent">
+                      <TableHead className="w-10 px-3 text-[10px] text-muted-foreground">
+                        <Checkbox
+                          checked={entries.length > 0 && selected.length === entries.length}
+                          indeterminate={selected.length > 0 && selected.length < entries.length}
+                          onCheckedChange={(checked) =>
+                            setSelected(checked === true ? entries.map((item) => item.path) : [])
                           }
-                        >
-                          <TableCell
-                            className="w-10 cursor-default px-3 py-2"
-                            onPointerDown={(event) => startCheckboxDrag(event, entry.path)}
+                          aria-label={t(
+                            searchActive
+                              ? 'sshFilesTool.selectAllSearchResults'
+                              : 'sshFilesTool.selectAll',
+                          )}
+                        />
+                      </TableHead>
+                      <TableHead
+                        className="min-w-[280px] text-[10px] text-muted-foreground"
+                        aria-sort={
+                          sortKey === 'name'
+                            ? sortDirection === 'asc'
+                              ? 'ascending'
+                              : 'descending'
+                            : 'none'
+                        }
+                      >
+                        {sortableHeader('name', t('sshFilesTool.name'))}
+                      </TableHead>
+                      <TableHead
+                        className="w-32 text-[10px] text-muted-foreground"
+                        aria-sort={
+                          sortKey === 'size'
+                            ? sortDirection === 'asc'
+                              ? 'ascending'
+                              : 'descending'
+                            : 'none'
+                        }
+                      >
+                        {sortableHeader('size', t('sshFilesTool.size'))}
+                      </TableHead>
+                      <TableHead
+                        className="w-44 text-[10px] text-muted-foreground"
+                        aria-sort={
+                          sortKey === 'modifiedAt'
+                            ? sortDirection === 'asc'
+                              ? 'ascending'
+                              : 'descending'
+                            : 'none'
+                        }
+                      >
+                        {sortableHeader('modifiedAt', t('sshFilesTool.modified'))}
+                      </TableHead>
+                      <TableHead
+                        className="w-44 text-[10px] text-muted-foreground"
+                        aria-sort={
+                          sortKey === 'createdAt'
+                            ? sortDirection === 'asc'
+                              ? 'ascending'
+                              : 'descending'
+                            : 'none'
+                        }
+                      >
+                        {sortableHeader('createdAt', t('sshFilesTool.created'))}
+                      </TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {filePaddingTop > 0 ? (
+                      <tr>
+                        <td colSpan={5} style={{ height: filePaddingTop, padding: 0 }} />
+                      </tr>
+                    ) : null}
+                    {fileVirtualRows.map((virtualRow) => {
+                      const entry = sortedEntries[virtualRow.index];
+                      const operationPaths = operationPathsFor(entry.path);
+                      const archiveSelection = operationPaths.every(isArchivePath);
+                      const parentPath = searchActive ? remoteParent(entry.path) : '';
+                      const isEntryFavorite = entry.isDir && favoritePaths.includes(entry.path);
+                      const EntryIcon = entry.isDir
+                        ? isEntryFavorite
+                          ? FolderStar
+                          : Folder
+                        : remoteFileIcon(entry.path);
+                      return (
+                        <ContextMenu key={entry.path}>
+                          <ContextMenuTrigger
+                            render={
+                              <TableRow
+                                ref={fileRowVirtualizer.measureElement}
+                                data-index={virtualRow.index}
+                                data-row-key={entry.path}
+                                data-state={selected.includes(entry.path) ? 'selected' : undefined}
+                                className="group select-none border-border/60"
+                              />
+                            }
                           >
-                            <Checkbox
-                              className="cursor-default"
-                              checked={selected.includes(entry.path)}
-                              onCheckedChange={(checked) =>
-                                setSelected((current) =>
-                                  checked
-                                    ? [...current, entry.path]
-                                    : current.filter((item) => item !== entry.path),
-                                )
-                              }
-                              aria-label={entry.name}
-                            />
-                          </TableCell>
-                          <TableCell className="min-w-[280px] max-w-0 py-2">
-                            <div className="min-w-0 max-w-full">
-                              <button
-                                type="button"
-                                className="flex w-full min-w-0 max-w-full items-center gap-2 text-left text-foreground hover:underline"
-                                title={entry.path}
-                                onClick={() =>
-                                  entry.isDir
-                                    ? navigate(entry.path)
-                                    : void downloadSelected([entry.path])
+                            <TableCell
+                              className="w-10 cursor-default px-3 py-2"
+                              onPointerDown={(event) => startCheckboxDrag(event, entry.path)}
+                            >
+                              <Checkbox
+                                className="cursor-default"
+                                checked={selected.includes(entry.path)}
+                                onCheckedChange={(checked) =>
+                                  setSelected((current) =>
+                                    checked
+                                      ? [...current, entry.path]
+                                      : current.filter((item) => item !== entry.path),
+                                  )
                                 }
-                              >
-                                <EntryIcon
-                                  size={16}
-                                  weight="duotone"
-                                  className="shrink-0 text-muted-foreground"
-                                />
-                                <span className="min-w-0 truncate">{entry.name}</span>
-                                {entry.isSymlink ? (
-                                  <ArrowUpRight
-                                    size={11}
-                                    aria-label={t('sshFilesTool.symbolicLink')}
+                                aria-label={entry.name}
+                              />
+                            </TableCell>
+                            <TableCell className="min-w-[280px] max-w-0 py-2">
+                              <div className="min-w-0 max-w-full">
+                                <button
+                                  type="button"
+                                  className="flex w-full min-w-0 max-w-full items-center gap-2 text-left text-foreground hover:underline"
+                                  title={entry.path}
+                                  onClick={() =>
+                                    entry.isDir
+                                      ? navigate(entry.path)
+                                      : void downloadSelected([entry.path])
+                                  }
+                                >
+                                  <EntryIcon
+                                    size={16}
+                                    weight="duotone"
                                     className="shrink-0 text-muted-foreground"
                                   />
+                                  <span className="min-w-0 truncate">{entry.name}</span>
+                                  {entry.isSymlink ? (
+                                    <ArrowUpRight
+                                      size={11}
+                                      aria-label={t('sshFilesTool.symbolicLink')}
+                                      className="shrink-0 text-muted-foreground"
+                                    />
+                                  ) : null}
+                                </button>
+                                {parentPath ? (
+                                  <button
+                                    type="button"
+                                    className="block w-full min-w-0 max-w-full truncate text-left text-[10px] text-muted-foreground hover:text-foreground hover:underline"
+                                    title={parentPath}
+                                    onClick={() => navigate(parentPath)}
+                                  >
+                                    {parentPath}
+                                  </button>
                                 ) : null}
-                              </button>
-                              {parentPath ? (
-                                <button
-                                  type="button"
-                                  className="block w-full min-w-0 max-w-full truncate text-left text-[10px] text-muted-foreground hover:text-foreground hover:underline"
-                                  title={parentPath}
-                                  onClick={() => navigate(parentPath)}
-                                >
-                                  {parentPath}
-                                </button>
-                              ) : null}
-                            </div>
-                          </TableCell>
-                          <TableCell className="w-32 py-2 text-muted-foreground">
-                            {entry.isDir ? (
-                              calculatingSizePaths.has(entry.path) ? (
-                                <span className="inline-flex items-center gap-1.5 text-muted-foreground">
-                                  <Spinner className="size-3" />
-                                  {t('sshFilesTool.scanning')}
-                                </span>
-                              ) : sizeValues[entry.path] !== undefined ? (
-                                formatBytes(sizeValues[entry.path])
+                              </div>
+                            </TableCell>
+                            <TableCell className="w-32 py-2 text-muted-foreground">
+                              {entry.isDir ? (
+                                calculatingSizePaths.has(entry.path) ? (
+                                  <span className="inline-flex items-center gap-1.5 text-muted-foreground">
+                                    <Spinner className="size-3" />
+                                    {t('sshFilesTool.scanning')}
+                                  </span>
+                                ) : sizeValues[entry.path] !== undefined ? (
+                                  formatBytes(sizeValues[entry.path])
+                                ) : (
+                                  <button
+                                    type="button"
+                                    className="text-primary underline underline-offset-2"
+                                    disabled={calculatingSizePaths.has(entry.path)}
+                                    onClick={() => void calculateSize(entry)}
+                                  >
+                                    {t('sshFilesTool.calculate')}
+                                  </button>
+                                )
                               ) : (
-                                <button
-                                  type="button"
-                                  className="text-primary underline underline-offset-2"
-                                  disabled={calculatingSizePaths.has(entry.path)}
-                                  onClick={() => void calculateSize(entry)}
-                                >
-                                  {t('sshFilesTool.calculate')}
-                                </button>
-                              )
-                            ) : (
-                              formatBytes(entry.size)
-                            )}
-                          </TableCell>
-                          <TableCell className="w-44 py-2 text-muted-foreground">
-                            {formatRemoteTimestamp(entry.modifiedAt, i18n.language)}
-                          </TableCell>
-                          <TableCell className="w-44 py-2 text-muted-foreground">
-                            {formatRemoteTimestamp(entry.createdAt, i18n.language)}
-                          </TableCell>
-                        </ContextMenuTrigger>
-                        <ContextMenuContent className="min-w-44">
-                          <ContextMenuGroup>
-                            <ContextMenuItem
-                              disabled={operationRunning}
-                              onClick={() => void copyPathToClipboard(entry.path)}
-                            >
-                              <Copy size={14} weight="duotone" aria-hidden="true" />
-                              {t('sshFilesTool.copyPath')}
-                            </ContextMenuItem>
-                            {entry.isDir ? (
+                                formatBytes(entry.size)
+                              )}
+                            </TableCell>
+                            <TableCell className="w-44 py-2 text-muted-foreground">
+                              {formatRemoteTimestamp(entry.modifiedAt, i18n.language)}
+                            </TableCell>
+                            <TableCell className="w-44 py-2 text-muted-foreground">
+                              {formatRemoteTimestamp(entry.createdAt, i18n.language)}
+                            </TableCell>
+                          </ContextMenuTrigger>
+                          <ContextMenuContent className="min-w-44">
+                            <ContextMenuGroup>
                               <ContextMenuItem
-                                disabled={favoritesSaving}
-                                onClick={() => void toggleFavorite(entry.path)}
+                                disabled={operationRunning}
+                                onClick={() => void copyPathToClipboard(entry.path)}
                               >
-                                <Star
-                                  size={14}
-                                  weight={isEntryFavorite ? 'fill' : 'duotone'}
-                                  aria-hidden="true"
-                                />
-                                {t(
-                                  isEntryFavorite
-                                    ? 'sshFilesTool.removeFavoritePath'
-                                    : 'sshFilesTool.addFavoritePath',
-                                )}
+                                <Copy size={14} weight="duotone" aria-hidden="true" />
+                                {t('sshFilesTool.copyPath')}
                               </ContextMenuItem>
-                            ) : null}
-                          </ContextMenuGroup>
-                          <ContextMenuSeparator />
-                          <ContextMenuGroup>
-                            <ContextMenuItem
-                              disabled={operationRunning}
-                              onClick={() => requestFileOperation('copy', operationPaths)}
-                            >
-                              <Copy size={14} weight="duotone" aria-hidden="true" />
-                              {t('sshFilesTool.copy')}
-                            </ContextMenuItem>
-                            <ContextMenuItem
-                              disabled={operationRunning}
-                              onClick={() => requestFileOperation('move', operationPaths)}
-                            >
-                              <ArrowsLeftRight size={14} weight="duotone" aria-hidden="true" />
-                              {t('sshFilesTool.move')}
-                            </ContextMenuItem>
-                            <ContextMenuItem
-                              disabled={operationRunning || operationPaths.length !== 1}
-                              onClick={() => requestFileOperation('rename', operationPaths)}
-                            >
-                              <PencilSimple size={14} weight="duotone" aria-hidden="true" />
-                              {t('sshFilesTool.rename')}
-                            </ContextMenuItem>
-                            <ContextMenuItem
-                              variant="destructive"
-                              disabled={operationRunning}
-                              onClick={() => requestFileOperation('delete', operationPaths)}
-                            >
-                              <Trash size={14} weight="duotone" aria-hidden="true" />
-                              {t('sshFilesTool.delete')}
-                            </ContextMenuItem>
-                          </ContextMenuGroup>
-                          <ContextMenuSeparator />
-                          <ContextMenuGroup>
-                            <ContextMenuItem
-                              disabled={operationRunning || !archiveSelection}
-                              onClick={() => requestFileOperation('extract', operationPaths)}
-                            >
-                              <FileArchive size={14} weight="duotone" aria-hidden="true" />
-                              {t('sshFilesTool.extract')}
-                            </ContextMenuItem>
-                            <ContextMenuItem
-                              disabled={operationRunning}
-                              onClick={() => requestFileOperation('compress', operationPaths)}
-                            >
-                              <Archive size={14} weight="duotone" aria-hidden="true" />
-                              {t('sshFilesTool.compress')}
-                            </ContextMenuItem>
-                            <ContextMenuItem
-                              disabled={operationRunning}
-                              onClick={() => void downloadSelected(operationPaths)}
-                            >
-                              <DownloadSimple size={14} weight="duotone" aria-hidden="true" />
-                              {t('sshFilesTool.download')}
-                            </ContextMenuItem>
-                          </ContextMenuGroup>
-                        </ContextMenuContent>
-                      </ContextMenu>
-                    );
-                  })}
-                  {filePaddingBottom > 0 ? (
-                    <tr>
-                      <td colSpan={5} style={{ height: filePaddingBottom, padding: 0 }} />
-                    </tr>
-                  ) : null}
-                </TableBody>
-              </Table>
-            )}
+                              {entry.isDir ? (
+                                <ContextMenuItem
+                                  disabled={favoritesSaving}
+                                  onClick={() => void toggleFavorite(entry.path)}
+                                >
+                                  <Star
+                                    size={14}
+                                    weight={isEntryFavorite ? 'fill' : 'duotone'}
+                                    aria-hidden="true"
+                                  />
+                                  {t(
+                                    isEntryFavorite
+                                      ? 'sshFilesTool.removeFavoritePath'
+                                      : 'sshFilesTool.addFavoritePath',
+                                  )}
+                                </ContextMenuItem>
+                              ) : null}
+                            </ContextMenuGroup>
+                            <ContextMenuSeparator />
+                            <ContextMenuGroup>
+                              <ContextMenuItem
+                                disabled={operationRunning}
+                                onClick={() => requestFileOperation('copy', operationPaths)}
+                              >
+                                <Copy size={14} weight="duotone" aria-hidden="true" />
+                                {t('sshFilesTool.copy')}
+                              </ContextMenuItem>
+                              <ContextMenuItem
+                                disabled={operationRunning}
+                                onClick={() => requestFileOperation('move', operationPaths)}
+                              >
+                                <ArrowsLeftRight size={14} weight="duotone" aria-hidden="true" />
+                                {t('sshFilesTool.move')}
+                              </ContextMenuItem>
+                              <ContextMenuItem
+                                disabled={operationRunning || operationPaths.length !== 1}
+                                onClick={() => requestFileOperation('rename', operationPaths)}
+                              >
+                                <PencilSimple size={14} weight="duotone" aria-hidden="true" />
+                                {t('sshFilesTool.rename')}
+                              </ContextMenuItem>
+                              <ContextMenuItem
+                                variant="destructive"
+                                disabled={operationRunning}
+                                onClick={() => requestFileOperation('delete', operationPaths)}
+                              >
+                                <Trash size={14} weight="duotone" aria-hidden="true" />
+                                {t('sshFilesTool.delete')}
+                              </ContextMenuItem>
+                            </ContextMenuGroup>
+                            <ContextMenuSeparator />
+                            <ContextMenuGroup>
+                              <ContextMenuItem
+                                disabled={operationRunning || !archiveSelection}
+                                onClick={() => requestFileOperation('extract', operationPaths)}
+                              >
+                                <FileArchive size={14} weight="duotone" aria-hidden="true" />
+                                {t('sshFilesTool.extract')}
+                              </ContextMenuItem>
+                              <ContextMenuItem
+                                disabled={operationRunning}
+                                onClick={() => requestFileOperation('compress', operationPaths)}
+                              >
+                                <Archive size={14} weight="duotone" aria-hidden="true" />
+                                {t('sshFilesTool.compress')}
+                              </ContextMenuItem>
+                              <ContextMenuItem
+                                disabled={operationRunning}
+                                onClick={() => void downloadSelected(operationPaths)}
+                              >
+                                <DownloadSimple size={14} weight="duotone" aria-hidden="true" />
+                                {t('sshFilesTool.download')}
+                              </ContextMenuItem>
+                            </ContextMenuGroup>
+                          </ContextMenuContent>
+                        </ContextMenu>
+                      );
+                    })}
+                    {filePaddingBottom > 0 ? (
+                      <tr>
+                        <td colSpan={5} style={{ height: filePaddingBottom, padding: 0 }} />
+                      </tr>
+                    ) : null}
+                  </TableBody>
+                </Table>
+              )}
             </ScrollArea>
           </ContextMenuTrigger>
           <ContextMenuContent className="min-w-44">
@@ -3006,11 +3016,11 @@ export default function SshFilesTool({ active }: Props) {
               </p>
               <ScrollArea className="w-full max-h-40 overscroll-contain rounded-md border border-border bg-muted/20 p-2">
                 <ul className="m-0 list-none space-y-1 font-mono text-[11px]">
-                {operationConflict?.conflicts.map((path) => (
-                  <li key={path} className="w-full break-all">
-                    {path}
-                  </li>
-                ))}
+                  {operationConflict?.conflicts.map((path) => (
+                    <li key={path} className="w-full break-all">
+                      {path}
+                    </li>
+                  ))}
                 </ul>
               </ScrollArea>
               <p className="m-0 text-[10px] leading-4 text-muted-foreground">
@@ -3063,15 +3073,15 @@ export default function SshFilesTool({ active }: Props) {
         <p className="m-0">{t('sshFilesTool.deleteDesc', { count: deletePaths?.length ?? 0 })}</p>
         <ScrollArea className="w-full max-h-40 overscroll-contain">
           <ol className="m-0 list-none space-y-1 font-mono text-[11px]">
-          {deletePaths?.map((path, index) => (
-            <li
-              key={`${path}-${index}`}
-              className="flex w-full min-w-0 items-start gap-2 rounded-md border border-border/60 bg-background/60 px-2 py-1.5"
-            >
-              <span className="shrink-0 text-muted-foreground">{index + 1}.</span>
-              <span className="min-w-0 flex-1 break-all">{path}</span>
-            </li>
-          ))}
+            {deletePaths?.map((path, index) => (
+              <li
+                key={`${path}-${index}`}
+                className="flex w-full min-w-0 items-start gap-2 rounded-md border border-border/60 bg-background/60 px-2 py-1.5"
+              >
+                <span className="shrink-0 text-muted-foreground">{index + 1}.</span>
+                <span className="min-w-0 flex-1 break-all">{path}</span>
+              </li>
+            ))}
           </ol>
         </ScrollArea>
       </ConfirmDialog>
@@ -3082,7 +3092,10 @@ export default function SshFilesTool({ active }: Props) {
             <DialogDescription>{t('sshFilesTool.tasksDesc')}</DialogDescription>
           </DialogHeader>
           <div className="min-h-0 max-h-[55vh] overflow-hidden">
-            <ScrollArea className="min-h-0 max-h-[55vh] overscroll-contain [padding-inline-end:var(--overlay-scrollbar-size)]" options={{ overflow: { x: 'hidden' } }}>
+            <ScrollArea
+              className="min-h-0 max-h-[55vh] overscroll-contain [padding-inline-end:var(--overlay-scrollbar-size)]"
+              options={{ overflow: { x: 'hidden' } }}
+            >
               {tasks.length ? (
                 <div>
                   {tasks
@@ -3145,10 +3158,10 @@ export default function SshFilesTool({ active }: Props) {
                 <div className="py-8 text-center text-xs text-muted-foreground">
                   {t('sshFilesTool.noTasks')}
                 </div>
-               )}
-             </ScrollArea>
-           </div>
-           <DialogFooter>
+              )}
+            </ScrollArea>
+          </div>
+          <DialogFooter>
             <Button variant="outline" onClick={() => setTasksOpen(false)}>
               {t('common.close')}
             </Button>
