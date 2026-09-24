@@ -35,6 +35,7 @@ user-invocable: false
 
 - 只改 Markdown 或 skill：运行 `git diff --check`，并检查路径、命令、文件名和现有架构描述一致。
 - 改 React 组件、locale、样式或现有工具内部行为：运行前端类型检查、生产构建，必要时格式检查。
+- 新增或修改用户触发的删除、移除操作：静态核对按钮、菜单项及快捷键均先打开 `ConfirmDialog`，确认前不会调用删除；批量操作的确认内容要说明对象范围。
 - 新增工具或改变 `ToolId`、注册、导航、常驻挂载、命令、历史或托盘识别：在前端验证之外，静态核对工具 ID 出现在侧栏、路由、常驻挂载、命令面板、历史记录和 locale；pending 不被其他常驻工具抢消费。
 - 改工具页高度链、CodeMirror 尺寸、浮层滚动或 `ScrollArea` 滚动容器：静态核对受影响页面的尺寸链和常驻挂载不卸载。若改 `ScrollArea` 或 `ToolLayoutScrollableContent`，确认宿主不残留 `overflow-*`、原 `overflow-x: hidden` 的容器传了 `overflow.x: 'hidden'`，且未在全局隐藏原生滚动条。
 - 改 Go 服务、配置、窗口、托盘或事件：运行 Go 测试和前端类型检查/构建；若导出类型改变，先确认已重新生成 bindings，再检查生成文件和调用方。
