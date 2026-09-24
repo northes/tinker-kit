@@ -40,7 +40,6 @@ import { yaml } from '@codemirror/lang-yaml';
 import { codeFolding, syntaxTree } from '@codemirror/language';
 import { EditorView, keymap } from '@codemirror/view';
 import { acceptCompletion } from '@codemirror/autocomplete';
-import { useGroupRef, type Layout } from 'react-resizable-panels';
 import { SaveText } from '../../bindings/changeme/fileservice';
 import { JSON_CONVERT_FORMATS, type JsonConvertFormat } from '../lib/json-converter';
 import { repairJson } from '../lib/json-repair';
@@ -577,18 +576,15 @@ export default function JsonTool({
   const splitMode = schema || pipelineMode || convertMode;
   const splitRootRef = useRef<HTMLDivElement>(null);
   const [splitStacked, setSplitStacked] = useState(false);
-  const splitOrientation = splitStacked ? 'vertical' : 'horizontal';
-  const mainGroupRef = useGroupRef();
-  const mainLayoutsRef = useRef<Record<string, Layout>>({});
-  const mainLayoutKey = `${schema ? 'schema' : convertMode ? 'convert' : 'pipeline'}-${splitStacked ? 'v' : 'h'}`;
-  // 初始分栏比例沿用旧布局：schema 宽屏三等分，其余模式左右均分。
-  const mainDefaultLayout = useMemo<Layout>(
-    () =>
-      schema && !splitStacked
-        ? { 'json-primary': 100 / 3, 'json-secondary': 200 / 3 }
-        : { 'json-primary': 50, 'json-secondary': 50 },
-    [schema, splitStacked],
-  );
+  // schema 固定左右分栏，不随宽窄屏切换方向；其余模式窄屏上下分栏。
+  const splitOrientation = schema ? 'horizontal' : splitStacked ? 'vertical' : 'horizontal';
+  // 分栏库按面板 ID 保存布局；各模式使用独立标识，React key 不变以保留编辑器实例。
+  const mainLayoutKey = !splitMode
+    ? 'plain'
+    : schema
+      ? 'schema'
+      : `${mode}-${splitStacked ? 'v' : 'h'}`;
+  const pipelineLayoutKey = pipelineMode ? 'split' : 'single';
   // 分栏方向跟随实际可用宽度：窄屏上下分栏，宽屏左右分栏。
   useLayoutEffect(() => {
     const el = splitRootRef.current;
@@ -599,16 +595,6 @@ export default function JsonTool({
     observer.observe(el);
     return () => observer.disconnect();
   }, []);
-  // 单栏模式把右侧面板压到 0；分栏模式恢复该模式上次比例或旧默认值。
-  useLayoutEffect(() => {
-    const group = mainGroupRef.current;
-    if (!group) return;
-    if (!splitMode) {
-      group.setLayout({ 'json-primary': 100, 'json-secondary': 0 });
-      return;
-    }
-    group.setLayout(mainLayoutsRef.current[mainLayoutKey] ?? mainDefaultLayout);
-  }, [splitMode, mainLayoutKey, mainDefaultLayout, mainGroupRef]);
   const cmTheme = quietEditorTheme;
   const inputPreview = useMemo(() => {
     // 流水线模式下不再在主线程解析输入；输入表格按需使用后端结果。
@@ -1085,7 +1071,7 @@ export default function JsonTool({
     : pipelineMode
       ? 'grid-cols-2'
       : schema
-        ? 'grid-cols-[minmax(0,1fr)_minmax(0,1fr)] @max-[959px]/json-page:grid-cols-2 @min-[960px]/json-page:grid-cols-3'
+        ? 'grid-cols-2'
         : 'grid-cols-1';
   const convertActions = (
     <ToolActionBar
@@ -1313,70 +1299,94 @@ export default function JsonTool({
                 id="json-main-split"
                 orientation={splitOrientation}
                 className="min-h-0 min-w-0"
-                groupRef={mainGroupRef}
-                onLayoutChanged={(layout, meta) => {
-                  if (meta.isUserInteraction) mainLayoutsRef.current[mainLayoutKey] = layout;
-                }}
               >
                 <ResizablePanel
                   key="primary"
-                  id="json-primary"
-                  minSize={splitStacked ? '25%' : 220}
+                  id={`json-primary-${mainLayoutKey}`}
+                  defaultSize={splitMode ? '50%' : '100%'}
+                  minSize={splitOrientation === 'vertical' ? '25%' : 220}
                   className="min-h-0 min-w-0"
                 >
-                  <div className="json-pipeline-source flex h-full min-h-0 min-w-0 flex-col gap-3">
-                    <JsonEditorPane
-                      label={t('jsonTool.input')}
-                      value={input}
-                      onChange={changeInput}
-                      foldExt={foldExt}
-                      onCreate={(v) => views.current.set('input', v)}
-                      theme={cmTheme}
-                      emptyHint
-                      cmClassName="json-input-cm"
-                      formatOnPaste={autoFormatOnFill ? tryAutoFormat : undefined}
-                      tableMode={inputTableMode}
-                      active={active}
-                      tableDisabled={!input.trim() || !inputPreview.valid}
-                      tableHint={t('jsonTool.tablePreviewInvalid')}
-                      onToggleTable={toggleInputTable}
-                      tablePreview={<JsonTablePreview value={inputPreview.value} t={t} />}
-                      schemaMode={inputSchemaPreviewMode}
-                      onToggleSchema={inputIsSchema ? toggleInputSchemaPreview : undefined}
-                      schemaPreview={
-                        inputIsSchema ? <JsonSchemaPreview value={inputPreview.value} /> : null
-                      }
-                      onOpenFile={() => void fileDrop.pick()}
-                    />
-                    <div
-                      className={`json-pipeline-output-slot min-h-0 min-w-0${
-                        pipelineMode ? ' flex-1' : modeHostHidden(false)
-                      }`}
-                      aria-hidden={!pipelineMode}
-                      {...(!pipelineMode ? { inert: true } : {})}
+                  <ResizablePanelGroup
+                    id="json-pipeline-split"
+                    orientation="vertical"
+                    className="json-pipeline-source min-h-0 min-w-0"
+                  >
+                    <ResizablePanel
+                      id={`json-pipeline-input-${pipelineLayoutKey}`}
+                      defaultSize={pipelineMode ? '50%' : '100%'}
+                      minSize="20%"
+                      className="min-h-0 min-w-0"
                     >
-                      <PipelineOutputPane
-                        evaluation={pipeline.evaluation}
-                        theme={cmTheme}
-                        foldExt={foldExt}
+                      <div className="flex h-full min-h-0 min-w-0 flex-col">
+                        <JsonEditorPane
+                          label={t('jsonTool.input')}
+                          value={input}
+                          onChange={changeInput}
+                          foldExt={foldExt}
+                          onCreate={(v) => views.current.set('input', v)}
+                          theme={cmTheme}
+                          emptyHint
+                          cmClassName="json-input-cm"
+                          formatOnPaste={autoFormatOnFill ? tryAutoFormat : undefined}
+                          tableMode={inputTableMode}
+                          active={active}
+                          tableDisabled={!input.trim() || !inputPreview.valid}
+                          tableHint={t('jsonTool.tablePreviewInvalid')}
+                          onToggleTable={toggleInputTable}
+                          tablePreview={<JsonTablePreview value={inputPreview.value} t={t} />}
+                          schemaMode={inputSchemaPreviewMode}
+                          onToggleSchema={inputIsSchema ? toggleInputSchemaPreview : undefined}
+                          schemaPreview={
+                            inputIsSchema ? <JsonSchemaPreview value={inputPreview.value} /> : null
+                          }
+                          onOpenFile={() => void fileDrop.pick()}
+                        />
+                      </div>
+                    </ResizablePanel>
+                    {pipelineMode ? (
+                      <ResizableHandle
+                        key="pipeline-handle"
+                        variant="handle"
+                        className="my-1"
+                        aria-label={t('jsonTool.resizePanels')}
                       />
-                    </div>
-                  </div>
+                    ) : null}
+                    <ResizablePanel
+                      id={`json-pipeline-output-${pipelineLayoutKey}`}
+                      defaultSize={pipelineMode ? '50%' : 0}
+                      minSize={pipelineMode ? '20%' : 0}
+                      maxSize={pipelineMode ? '100%' : 0}
+                      className="min-h-0 min-w-0"
+                    >
+                      <div
+                        className={`json-pipeline-output-slot h-full min-h-0 min-w-0${pipelineMode ? '' : ' invisible pointer-events-none'}`}
+                        aria-hidden={!pipelineMode}
+                        {...(!pipelineMode ? { inert: true } : {})}
+                      >
+                        <PipelineOutputPane
+                          evaluation={pipeline.evaluation}
+                          theme={cmTheme}
+                          foldExt={foldExt}
+                        />
+                      </div>
+                    </ResizablePanel>
+                  </ResizablePanelGroup>
                 </ResizablePanel>
                 {splitMode ? (
                   <ResizableHandle
                     key="main-handle"
                     variant="handle"
-                    className={splitStacked ? 'my-1' : 'mx-1'}
+                    className={splitOrientation === 'vertical' ? 'my-1' : 'mx-1'}
                     aria-label={t('jsonTool.resizePanels')}
                   />
                 ) : null}
                 <ResizablePanel
                   key="secondary"
-                  id="json-secondary"
-                  collapsible
-                  collapsedSize={0}
-                  minSize={splitStacked ? '25%' : 220}
+                  id={`json-secondary-${mainLayoutKey}`}
+                  defaultSize={splitMode ? '50%' : 0}
+                  minSize={splitMode ? (splitOrientation === 'vertical' ? '25%' : 220) : 0}
+                  maxSize={splitMode ? '100%' : 0}
                   className="min-h-0 min-w-0"
                 >
                   <div className="relative h-full min-h-0 min-w-0">
@@ -1443,15 +1453,15 @@ export default function JsonTool({
                     </div>
                     <ResizablePanelGroup
                       id="json-schema-split"
-                      orientation={splitOrientation}
+                      orientation="vertical"
                       className={`json-schema-right min-h-0 min-w-0${schema ? '' : modeHostHidden(false)}`}
                       aria-hidden={!schema}
                       {...(!schema ? { inert: true } : {})}
                     >
                       <ResizablePanel
                         id="json-path"
-                        defaultSize="50%"
-                        minSize={splitStacked ? '20%' : 120}
+                        defaultSize="14.2857%"
+                        minSize={60}
                         className="min-h-0 min-w-0"
                       >
                         <div className="json-path flex h-full min-w-0 flex-col gap-2 min-h-0">
@@ -1484,13 +1494,13 @@ export default function JsonTool({
                       </ResizablePanel>
                       <ResizableHandle
                         variant="handle"
-                        className={splitStacked ? 'my-1' : 'mx-1'}
+                        className="my-1"
                         aria-label={t('jsonTool.resizePanels')}
                       />
                       <ResizablePanel
                         id="json-result"
-                        defaultSize="50%"
-                        minSize={splitStacked ? '25%' : 200}
+                        defaultSize="85.7143%"
+                        minSize={120}
                         className="min-h-0 min-w-0"
                       >
                         <div className="json-pane flex h-full min-h-0 min-w-0 flex-col gap-2">
