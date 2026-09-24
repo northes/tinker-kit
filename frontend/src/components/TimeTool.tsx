@@ -463,7 +463,7 @@ export default function TimeTool({
                     {timePresetGroups.map((group) => (
                       <Fragment key={group.primary}>
                         {timePresetSeparators.has(group.primary) ? (
-                          <Separator orientation="vertical" className="mx-0.5" />
+                          <Separator orientation="vertical" className="mx-0.5 my-auto h-4" />
                         ) : null}
                         {group.options.length === 0 ? (
                           <Button
