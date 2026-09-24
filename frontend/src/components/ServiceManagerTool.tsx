@@ -868,7 +868,7 @@ export default function ServiceManagerTool({
                 </Badge>
               </Button>
               <Button variant="outline" size="sm" onClick={() => void load()} disabled={loading}>
-                {loading ? <Spinner /> : <ArrowsClockwise weight="duotone" />}
+                {loading ? <Spinner className="size-3.5" /> : <ArrowsClockwise weight="duotone" />}
                 {t('serviceManagerTool.refresh')}
               </Button>
             </div>
