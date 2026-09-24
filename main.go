@@ -270,8 +270,9 @@ func main() {
 		app.Quit()
 	}
 	analyzeClipboard := func() {
+		text, _ := app.Clipboard.Text()
+		app.Event.Emit("tray:analyze", text)
 		showFromTray()
-		app.Event.Emit("tray:analyze")
 	}
 
 	menu := app.Menu.New()

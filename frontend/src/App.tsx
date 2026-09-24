@@ -1450,8 +1450,8 @@ function AppShell() {
     return () => window.removeEventListener('mousedown', onMouseDown, true);
   }, [routerNavigate]);
   useEffect(() => {
-    const off = Events.On('tray:analyze', () => {
-      void analyzeClipboard();
+    const off = Events.On('tray:analyze', (event) => {
+      if (typeof event.data === 'string') analyzeClipboard(event.data);
     });
     return () => off();
   }, []);
@@ -1763,9 +1763,8 @@ function AppShell() {
     };
     apply();
   };
-  const analyzeClipboard = async () => {
+  const analyzeClipboard = (text: string) => {
     if (!settingsRef.current.trayMatchEnabled) return;
-    const text = (await Clipboard.Text().catch(() => '')) || '';
     const currentSettings = settingsRef.current;
     if (!currentSettings.trayMatchEnabled) return;
     const s = text.trim();
