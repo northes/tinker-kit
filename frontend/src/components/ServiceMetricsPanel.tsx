@@ -1,5 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowsClockwise, CaretDown, Pause, Play, WarningCircle } from '@phosphor-icons/react';
+import {
+  ArrowsClockwise,
+  CaretDown,
+  CaretUp,
+  Pause,
+  Play,
+  WarningCircle,
+} from '@phosphor-icons/react';
 import { useTranslation } from 'react-i18next';
 import { GetServiceMetrics } from '../../bindings/changeme/servicemanagerservice';
 import type {
@@ -26,6 +33,8 @@ const ALL_TARGETS = '__all_targets__';
 
 type GroupMode = 'resource' | 'compose' | 'source';
 type MetricKind = 'cpu' | 'memory' | 'network' | 'disk';
+type SortKey = 'name' | MetricKind;
+type SortDirection = 'asc' | 'desc';
 type TimeRange = '60' | '300' | '900' | 'session';
 
 type MetricPoint = {
@@ -155,6 +164,10 @@ function targetLabel(target: ServiceTarget, localLabel: string) {
   return target.kind === 'local' ? localLabel : target.name;
 }
 
+function rowDisplayName(row: MetricRow, targetNames: Map<string, string>) {
+  return row.kind === 'source' ? (targetNames.get(row.targetID) ?? row.name) : row.name;
+}
+
 function availabilityText(status: string, t: ReturnType<typeof useTranslation>['t']) {
   const known = ['unsupported', 'unavailable', 'stopped', 'partial', 'accounting-disabled'];
   const key = known.includes(status) ? status : 'unavailable';
@@ -184,6 +197,8 @@ export function ServiceMetricsPanel({
   const [scope, setScope] = useState(ALL_TARGETS);
   const [group, setGroup] = useState<GroupMode>('resource');
   const [metric, setMetric] = useState<MetricKind>('cpu');
+  const [sortKey, setSortKey] = useState<SortKey>('cpu');
+  const [sortDir, setSortDir] = useState<SortDirection>('desc');
   const [range, setRange] = useState<TimeRange>('300');
   const [searchDraft, setSearchDraft] = useState('');
   const [search, setSearch] = useState('');
@@ -280,20 +295,37 @@ export function ServiceMetricsPanel({
           (targetNames.get(row.targetID) ?? '').toLowerCase().includes(query),
       )
       .sort((left, right) => {
-        const a = metricValue(left.point, metric);
-        const b = metricValue(right.point, metric);
-        if (!finite(a) && !finite(b)) return left.name.localeCompare(right.name);
+        const nameCompare = rowDisplayName(left, targetNames).localeCompare(
+          rowDisplayName(right, targetNames),
+        );
+        if (sortKey === 'name') return sortDir === 'asc' ? nameCompare : -nameCompare;
+        const a = metricValue(left.point, sortKey);
+        const b = metricValue(right.point, sortKey);
+        if (!finite(a) && !finite(b)) return nameCompare;
         if (!finite(a)) return 1;
         if (!finite(b)) return -1;
-        return b - a;
+        return sortDir === 'asc' ? a - b : b - a;
       });
-  }, [effectiveScope, group, metric, rows, search, targetNames]);
+  }, [effectiveScope, group, rows, search, sortDir, sortKey, targetNames]);
 
   useEffect(() => {
     if (!visibleRows.some((row) => row.key === selectedKey)) {
       setSelectedKey(visibleRows[0]?.key ?? '');
     }
   }, [selectedKey, visibleRows]);
+
+  const handleSort = useCallback(
+    (key: SortKey) => {
+      if (key === sortKey) {
+        setSortDir((direction) => (direction === 'asc' ? 'desc' : 'asc'));
+      } else {
+        setSortKey(key);
+        setSortDir(key === 'name' ? 'asc' : 'desc');
+      }
+      if (key !== 'name') setMetric(key);
+    },
+    [sortKey],
+  );
 
   const selected = visibleRows.find((row) => row.key === selectedKey) ?? null;
   const errors = snapshots.flatMap((snapshot) => {
@@ -455,18 +487,16 @@ export function ServiceMetricsPanel({
           rows={visibleRows}
           selectedKey={selectedKey}
           metric={metric}
-          onMetricChange={setMetric}
+          sortKey={sortKey}
+          sortDir={sortDir}
+          onSort={handleSort}
           onSelect={setSelectedKey}
           targetNames={targetNames}
         />
         <TrendPanel
           key={`${selectedKey}:${historyVersion}`}
           row={selected}
-          displayName={
-            selected?.kind === 'source'
-              ? (targetNames.get(selected.targetID) ?? selected.name)
-              : (selected?.name ?? '')
-          }
+          displayName={selected ? rowDisplayName(selected, targetNames) : ''}
           targetName={selected ? (targetNames.get(selected.targetID) ?? selected.targetName) : ''}
           metric={metric}
           range={range}
@@ -498,43 +528,70 @@ function RankingTable({
   rows,
   selectedKey,
   metric,
-  onMetricChange,
+  sortKey,
+  sortDir,
+  onSort,
   onSelect,
   targetNames,
 }: {
   rows: MetricRow[];
   selectedKey: string;
   metric: MetricKind;
-  onMetricChange: (metric: MetricKind) => void;
+  sortKey: SortKey;
+  sortDir: SortDirection;
+  onSort: (key: SortKey) => void;
   onSelect: (key: string) => void;
   targetNames: Map<string, string>;
 }) {
   const { t } = useTranslation();
   const metricHeaders: MetricKind[] = ['cpu', 'memory', 'network', 'disk'];
+  const ariaSort = (key: SortKey): 'ascending' | 'descending' | 'none' =>
+    sortKey !== key ? 'none' : sortDir === 'asc' ? 'ascending' : 'descending';
+  const sortCaret = (key: SortKey) =>
+    sortKey === key ? (
+      sortDir === 'asc' ? (
+        <CaretUp className="ml-1 inline size-3" weight="bold" aria-hidden="true" />
+      ) : (
+        <CaretDown className="ml-1 inline size-3" weight="bold" aria-hidden="true" />
+      )
+    ) : null;
   return (
     <section className="min-h-0 min-w-0 border-r max-[800px]:border-r-0 max-[800px]:border-b">
       <ScrollArea className="h-full min-h-0" options={{ overflow: { x: 'scroll' } }}>
         <table className="w-full min-w-[660px] table-fixed text-xs">
           <thead className="sticky top-0 z-10 bg-background">
             <tr className="border-b">
-              <th className="w-[31%] px-3 py-2 text-left font-medium">
-                {t('serviceManagerTool.metrics.name')}
+              <th className="w-[31%] px-3 py-2 text-left font-medium" aria-sort={ariaSort('name')}>
+                <button
+                  type="button"
+                  className={
+                    sortKey === 'name'
+                      ? 'text-foreground'
+                      : 'text-muted-foreground hover:text-foreground'
+                  }
+                  onClick={() => onSort('name')}
+                >
+                  {t('serviceManagerTool.metrics.name')}
+                  {sortCaret('name')}
+                </button>
               </th>
               {metricHeaders.map((value) => (
-                <th key={value} className="px-2 py-2 text-right font-medium">
+                <th
+                  key={value}
+                  className="px-2 py-2 text-right font-medium"
+                  aria-sort={ariaSort(value)}
+                >
                   <button
                     type="button"
                     className={
-                      metric === value
+                      sortKey === value
                         ? 'text-foreground'
                         : 'text-muted-foreground hover:text-foreground'
                     }
-                    onClick={() => onMetricChange(value)}
+                    onClick={() => onSort(value)}
                   >
                     {t(`serviceManagerTool.metrics.metric.${value}`)}
-                    {metric === value ? (
-                      <CaretDown className="ml-1 inline size-3" weight="bold" />
-                    ) : null}
+                    {sortCaret(value)}
                   </button>
                 </th>
               ))}
@@ -557,7 +614,7 @@ function RankingTable({
               >
                 <td className="px-3 py-2">
                   <span className="block truncate font-medium">
-                    {row.kind === 'source' ? (targetNames.get(row.targetID) ?? row.name) : row.name}
+                    {rowDisplayName(row, targetNames)}
                   </span>
                   <span className="block truncate text-[10px] text-muted-foreground">
                     {targetNames.get(row.targetID) ?? row.targetName} · {row.runtime}
@@ -610,7 +667,7 @@ function MetricCell({
       {missing ? (
         <>
           <span className="block">—</span>
-          <span className="block whitespace-normal text-[10px] leading-tight text-muted-foreground">
+          <span className="block truncate text-[10px] leading-tight text-muted-foreground">
             {hint}
           </span>
         </>
