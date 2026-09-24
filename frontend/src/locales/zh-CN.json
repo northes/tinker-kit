@@ -1055,6 +1055,8 @@
     "stopMonitorFailed": "停止日志监控失败",
     "removeMonitorFailed": "移除日志监控失败",
     "workspace": "监控工作台",
+    "resizeMainPanels": "调整资源列表与详情区域大小",
+    "resizeWorkspacePanels": "调整监控源与日志区域大小",
     "workspaceHint": "日志按本机接收顺序合并。最多同时监控 16 路，缓冲总量上限 64 MB；关闭应用后结束。",
     "workspaceEmpty": "还没有监控源。从左侧选择容器或服务并开始监控。",
     "selectMonitorHint": "选择至少一个监控源查看日志",

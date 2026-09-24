@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
+import type { Layout } from 'react-resizable-panels';
 import { Events } from '@wailsio/runtime';
 import {
   ArrowsClockwise,
@@ -58,6 +59,7 @@ import { SSHProfileSelect } from './SSHProfileSelect';
 import { ConfirmDialog } from './ConfirmDialog';
 import { Badge } from './ui/badge';
 import { ScrollArea } from './ui/scroll-area';
+import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from './ui/resizable';
 import { Button } from './ui/button';
 import { Checkbox } from './ui/checkbox';
 import {
@@ -200,6 +202,10 @@ export default function ServiceManagerTool({
   const [busy, setBusy] = useState('');
   const [monitors, setMonitors] = useState<LogMonitor[]>([]);
   const [view, setView] = useState<'resource' | 'workspace'>('resource');
+  const [panelOrientation, setPanelOrientation] = useState<'horizontal' | 'vertical'>(() =>
+    window.matchMedia('(max-width: 800px)').matches ? 'vertical' : 'horizontal',
+  );
+  const [workspaceLayout, setWorkspaceLayout] = useState<Layout>({ sources: 40, logs: 60 });
   const [excludedMonitorIDs, setExcludedMonitorIDs] = useState<Set<string>>(new Set());
   const [logDraft, setLogDraft] = useState('');
   const [logQuery, setLogQuery] = useState('');
@@ -224,6 +230,13 @@ export default function ServiceManagerTool({
   } | null>(null);
   const [monitorSelection, setMonitorSelection] = useState<Set<string>>(new Set());
   const monitorLoadVersion = useRef(0);
+
+  useEffect(() => {
+    const media = window.matchMedia('(max-width: 800px)');
+    const update = () => setPanelOrientation(media.matches ? 'vertical' : 'horizontal');
+    media.addEventListener('change', update);
+    return () => media.removeEventListener('change', update);
+  }, []);
   // 浏览位置与监控会话独立；移除当前浏览的主机时返回本机。
   const syncTargets = (next: ServiceTarget[]) => {
     setTargets(next);
@@ -861,77 +874,97 @@ export default function ServiceManagerTool({
             </div>
           }
         />
-        <ToolLayoutContent className="grid min-h-0 grid-cols-[minmax(230px,38%)_minmax(0,1fr)] border-t max-[800px]:grid-cols-1 max-[800px]:grid-rows-[minmax(180px,42%)_minmax(0,1fr)]">
-          <ResourceList
-            inventory={inventory}
-            statuses={statusFilter}
-            search={search}
-            selection={selection}
-            onSelect={(next) => {
-              setSelection(next);
-              setView('resource');
-            }}
-            monitored={monitoredByResource}
-            t={t}
-          />
-          <section className="min-h-0 overflow-hidden border-l max-[800px]:border-t max-[800px]:border-l-0">
-            {view === 'workspace' ? (
-              <WorkspacePanel
-                monitors={monitors}
-                targets={targets}
-                selectedIDs={workspaceMonitorIDs}
-                excludedIDs={excludedMonitorIDs}
-                onToggle={(id, checked) =>
-                  setExcludedMonitorIDs((current) => {
-                    const next = new Set(current);
-                    if (checked) next.delete(id);
-                    else next.add(id);
-                    return next;
-                  })
-                }
-                onStop={stopWorkspaceMonitor}
-                onRestart={restartWorkspaceMonitor}
-                onRemove={removeWorkspaceMonitor}
-                lines={lines}
-                truncated={truncated}
-                logDraft={logDraft}
-                setLogDraft={setLogDraft}
-                applyFilter={() => setLogQuery(logDraft)}
-                query={logQuery}
-                regex={regex}
-                setRegex={setRegex}
-                caseSensitive={caseSensitive}
-                setCaseSensitive={setCaseSensitive}
-              />
-            ) : selection ? (
-              <ResourcePanel
+        <ToolLayoutContent className="min-h-0 border-t">
+          <ResizablePanelGroup orientation={panelOrientation} className="min-h-0 min-w-0">
+            <ResizablePanel
+              id="resources"
+              defaultSize={panelOrientation === 'horizontal' ? '38%' : '42%'}
+              minSize={panelOrientation === 'horizontal' ? 230 : '20%'}
+              className="min-h-0 min-w-0"
+            >
+              <ResourceList
+                inventory={inventory}
+                statuses={statusFilter}
+                search={search}
                 selection={selection}
-                targetID={targetID}
-                monitorIDs={activeMonitorIDs}
-                monitoring={monitoring}
-                lines={lines}
-                truncated={truncated}
-                logDraft={logDraft}
-                setLogDraft={setLogDraft}
-                applyFilter={() => setLogQuery(logDraft)}
-                query={logQuery}
-                regex={regex}
-                setRegex={setRegex}
-                caseSensitive={caseSensitive}
-                setCaseSensitive={setCaseSensitive}
-                onMonitor={monitor}
-                onStop={stop}
-                onClear={clear}
-                onAction={act}
-                busy={busy}
+                onSelect={(next) => {
+                  setSelection(next);
+                  setView('resource');
+                }}
+                monitored={monitoredByResource}
                 t={t}
               />
-            ) : (
-              <div className="grid h-full place-items-center text-sm text-muted-foreground">
-                {t('serviceManagerTool.selectHint')}
-              </div>
-            )}
-          </section>
+            </ResizablePanel>
+            <ResizableHandle withHandle aria-label={t('serviceManagerTool.resizeMainPanels')} />
+            <ResizablePanel
+              id="details"
+              minSize={panelOrientation === 'horizontal' ? 300 : '30%'}
+              className="min-h-0 min-w-0"
+            >
+              <section className="h-full min-h-0 overflow-hidden">
+                {view === 'workspace' ? (
+                  <WorkspacePanel
+                    layout={workspaceLayout}
+                    onLayoutChanged={(next, meta) => {
+                      if (meta.isUserInteraction) setWorkspaceLayout(next);
+                    }}
+                    monitors={monitors}
+                    targets={targets}
+                    selectedIDs={workspaceMonitorIDs}
+                    excludedIDs={excludedMonitorIDs}
+                    onToggle={(id, checked) =>
+                      setExcludedMonitorIDs((current) => {
+                        const next = new Set(current);
+                        if (checked) next.delete(id);
+                        else next.add(id);
+                        return next;
+                      })
+                    }
+                    onStop={stopWorkspaceMonitor}
+                    onRestart={restartWorkspaceMonitor}
+                    onRemove={removeWorkspaceMonitor}
+                    lines={lines}
+                    truncated={truncated}
+                    logDraft={logDraft}
+                    setLogDraft={setLogDraft}
+                    applyFilter={() => setLogQuery(logDraft)}
+                    query={logQuery}
+                    regex={regex}
+                    setRegex={setRegex}
+                    caseSensitive={caseSensitive}
+                    setCaseSensitive={setCaseSensitive}
+                  />
+                ) : selection ? (
+                  <ResourcePanel
+                    selection={selection}
+                    targetID={targetID}
+                    monitorIDs={activeMonitorIDs}
+                    monitoring={monitoring}
+                    lines={lines}
+                    truncated={truncated}
+                    logDraft={logDraft}
+                    setLogDraft={setLogDraft}
+                    applyFilter={() => setLogQuery(logDraft)}
+                    query={logQuery}
+                    regex={regex}
+                    setRegex={setRegex}
+                    caseSensitive={caseSensitive}
+                    setCaseSensitive={setCaseSensitive}
+                    onMonitor={monitor}
+                    onStop={stop}
+                    onClear={clear}
+                    onAction={act}
+                    busy={busy}
+                    t={t}
+                  />
+                ) : (
+                  <div className="grid h-full place-items-center text-sm text-muted-foreground">
+                    {t('serviceManagerTool.selectHint')}
+                  </div>
+                )}
+              </section>
+            </ResizablePanel>
+          </ResizablePanelGroup>
         </ToolLayoutContent>
       </ToolLayout>
       <TargetHostManagerDialog<ServiceTarget, ServiceTarget>
@@ -1310,6 +1343,8 @@ function RuntimeError({ name, error }: { name: string; error?: string }) {
 }
 
 function WorkspacePanel({
+  layout,
+  onLayoutChanged,
   monitors,
   targets,
   selectedIDs,
@@ -1329,6 +1364,8 @@ function WorkspacePanel({
   caseSensitive,
   setCaseSensitive,
 }: {
+  layout: Layout;
+  onLayoutChanged: (layout: Layout, meta: { isUserInteraction: boolean }) => void;
   monitors: LogMonitor[];
   targets: ServiceTarget[];
   selectedIDs: string[];
@@ -1384,154 +1421,168 @@ function WorkspacePanel({
   );
   return (
     <>
-      <div className="grid h-full min-h-0 grid-rows-[auto_auto_minmax(0,1fr)]">
-        <div className="border-b px-4 py-3">
-          <h2 className="text-sm font-semibold">{t('serviceManagerTool.workspace')}</h2>
-          <p className="mt-1 text-xs text-muted-foreground">
-            {t('serviceManagerTool.workspaceHint')}
-          </p>
-        </div>
-        <div className="min-h-0 border-b">
-          {monitors.length ? (
-            <ScrollArea className="h-40 min-h-0">
-              {monitors.map((monitor) => (
-                <div
-                  key={monitor.id}
-                  className="flex items-center gap-2 border-b px-3 py-2 text-xs last:border-b-0"
-                >
-                  <Checkbox
-                    checked={!excludedIDs.has(monitor.id)}
-                    onCheckedChange={(checked) => onToggle(monitor.id, checked === true)}
-                    aria-label={t('serviceManagerTool.includeSource', {
-                      name: sourceLabels.get(monitor.id),
-                    })}
-                  />
-                  <div className="min-w-0 flex-1">
-                    <div className="truncate font-medium" title={sourceLabels.get(monitor.id)}>
-                      {sourceLabels.get(monitor.id)}
-                    </div>
-                    <div
-                      className="truncate text-muted-foreground"
-                      title={monitor.error || undefined}
-                    >
-                      {t(
-                        `serviceManagerTool.monitorStates.${['monitoring', 'stopping', 'stopped', 'disconnected'].includes(monitor.state) ? monitor.state : 'unknown'}`,
-                      )}
-                      {monitor.error ? ` · ${monitor.error}` : ''}
-                    </div>
-                  </div>
-                  {monitor.state === 'monitoring' ? (
-                    <Button
-                      variant="ghost"
-                      size="icon-xs"
-                      className="flex-none"
-                      onClick={() => onStop(monitor.id)}
-                      title={t('serviceManagerTool.stopMonitor')}
-                      aria-label={t('serviceManagerTool.stopMonitor')}
-                    >
-                      <Stop weight="duotone" />
-                    </Button>
-                  ) : monitor.state === 'stopping' ? (
-                    <Spinner className="size-3.5 flex-none text-muted-foreground" />
-                  ) : (
-                    <Button
-                      variant="ghost"
-                      size="icon-xs"
-                      className="flex-none"
-                      onClick={() => onRestart(monitor)}
-                      title={t('serviceManagerTool.restartMonitor')}
-                      aria-label={t('serviceManagerTool.restartMonitor')}
-                    >
-                      <Play weight="duotone" />
-                    </Button>
-                  )}
-                  <Button
-                    variant="ghost"
-                    size="icon-xs"
-                    className="flex-none"
-                    onClick={() => {
-                      setRemoveError('');
-                      setPendingRemove(monitor);
-                    }}
-                    title={t('serviceManagerTool.removeMonitor')}
-                    aria-label={t('serviceManagerTool.removeMonitor')}
-                  >
-                    <Trash weight="duotone" />
-                  </Button>
-                </div>
-              ))}
-            </ScrollArea>
-          ) : (
-            <p className="px-4 py-5 text-center text-xs text-muted-foreground">
-              {t('serviceManagerTool.workspaceEmpty')}
-            </p>
-          )}
-        </div>
-        <div className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)]">
-          <div className="border-b px-4 py-2">
-            <div className="flex items-center gap-2">
-              <Input
-                className="h-8"
-                value={logDraft}
-                onChange={(event) => setLogDraft(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === 'Enter') applyFilter();
-                }}
-                placeholder={t('serviceManagerTool.logFilter')}
-              />
-              <Button variant="outline" size="sm" onClick={applyFilter}>
-                {t('serviceManagerTool.apply')}
-              </Button>
-              <ToggleGroup
-                multiple
-                variant="outline"
-                size="sm"
-                value={[regex ? 'regex' : '', caseSensitive ? 'case' : ''].filter(Boolean)}
-                onValueChange={(value) => {
-                  setRegex(value.includes('regex'));
-                  setCaseSensitive(value.includes('case'));
-                }}
-              >
-                <ToggleGroupItem
-                  value="regex"
-                  title={t('serviceManagerTool.regex')}
-                  aria-label={t('serviceManagerTool.regex')}
-                >
-                  <Asterisk weight="duotone" />
-                </ToggleGroupItem>
-                <ToggleGroupItem
-                  value="case"
-                  title={t('serviceManagerTool.caseSensitive')}
-                  aria-label={t('serviceManagerTool.caseSensitive')}
-                >
-                  <TextAa weight="duotone" />
-                </ToggleGroupItem>
-              </ToggleGroup>
-            </div>
-            {truncated ? (
-              <p className="mt-2 text-xs text-amber-600">{t('serviceManagerTool.logsTruncated')}</p>
-            ) : null}
-            {visibleLines.length >= VISIBLE_LOG_LIMIT ? (
-              <p className="mt-2 text-xs text-muted-foreground">
-                {t('serviceManagerTool.visibleLogLimit')}
+      <ResizablePanelGroup
+        orientation="vertical"
+        defaultLayout={layout}
+        onLayoutChanged={onLayoutChanged}
+        className="min-h-0 min-w-0"
+      >
+        <ResizablePanel id="sources" defaultSize="40%" minSize="20%" className="min-h-0 min-w-0">
+          <div className="flex h-full min-h-0 flex-col">
+            <div className="flex-none px-4 py-3">
+              <h2 className="text-sm font-semibold">{t('serviceManagerTool.workspace')}</h2>
+              <p className="mt-1 text-xs text-muted-foreground">
+                {t('serviceManagerTool.workspaceHint')}
               </p>
-            ) : null}
-          </div>
-          {selectedIDs.length ? (
-            <LogList
-              lines={visibleLines}
-              query={query}
-              regex={regex}
-              caseSensitive={caseSensitive}
-              sourceLabels={sourceLabels}
-            />
-          ) : (
-            <div className="grid min-h-0 place-items-center text-xs text-muted-foreground">
-              {t('serviceManagerTool.selectMonitorHint')}
             </div>
-          )}
-        </div>
-      </div>
+            <div className="min-h-0 flex-1">
+              {monitors.length ? (
+                <ScrollArea className="h-full min-h-0">
+                  {monitors.map((monitor) => (
+                    <div
+                      key={monitor.id}
+                      className="flex items-center gap-2 border-b px-3 py-2 text-xs last:border-b-0"
+                    >
+                      <Checkbox
+                        checked={!excludedIDs.has(monitor.id)}
+                        onCheckedChange={(checked) => onToggle(monitor.id, checked === true)}
+                        aria-label={t('serviceManagerTool.includeSource', {
+                          name: sourceLabels.get(monitor.id),
+                        })}
+                      />
+                      <div className="min-w-0 flex-1">
+                        <div className="truncate font-medium" title={sourceLabels.get(monitor.id)}>
+                          {sourceLabels.get(monitor.id)}
+                        </div>
+                        <div
+                          className="truncate text-muted-foreground"
+                          title={monitor.error || undefined}
+                        >
+                          {t(
+                            `serviceManagerTool.monitorStates.${['monitoring', 'stopping', 'stopped', 'disconnected'].includes(monitor.state) ? monitor.state : 'unknown'}`,
+                          )}
+                          {monitor.error ? ` · ${monitor.error}` : ''}
+                        </div>
+                      </div>
+                      {monitor.state === 'monitoring' ? (
+                        <Button
+                          variant="ghost"
+                          size="icon-xs"
+                          className="flex-none"
+                          onClick={() => onStop(monitor.id)}
+                          title={t('serviceManagerTool.stopMonitor')}
+                          aria-label={t('serviceManagerTool.stopMonitor')}
+                        >
+                          <Stop weight="duotone" />
+                        </Button>
+                      ) : monitor.state === 'stopping' ? (
+                        <Spinner className="size-3.5 flex-none text-muted-foreground" />
+                      ) : (
+                        <Button
+                          variant="ghost"
+                          size="icon-xs"
+                          className="flex-none"
+                          onClick={() => onRestart(monitor)}
+                          title={t('serviceManagerTool.restartMonitor')}
+                          aria-label={t('serviceManagerTool.restartMonitor')}
+                        >
+                          <Play weight="duotone" />
+                        </Button>
+                      )}
+                      <Button
+                        variant="ghost"
+                        size="icon-xs"
+                        className="flex-none"
+                        onClick={() => {
+                          setRemoveError('');
+                          setPendingRemove(monitor);
+                        }}
+                        title={t('serviceManagerTool.removeMonitor')}
+                        aria-label={t('serviceManagerTool.removeMonitor')}
+                      >
+                        <Trash weight="duotone" />
+                      </Button>
+                    </div>
+                  ))}
+                </ScrollArea>
+              ) : (
+                <p className="px-4 py-5 text-center text-xs text-muted-foreground">
+                  {t('serviceManagerTool.workspaceEmpty')}
+                </p>
+              )}
+            </div>
+          </div>
+        </ResizablePanel>
+        <ResizableHandle withHandle aria-label={t('serviceManagerTool.resizeWorkspacePanels')} />
+        <ResizablePanel id="logs" minSize="30%" className="min-h-0 min-w-0">
+          <div className="grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)]">
+            <div className="border-b px-4 py-2">
+              <div className="flex items-center gap-2">
+                <Input
+                  className="h-8"
+                  value={logDraft}
+                  onChange={(event) => setLogDraft(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter') applyFilter();
+                  }}
+                  placeholder={t('serviceManagerTool.logFilter')}
+                />
+                <Button variant="outline" size="sm" onClick={applyFilter}>
+                  {t('serviceManagerTool.apply')}
+                </Button>
+                <ToggleGroup
+                  multiple
+                  variant="outline"
+                  size="sm"
+                  value={[regex ? 'regex' : '', caseSensitive ? 'case' : ''].filter(Boolean)}
+                  onValueChange={(value) => {
+                    setRegex(value.includes('regex'));
+                    setCaseSensitive(value.includes('case'));
+                  }}
+                >
+                  <ToggleGroupItem
+                    value="regex"
+                    title={t('serviceManagerTool.regex')}
+                    aria-label={t('serviceManagerTool.regex')}
+                  >
+                    <Asterisk weight="duotone" />
+                  </ToggleGroupItem>
+                  <ToggleGroupItem
+                    value="case"
+                    title={t('serviceManagerTool.caseSensitive')}
+                    aria-label={t('serviceManagerTool.caseSensitive')}
+                  >
+                    <TextAa weight="duotone" />
+                  </ToggleGroupItem>
+                </ToggleGroup>
+              </div>
+              {truncated ? (
+                <p className="mt-2 text-xs text-amber-600">
+                  {t('serviceManagerTool.logsTruncated')}
+                </p>
+              ) : null}
+              {visibleLines.length >= VISIBLE_LOG_LIMIT ? (
+                <p className="mt-2 text-xs text-muted-foreground">
+                  {t('serviceManagerTool.visibleLogLimit')}
+                </p>
+              ) : null}
+            </div>
+            {selectedIDs.length ? (
+              <LogList
+                lines={visibleLines}
+                query={query}
+                regex={regex}
+                caseSensitive={caseSensitive}
+                sourceLabels={sourceLabels}
+              />
+            ) : (
+              <div className="grid min-h-0 place-items-center text-xs text-muted-foreground">
+                {t('serviceManagerTool.selectMonitorHint')}
+              </div>
+            )}
+          </div>
+        </ResizablePanel>
+      </ResizablePanelGroup>
       <ConfirmDialog
         open={pendingRemove !== null}
         onOpenChange={(open) => {
