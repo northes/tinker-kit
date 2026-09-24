@@ -8,7 +8,6 @@ import type {
   ServiceMetricSnapshot,
   ServiceTarget,
 } from '../../bindings/changeme/models';
-import { formatBackendError } from '../lib/backend-error';
 import { Badge } from './ui/badge';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
@@ -160,6 +159,12 @@ function availabilityText(status: string, t: ReturnType<typeof useTranslation>['
   const known = ['unsupported', 'unavailable', 'stopped', 'partial', 'accounting-disabled'];
   const key = known.includes(status) ? status : 'unavailable';
   return t(`serviceManagerTool.metrics.availability.${key}`);
+}
+
+function metricErrorText(error: string, t: ReturnType<typeof useTranslation>['t']) {
+  return error === 'metric-host-parse-failed'
+    ? t('serviceManagerTool.metrics.hostParseFailed')
+    : error;
 }
 
 export function ServiceMetricsPanel({
@@ -438,7 +443,7 @@ export function ServiceMetricsPanel({
               {errors.map((item) => (
                 <li key={item.key}>
                   <span className="font-medium text-foreground">{item.name}</span> ·{' '}
-                  {formatBackendError(item.error)}
+                  {metricErrorText(item.error, t)}
                 </li>
               ))}
             </ul>

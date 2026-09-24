@@ -1049,6 +1049,7 @@
       "live": "Live",
       "partialErrors": "{{total}} data sources are unavailable",
       "collectionFailed": "Performance collection",
+      "hostParseFailed": "Unable to parse host performance metrics",
       "name": "Name",
       "metric": { "cpu": "CPU", "memory": "Memory", "network": "Network", "disk": "Disk I/O" },
       "current": "Current",
@@ -1816,8 +1817,7 @@
       "logMonitorStopping": "The log monitor is stopping; try again later",
       "logMonitorLimitReached": "The number of concurrent log sources has reached the limit ({{max}})",
       "logMonitorNotFound": "Log monitor not found",
-      "logRegexInvalid": "Invalid log regular expression",
-      "metricHostParseFailed": "Unable to parse host performance metrics"
+      "logRegexInvalid": "Invalid log regular expression"
     },
     "sshFile": {
       "taskNotFound": "The file task does not exist",

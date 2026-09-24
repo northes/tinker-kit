@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"runtime"
 	"strconv"
 	"strings"
@@ -11,6 +12,7 @@ import (
 )
 
 const serviceMetricTimeout = 25 * time.Second
+const metricHostParseError = "metric-host-parse-failed"
 
 type ServiceMetricAvailability struct {
 	CPU     string `json:"cpu"`
@@ -247,7 +249,7 @@ func parseHostMetricOutput(output string) (hostMetricValues, error) {
 			DiskReadBytes: parseOptionalFloat(parts[8]), DiskWriteBytes: parseOptionalFloat(parts[9]),
 		}, nil
 	}
-	return hostMetricValues{CPUCores: 1}, userError("errors.service.metricHostParseFailed")
+	return hostMetricValues{CPUCores: 1}, errors.New(metricHostParseError)
 }
 
 func parseOptionalFloat(value string) *float64 {

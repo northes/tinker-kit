@@ -1044,6 +1044,7 @@
       "live": "实时",
       "partialErrors": "{{total}} 项数据暂不可用",
       "collectionFailed": "性能采集",
+      "hostParseFailed": "无法解析主机性能指标",
       "name": "名称",
       "metric": { "cpu": "CPU", "memory": "内存", "network": "网络", "disk": "磁盘 I/O" },
       "current": "当前",
@@ -1811,8 +1812,7 @@
       "logMonitorStopping": "日志正在停止，请稍后重试",
       "logMonitorLimitReached": "同时监控的日志源已达到上限（{{max}}）",
       "logMonitorNotFound": "日志监控不存在",
-      "logRegexInvalid": "日志正则表达式无效",
-      "metricHostParseFailed": "无法解析主机性能指标"
+      "logRegexInvalid": "日志正则表达式无效"
     },
     "sshFile": {
       "taskNotFound": "文件任务不存在",
