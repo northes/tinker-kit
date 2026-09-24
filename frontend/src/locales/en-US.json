@@ -1097,6 +1097,7 @@
     "removeMonitorFailed": "Unable to remove log monitor",
     "workspace": "Log workspace",
     "resizeMainPanels": "Resize resource list and details",
+    "resizeResourcePanels": "Resize resource information and log area",
     "resizeWorkspacePanels": "Resize log sources and log area",
     "workspaceHint": "Logs merge in local arrival order. Up to 16 live sources and 64 MB of buffer; monitoring ends when the app exits.",
     "workspaceEmpty": "No log sources yet. Select a container or service on the left and start monitoring.",

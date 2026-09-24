@@ -914,6 +914,8 @@ export default function ServiceManagerTool({
               id="resources"
               defaultSize={panelOrientation === 'horizontal' ? '38%' : '42%'}
               minSize={panelOrientation === 'horizontal' ? 230 : '20%'}
+              collapsible
+              collapsedSize={0}
               className="min-h-0 min-w-0"
             >
               <ResourceList
@@ -1461,7 +1463,14 @@ function WorkspacePanel({
         onLayoutChanged={onLayoutChanged}
         className="min-h-0 min-w-0"
       >
-        <ResizablePanel id="sources" defaultSize="40%" minSize="20%" className="min-h-0 min-w-0">
+        <ResizablePanel
+          id="sources"
+          defaultSize="40%"
+          minSize="20%"
+          collapsible
+          collapsedSize={0}
+          className="min-h-0 min-w-0"
+        >
           <div className="flex h-full min-h-0 flex-col overflow-hidden">
             <div className="flex-none px-4 py-3">
               <h2 className="text-sm font-semibold">{t('serviceManagerTool.workspace')}</h2>
@@ -1697,138 +1706,159 @@ function ResourcePanel({
   const [infoOpen, setInfoOpen] = useState(false);
   return (
     <>
-      <div className="grid h-full min-h-0 grid-rows-[auto_auto_minmax(0,1fr)]">
-        <div className="border-b px-4 py-3">
-          <div className="flex items-center gap-2">
-            <div className="min-w-0 flex-1">
-              <h2 className="truncate text-sm font-semibold">{resource.name || resource.id}</h2>
-              <p className="mt-0.5 truncate text-xs text-muted-foreground">
-                {resource.runtime}
-                {resource.scope ? ` · ${resource.scope}` : ''}
-              </p>
+      <ResizablePanelGroup orientation="vertical" className="min-h-0 min-w-0">
+        <ResizablePanel
+          id="resource-header"
+          defaultSize={68}
+          minSize={60}
+          collapsible
+          collapsedSize={0}
+          className="min-h-0 min-w-0 overflow-hidden"
+        >
+          <div className="h-full overflow-hidden px-4 py-3">
+            <div className="flex items-center gap-2">
+              <div className="min-w-0 flex-1">
+                <h2 className="truncate text-sm font-semibold">{resource.name || resource.id}</h2>
+                <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                  {resource.runtime}
+                  {resource.scope ? ` · ${resource.scope}` : ''}
+                </p>
+              </div>
+              {actions.map((action) => (
+                <Button
+                  key={action}
+                  variant={
+                    action === 'delete' || action.startsWith('disable') ? 'destructive' : 'outline'
+                  }
+                  size="icon-xs"
+                  disabled={busy === `${resourceKey(resource)}:${action}`}
+                  title={t(`serviceManagerTool.actions.${action}`)}
+                  onClick={() => onAction(resource, action)}
+                >
+                  {action === 'start' ? (
+                    <Play weight="duotone" />
+                  ) : action === 'stop' ? (
+                    <Pause weight="duotone" />
+                  ) : action === 'restart' ? (
+                    <ArrowCounterClockwise weight="duotone" />
+                  ) : action === 'delete' ? (
+                    <Trash weight="duotone" />
+                  ) : (
+                    <Power weight="duotone" />
+                  )}
+                </Button>
+              ))}
+              {selection.kind !== 'group' ? (
+                <Button
+                  variant="outline"
+                  size="icon-xs"
+                  title={t('serviceManagerTool.info')}
+                  aria-label={t('serviceManagerTool.info')}
+                  onClick={() => setInfoOpen(true)}
+                >
+                  <Info weight="duotone" />
+                </Button>
+              ) : null}
             </div>
-            {actions.map((action) => (
-              <Button
-                key={action}
-                variant={
-                  action === 'delete' || action.startsWith('disable') ? 'destructive' : 'outline'
-                }
-                size="icon-xs"
-                disabled={busy === `${resourceKey(resource)}:${action}`}
-                title={t(`serviceManagerTool.actions.${action}`)}
-                onClick={() => onAction(resource, action)}
-              >
-                {action === 'start' ? (
-                  <Play weight="duotone" />
-                ) : action === 'stop' ? (
-                  <Pause weight="duotone" />
-                ) : action === 'restart' ? (
-                  <ArrowCounterClockwise weight="duotone" />
-                ) : action === 'delete' ? (
-                  <Trash weight="duotone" />
+          </div>
+        </ResizablePanel>
+        <ResizableHandle withHandle aria-label={t('serviceManagerTool.resizeResourcePanels')} />
+        <ResizablePanel id="resource-logs" minSize="30%" className="min-h-0 min-w-0">
+          <div className="grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)]">
+            <div className="border-b px-4 py-2">
+              <div className="flex items-center gap-2">
+                {monitoring ? (
+                  <Button
+                    variant="outline"
+                    size="icon-sm"
+                    className="flex-none"
+                    title={t('serviceManagerTool.stopMonitor')}
+                    aria-label={t('serviceManagerTool.stopMonitor')}
+                    onClick={() => void onStop()}
+                  >
+                    <Stop weight="duotone" />
+                  </Button>
                 ) : (
-                  <Power weight="duotone" />
+                  <Button
+                    variant="outline"
+                    size="icon-sm"
+                    className="flex-none"
+                    title={t('serviceManagerTool.monitor')}
+                    aria-label={t('serviceManagerTool.monitor')}
+                    onClick={() => onMonitor(resource)}
+                  >
+                    <Play weight="duotone" />
+                  </Button>
                 )}
-              </Button>
-            ))}
-            {selection.kind !== 'group' ? (
-              <Button
-                variant="outline"
-                size="icon-xs"
-                title={t('serviceManagerTool.info')}
-                aria-label={t('serviceManagerTool.info')}
-                onClick={() => setInfoOpen(true)}
-              >
-                <Info weight="duotone" />
-              </Button>
-            ) : null}
-          </div>
-        </div>
-        <div className="border-b px-4 py-2">
-          <div className="flex items-center gap-2">
-            {monitoring ? (
-              <Button
-                variant="outline"
-                size="icon-sm"
-                className="flex-none"
-                title={t('serviceManagerTool.stopMonitor')}
-                aria-label={t('serviceManagerTool.stopMonitor')}
-                onClick={() => void onStop()}
-              >
-                <Stop weight="duotone" />
-              </Button>
-            ) : (
-              <Button
-                variant="outline"
-                size="icon-sm"
-                className="flex-none"
-                title={t('serviceManagerTool.monitor')}
-                aria-label={t('serviceManagerTool.monitor')}
-                onClick={() => onMonitor(resource)}
-              >
-                <Play weight="duotone" />
-              </Button>
-            )}
-            <Input
-              className="h-8"
-              value={logDraft}
-              onChange={(event) => setLogDraft(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === 'Enter') applyFilter();
-              }}
-              placeholder={t('serviceManagerTool.logFilter')}
+                <Input
+                  className="h-8"
+                  value={logDraft}
+                  onChange={(event) => setLogDraft(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter') applyFilter();
+                  }}
+                  placeholder={t('serviceManagerTool.logFilter')}
+                />
+                <Button variant="outline" size="sm" onClick={applyFilter}>
+                  {t('serviceManagerTool.apply')}
+                </Button>
+                <ToggleGroup
+                  multiple
+                  variant="outline"
+                  size="sm"
+                  value={[regex ? 'regex' : '', caseSensitive ? 'case' : ''].filter(Boolean)}
+                  onValueChange={(value) => {
+                    setRegex(value.includes('regex'));
+                    setCaseSensitive(value.includes('case'));
+                  }}
+                >
+                  <ToggleGroupItem
+                    value="regex"
+                    title={t('serviceManagerTool.regex')}
+                    aria-label={t('serviceManagerTool.regex')}
+                  >
+                    <Asterisk weight="duotone" />
+                  </ToggleGroupItem>
+                  <ToggleGroupItem
+                    value="case"
+                    title={t('serviceManagerTool.caseSensitive')}
+                    aria-label={t('serviceManagerTool.caseSensitive')}
+                  >
+                    <TextAa weight="duotone" />
+                  </ToggleGroupItem>
+                </ToggleGroup>
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  className="ml-auto flex-none text-muted-foreground hover:text-destructive"
+                  disabled={!monitorIDs.length}
+                  title={t('serviceManagerTool.clearLogs')}
+                  aria-label={t('serviceManagerTool.clearLogs')}
+                  onClick={() => setConfirmingClear(true)}
+                >
+                  <Eraser weight="duotone" />
+                </Button>
+              </div>
+              {truncated ? (
+                <p className="mt-2 text-xs text-amber-600">
+                  {t('serviceManagerTool.logsTruncated')}
+                </p>
+              ) : null}
+              {lines.length >= VISIBLE_LOG_LIMIT ? (
+                <p className="mt-2 text-xs text-muted-foreground">
+                  {t('serviceManagerTool.visibleLogLimit')}
+                </p>
+              ) : null}
+            </div>
+            <LogList
+              lines={visibleLines}
+              query={query}
+              regex={regex}
+              caseSensitive={caseSensitive}
             />
-            <Button variant="outline" size="sm" onClick={applyFilter}>
-              {t('serviceManagerTool.apply')}
-            </Button>
-            <ToggleGroup
-              multiple
-              variant="outline"
-              size="sm"
-              value={[regex ? 'regex' : '', caseSensitive ? 'case' : ''].filter(Boolean)}
-              onValueChange={(value) => {
-                setRegex(value.includes('regex'));
-                setCaseSensitive(value.includes('case'));
-              }}
-            >
-              <ToggleGroupItem
-                value="regex"
-                title={t('serviceManagerTool.regex')}
-                aria-label={t('serviceManagerTool.regex')}
-              >
-                <Asterisk weight="duotone" />
-              </ToggleGroupItem>
-              <ToggleGroupItem
-                value="case"
-                title={t('serviceManagerTool.caseSensitive')}
-                aria-label={t('serviceManagerTool.caseSensitive')}
-              >
-                <TextAa weight="duotone" />
-              </ToggleGroupItem>
-            </ToggleGroup>
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              className="ml-auto flex-none text-muted-foreground hover:text-destructive"
-              disabled={!monitorIDs.length}
-              title={t('serviceManagerTool.clearLogs')}
-              aria-label={t('serviceManagerTool.clearLogs')}
-              onClick={() => setConfirmingClear(true)}
-            >
-              <Eraser weight="duotone" />
-            </Button>
           </div>
-          {truncated ? (
-            <p className="mt-2 text-xs text-amber-600">{t('serviceManagerTool.logsTruncated')}</p>
-          ) : null}
-          {lines.length >= VISIBLE_LOG_LIMIT ? (
-            <p className="mt-2 text-xs text-muted-foreground">
-              {t('serviceManagerTool.visibleLogLimit')}
-            </p>
-          ) : null}
-        </div>
-        <LogList lines={visibleLines} query={query} regex={regex} caseSensitive={caseSensitive} />
-      </div>
+        </ResizablePanel>
+      </ResizablePanelGroup>
       <ConfirmDialog
         open={confirmingClear}
         onOpenChange={setConfirmingClear}
