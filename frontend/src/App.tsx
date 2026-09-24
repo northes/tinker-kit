@@ -106,6 +106,7 @@ import { SetAutoCheckEnabled } from '../bindings/changeme/updateservice';
 import type { Config as Settings, SidebarToolConfig } from '../bindings/changeme/models';
 import { useLocation, useNavigate, useNavigationType } from 'react-router';
 import { resolveTheme } from './theme';
+import { formatBackendError } from './lib/backend-error';
 
 type Page = 'settings' | 'history' | ToolId | 'image-manager-detail';
 type SaveWaiter = {
@@ -1336,7 +1337,7 @@ function AppShell() {
         logFrontend(`[ssh] host key prompt response failed: ${String(error)}`);
         toast.add({
           title: t('sshHostKeyDialog.responseFailed'),
-          description: String(error),
+          description: formatBackendError(error),
           type: 'error',
         });
       })

@@ -575,7 +575,10 @@ func TestStreamDockerLoadReportsStderr(t *testing.T) {
 	}
 	s := &ImageService{}
 	err := s.streamDockerLoad(context.Background(), ImageSource{Kind: "local"}, "docker", bytes.NewReader([]byte("x")))
-	if err == nil || !strings.Contains(err.Error(), "invalid tar") {
+	if err == nil || localizedErrorKey(err) != "errors.imageExport.importImageFailed" {
+		t.Fatalf("expected localized import error, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "invalid tar") {
 		t.Fatalf("expected stderr in load error, got %v", err)
 	}
 }

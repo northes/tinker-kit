@@ -411,7 +411,7 @@ func (s *JSONPipelineService) findResult(resultID string) *pipelineResult {
 func (s *JSONPipelineService) GetPipelineResultText(resultID string) (string, error) {
 	result := s.findResult(resultID)
 	if result == nil {
-		return "", fmt.Errorf("resultExpired")
+		return "", userError("errors.json.resultExpired")
 	}
 	return result.fullText()
 }
@@ -421,15 +421,15 @@ func (result *pipelineResult) fullText() (string, error) {
 	defer result.textMu.Unlock()
 	if result.textReady {
 		if result.textErr != "" {
-			return "", fmt.Errorf("%s", result.textErr)
+			return "", userError(result.textErr)
 		}
 		return result.text, nil
 	}
 	run := result.run
 	if run == nil || run.Error != nil {
 		result.textReady = true
-		result.textErr = "resultUnavailable"
-		return "", fmt.Errorf("resultUnavailable")
+		result.textErr = "errors.json.resultUnavailable"
+		return "", userError("errors.json.resultUnavailable")
 	}
 	var text string
 	if run.Output == nil {
@@ -441,8 +441,8 @@ func (result *pipelineResult) fullText() (string, error) {
 	}
 	if len(text) > jsonPipelineMaxTextBytes {
 		result.textReady = true
-		result.textErr = "resultTooLarge"
-		return "", fmt.Errorf("resultTooLarge")
+		result.textErr = "errors.json.resultTooLarge"
+		return "", userError("errors.json.resultTooLarge")
 	}
 	result.text = text
 	result.textSize = len(text)

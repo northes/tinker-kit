@@ -48,7 +48,7 @@ func TestReadImageFileRejectsUnsupportedExtension(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "preview.gif")
 	if _, err := (&FileService{}).ReadImageFile(path); err == nil {
 		t.Fatal("读取不支持的扩展名时应返回错误")
-	} else if !strings.Contains(err.Error(), "不支持的图片文件类型") {
+	} else if localizedErrorKey(err) != "errors.file.unsupportedImageType" {
 		t.Fatalf("错误信息不清晰: %v", err)
 	}
 }
@@ -61,7 +61,7 @@ func TestReadImageFileRejectsDirectory(t *testing.T) {
 
 	if _, err := (&FileService{}).ReadImageFile(path); err == nil {
 		t.Fatal("读取目录时应返回错误")
-	} else if !strings.Contains(err.Error(), "不是普通文件") {
+	} else if localizedErrorKey(err) != "errors.file.imageNotRegular" {
 		t.Fatalf("目录错误信息不清晰: %v", err)
 	}
 }
@@ -70,7 +70,7 @@ func TestReadImageFileRejectsMissingPath(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "missing.png")
 	if _, err := (&FileService{}).ReadImageFile(path); err == nil {
 		t.Fatal("读取不存在的路径时应返回错误")
-	} else if !strings.Contains(err.Error(), "获取图片文件信息") {
+	} else if localizedErrorKey(err) != "errors.file.imageInfoFailed" {
 		t.Fatalf("不存在路径的错误信息不清晰: %v", err)
 	}
 }
@@ -107,7 +107,7 @@ func TestReadFileRejectsOversizedFile(t *testing.T) {
 
 	if _, err := (&FileService{}).ReadFile(path, 4); err == nil {
 		t.Fatal("超过大小限制时应返回错误")
-	} else if !strings.Contains(err.Error(), "超过大小限制") {
+	} else if localizedErrorKey(err) != "errors.file.tooLarge" {
 		t.Fatalf("大小限制错误信息不清晰: %v", err)
 	}
 }
@@ -120,7 +120,7 @@ func TestReadFileRejectsDirectory(t *testing.T) {
 
 	if _, err := (&FileService{}).ReadFile(path, 0); err == nil {
 		t.Fatal("读取目录时应返回错误")
-	} else if !strings.Contains(err.Error(), "不是普通文件") {
+	} else if localizedErrorKey(err) != "errors.file.notRegular" {
 		t.Fatalf("目录错误信息不清晰: %v", err)
 	}
 }

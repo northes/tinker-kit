@@ -49,6 +49,18 @@ func writeSSHConfigTestFile(t *testing.T, path string, content string) {
 	}
 }
 
+// localizedMessageKey 从模型字段保存的多语言错误串中取出 key，供断言使用。
+func localizedMessageKey(t *testing.T, message string) string {
+	t.Helper()
+	var payload struct {
+		Key string `json:"key"`
+	}
+	if err := json.Unmarshal([]byte(message), &payload); err != nil || payload.Key == "" {
+		t.Fatalf("错误消息不是多语言错误: %q", message)
+	}
+	return payload.Key
+}
+
 func TestGetSSHConfigHostsIncludesNestedGlobRelativeAndTokens(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
@@ -323,7 +335,7 @@ func TestTagDockerImagesReportsOldTagDeleteFailure(t *testing.T) {
 		},
 	}
 	result := service.TagDockerImages("local", []DockerImageReferenceChange{{Source: "repo:old", Target: "repo:new"}}, true)
-	if len(result.Succeeded) != 0 || len(result.Failed) != 1 || !strings.Contains(result.Failed[0].Error, "目标 Tag 已创建") {
+	if len(result.Succeeded) != 0 || len(result.Failed) != 1 || localizedMessageKey(t, result.Failed[0].Error) != "errors.image.oldTagDeleteFailed" {
 		t.Fatalf("旧 Tag 删除失败结果为 %#v", result)
 	}
 }
@@ -381,7 +393,7 @@ func TestImageMutationRejectsRegistryAndInvalidReferences(t *testing.T) {
 	config := &ConfigService{cfg: normalizeConfig(Config{ImageSources: []ImageSource{{ID: "registry", Kind: "registry", RegistryURL: "https://registry.example"}}})}
 	service := &ImageService{config: config}
 	result := service.TagDockerImages("registry", []DockerImageReferenceChange{{Source: "repo:old", Target: "repo:new"}}, false)
-	if len(result.Failed) != 1 || !strings.Contains(result.Failed[0].Error, "Registry") {
+	if len(result.Failed) != 1 || localizedMessageKey(t, result.Failed[0].Error) != "errors.image.registryMutationUnsupported" {
 		t.Fatalf("Registry 来源未拒绝镜像变更: %#v", result)
 	}
 	config = &ConfigService{cfg: normalizeConfig(Config{ImageSources: []ImageSource{{ID: "local", Kind: "local"}}})}
@@ -390,7 +402,7 @@ func TestImageMutationRejectsRegistryAndInvalidReferences(t *testing.T) {
 		return nil, nil
 	}}
 	result = service.TagDockerImages("local", []DockerImageReferenceChange{{Source: "<none>:<none>", Target: "repo:new"}}, false)
-	if len(result.Failed) != 1 || !strings.Contains(result.Failed[0].Error, "无效") {
+	if len(result.Failed) != 1 || localizedMessageKey(t, result.Failed[0].Error) != "errors.image.referenceInvalid" {
 		t.Fatalf("无效镜像引用未拒绝: %#v", result)
 	}
 }
@@ -614,7 +626,7 @@ func TestImageSourceConnectionTestsRegistryDraft(t *testing.T) {
 		RegistryUsername: "user",
 		RegistryPassword: "wrong-password",
 	})
-	if err == nil || !strings.Contains(err.Error(), "认证失败") {
+	if err == nil || localizedErrorKey(err) != "errors.image.registryAuthFailed" {
 		t.Fatalf("错误 Registry 凭据应被拒绝，错误为 %v", err)
 	}
 	if got := config.Get().ImageSources; len(got) != 1 || got[0].ID != localImageSourceID {

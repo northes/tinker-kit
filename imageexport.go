@@ -183,7 +183,7 @@ func (s *ImageService) CancelImageTask(id string) error {
 	task := s.tasks[id]
 	if task == nil {
 		s.taskMu.Unlock()
-		return errors.New("任务不存在")
+		return userError("errors.imageExport.taskNotFound")
 	}
 	if task.Type != imageTaskTypeExport || (task.Status != imageTaskQueued && task.Status != imageTaskRunning) {
 		s.taskMu.Unlock()
@@ -202,16 +202,16 @@ func (s *ImageService) RetryImageExport(id string) (ImageExportResult, error) {
 	task := s.tasks[id]
 	if task == nil {
 		s.taskMu.Unlock()
-		return ImageExportResult{}, errors.New("任务不存在")
+		return ImageExportResult{}, userError("errors.imageExport.taskNotFound")
 	}
 	if task.Type != imageTaskTypeExport || task.Status != imageTaskFailed {
 		s.taskMu.Unlock()
-		return ImageExportResult{}, errors.New("任务不可重试")
+		return ImageExportResult{}, userError("errors.imageExport.taskNotRetryable")
 	}
 	sourceID, imageID, target := task.SourceID, task.ImageID, task.Path
 	s.taskMu.Unlock()
 	if sourceID == "" || imageID == "" || target == "" {
-		return ImageExportResult{}, errors.New("导出任务信息不完整")
+		return ImageExportResult{}, userError("errors.imageExport.exportTaskIncomplete")
 	}
 	source, cliPath, _, err := s.sourceSnapshot(sourceID)
 	if err != nil {
@@ -224,11 +224,11 @@ func (s *ImageService) RetryImageExport(id string) (ImageExportResult, error) {
 	task = s.tasks[id]
 	if task == nil {
 		s.taskMu.Unlock()
-		return ImageExportResult{}, errors.New("任务不存在")
+		return ImageExportResult{}, userError("errors.imageExport.taskNotFound")
 	}
 	if task.Type != imageTaskTypeExport || task.Status != imageTaskFailed {
 		s.taskMu.Unlock()
-		return ImageExportResult{}, errors.New("任务不可重试")
+		return ImageExportResult{}, userError("errors.imageExport.taskNotRetryable")
 	}
 	sourceID, imageID, target = task.SourceID, task.ImageID, task.Path
 	total, totalEstimated := task.Total, task.TotalEstimated
@@ -260,11 +260,11 @@ func (s *ImageService) RetryImageExport(id string) (ImageExportResult, error) {
 // StartImageExport 打开原生保存对话框，并异步导出镜像 tar 包。estimatedSize 是镜像列表提供的估算字节数。
 func (s *ImageService) StartImageExport(sourceID, imageID string, estimatedSize int64) (ImageExportResult, error) {
 	if strings.TrimSpace(imageID) == "" {
-		return ImageExportResult{}, errors.New("镜像 ID 为空")
+		return ImageExportResult{}, userError("errors.imageExport.emptyImageID")
 	}
 	app := application.Get()
 	if app == nil || app.Dialog == nil {
-		return ImageExportResult{}, errors.New("应用尚未初始化")
+		return ImageExportResult{}, userError("errors.common.notInitialized")
 	}
 	filename := exportFilename(imageID)
 	dialog := app.Dialog.SaveFile().SetFilename(filename).CanCreateDirectories(true).AddFilter("Tar archive", "*.tar")
@@ -273,7 +273,7 @@ func (s *ImageService) StartImageExport(sourceID, imageID string, estimatedSize 
 	}
 	path, err := dialog.PromptForSingleSelection()
 	if err != nil {
-		return ImageExportResult{}, fmt.Errorf("选择保存路径: %w", err)
+		return ImageExportResult{}, userErrorCause("errors.imageExport.selectSavePath", err)
 	}
 	if path == "" {
 		return ImageExportResult{}, nil
@@ -295,7 +295,7 @@ func (s *ImageService) StartImageExports(sourceID string, imageIDs []string, est
 	seen := make(map[string]bool)
 	for _, id := range imageIDs {
 		if strings.TrimSpace(id) == "" {
-			return ImageExportResult{}, errors.New("镜像 ID 为空")
+			return ImageExportResult{}, userError("errors.imageExport.emptyImageID")
 		}
 		if !seen[id] {
 			seen[id] = true
@@ -303,10 +303,10 @@ func (s *ImageService) StartImageExports(sourceID string, imageIDs []string, est
 		}
 	}
 	if len(ids) == 0 {
-		return ImageExportResult{}, errors.New("未选择镜像")
+		return ImageExportResult{}, userError("errors.imageExport.noImagesSelected")
 	}
 	if len(estimatedSizes) != len(imageIDs) {
-		return ImageExportResult{}, errors.New("镜像大小估算数量不匹配")
+		return ImageExportResult{}, userError("errors.imageExport.estimateSizeMismatch")
 	}
 	source, cliPath, _, err := s.sourceSnapshot(sourceID)
 	if err != nil {
@@ -314,7 +314,7 @@ func (s *ImageService) StartImageExports(sourceID string, imageIDs []string, est
 	}
 	app := application.Get()
 	if app == nil || app.Dialog == nil {
-		return ImageExportResult{}, errors.New("应用尚未初始化")
+		return ImageExportResult{}, userError("errors.common.notInitialized")
 	}
 	dialog := app.Dialog.OpenFile().CanChooseDirectories(true).CanChooseFiles(false).CanCreateDirectories(true)
 	if window := app.Window.Current(); window != nil {
@@ -322,7 +322,7 @@ func (s *ImageService) StartImageExports(sourceID string, imageIDs []string, est
 	}
 	directory, err := dialog.PromptForSingleSelection()
 	if err != nil {
-		return ImageExportResult{}, fmt.Errorf("选择保存目录: %w", err)
+		return ImageExportResult{}, userErrorCause("errors.imageExport.selectSaveDirectory", err)
 	}
 	if directory == "" {
 		return ImageExportResult{}, nil
@@ -361,7 +361,7 @@ func (s *ImageService) exportSourceSnapshot(sourceID string) (ImageSource, strin
 
 func (s *ImageService) enqueueImageExportsWithSnapshot(sourceID string, ids []string, estimates []int64, directory string, source ImageSource, cliPath string) (ImageExportResult, error) {
 	if len(estimates) != len(ids) {
-		return ImageExportResult{}, errors.New("镜像大小估算数量不匹配")
+		return ImageExportResult{}, userError("errors.imageExport.estimateSizeMismatch")
 	}
 	s.exportQueueMu.Lock()
 	defer s.exportQueueMu.Unlock()
@@ -404,7 +404,7 @@ func batchExportPaths(directory string, ids []string, reserved map[string]bool) 
 				continue
 			}
 			if !errors.Is(err, os.ErrNotExist) {
-				return nil, fmt.Errorf("检查导出路径失败: %w", err)
+				return nil, userErrorCause("errors.imageExport.checkExportPath", err)
 			}
 			reserved[path] = true
 			paths = append(paths, path)
@@ -567,7 +567,7 @@ func (s *ImageService) exportDockerTar(ctx context.Context, taskID string, sourc
 	_ = os.Remove(tmp)
 	f, err := os.OpenFile(tmp, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
 	if err != nil {
-		return fmt.Errorf("创建导出文件失败: %w", err)
+		return userErrorCause("errors.imageExport.createExportFile", err)
 	}
 	defer f.Close()
 	var progressMu sync.Mutex
@@ -609,7 +609,7 @@ func (s *ImageService) exportDockerTar(ctx context.Context, taskID string, sourc
 	}
 	if err := s.commitImageExport(taskID, tmp, target); err != nil {
 		_ = os.Remove(tmp)
-		return fmt.Errorf("提交导出文件失败: %w", err)
+		return userErrorCause("errors.imageExport.commitExportFile", err)
 	}
 	return nil
 }
@@ -639,7 +639,7 @@ func (s *ImageService) streamDockerCommand(ctx context.Context, source ImageSour
 	}
 	if waitErr != nil {
 		if stderr.Len() > 0 {
-			return fmt.Errorf("Docker 导出失败: %s", stderr.String())
+			return userErrorParams("errors.imageExport.dockerExportFailed", map[string]any{"detail": stderr.String()})
 		}
 		return waitErr
 	}
@@ -675,14 +675,14 @@ func (s *ImageService) exportRegistryOCI(ctx context.Context, taskID string, sou
 	}
 	root, err := puller.Get(ctx, rootRef)
 	if err != nil {
-		return fmt.Errorf("读取 Registry manifest 失败: %w", redactRegistryError(err, source))
+		return userErrorCause("errors.imageExport.readRegistryManifest", redactRegistryError(err, source))
 	}
 	rootDigest := root.Digest.String()
 	if !canonicalSHA256Digest(rootDigest) {
-		return errors.New("Registry 返回了无效 manifest digest")
+		return userError("errors.imageExport.invalidManifestDigest")
 	}
 	if digest != "" && digest != rootDigest {
-		return errors.New("Registry 返回的 manifest digest 与请求不一致")
+		return userError("errors.imageExport.manifestDigestMismatch")
 	}
 	objects := map[string]registryObject{}
 	if err := s.collectRegistryObjects(ctx, puller, repository, root, objects); err != nil {
@@ -739,7 +739,7 @@ func (s *ImageService) exportRegistryOCI(ctx context.Context, taskID string, sou
 			return err
 		}
 		if n != size {
-			return fmt.Errorf("Registry 对象大小不一致: %s，实际 %d，声明 %d", path, n, size)
+			return userErrorParams("errors.imageExport.objectSizeMismatch", map[string]any{"path": path, "actual": n, "declared": size})
 		}
 		return nil
 	}
@@ -778,7 +778,7 @@ func (s *ImageService) exportRegistryOCI(ctx context.Context, taskID string, sou
 			return closeErr
 		}
 		if hex.EncodeToString(hash.Sum(nil)) != strings.TrimPrefix(digest, "sha256:") {
-			return fmt.Errorf("Registry blob digest 校验失败: %s", digest)
+			return userErrorParams("errors.imageExport.blobDigestMismatch", map[string]any{"digest": digest})
 		}
 	}
 	if err := tw.Close(); err != nil {
@@ -815,7 +815,7 @@ func (s *ImageService) collectRegistryObjects(ctx context.Context, puller *remot
 	}
 	hash := sha256.Sum256(raw)
 	if !canonicalSHA256Digest(digest) || hex.EncodeToString(hash[:]) != strings.TrimPrefix(digest, "sha256:") || int64(len(raw)) != descriptor.Size {
-		return fmt.Errorf("Registry manifest digest 或大小校验失败: %s", digest)
+		return userErrorParams("errors.imageExport.manifestDigestOrSizeInvalid", map[string]any{"digest": digest})
 	}
 	objects[digest] = registryObject{data: raw, size: int64(len(raw))}
 	var envelope struct {
@@ -824,7 +824,7 @@ func (s *ImageService) collectRegistryObjects(ctx context.Context, puller *remot
 		Manifests []v1.Descriptor `json:"manifests"`
 	}
 	if err := json.Unmarshal(raw, &envelope); err != nil {
-		return fmt.Errorf("解析 Registry manifest 失败: %w", err)
+		return userErrorCause("errors.imageExport.parseRegistryManifest", err)
 	}
 	for _, child := range envelope.Manifests {
 		childDesc, err := puller.Get(ctx, repo.Digest(child.Digest.String()))
@@ -832,7 +832,7 @@ func (s *ImageService) collectRegistryObjects(ctx context.Context, puller *remot
 			return err
 		}
 		if childDesc.Digest != child.Digest || childDesc.Size != child.Size {
-			return errors.New("Registry 子 manifest 与索引声明不一致")
+			return userError("errors.imageExport.childManifestMismatch")
 		}
 		if err := s.collectRegistryObjects(ctx, puller, repo, childDesc, objects); err != nil {
 			return err
@@ -845,11 +845,11 @@ func (s *ImageService) collectRegistryObjects(ctx context.Context, puller *remot
 	for _, blob := range blobs {
 		key := blob.Digest.String()
 		if !canonicalSHA256Digest(key) || blob.Size < 0 || blob.Size == int64(^uint64(0)>>1) {
-			return fmt.Errorf("Registry blob 描述无效: %s", key)
+			return userErrorParams("errors.imageExport.invalidBlobDescriptor", map[string]any{"digest": key})
 		}
 		if previous, ok := objects[key]; ok {
 			if previous.size != blob.Size {
-				return fmt.Errorf("Registry 共享 blob 大小不一致: %s", key)
+				return userErrorParams("errors.imageExport.sharedBlobSizeMismatch", map[string]any{"digest": key})
 			}
 			continue
 		}
@@ -974,7 +974,7 @@ func (s *ImageService) streamDockerPull(ctx context.Context, source ImageSource,
 	cmd.Stdout = writer
 	cmd.Stderr = writer
 	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("拉取镜像失败: %w", err)
+		return userErrorCause("errors.imageExport.pullImageFailed", err)
 	}
 	return nil
 }
@@ -986,7 +986,7 @@ func (s *ImageService) StartImagePulls(sourceID string, images []string) (ImageE
 	for _, image := range images {
 		reference := strings.TrimSpace(image)
 		if reference == "" || !validMutableImageReference(reference) {
-			return ImageExportResult{}, errors.New("镜像引用无效")
+			return ImageExportResult{}, userError("errors.imageExport.invalidImageReference")
 		}
 		if seen[reference] {
 			continue
@@ -995,14 +995,14 @@ func (s *ImageService) StartImagePulls(sourceID string, images []string) (ImageE
 		refs = append(refs, reference)
 	}
 	if len(refs) == 0 {
-		return ImageExportResult{}, errors.New("未选择镜像")
+		return ImageExportResult{}, userError("errors.imageExport.noImagesSelected")
 	}
 	source, cliPath, _, err := s.sourceSnapshot(sourceID)
 	if err != nil {
 		return ImageExportResult{}, err
 	}
 	if source.Kind == "registry" {
-		return ImageExportResult{}, errors.New("Registry 来源不支持拉取更新")
+		return ImageExportResult{}, userError("errors.imageExport.registryPullUnsupported")
 	}
 	for _, reference := range refs {
 		s.enqueueImagePullWithSnapshot(sourceID, reference, source, cliPath)
@@ -1079,11 +1079,11 @@ func (s *ImageService) StartImageImports(sourceID string) (ImageExportResult, er
 		return ImageExportResult{}, err
 	}
 	if source.Kind == "registry" {
-		return ImageExportResult{}, errors.New("Registry 来源不支持导入镜像")
+		return ImageExportResult{}, userError("errors.imageExport.registryImportUnsupported")
 	}
 	app := application.Get()
 	if app == nil || app.Dialog == nil {
-		return ImageExportResult{}, errors.New("应用尚未初始化")
+		return ImageExportResult{}, userError("errors.common.notInitialized")
 	}
 	dialog := app.Dialog.OpenFile().
 		CanChooseDirectories(false).
@@ -1094,7 +1094,7 @@ func (s *ImageService) StartImageImports(sourceID string) (ImageExportResult, er
 	}
 	paths, err := dialog.PromptForMultipleSelection()
 	if err != nil {
-		return ImageExportResult{}, fmt.Errorf("选择导入文件: %w", err)
+		return ImageExportResult{}, userErrorCause("errors.imageExport.selectImportFiles", err)
 	}
 	if len(paths) == 0 {
 		return ImageExportResult{}, nil
@@ -1113,16 +1113,16 @@ func (s *ImageService) enqueueImageImportsWithSnapshot(sourceID string, paths []
 		}
 		info, err := os.Stat(cleaned)
 		if err != nil {
-			return ImageExportResult{}, fmt.Errorf("读取导入文件失败: %w", err)
+			return ImageExportResult{}, userErrorCause("errors.imageExport.readImportFile", err)
 		}
 		if !info.Mode().IsRegular() {
-			return ImageExportResult{}, fmt.Errorf("导入路径 %q 不是普通文件", cleaned)
+			return ImageExportResult{}, userErrorParams("errors.imageExport.importPathNotRegular", map[string]any{"path": cleaned})
 		}
 		seen[cleaned] = true
 		unique = append(unique, cleaned)
 	}
 	if len(unique) == 0 {
-		return ImageExportResult{}, errors.New("未选择导入文件")
+		return ImageExportResult{}, userError("errors.imageExport.noImportFilesSelected")
 	}
 	for _, path := range unique {
 		s.enqueueImageImportWithSnapshot(sourceID, path, source, cliPath)
@@ -1161,7 +1161,7 @@ func (s *ImageService) runImageImport(ctx context.Context, taskID, path string, 
 	})
 	file, err := os.Open(path)
 	if err != nil {
-		s.failImageImport(taskID, fmt.Errorf("打开导入文件失败: %w", err))
+		s.failImageImport(taskID, userErrorCause("errors.imageExport.openImportFile", err))
 		return
 	}
 	defer file.Close()
@@ -1252,9 +1252,9 @@ func (s *ImageService) streamDockerLoad(ctx context.Context, source ImageSource,
 	cmd.Stderr = stderr
 	if err := cmd.Run(); err != nil {
 		if stderr.Len() > 0 {
-			return fmt.Errorf("导入镜像失败: %s", strings.TrimSpace(stderr.String()))
+			return userErrorParams("errors.imageExport.importImageFailed", map[string]any{"detail": strings.TrimSpace(stderr.String())})
 		}
-		return fmt.Errorf("导入镜像失败: %w", err)
+		return userErrorCause("errors.imageExport.importImageFailed", err)
 	}
 	return nil
 }

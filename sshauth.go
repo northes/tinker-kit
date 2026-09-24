@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"errors"
-	"fmt"
 	"net"
 
 	"golang.org/x/crypto/ssh"
@@ -70,7 +69,7 @@ type sshDialError struct {
 }
 
 func (e *sshDialError) Error() string {
-	return fmt.Sprintf("连接 SSH 主机失败: %v", e.err)
+	return userErrorCause("errors.ssh.connectFailed", e.err).Error()
 }
 
 func (e *sshDialError) Unwrap() error {

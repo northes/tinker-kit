@@ -368,7 +368,7 @@ func (b *limitedBuffer) Write(p []byte) (int, error) {
 
 func (s *ImageService) sourceSnapshot(sourceID string) (ImageSource, string, string, error) {
 	if s == nil || s.config == nil {
-		return ImageSource{}, "", "", errors.New("镜像服务未配置")
+		return ImageSource{}, "", "", userError("errors.common.configNotInitialized")
 	}
 	config := normalizeConfig(s.config.Get())
 	cliPath := config.DockerCLIPath
@@ -390,7 +390,7 @@ func (s *ImageService) sourceSnapshot(sourceID string) (ImageSource, string, str
 						}
 					}
 					if profile.ID == "" {
-						return ImageSource{}, "", "", errors.New("镜像来源引用的 SSH 配置不存在")
+						return ImageSource{}, "", "", userError("errors.image.sshProfileMissing")
 					}
 					resolved := imageSourceFromSSHProfile(source, profile)
 					return resolved, "docker", imageSourceFingerprint(resolved, "docker"), nil
@@ -404,10 +404,10 @@ func (s *ImageService) sourceSnapshot(sourceID string) (ImageSource, string, str
 					return source, "", imageSourceFingerprint(source, ""), nil
 				}
 			}
-			return ImageSource{}, "", "", errors.New("镜像来源无效")
+			return ImageSource{}, "", "", userError("errors.image.sourceInvalid")
 		}
 	}
-	return ImageSource{}, "", "", fmt.Errorf("镜像来源 %q 不存在", sourceID)
+	return ImageSource{}, "", "", userErrorParams("errors.image.sourceNotFound", map[string]any{"sourceID": sourceID})
 }
 
 func imageSourceFromSSHProfile(source ImageSource, profile SSHProfile) ImageSource {
@@ -508,13 +508,13 @@ func remoteCommandLabel(cliPath string) string {
 
 func buildImageCommand(source ImageSource, cliPath string, dockerArgs ...string) (string, []string, error) {
 	if !validPathValue(cliPath, 4096) || strings.HasPrefix(cliPath, "-") {
-		return "", nil, errors.New("Docker CLI 路径无效")
+		return "", nil, userError("errors.image.cliPathInvalid")
 	}
 	if source.Kind == "local" {
 		return cliPath, append([]string(nil), dockerArgs...), nil
 	}
 	if source.Kind != "ssh" || !validSSHHost(source.SSHHost) {
-		return "", nil, errors.New("镜像来源无效")
+		return "", nil, userError("errors.image.sourceInvalid")
 	}
 	remoteArgs := append([]string{cliPath}, dockerArgs...)
 	sshArgs := []string{"-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=yes"}
@@ -623,14 +623,14 @@ func runAuthenticatedSSHCombinedLine(
 func dialAuthenticatedSSH(ctx context.Context, source ImageSource, language string) (*ssh.Client, error) {
 	hostKeyCallback, err := newAppSSHHostKeyCallback(language)
 	if err != nil {
-		return nil, fmt.Errorf("读取应用 SSH known_hosts 失败: %w", err)
+		return nil, userErrorCause("errors.image.knownHostsReadFailed", err)
 	}
 	user := source.SSHUsername
 	if user == "" {
 		user = os.Getenv("USER")
 	}
 	if user == "" {
-		return nil, errors.New("SSH 用户名为空")
+		return nil, userError("errors.image.sshUserEmpty")
 	}
 	authMethods := make([]ssh.AuthMethod, 0, 3)
 	if source.SSHPassword != "" {
@@ -640,7 +640,7 @@ func dialAuthenticatedSSH(ctx context.Context, source ImageSource, language stri
 	if keyData == "" && source.SSHPrivateKeyPath != "" {
 		keyData, err = readSSHPrivateKeyFile(source.SSHPrivateKeyPath)
 		if err != nil {
-			return nil, errors.New("读取 SSH 私钥文件失败")
+			return nil, userError("errors.image.privateKeyReadFailed")
 		}
 	}
 	if keyData != "" {
@@ -651,12 +651,12 @@ func dialAuthenticatedSSH(ctx context.Context, source ImageSource, language stri
 			signer, err = ssh.ParsePrivateKey([]byte(keyData))
 		}
 		if err != nil {
-			return nil, errors.New("解析 SSH 私钥失败")
+			return nil, userErrorCause("errors.image.privateKeyParseFailed", err)
 		}
 		authMethods = append(authMethods, ssh.PublicKeys(signer))
 	}
 	if len(authMethods) == 0 {
-		return nil, errors.New("SSH 未配置认证凭据")
+		return nil, userError("errors.image.sshCredentialsMissing")
 	}
 	host := strings.TrimPrefix(strings.TrimSuffix(source.SSHHost, "]"), "[")
 	port := source.SSHPort
@@ -674,7 +674,7 @@ func dialAuthenticatedSSH(ctx context.Context, source ImageSource, language stri
 		if errors.As(err, &hostKeyErr) {
 			return nil, hostKeyErr
 		}
-		return nil, errors.New("连接 SSH 主机失败")
+		return nil, userError("errors.image.sshConnectFailed")
 	}
 	return client, nil
 }
@@ -723,7 +723,7 @@ func runAuthenticatedSSHInput(ctx context.Context, source ImageSource, cliPath, 
 	stderr := &limitedBuffer{limit: maxImageCommandOutput}
 	if err := runSSHCommandToWriters(ctx, client, cliPath, src, io.Discard, stderr, dockerArgs...); err != nil {
 		if stderr.Len() > 0 {
-			return fmt.Errorf("导入镜像失败: %s", strings.TrimSpace(stderr.String()))
+			return userErrorCause("errors.image.importFailed", errors.New(strings.TrimSpace(stderr.String())))
 		}
 		return err
 	}
@@ -738,7 +738,7 @@ func runSSHCommand(ctx context.Context, client *ssh.Client, cliPath string, dock
 func runSSHCommandLine(ctx context.Context, client *ssh.Client, label, commandLine string) ([]byte, error) {
 	session, err := client.NewSession()
 	if err != nil {
-		return nil, errors.New("创建 SSH 会话失败")
+		return nil, userError("errors.image.sshSessionFailed")
 	}
 	defer session.Close()
 	stdout := &limitedBuffer{limit: maxImageCommandOutput}
@@ -746,7 +746,7 @@ func runSSHCommandLine(ctx context.Context, client *ssh.Client, label, commandLi
 	session.Stdout = stdout
 	session.Stderr = stderr
 	if err := session.Start(commandLine); err != nil {
-		return nil, fmt.Errorf("启动远程命令 %s 失败", label)
+		return nil, userErrorParams("errors.image.remoteCommandStartFailed", map[string]any{"command": label})
 	}
 	wait := make(chan error, 1)
 	go func() { wait <- session.Wait() }()
@@ -754,9 +754,9 @@ func runSSHCommandLine(ctx context.Context, client *ssh.Client, label, commandLi
 	case err := <-wait:
 		if err != nil {
 			if stderr.Len() > 0 {
-				return stdout.Bytes(), fmt.Errorf("远程命令 %s 执行失败: %s", label, strings.TrimSpace(stderr.String()))
+				return stdout.Bytes(), userErrorParamsCause("errors.image.remoteCommandFailed", map[string]any{"command": label}, errors.New(strings.TrimSpace(stderr.String())))
 			}
-			return stdout.Bytes(), fmt.Errorf("远程命令 %s 执行失败: %w", label, err)
+			return stdout.Bytes(), userErrorParamsCause("errors.image.remoteCommandFailed", map[string]any{"command": label}, err)
 		}
 		return stdout.Bytes(), nil
 	case <-ctx.Done():
@@ -768,14 +768,14 @@ func runSSHCommandLine(ctx context.Context, client *ssh.Client, label, commandLi
 func runSSHCommandToWriter(ctx context.Context, client *ssh.Client, cliPath string, dst io.Writer, dockerArgs ...string) error {
 	session, err := client.NewSession()
 	if err != nil {
-		return errors.New("创建 SSH 会话失败")
+		return userError("errors.image.sshSessionFailed")
 	}
 	defer session.Close()
 	stderr := &limitedBuffer{limit: maxImageCommandOutput}
 	session.Stdout = dst
 	session.Stderr = stderr
 	if err := session.Start(shellJoin(append([]string{cliPath}, dockerArgs...))); err != nil {
-		return fmt.Errorf("启动远程命令 %s 失败", remoteCommandLabel(cliPath))
+		return userErrorParams("errors.image.remoteCommandStartFailed", map[string]any{"command": remoteCommandLabel(cliPath)})
 	}
 	wait := make(chan error, 1)
 	go func() { wait <- session.Wait() }()
@@ -783,7 +783,7 @@ func runSSHCommandToWriter(ctx context.Context, client *ssh.Client, cliPath stri
 	case err := <-wait:
 		if err != nil {
 			if stderr.Len() > 0 {
-				return fmt.Errorf("远程命令 %s 执行失败: %s", remoteCommandLabel(cliPath), strings.TrimSpace(stderr.String()))
+				return userErrorParamsCause("errors.image.remoteCommandFailed", map[string]any{"command": remoteCommandLabel(cliPath)}, errors.New(strings.TrimSpace(stderr.String())))
 			}
 			return err
 		}
@@ -805,21 +805,21 @@ func runSSHCommandToWriters(ctx context.Context, client *ssh.Client, cliPath str
 func runSSHCommandWritersLine(ctx context.Context, client *ssh.Client, label, commandLine string, stdin io.Reader, stdout, stderr io.Writer) error {
 	session, err := client.NewSession()
 	if err != nil {
-		return errors.New("创建 SSH 会话失败")
+		return userError("errors.image.sshSessionFailed")
 	}
 	defer session.Close()
 	session.Stdin = stdin
 	session.Stdout = stdout
 	session.Stderr = stderr
 	if err := session.Start(commandLine); err != nil {
-		return fmt.Errorf("启动远程命令 %s 失败", label)
+		return userErrorParams("errors.image.remoteCommandStartFailed", map[string]any{"command": label})
 	}
 	wait := make(chan error, 1)
 	go func() { wait <- session.Wait() }()
 	select {
 	case err := <-wait:
 		if err != nil {
-			return fmt.Errorf("远程命令 %s 执行失败: %w", label, err)
+			return userErrorParamsCause("errors.image.remoteCommandFailed", map[string]any{"command": label}, err)
 		}
 		return nil
 	case <-ctx.Done():
@@ -831,7 +831,7 @@ func runSSHCommandWritersLine(ctx context.Context, client *ssh.Client, label, co
 func readSSHPrivateKeyFile(path string) (string, error) {
 	info, err := os.Stat(path)
 	if err != nil || !info.Mode().IsRegular() || info.Size() <= 0 || info.Size() > 128<<10 {
-		return "", errors.New("SSH 私钥文件无效")
+		return "", userError("errors.image.privateKeyFileInvalid")
 	}
 	b, err := os.ReadFile(path)
 	if err != nil {
@@ -843,7 +843,7 @@ func readSSHPrivateKeyFile(path string) (string, error) {
 func (s *ImageService) GetSSHConfigHosts() ([]SSHConfigHost, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return []SSHConfigHost{}, fmt.Errorf("获取用户主目录失败: %w", err)
+		return []SSHConfigHost{}, userErrorCause("errors.image.homeDirFailed", err)
 	}
 	return parseSSHConfigFileTree(filepath.Join(home, ".ssh", "config"))
 }
@@ -861,7 +861,7 @@ type sshConfigParseState struct {
 func parseSSHConfigFileTree(path string) ([]SSHConfigHost, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return []SSHConfigHost{}, fmt.Errorf("获取用户主目录失败: %w", err)
+		return []SSHConfigHost{}, userErrorCause("errors.image.homeDirFailed", err)
 	}
 	state := &sshConfigParseState{home: home, hosts: []SSHConfigHost{}, seenHosts: map[string]bool{}, seenFiles: map[string]bool{}}
 	if err := state.parseFile(path, 0); err != nil {
@@ -926,43 +926,43 @@ func isConcreteSSHHostAlias(alias string) bool {
 
 func (s *sshConfigParseState) parseFile(path string, depth int) error {
 	if depth > maxSSHConfigDepth {
-		return fmt.Errorf("SSH 配置 Include 嵌套超过限制（最大 %d 层）", maxSSHConfigDepth)
+		return userErrorParams("errors.image.sshConfigIncludeDepthExceeded", map[string]any{"max": maxSSHConfigDepth})
 	}
 	canonicalPath, err := canonicalSSHConfigPath(path)
 	if err != nil {
-		return fmt.Errorf("解析 SSH 配置文件 %q 失败: %w", path, err)
+		return userErrorParamsCause("errors.image.sshConfigParseFailed", map[string]any{"path": path}, err)
 	}
 	if s.seenFiles[canonicalPath] {
 		return nil
 	}
 	if s.fileCount >= maxSSHConfigFiles {
-		return fmt.Errorf("SSH 配置 Include 文件数量超过限制（最大 %d 个）", maxSSHConfigFiles)
+		return userErrorParams("errors.image.sshConfigIncludeFileLimitExceeded", map[string]any{"max": maxSSHConfigFiles})
 	}
 	info, err := os.Stat(canonicalPath)
 	if err != nil {
-		return fmt.Errorf("读取 SSH 配置文件 %q 失败: %w", canonicalPath, err)
+		return userErrorParamsCause("errors.image.sshConfigReadFailed", map[string]any{"path": canonicalPath}, err)
 	}
 	if !info.Mode().IsRegular() {
-		return fmt.Errorf("SSH 配置路径 %q 不是普通文件", canonicalPath)
+		return userErrorParams("errors.image.sshConfigNotRegular", map[string]any{"path": canonicalPath})
 	}
 	if info.Size() > maxSSHConfigFileSize {
-		return fmt.Errorf("SSH 配置文件 %q 超过大小限制", canonicalPath)
+		return userErrorParams("errors.image.sshConfigTooLarge", map[string]any{"path": canonicalPath})
 	}
 	file, err := os.Open(canonicalPath)
 	if err != nil {
-		return fmt.Errorf("读取 SSH 配置文件 %q 失败: %w", canonicalPath, err)
+		return userErrorParamsCause("errors.image.sshConfigReadFailed", map[string]any{"path": canonicalPath}, err)
 	}
 	defer file.Close()
 	data, err := io.ReadAll(io.LimitReader(file, maxSSHConfigFileSize+1))
 	if err != nil {
-		return fmt.Errorf("读取 SSH 配置文件 %q 失败: %w", canonicalPath, err)
+		return userErrorParamsCause("errors.image.sshConfigReadFailed", map[string]any{"path": canonicalPath}, err)
 	}
 	if len(data) > maxSSHConfigFileSize {
-		return fmt.Errorf("SSH 配置文件 %q 超过大小限制", canonicalPath)
+		return userErrorParams("errors.image.sshConfigTooLarge", map[string]any{"path": canonicalPath})
 	}
 	s.totalBytes += int64(len(data))
 	if s.totalBytes > int64(maxSSHConfigFileSize)*maxSSHConfigFiles {
-		return errors.New("SSH 配置总读取大小超过限制")
+		return userError("errors.image.sshConfigTotalSizeExceeded")
 	}
 	s.seenFiles[canonicalPath] = true
 	s.fileCount++
@@ -1011,7 +1011,7 @@ func canonicalSSHConfigPath(path string) (string, error) {
 
 func (s *sshConfigParseState) expandInclude(pattern string, baseDir string) ([]string, error) {
 	if pattern == "" || len(pattern) > maxSSHConfigFileSize {
-		return nil, errors.New("SSH Include 路径无效")
+		return nil, userError("errors.image.sshIncludePathInvalid")
 	}
 	hosts := s.currentHosts
 	if len(hosts) == 0 && strings.Contains(pattern, "%h") {
@@ -1034,16 +1034,16 @@ func (s *sshConfigParseState) expandInclude(pattern string, baseDir string) ([]s
 			includePath = filepath.Join(baseDir, includePath)
 		}
 		if len(includePath) > maxSSHConfigFileSize {
-			return nil, errors.New("SSH Include 路径过长")
+			return nil, userError("errors.image.sshIncludePathTooLong")
 		}
 		globMatches, err := filepath.Glob(includePath)
 		if err != nil {
-			return nil, fmt.Errorf("解析 SSH Include 路径 %q 失败: %w", pattern, err)
+			return nil, userErrorParamsCause("errors.image.sshIncludeParseFailed", map[string]any{"path": pattern}, err)
 		}
 		for _, match := range globMatches {
 			canonical, err := canonicalSSHConfigPath(match)
 			if err != nil {
-				return nil, fmt.Errorf("解析 SSH Include 文件 %q 失败: %w", match, err)
+				return nil, userErrorParamsCause("errors.image.sshIncludeFileParseFailed", map[string]any{"path": match}, err)
 			}
 			if !seen[canonical] {
 				seen[canonical] = true
@@ -1065,14 +1065,14 @@ func (s *ImageService) GetDockerStatus(sourceID string) DockerStatus {
 // TestImageSourceConnection 使用未持久化的来源配置测试 SSH 或 Registry 连接。
 func (s *ImageService) TestImageSourceConnection(source ImageSource) error {
 	if s == nil || s.config == nil {
-		return errors.New("镜像服务未配置")
+		return userError("errors.common.configNotInitialized")
 	}
 	normalized, err := s.config.ValidateImageSource(source)
 	if err != nil {
 		return err
 	}
 	if normalized.Kind != "ssh" && normalized.Kind != "registry" {
-		return errors.New("仅支持测试 SSH 或 Registry 来源")
+		return userError("errors.image.testUnsupportedSource")
 	}
 	config := normalizeConfig(s.config.Get())
 	if normalized.Kind == "ssh" && normalized.SSHProfileID != "" {
@@ -1084,7 +1084,7 @@ func (s *ImageService) TestImageSourceConnection(source ImageSource) error {
 			}
 		}
 		if profile.ID == "" {
-			return errors.New("镜像来源引用的 SSH 配置不存在")
+			return userError("errors.image.sshProfileMissing")
 		}
 		normalized = imageSourceFromSSHProfile(normalized, profile)
 	}
@@ -1092,9 +1092,8 @@ func (s *ImageService) TestImageSourceConnection(source ImageSource) error {
 	if cliPath == "" {
 		cliPath = "docker"
 	}
-	status := s.sourceConnectionStatus(normalized, cliPath)
-	if !status.Available {
-		return errors.New(status.Error)
+	if _, err := s.probeSourceConnection(s.serviceContext(), normalized, cliPath); err != nil {
+		return err
 	}
 	return nil
 }
@@ -1106,28 +1105,35 @@ func (s *ImageService) sourceConnectionStatus(source ImageSource, cliPath string
 // sourceConnectionStatusContext 从外部 ctx 派生连接探测（registry ping 与 CLI --version），
 // 保证所有 CLI/registry 状态操作随调用方 ctx（watch 循环/shutdown）取消。
 func (s *ImageService) sourceConnectionStatusContext(ctx context.Context, source ImageSource, cliPath string) DockerStatus {
+	status, _ := s.probeSourceConnection(ctx, source, cliPath)
+	return status
+}
+
+// probeSourceConnection 执行连接探测，并在不可用时保留原始错误，
+// 供需要错误链的调用方直接返回；状态模型字段仍写入序列化后的错误文本。
+func (s *ImageService) probeSourceConnection(ctx context.Context, source ImageSource, cliPath string) (DockerStatus, error) {
 	status := DockerStatus{CLIPath: cliPath}
 	if source.Kind == "registry" {
 		itemCtx, cancel := context.WithTimeout(ctx, imageCommandTimeout)
 		defer cancel()
 		if err := s.pingRegistry(itemCtx, source); err != nil {
 			status.Error = err.Error()
-			return status
+			return status, err
 		}
 		status.Available = true
 		status.Version = "Registry"
-		return status
+		return status, nil
 	}
 	itemCtx, cancel := context.WithTimeout(ctx, imageCommandTimeout)
 	defer cancel()
 	output, err := s.runDockerSnapshotContext(itemCtx, source, cliPath, []string{"--version"})
 	if err != nil {
 		status.Error = err.Error()
-		return status
+		return status, err
 	}
 	status.Available = true
 	status.Version = strings.TrimSpace(string(output))
-	return status
+	return status, nil
 }
 
 func (s *ImageService) pingRegistry(ctx context.Context, source ImageSource) error {
@@ -1138,11 +1144,11 @@ func (s *ImageService) pingRegistry(ctx context.Context, source ImageSource) err
 	defer release()
 	endpoint, ok := normalizeRegistryURL(source.RegistryURL)
 	if !ok {
-		return errors.New("镜像仓库地址无效：仅支持 HTTPS")
+		return userError("errors.image.registryURLHTTPSOnly")
 	}
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint+"/v2/", nil)
 	if err != nil {
-		return errors.New("创建 Registry 探测请求失败")
+		return userError("errors.image.registryRequestCreateFailed")
 	}
 	if source.RegistryUsername != "" {
 		request.SetBasicAuth(source.RegistryUsername, source.RegistryPassword)
@@ -1154,7 +1160,7 @@ func (s *ImageService) pingRegistry(ctx context.Context, source ImageSource) err
 	client := &http.Client{Transport: &limitedRegistryTransport{base: transport}}
 	response, err := client.Do(request)
 	if err != nil {
-		return fmt.Errorf("Registry 不可达: %w", redactRegistryError(err, source))
+		return userErrorCause("errors.image.registryUnreachable", redactRegistryError(err, source))
 	}
 	defer response.Body.Close()
 	if response.StatusCode >= 200 && response.StatusCode < 300 {
@@ -1162,14 +1168,14 @@ func (s *ImageService) pingRegistry(ctx context.Context, source ImageSource) err
 	}
 	if response.StatusCode == http.StatusUnauthorized {
 		if source.RegistryUsername == "" {
-			return errors.New("Registry 需要认证：请填写用户名和密码")
+			return userError("errors.image.registryAuthRequired")
 		}
-		return errors.New("Registry 认证失败：用户名或密码错误，或账号无权访问")
+		return userError("errors.image.registryAuthFailed")
 	}
 	if response.StatusCode == http.StatusForbidden {
-		return errors.New("Registry 认证成功但没有访问权限")
+		return userError("errors.image.registryForbidden")
 	}
-	return fmt.Errorf("Registry 探测返回 HTTP %d", response.StatusCode)
+	return userErrorParams("errors.image.registryProbeFailed", map[string]any{"status": response.StatusCode})
 }
 
 type dockerImageListJSON struct {
@@ -1259,7 +1265,7 @@ func (s *ImageService) ListDockerImages(sourceID string) ([]DockerImage, error) 
 			if s.listRequestObsolete(token, requestCtx) {
 				return []DockerImage{}, nil
 			}
-			return nil, fmt.Errorf("解析 Docker 镜像列表失败: %w", err)
+			return nil, userErrorCause("errors.image.dockerListParseFailed", err)
 		}
 		name := item.Repository
 		if item.Tag != "" {
@@ -1293,15 +1299,15 @@ func containsString(values []string, value string) bool {
 func registryEndpoint(source ImageSource) (name.Registry, error) {
 	u, ok := normalizeRegistryURL(source.RegistryURL)
 	if !ok {
-		return name.Registry{}, errors.New("镜像仓库地址无效：仅支持 HTTPS")
+		return name.Registry{}, userError("errors.image.registryURLHTTPSOnly")
 	}
 	parsed, err := url.Parse(u)
 	if err != nil {
-		return name.Registry{}, errors.New("镜像仓库地址无效")
+		return name.Registry{}, userError("errors.image.registryURLInvalid")
 	}
 	registry, err := name.NewRegistry(parsed.Host)
 	if err != nil {
-		return name.Registry{}, fmt.Errorf("解析镜像仓库地址失败: %w", err)
+		return name.Registry{}, userErrorCause("errors.image.registryAddressParseFailed", err)
 	}
 	return registry, nil
 }
@@ -1367,11 +1373,11 @@ func registryRepository(source ImageSource, repository string) (name.Repository,
 		return name.Repository{}, err
 	}
 	if repository == "" || strings.ContainsAny(repository, "@\x00\r\n") {
-		return name.Repository{}, errors.New("镜像仓库名称无效")
+		return name.Repository{}, userError("errors.image.registryRepositoryInvalid")
 	}
 	repo, err := name.NewRepository(registry.String()+"/"+repository, name.WeakValidation)
 	if err != nil {
-		return name.Repository{}, fmt.Errorf("解析镜像仓库名称失败: %w", err)
+		return name.Repository{}, userErrorCause("errors.image.registryRepositoryParseFailed", err)
 	}
 	return repo, nil
 }
@@ -1405,15 +1411,15 @@ func validRegistryTag(tag string) bool {
 func parseRegistryImageID(imageID string) (string, string, error) {
 	separator := strings.LastIndexByte(imageID, '@')
 	if separator <= 0 {
-		return "", "", errors.New("Registry 镜像 ID 无效")
+		return "", "", userError("errors.image.registryImageIDInvalid")
 	}
 	repository, digest := imageID[:separator], imageID[separator+1:]
 	if _, err := v1.NewHash(digest); err != nil || !strings.HasPrefix(digest, "sha256:") || len(digest) != len("sha256:")+64 {
-		return "", "", errors.New("Registry 镜像 ID 必须包含规范 sha256 digest")
+		return "", "", userError("errors.image.registryImageIDDigestInvalid")
 	}
 	if _, err := registryRepository(ImageSource{RegistryURL: "https://placeholder.invalid"}, repository); err != nil {
 		// 这里只借助仓库解析器校验名称，不接受任意镜像引用。
-		return "", "", errors.New("Registry 镜像仓库名称无效")
+		return "", "", userError("errors.image.registryRepositoryNameInvalid")
 	}
 	return repository, digest, nil
 }
@@ -1425,14 +1431,14 @@ func parseRegistryImageReference(imageID string) (repository, tag, digest string
 	}
 	separator := strings.LastIndexByte(imageID, ':')
 	if separator <= 0 || separator == len(imageID)-1 {
-		return "", "", "", errors.New("Registry 镜像引用必须包含标签或 digest")
+		return "", "", "", userError("errors.image.registryReferenceTagMissing")
 	}
 	repository, tag = imageID[:separator], imageID[separator+1:]
 	if _, err := registryRepository(ImageSource{RegistryURL: "https://placeholder.invalid"}, repository); err != nil {
-		return "", "", "", errors.New("Registry 镜像仓库名称无效")
+		return "", "", "", userError("errors.image.registryRepositoryNameInvalid")
 	}
 	if !validRegistryTag(tag) {
-		return "", "", "", errors.New("Registry 镜像标签无效")
+		return "", "", "", userError("errors.image.registryTagInvalid")
 	}
 	return repository, tag, "", nil
 }
@@ -1504,7 +1510,7 @@ func (s *ImageService) listRegistryImages(sourceID string, source ImageSource, t
 	options := s.registryOptions(ctx, source)
 	puller, err := remote.NewPuller(options...)
 	if err != nil {
-		return nil, fmt.Errorf("创建 Registry 客户端失败: %w", redactRegistryError(err, source))
+		return nil, userErrorCause("errors.image.registryClientCreateFailed", redactRegistryError(err, source))
 	}
 	const pageSize = 1000
 	repositories := make([]string, 0)
@@ -1512,7 +1518,7 @@ func (s *ImageService) listRegistryImages(sourceID string, source ImageSource, t
 	for len(repositories) < maxRegistryRepositories {
 		page, err := remote.CatalogPage(registry, last, pageSize, options...)
 		if err != nil {
-			return nil, fmt.Errorf("枚举 Registry 仓库失败: %w", redactRegistryError(err, source))
+			return nil, userErrorCause("errors.image.registryCatalogFailed", redactRegistryError(err, source))
 		}
 		if len(page) == 0 || len(page) > pageSize {
 			break
@@ -1523,12 +1529,12 @@ func (s *ImageService) listRegistryImages(sourceID string, source ImageSource, t
 		}
 		next := page[len(page)-1]
 		if next == last {
-			return nil, errors.New("Registry 仓库目录分页未前进")
+			return nil, userError("errors.image.registryCatalogPageStuck")
 		}
 		last = next
 	}
 	if len(repositories) >= maxRegistryRepositories {
-		return nil, errors.New("Registry 仓库数量超过限制")
+		return nil, userError("errors.image.registryRepositoryLimitExceeded")
 	}
 	byID := make(map[string]int)
 	images := make([]DockerImage, 0)
@@ -1539,10 +1545,10 @@ func (s *ImageService) listRegistryImages(sourceID string, source ImageSource, t
 		}
 		tags, err := puller.List(ctx, repository)
 		if err != nil {
-			return nil, fmt.Errorf("枚举 Registry 仓库 %q 的标签失败: %w", repositoryName, redactRegistryError(err, source))
+			return nil, userErrorParamsCause("errors.image.registryTagListFailed", map[string]any{"repository": repositoryName}, redactRegistryError(err, source))
 		}
 		if len(tags) > maxRegistryTags {
-			return nil, fmt.Errorf("Registry 仓库 %q 的标签数量超过限制", repositoryName)
+			return nil, userErrorParams("errors.image.registryTagLimitExceeded", map[string]any{"repository": repositoryName})
 		}
 		for _, tag := range tags {
 			if !validRegistryTag(tag) {
@@ -1577,7 +1583,7 @@ func (s *ImageService) resolveRegistryTagDigest(ctx context.Context, source Imag
 	}
 	puller, err := remote.NewPuller(s.registryOptions(ctx, source)...)
 	if err != nil {
-		return "", fmt.Errorf("创建 Registry 客户端失败: %w", redactRegistryError(err, source))
+		return "", userErrorCause("errors.image.registryClientCreateFailed", redactRegistryError(err, source))
 	}
 	descriptor, err := puller.Head(ctx, repository.Tag(tag))
 	if err != nil {
@@ -1585,7 +1591,7 @@ func (s *ImageService) resolveRegistryTagDigest(ctx context.Context, source Imag
 	}
 	digest := descriptor.Digest.String()
 	if !canonicalSHA256Digest(digest) {
-		return "", fmt.Errorf("Registry 镜像 %q:%q 返回了无效 digest", repositoryName, tag)
+		return "", userErrorParams("errors.image.registryDigestInvalid", map[string]any{"repository": repositoryName, "tag": tag})
 	}
 	return digest, nil
 }
@@ -1617,10 +1623,10 @@ func (s *ImageService) fetchRegistryImageMetadata(ctx context.Context, source Im
 	}
 	resolvedDigest := descriptor.Digest.String()
 	if !canonicalSHA256Digest(resolvedDigest) {
-		return registryImageMetadataEvent{}, errors.New("Registry 返回了无效 manifest digest")
+		return registryImageMetadataEvent{}, userError("errors.image.registryManifestDigestInvalid")
 	}
 	if digest != "" && digest != resolvedDigest {
-		return registryImageMetadataEvent{}, errors.New("Registry 返回的 manifest digest 与请求不一致")
+		return registryImageMetadataEvent{}, userError("errors.image.registryManifestDigestMismatch")
 	}
 	var image v1.Image
 	if resolvedImage, imageErr := descriptor.Image(); imageErr == nil {
@@ -2359,7 +2365,7 @@ func (s *ImageService) inspectWithGeneration(sourceID string, source ImageSource
 
 func (s *ImageService) inspectDockerImage(ctx context.Context, source ImageSource, cliPath, imageID string) (DockerImageDetail, error) {
 	if !validImageReference(imageID) {
-		return DockerImageDetail{}, errors.New("镜像 ID 无效")
+		return DockerImageDetail{}, userError("errors.image.imageIDInvalid")
 	}
 	commandCtx, cancel := context.WithTimeout(ctx, imageCommandTimeout)
 	defer cancel()
@@ -2369,10 +2375,10 @@ func (s *ImageService) inspectDockerImage(ctx context.Context, source ImageSourc
 	}
 	var entries []dockerImageInspectJSON
 	if err := json.Unmarshal(output, &entries); err != nil {
-		return DockerImageDetail{}, fmt.Errorf("解析 Docker 镜像详情失败: %w", err)
+		return DockerImageDetail{}, userErrorCause("errors.image.dockerDetailParseFailed", err)
 	}
 	if len(entries) == 0 {
-		return DockerImageDetail{}, errors.New("Docker 镜像详情为空")
+		return DockerImageDetail{}, userError("errors.image.dockerDetailEmpty")
 	}
 	item := entries[0]
 	tags := append([]string(nil), item.RepoTags...)
@@ -2522,7 +2528,7 @@ func (s *ImageService) inspectRegistryImage(ctx context.Context, source ImageSou
 		return DockerImageDetail{}, err
 	}
 	if repository != "" && repository != parsedRepository {
-		return DockerImageDetail{}, errors.New("Registry 镜像仓库不匹配")
+		return DockerImageDetail{}, userError("errors.image.registryRepositoryMismatch")
 	}
 	repository = parsedRepository
 	repo, err := registryRepository(source, repository)
@@ -2543,14 +2549,14 @@ func (s *ImageService) inspectRegistryImage(ctx context.Context, source ImageSou
 		descriptor, err = remote.Get(repo.Digest(digest), s.registryOptions(ctx, source)...)
 	}
 	if err != nil {
-		return DockerImageDetail{}, fmt.Errorf("读取 Registry manifest 失败: %w", redactRegistryError(err, source))
+		return DockerImageDetail{}, userErrorCause("errors.image.registryManifestReadFailed", redactRegistryError(err, source))
 	}
 	resolvedDigest := descriptor.Digest.String()
 	if !canonicalSHA256Digest(resolvedDigest) {
-		return DockerImageDetail{}, errors.New("Registry 返回了无效 manifest digest")
+		return DockerImageDetail{}, userError("errors.image.registryManifestDigestInvalid")
 	}
 	if digest != "" && resolvedDigest != digest {
-		return DockerImageDetail{}, errors.New("Registry 返回的 manifest digest 与请求不一致")
+		return DockerImageDetail{}, userError("errors.image.registryManifestDigestMismatch")
 	}
 	digest = resolvedDigest
 	detailName := repository
@@ -2568,7 +2574,7 @@ func (s *ImageService) inspectRegistryImage(ctx context.Context, source ImageSou
 		Manifests     []v1.Descriptor `json:"manifests"`
 	}
 	if err := json.Unmarshal(descriptor.Manifest, &envelope); err != nil {
-		return DockerImageDetail{}, fmt.Errorf("解析 Registry manifest 失败: %w", err)
+		return DockerImageDetail{}, userErrorCause("errors.image.registryManifestParseFailed", err)
 	}
 	detail.Metadata.ConfigDigest = digestString(envelope.Config.Digest)
 	if descriptor.MediaType == types.OCIImageIndex || descriptor.MediaType == types.DockerManifestList {
@@ -2666,7 +2672,7 @@ func (s *ImageService) InspectDockerImage(sourceID string, imageID string) (Dock
 			return finish(DockerImageDetail{}, err)
 		}
 	} else if !validImageReference(imageID) {
-		return finish(DockerImageDetail{}, errors.New("镜像 ID 无效"))
+		return finish(DockerImageDetail{}, userError("errors.image.imageIDInvalid"))
 	}
 	return finish(s.inspectWithSnapshot(sourceID, source, cliPath, fingerprint, imageID, repository))
 }
@@ -2674,8 +2680,9 @@ func (s *ImageService) InspectDockerImage(sourceID string, imageID string) (Dock
 func (s *ImageService) PushDockerImage(sourceID string, image string) (DockerOperationResult, error) {
 	result := DockerOperationResult{Image: image}
 	if !validImageReference(image) {
-		result.Error = "镜像引用无效"
-		return result, errors.New(result.Error)
+		err := userError("errors.image.referenceInvalid")
+		result.Error = err.Error()
+		return result, err
 	}
 	source, cliPath, err := s.source(sourceID)
 	if err != nil {
@@ -2683,8 +2690,9 @@ func (s *ImageService) PushDockerImage(sourceID string, image string) (DockerOpe
 		return result, err
 	}
 	if source.Kind == "registry" {
-		result.Error = "Registry 来源不支持 Docker CLI 推送"
-		return result, errors.New(result.Error)
+		err := userError("errors.image.registryPushUnsupported")
+		result.Error = err.Error()
+		return result, err
 	}
 	output, err := s.runDockerSnapshot(source, cliPath, []string{"image", "push", image}, imagePushTimeout)
 	result.Output = string(output)
@@ -2731,7 +2739,7 @@ func (s *ImageService) dockerMutationSource(sourceID string) (ImageSource, strin
 		return ImageSource{}, "", "", err
 	}
 	if source.Kind == "registry" {
-		return ImageSource{}, "", "", errors.New("Registry 来源不支持 Docker 镜像变更")
+		return ImageSource{}, "", "", userError("errors.image.registryMutationUnsupported")
 	}
 	return source, cliPath, fingerprint, nil
 }
@@ -2761,21 +2769,21 @@ func (s *ImageService) TagDockerImages(sourceID string, changes []DockerImageRef
 	}
 	if len(changes) > maxDockerImageOperations {
 		for _, change := range changes[maxDockerImageOperations:] {
-			appendDockerImageBatchFailure(&result, change.Source, "超过镜像操作数量限制")
+			appendDockerImageBatchFailure(&result, change.Source, userError("errors.image.operationLimitExceeded").Error())
 		}
 		changes = changes[:maxDockerImageOperations]
 	}
 	for _, change := range changes {
 		if !validMutableImageReference(change.Source) || !validMutableImageReference(change.Target) {
-			appendDockerImageBatchFailure(&result, change.Source, "镜像引用无效")
+			appendDockerImageBatchFailure(&result, change.Source, userError("errors.image.referenceInvalid").Error())
 			continue
 		}
 		if change.Source == change.Target {
-			appendDockerImageBatchFailure(&result, change.Source, "目标 Tag 与当前镜像相同")
+			appendDockerImageBatchFailure(&result, change.Source, userError("errors.image.targetTagSameAsSource").Error())
 			continue
 		}
 		if !s.sourceFingerprintCurrent(sourceID, fingerprint) {
-			appendDockerImageBatchFailure(&result, change.Source, "来源配置已变化，请刷新后重试")
+			appendDockerImageBatchFailure(&result, change.Source, userError("errors.image.sourceChanged").Error())
 			continue
 		}
 		if _, err := s.runDockerSnapshot(source, cliPath, []string{"image", "tag", change.Source, change.Target}, imageCommandTimeout); err != nil {
@@ -2784,7 +2792,7 @@ func (s *ImageService) TagDockerImages(sourceID string, changes []DockerImageRef
 		}
 		if removeSource {
 			if _, err := s.runDockerSnapshot(source, cliPath, []string{"image", "rm", change.Source}, imageCommandTimeout); err != nil {
-				appendDockerImageBatchFailure(&result, change.Source, fmt.Sprintf("目标 Tag 已创建，但删除旧 Tag 失败: %v", err))
+				appendDockerImageBatchFailure(&result, change.Source, userErrorCause("errors.image.oldTagDeleteFailed", err).Error())
 				continue
 			}
 		}
@@ -2814,17 +2822,17 @@ func (s *ImageService) PushDockerImages(sourceID string, changes []DockerImageRe
 	}
 	if len(changes) > maxDockerImageOperations {
 		for _, change := range changes[maxDockerImageOperations:] {
-			appendDockerImageBatchFailure(&result, change.Source, "超过镜像操作数量限制")
+			appendDockerImageBatchFailure(&result, change.Source, userError("errors.image.operationLimitExceeded").Error())
 		}
 		changes = changes[:maxDockerImageOperations]
 	}
 	for _, change := range changes {
 		if !validMutableImageReference(change.Source) || !validMutableImageReference(change.Target) {
-			appendDockerImageBatchFailure(&result, change.Source, "镜像引用无效")
+			appendDockerImageBatchFailure(&result, change.Source, userError("errors.image.referenceInvalid").Error())
 			continue
 		}
 		if !s.sourceFingerprintCurrent(sourceID, fingerprint) {
-			appendDockerImageBatchFailure(&result, change.Source, "来源配置已变化，请刷新后重试")
+			appendDockerImageBatchFailure(&result, change.Source, userError("errors.image.sourceChanged").Error())
 			continue
 		}
 		if change.Source != change.Target {
@@ -2884,7 +2892,7 @@ func (s *ImageService) DeleteDockerImages(sourceID string, targets []DockerDelet
 	}
 	if len(uniqueTargets) > maxDockerDeleteImages {
 		for _, target := range uniqueTargets[maxDockerDeleteImages:] {
-			result.Failed = append(result.Failed, DockerDeleteFailure{ImageID: target.ImageID, Error: "超过镜像删除数量限制"})
+			result.Failed = append(result.Failed, DockerDeleteFailure{ImageID: target.ImageID, Error: userError("errors.image.deleteLimitExceeded").Error()})
 		}
 		uniqueTargets = uniqueTargets[:maxDockerDeleteImages]
 	}
@@ -2912,7 +2920,7 @@ func (s *ImageService) DeleteDockerImages(sourceID string, targets []DockerDelet
 	for _, target := range uniqueTargets {
 		imageID := target.ImageID
 		if !s.sourceFingerprintCurrent(sourceID, fingerprint) {
-			result.Failed = append(result.Failed, DockerDeleteFailure{ImageID: imageID, Error: "来源配置已变化，请刷新后重新确认删除"})
+			result.Failed = append(result.Failed, DockerDeleteFailure{ImageID: imageID, Error: userError("errors.image.sourceChangedDelete").Error()})
 			continue
 		}
 		if source.Kind == "registry" {
@@ -2924,16 +2932,16 @@ func (s *ImageService) DeleteDockerImages(sourceID string, targets []DockerDelet
 			if digest == "" {
 				digest, err = s.resolveRegistryTagDigest(ctx, source, repository, tag)
 				if err != nil {
-					result.Failed = append(result.Failed, DockerDeleteFailure{ImageID: imageID, Error: fmt.Sprintf("解析 Registry 镜像 digest 失败: %v", redactRegistryError(err, source))})
+					result.Failed = append(result.Failed, DockerDeleteFailure{ImageID: imageID, Error: userErrorCause("errors.image.registryDigestResolveFailed", redactRegistryError(err, source)).Error()})
 					continue
 				}
 			}
 			if target.ExpectedDigest == "" {
-				result.Failed = append(result.Failed, DockerDeleteFailure{ImageID: imageID, Error: "删除确认缺少 manifest digest，请刷新后重试"})
+				result.Failed = append(result.Failed, DockerDeleteFailure{ImageID: imageID, Error: userError("errors.image.registryDigestMissing").Error()})
 				continue
 			}
 			if digest != target.ExpectedDigest {
-				result.Failed = append(result.Failed, DockerDeleteFailure{ImageID: imageID, Error: "镜像 digest 已变化，请刷新后重新确认"})
+				result.Failed = append(result.Failed, DockerDeleteFailure{ImageID: imageID, Error: userError("errors.image.registryDigestChanged").Error()})
 				continue
 			}
 			repo, err := registryRepository(source, repository)
@@ -2942,7 +2950,7 @@ func (s *ImageService) DeleteDockerImages(sourceID string, targets []DockerDelet
 				continue
 			}
 			if err := remote.Delete(repo.Digest(digest), s.registryOptions(ctx, source)...); err != nil {
-				result.Failed = append(result.Failed, DockerDeleteFailure{ImageID: imageID, Error: fmt.Sprintf("删除 Registry manifest 失败: %v", redactRegistryError(err, source))})
+				result.Failed = append(result.Failed, DockerDeleteFailure{ImageID: imageID, Error: userErrorCause("errors.image.registryManifestDeleteFailed", redactRegistryError(err, source)).Error()})
 				continue
 			}
 			s.removeImageCache(sourceID, fingerprint, digest, repository)
@@ -2951,7 +2959,7 @@ func (s *ImageService) DeleteDockerImages(sourceID string, targets []DockerDelet
 			continue
 		}
 		if !validImageReference(imageID) {
-			result.Failed = append(result.Failed, DockerDeleteFailure{ImageID: imageID, Error: "镜像 ID 无效"})
+			result.Failed = append(result.Failed, DockerDeleteFailure{ImageID: imageID, Error: userError("errors.image.imageIDInvalid").Error()})
 			continue
 		}
 		_, err := s.runDockerSnapshot(source, cliPath, []string{"image", "rm", imageID}, imageCommandTimeout)

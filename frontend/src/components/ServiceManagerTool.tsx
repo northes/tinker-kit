@@ -95,6 +95,7 @@ import { Spinner } from './ui/spinner';
 import { toast } from './ui/toast';
 import { ToggleGroup, ToggleGroupItem } from './ui/toggle-group';
 import { TargetHostManagerDialog } from './TargetHostManagerDialog';
+import { formatBackendError } from '../lib/backend-error';
 
 const MANAGE_TARGETS_VALUE = '__manage-targets__';
 const VISIBLE_LOG_LIMIT = 5000;
@@ -256,7 +257,7 @@ export default function ServiceManagerTool({
       if (targetIDRef.current !== nextTarget) return;
       toast.add({
         title: t('serviceManagerTool.refreshFailed'),
-        description: String(error),
+        description: formatBackendError(error),
         type: 'error',
       });
     } finally {
@@ -373,7 +374,7 @@ export default function ServiceManagerTool({
         if (cancelled) return;
         toast.add({
           title: t('serviceManagerTool.filterFailed'),
-          description: String(error),
+          description: formatBackendError(error),
           type: 'error',
         });
       }
@@ -422,12 +423,12 @@ export default function ServiceManagerTool({
           action,
           `${selectedTarget ? targetLabel(selectedTarget, t) : targetID} · ${resource.name || resource.id}`,
           '',
-          failed.map((item) => item.error).join('\n'),
+          failed.map((item) => formatBackendError(item.error)).join('\n'),
         );
       if (failed.length)
         toast.add({
           title: t('serviceManagerTool.actionFailed'),
-          description: failed.map((item) => item.error).join('；'),
+          description: failed.map((item) => formatBackendError(item.error)).join('；'),
           type: 'error',
         });
       else toast.add({ title: t('serviceManagerTool.actionSucceeded'), type: 'success' });
@@ -435,7 +436,7 @@ export default function ServiceManagerTool({
     } catch (error) {
       toast.add({
         title: t('serviceManagerTool.actionFailed'),
-        description: String(error),
+        description: formatBackendError(error),
         type: 'error',
       });
     } finally {
@@ -453,7 +454,7 @@ export default function ServiceManagerTool({
       if (failed.length)
         toast.add({
           title: t('serviceManagerTool.monitorFailed'),
-          description: failed.map((item) => item.error).join('\n'),
+          description: failed.map((item) => formatBackendError(item.error)).join('\n'),
           type: 'error',
         });
       ++monitorLoadVersion.current;
@@ -465,7 +466,7 @@ export default function ServiceManagerTool({
     } catch (error) {
       toast.add({
         title: t('serviceManagerTool.monitorFailed'),
-        description: String(error),
+        description: formatBackendError(error),
         type: 'error',
       });
     }
@@ -546,7 +547,7 @@ export default function ServiceManagerTool({
     } catch (error) {
       toast.add({
         title: t('serviceManagerTool.stopMonitorFailed'),
-        description: String(error),
+        description: formatBackendError(error),
         type: 'error',
       });
     }
@@ -563,7 +564,7 @@ export default function ServiceManagerTool({
     } catch (error) {
       toast.add({
         title: t('serviceManagerTool.monitorFailed'),
-        description: String(error),
+        description: formatBackendError(error),
         type: 'error',
       });
     }
@@ -650,7 +651,7 @@ export default function ServiceManagerTool({
       syncTargets(next);
       setManageOpen(false);
     } catch (error) {
-      setTargetSaveError(String(error) || t('serviceManagerTool.targetSaveFailed'));
+      setTargetSaveError(formatBackendError(error) || t('serviceManagerTool.targetSaveFailed'));
     } finally {
       setSavingTargets(false);
     }
@@ -1337,7 +1338,7 @@ function RuntimeError({ name, error }: { name: string; error?: string }) {
   return (
     <div className="border-b px-3 py-3 text-xs text-muted-foreground">
       <WarningCircle className="mr-1 inline size-3.5" />
-      {name}: {error || '—'}
+      {name}: {error ? formatBackendError(error) : '—'}
     </div>
   );
 }
@@ -1397,7 +1398,7 @@ function WorkspacePanel({
       await onRemove(pendingRemove.id);
       setPendingRemove(null);
     } catch (error) {
-      setRemoveError(String(error));
+      setRemoveError(formatBackendError(error));
     } finally {
       setRemoving(false);
     }
@@ -1456,12 +1457,12 @@ function WorkspacePanel({
                         </div>
                         <div
                           className="truncate text-muted-foreground"
-                          title={monitor.error || undefined}
+                          title={monitor.error ? formatBackendError(monitor.error) : undefined}
                         >
                           {t(
                             `serviceManagerTool.monitorStates.${['monitoring', 'stopping', 'stopped', 'disconnected'].includes(monitor.state) ? monitor.state : 'unknown'}`,
                           )}
-                          {monitor.error ? ` · ${monitor.error}` : ''}
+                          {monitor.error ? ` · ${formatBackendError(monitor.error)}` : ''}
                         </div>
                       </div>
                       {monitor.state === 'monitoring' ? (
@@ -1845,7 +1846,7 @@ function ResourceInfoDialog({
             : await GetSystemdUnitDetail(targetID, resource.id, resource.scope ?? 'system');
       setDetail(value as unknown as Record<string, unknown>);
     } catch (reason) {
-      setError(String(reason));
+      setError(formatBackendError(reason));
     } finally {
       setLoading(false);
     }

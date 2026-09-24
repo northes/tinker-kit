@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"errors"
 	"log"
 	"sync"
 	"time"
@@ -70,7 +69,7 @@ func (s *UpdateService) CheckForUpdates() (bool, error) {
 	defer s.checkMu.Unlock()
 	u := s.getUpdater()
 	if u == nil {
-		return false, errors.New("更新服务尚未初始化")
+		return false, userError("errors.update.notInitialized")
 	}
 	release, err := u.Check(context.Background())
 	if err != nil {
@@ -85,7 +84,7 @@ func (s *UpdateService) CheckForUpdates() (bool, error) {
 func (s *UpdateService) InstallUpdate() error {
 	u := s.getUpdater()
 	if u == nil {
-		return errors.New("更新服务尚未初始化")
+		return userError("errors.update.notInitialized")
 	}
 	if u.State() != updater.StateAvailable {
 		s.checkMu.Lock()
@@ -95,7 +94,7 @@ func (s *UpdateService) InstallUpdate() error {
 			return err
 		}
 		if release == nil {
-			return errors.New("暂无可用更新")
+			return userError("errors.update.noUpdate")
 		}
 	}
 	return u.DownloadAndInstall(context.Background())
@@ -105,7 +104,7 @@ func (s *UpdateService) InstallUpdate() error {
 func (s *UpdateService) RestartApp() error {
 	u := s.getUpdater()
 	if u == nil {
-		return errors.New("更新服务尚未初始化")
+		return userError("errors.update.notInitialized")
 	}
 	s.mu.RLock()
 	before := s.beforeRestart

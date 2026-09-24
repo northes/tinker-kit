@@ -36,7 +36,7 @@ func (s *SSHProfileService) ServiceName() string { return "SSHProfileService" }
 
 func (s *SSHProfileService) configService() (*ConfigService, error) {
 	if s == nil || s.config == nil {
-		return nil, errors.New("配置服务尚未初始化")
+		return nil, userError("errors.common.configNotInitialized")
 	}
 	return s.config, nil
 }
@@ -111,7 +111,7 @@ func normalizeSSHProfile(profile SSHProfile) (SSHProfile, error) {
 		profile.Origin = "manual"
 	}
 	if profile.Origin != "manual" && profile.Origin != "ssh-config" {
-		return SSHProfile{}, errors.New("SSH 配置来源无效")
+		return SSHProfile{}, userError("errors.sshProfile.invalidOrigin")
 	}
 	if profile.Name == "" {
 		profile.Name = profile.OriginAlias
@@ -120,37 +120,37 @@ func normalizeSSHProfile(profile SSHProfile) (SSHProfile, error) {
 		}
 	}
 	if !validTextValue(profile.Name, 256) {
-		return SSHProfile{}, errors.New("SSH 配置名称无效")
+		return SSHProfile{}, userError("errors.sshProfile.invalidName")
 	}
 	if profile.Port == 0 {
 		profile.Port = 22
 	}
 	if profile.Port < 1 || profile.Port > 65535 {
-		return SSHProfile{}, errors.New("SSH 端口必须在 1-65535 之间")
+		return SSHProfile{}, userError("errors.sshProfile.portOutOfRange")
 	}
 	if !validSSHHost(profile.Host) {
-		return SSHProfile{}, errors.New("SSH 主机无效")
+		return SSHProfile{}, userError("errors.sshProfile.invalidHost")
 	}
 	if profile.Origin == "ssh-config" {
 		if !validSSHHost(profile.OriginAlias) {
-			return SSHProfile{}, errors.New("本机 SSH config 别名无效")
+			return SSHProfile{}, userError("errors.sshProfile.invalidConfigAlias")
 		}
 	} else {
 		if profile.Username == "" || !validConfigValue(profile.Username, 256) || strings.HasPrefix(profile.Username, "-") {
-			return SSHProfile{}, errors.New("SSH 用户名无效")
+			return SSHProfile{}, userError("errors.sshProfile.invalidUsername")
 		}
 		if profile.Password == "" && profile.PrivateKey == "" && profile.PrivateKeyPath == "" {
-			return SSHProfile{}, errors.New("SSH 未配置密码或私钥")
+			return SSHProfile{}, userError("errors.sshProfile.missingAuth")
 		}
 	}
 	if !validSecretValue(profile.Password, 4096) || !validSecretValue(profile.PrivateKey, 128<<10) || !validSecretValue(profile.KeyPassphrase, 4096) {
-		return SSHProfile{}, errors.New("SSH 认证信息无效")
+		return SSHProfile{}, userError("errors.sshProfile.invalidAuth")
 	}
 	if profile.PrivateKeyPath != "" && (!validPathValue(profile.PrivateKeyPath, 4096) || strings.HasPrefix(profile.PrivateKeyPath, "-")) {
-		return SSHProfile{}, errors.New("SSH 私钥路径无效")
+		return SSHProfile{}, userError("errors.sshProfile.invalidKeyPath")
 	}
 	if profile.KeyPassphrase != "" && profile.PrivateKey == "" && profile.PrivateKeyPath == "" {
-		return SSHProfile{}, errors.New("SSH 密钥口令未关联私钥")
+		return SSHProfile{}, userError("errors.sshProfile.keyPassphraseWithoutKey")
 	}
 	return profile, nil
 }
@@ -180,13 +180,13 @@ func validateSSHProfiles(profiles []SSHProfile) error {
 	for index, profile := range profiles {
 		normalized, err := normalizeSSHProfile(profile)
 		if err != nil {
-			return fmt.Errorf("SSH 配置无效（第 %d 项）：%v", index+1, err)
+			return userErrorParamsCause("errors.sshProfile.invalidProfileAt", map[string]any{"index": index + 1}, err)
 		}
 		if !validConfigValue(normalized.ID, 128) {
-			return fmt.Errorf("SSH 配置 ID 无效（第 %d 项）", index+1)
+			return userErrorParams("errors.sshProfile.invalidIdAt", map[string]any{"index": index + 1})
 		}
 		if _, ok := seen[normalized.ID]; ok {
-			return fmt.Errorf("SSH 配置 ID 重复: %q", normalized.ID)
+			return userErrorParams("errors.sshProfile.duplicateId", map[string]any{"id": normalized.ID})
 		}
 		seen[normalized.ID] = struct{}{}
 	}
@@ -245,7 +245,7 @@ func (s *ConfigService) saveSSHProfile(profile SSHProfile, allowImportedUpdate b
 			return err
 		}
 		if !validConfigValue(normalized.ID, 128) {
-			return errors.New("SSH 配置 ID 无效")
+			return userError("errors.sshProfile.invalidId")
 		}
 		for index := range profiles {
 			if profiles[index].ID == normalized.ID {
@@ -268,7 +268,7 @@ func (s *ConfigService) saveSSHProfile(profile SSHProfile, allowImportedUpdate b
 func (s *ConfigService) DeleteSSHProfile(id string) error {
 	id = strings.TrimSpace(id)
 	if !validConfigValue(id, 128) {
-		return errors.New("SSH 配置 ID 无效")
+		return userError("errors.sshProfile.invalidId")
 	}
 	return s.updateConfigAllowDanglingRefs(func(cfg *Config) error {
 		profiles := make([]SSHProfile, 0, len(cfg.SSHProfiles))
@@ -303,7 +303,7 @@ func (s *ConfigService) GetSSHConfigProfiles() ([]SSHProfile, error) {
 func (s *ConfigService) getSSHConfigAliases() ([]string, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return []string{}, fmt.Errorf("获取用户主目录失败: %w", err)
+		return []string{}, userErrorCause("errors.sshProfile.homeDirFailed", err)
 	}
 	hosts, err := parseSSHConfigFileTree(filepath.Join(home, ".ssh", "config"))
 	if err != nil {
@@ -345,7 +345,7 @@ func (s *ConfigService) RefreshSSHConfigProfile(id string) (SSHProfile, error) {
 		}
 	}
 	if current.ID == "" || current.Origin != "ssh-config" || current.OriginAlias == "" {
-		return SSHProfile{}, errors.New("找不到可更新的本机 SSH 配置")
+		return SSHProfile{}, userError("errors.sshProfile.refreshTargetNotFound")
 	}
 	if err := ensureSSHConfigAlias(current.OriginAlias); err != nil {
 		return SSHProfile{}, err
@@ -362,16 +362,16 @@ func (s *ConfigService) RefreshSSHConfigProfile(id string) (SSHProfile, error) {
 func ensureSSHConfigAlias(alias string) error {
 	alias = strings.TrimSpace(alias)
 	if !validSSHHost(alias) {
-		return errors.New("本机 SSH config 别名无效")
+		return userError("errors.sshProfile.invalidConfigAlias")
 	}
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return fmt.Errorf("获取用户主目录失败: %w", err)
+		return userErrorCause("errors.sshProfile.homeDirFailed", err)
 	}
 	hosts, err := parseSSHConfigFileTree(filepath.Join(home, ".ssh", "config"))
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			return fmt.Errorf("本机 SSH config 中不存在别名 %q", alias)
+			return userErrorParams("errors.sshProfile.configAliasMissing", map[string]any{"alias": alias})
 		}
 		return err
 	}
@@ -380,7 +380,7 @@ func ensureSSHConfigAlias(alias string) error {
 			return nil
 		}
 	}
-	return fmt.Errorf("本机 SSH config 中不存在别名 %q", alias)
+	return userErrorParams("errors.sshProfile.configAliasMissing", map[string]any{"alias": alias})
 }
 
 // TestSSHProfile 使用 SSH 文件和镜像服务共用的直接客户端路径完成握手测试。
@@ -399,7 +399,7 @@ func testSSHProfile(ctx context.Context, profile SSHProfile, language string) er
 	}
 	hostKeyCallback, err := newAppSSHHostKeyCallback(language)
 	if err != nil {
-		return fmt.Errorf("读取应用 SSH known_hosts 失败: %w", err)
+		return userErrorCause("errors.sshProfile.knownHostsFailed", err)
 	}
 	host := strings.TrimPrefix(strings.TrimSuffix(profile.Host, "]"), "[")
 	address := net.JoinHostPort(host, strconv.Itoa(profile.Port))
@@ -422,7 +422,7 @@ func sshAuthMethodsForProfile(profile SSHProfile) ([]ssh.AuthMethod, error) {
 	if keyData == "" && profile.PrivateKeyPath != "" {
 		keyData, err = readSSHPrivateKeyFile(profile.PrivateKeyPath)
 		if err != nil {
-			return nil, errors.New("读取 SSH 私钥文件失败")
+			return nil, userError("errors.sshProfile.readPrivateKeyFailed")
 		}
 	}
 	if keyData != "" {
@@ -433,12 +433,12 @@ func sshAuthMethodsForProfile(profile SSHProfile) ([]ssh.AuthMethod, error) {
 			signer, err = ssh.ParsePrivateKey([]byte(keyData))
 		}
 		if err != nil {
-			return nil, errors.New("解析 SSH 私钥失败")
+			return nil, userError("errors.sshProfile.parsePrivateKeyFailed")
 		}
 		methods = append(methods, ssh.PublicKeys(signer))
 	}
 	if len(methods) == 0 {
-		return nil, errors.New("SSH 未配置认证凭据")
+		return nil, userError("errors.sshProfile.missingAuthCredentials")
 	}
 	return methods, nil
 }
@@ -450,7 +450,7 @@ var sshConfigCommand = func(ctx context.Context, alias string) *exec.Cmd {
 func resolveSSHConfigProfile(alias string) (SSHProfile, error) {
 	alias = strings.TrimSpace(alias)
 	if !validSSHHost(alias) {
-		return SSHProfile{}, errors.New("本机 SSH config 别名无效")
+		return SSHProfile{}, userError("errors.sshProfile.invalidConfigAlias")
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), sshConfigResolveTimeout)
 	defer cancel()
@@ -459,7 +459,7 @@ func resolveSSHConfigProfile(alias string) (SSHProfile, error) {
 		if ctx.Err() != nil {
 			return SSHProfile{}, ctx.Err()
 		}
-		return SSHProfile{}, fmt.Errorf("读取本机 SSH config 失败: %w", err)
+		return SSHProfile{}, userErrorCause("errors.sshProfile.readConfigFailed", err)
 	}
 	profile := SSHProfile{ID: alias, Name: alias, Origin: "ssh-config", OriginAlias: alias, Port: 22, Host: alias, OriginUpdatedAt: time.Now().UTC().Format(time.RFC3339Nano)}
 	seenHost, seenPort, seenUser := false, false, false
@@ -475,7 +475,7 @@ func resolveSSHConfigProfile(alias string) (SSHProfile, error) {
 		case "port":
 			port, parseErr := strconv.Atoi(fields[1])
 			if parseErr != nil {
-				return SSHProfile{}, errors.New("解析本机 SSH config 的端口失败")
+				return SSHProfile{}, userError("errors.sshProfile.parseConfigPortFailed")
 			}
 			profile.Port = port
 			seenPort = true
@@ -489,7 +489,7 @@ func resolveSSHConfigProfile(alias string) (SSHProfile, error) {
 		}
 	}
 	if !seenHost || !seenPort || !seenUser {
-		return SSHProfile{}, errors.New("本机 SSH config 输出缺少 HostName、Port 或 User")
+		return SSHProfile{}, userError("errors.sshProfile.configOutputIncomplete")
 	}
 	if _, err := normalizeSSHProfile(profile); err != nil {
 		return SSHProfile{}, err
@@ -579,21 +579,21 @@ func validateConfigForSave(cfg Config, allowDanglingRefs ...bool) error {
 	for index, source := range cfg.ImageSources {
 		if source.Kind == "ssh" && source.SSHProfileID != "" {
 			if _, ok := profiles[source.SSHProfileID]; !ok {
-				return fmt.Errorf("镜像来源（第 %d 项）引用的 SSH 配置不存在", index+1)
+				return userErrorParams("errors.sshProfile.imageSourceProfileMissing", map[string]any{"index": index + 1})
 			}
 		}
 	}
 	for index, source := range cfg.FileSources {
 		if source.SSHProfileID != "" {
 			if _, ok := profiles[source.SSHProfileID]; !ok {
-				return fmt.Errorf("文件来源（第 %d 项）引用的 SSH 配置不存在", index+1)
+				return userErrorParams("errors.sshProfile.fileSourceProfileMissing", map[string]any{"index": index + 1})
 			}
 		}
 	}
 	for index, target := range cfg.ServiceTargets {
 		if target.Kind == "ssh" && target.SSHProfileID != "" {
 			if _, ok := profiles[target.SSHProfileID]; !ok {
-				return fmt.Errorf("服务目标（第 %d 项）引用的 SSH 配置不存在", index+1)
+				return userErrorParams("errors.sshProfile.serviceTargetProfileMissing", map[string]any{"index": index + 1})
 			}
 		}
 	}

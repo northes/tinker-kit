@@ -404,8 +404,8 @@ func TestHistoryAccessHonorsDisabledSidebarTool(t *testing.T) {
 	}
 
 	content, err := service.GetHistoryContent(disabledItem.ID)
-	if err == nil || err.Error() != "history entry not found" {
-		t.Fatalf("读取禁用工具历史错误为 %v，期望 history entry not found", err)
+	if err == nil || localizedErrorKey(err) != "errors.config.historyEntryNotFound" {
+		t.Fatalf("读取禁用工具历史错误为 %v，期望错误 key errors.config.historyEntryNotFound", err)
 	}
 	if content != (HistoryContent{}) {
 		t.Fatalf("禁用工具历史不应返回内容: %#v", content)
@@ -515,18 +515,19 @@ func TestConfigServiceSaveRejectsInvalidImageSource(t *testing.T) {
 	tests := []struct {
 		name     string
 		sources  []ImageSource
-		wantPart string
+		wantKey  string
+		wantName string
 	}{
-		{name: "空 registry 地址", sources: []ImageSource{{ID: "registry:repo-a", Name: "仓库A", Kind: "registry", RegistryURL: ""}}, wantPart: "registry 地址非法"},
-		{name: "非 https registry 地址", sources: []ImageSource{{ID: "registry:repo-a", Name: "仓库A", Kind: "registry", RegistryURL: "http://registry.example"}}, wantPart: "registry 地址非法"},
-		{name: "无用户名的 registry 密码", sources: []ImageSource{{ID: "registry:repo-a", Name: "仓库A", Kind: "registry", RegistryURL: "https://registry.example", RegistryPassword: "secret"}}, wantPart: "registry 密码缺少用户名"},
-		{name: "无私钥的密钥口令", sources: []ImageSource{{ID: "ssh:box-a", Name: "构建机A", Kind: "ssh", SSHHost: "box-a", SSHKeyPassphrase: "pass"}}, wantPart: "未关联私钥"},
-		{name: "非法 SSH 主机", sources: []ImageSource{{ID: "ssh:box-a", Name: "构建机A", Kind: "ssh", SSHHost: "bad host"}}, wantPart: "SSH 主机非法"},
-		{name: "非法 ID", sources: []ImageSource{{ID: "bad id", Name: "坏来源", Kind: "ssh", SSHHost: "box-a"}}, wantPart: "ID 非法"},
+		{name: "空 registry 地址", sources: []ImageSource{{ID: "registry:repo-a", Name: "仓库A", Kind: "registry", RegistryURL: ""}}, wantKey: "errors.config.registryURLInvalid"},
+		{name: "非 https registry 地址", sources: []ImageSource{{ID: "registry:repo-a", Name: "仓库A", Kind: "registry", RegistryURL: "http://registry.example"}}, wantKey: "errors.config.registryURLInvalid"},
+		{name: "无用户名的 registry 密码", sources: []ImageSource{{ID: "registry:repo-a", Name: "仓库A", Kind: "registry", RegistryURL: "https://registry.example", RegistryPassword: "secret"}}, wantKey: "errors.config.registryPasswordWithoutUsername"},
+		{name: "无私钥的密钥口令", sources: []ImageSource{{ID: "ssh:box-a", Name: "构建机A", Kind: "ssh", SSHHost: "box-a", SSHKeyPassphrase: "pass"}}, wantKey: "errors.config.sshKeyPassphraseWithoutKey"},
+		{name: "非法 SSH 主机", sources: []ImageSource{{ID: "ssh:box-a", Name: "构建机A", Kind: "ssh", SSHHost: "bad host"}}, wantKey: "errors.config.sshHostInvalid"},
+		{name: "非法 ID", sources: []ImageSource{{ID: "bad id", Name: "坏来源", Kind: "ssh", SSHHost: "box-a"}}, wantKey: "errors.config.sshImageSourceIDInvalid"},
 		{name: "重复 ID 辨别第二项", sources: []ImageSource{
 			{ID: "ssh:box-a", Name: "构建机A", Kind: "ssh", SSHHost: "box-a"},
 			{ID: "ssh:box-a", Name: "构建机B", Kind: "ssh", SSHHost: "box-a"},
-		}, wantPart: "构建机B"},
+		}, wantKey: "errors.config.imageSourceIDDuplicate", wantName: "构建机B"},
 	}
 
 	for _, test := range tests {
@@ -537,8 +538,14 @@ func TestConfigServiceSaveRejectsInvalidImageSource(t *testing.T) {
 			if err == nil {
 				t.Fatalf("保存含无效来源的配置应返回错误: %#v", test.sources)
 			}
-			if !strings.Contains(err.Error(), test.wantPart) {
-				t.Fatalf("错误 %q 应包含 %q", err.Error(), test.wantPart)
+			if key := localizedErrorKey(err); key != "errors.config.imageSourceInvalid" {
+				t.Fatalf("错误 key 为 %q，期望 errors.config.imageSourceInvalid", key)
+			}
+			if !strings.Contains(err.Error(), test.wantKey) {
+				t.Fatalf("错误 %q 应包含内层 key %q", err.Error(), test.wantKey)
+			}
+			if test.wantName != "" && !strings.Contains(err.Error(), test.wantName) {
+				t.Fatalf("错误 %q 应包含来源标识 %q", err.Error(), test.wantName)
 			}
 			if got := service.Get(); !imageSourcesEqual(got.ImageSources, before.ImageSources) {
 				t.Fatalf("无效来源保存后内存配置不应变化: %#v", got.ImageSources)

@@ -67,6 +67,7 @@ import { Spinner } from './ui/spinner';
 import { Textarea } from './ui/textarea';
 import { useSSHProfiles } from './SSHProfileManagerDialog';
 import { ConfirmDialog } from './ConfirmDialog';
+import { formatBackendError } from '../lib/backend-error';
 
 const TRAY_MATCH_DEFAULT_TOOLS: readonly ToolId[] = [
   'json',
@@ -276,14 +277,7 @@ function ChoiceGroup<T extends string | number>({
 }
 
 function settingsErrorMessage(error: unknown) {
-  if (error instanceof Error && error.message) return error.message;
-  if (typeof error === 'string' && error) return error;
-  if (error && typeof error === 'object') {
-    const value = error as { message?: unknown; error?: unknown };
-    if (typeof value.message === 'string' && value.message) return value.message;
-    if (typeof value.error === 'string' && value.error) return value.error;
-  }
-  return '';
+  return formatBackendError(error);
 }
 
 function SSHKnownHostsDialog({

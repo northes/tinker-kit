@@ -97,16 +97,14 @@ func newAppSSHHostKeyCallback(language string) (ssh.HostKeyCallback, error) {
 }
 
 func (e *sshHostKeyError) Error() string {
-	if e.language == "en-US" {
-		if len(e.want) == 0 {
-			return fmt.Sprintf("SSH host key is not trusted: %s (%s)", e.address, ssh.FingerprintSHA256(e.key))
-		}
-		return fmt.Sprintf("SSH host key changed: %s (%s)", e.address, ssh.FingerprintSHA256(e.key))
+	key := "errors.sshKnownHost.hostKeyNotTrusted"
+	if len(e.want) > 0 {
+		key = "errors.sshKnownHost.hostKeyChanged"
 	}
-	if len(e.want) == 0 {
-		return fmt.Sprintf("SSH 主机指纹未受信任：%s（%s）", e.address, ssh.FingerprintSHA256(e.key))
-	}
-	return fmt.Sprintf("SSH 主机指纹已变更：%s（%s）", e.address, ssh.FingerprintSHA256(e.key))
+	return userErrorParams(key, map[string]any{
+		"address":     e.address,
+		"fingerprint": ssh.FingerprintSHA256(e.key),
+	}).Error()
 }
 
 func (e *sshHostKeyError) Unwrap() error { return e.cause }
@@ -138,7 +136,7 @@ func resolveSSHHostKeyPrompt(id string, accepted bool) error {
 	}
 	pendingSSHHostKeyPrompts.mu.Unlock()
 	if !ok {
-		return errors.New("SSH 主机指纹提示已失效")
+		return userError("errors.sshKnownHost.promptExpired")
 	}
 	result <- accepted
 	return nil
@@ -177,7 +175,7 @@ func (s *sshKnownHostStore) list() ([]SSHKnownHost, error) {
 
 func (s *sshKnownHostStore) update(entry SSHKnownHost) (SSHKnownHost, error) {
 	if strings.TrimSpace(entry.ID) == "" {
-		return SSHKnownHost{}, errors.New("SSH 主机指纹记录 ID 不能为空")
+		return SSHKnownHost{}, userError("errors.sshKnownHost.recordIDRequired")
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -193,7 +191,7 @@ func (s *sshKnownHostStore) update(entry SSHKnownHost) (SSHKnownHost, error) {
 		}
 	}
 	if record == nil {
-		return SSHKnownHost{}, errors.New("SSH 主机指纹记录已变更，请刷新后重试")
+		return SSHKnownHost{}, userError("errors.sshKnownHost.recordChanged")
 	}
 	line, err := formatSSHKnownHostLine(entry, record.entry.Marker)
 	if err != nil {
@@ -203,7 +201,7 @@ func (s *sshKnownHostStore) update(entry SSHKnownHost) (SSHKnownHost, error) {
 	if err := writeConfigAtomically(s.path, []byte(strings.Join(lines, "\n"))); err != nil {
 		return SSHKnownHost{}, err
 	}
-	updated, _, err := parseSSHKnownHostLine(line)
+	updated, _, err := parseSSHKnownHostLine(line, record.line)
 	if err != nil {
 		return SSHKnownHost{}, err
 	}
@@ -213,7 +211,7 @@ func (s *sshKnownHostStore) update(entry SSHKnownHost) (SSHKnownHost, error) {
 
 func (s *sshKnownHostStore) delete(id string) error {
 	if strings.TrimSpace(id) == "" {
-		return errors.New("SSH 主机指纹记录 ID 不能为空")
+		return userError("errors.sshKnownHost.recordIDRequired")
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -229,7 +227,7 @@ func (s *sshKnownHostStore) delete(id string) error {
 		}
 	}
 	if line == 0 {
-		return errors.New("SSH 主机指纹记录已变更，请刷新后重试")
+		return userError("errors.sshKnownHost.recordChanged")
 	}
 	lines = append(lines[:line-1], lines[line:]...)
 	return writeConfigAtomically(s.path, []byte(strings.Join(lines, "\n")))
@@ -249,9 +247,9 @@ func (s *sshKnownHostStore) recordsLocked() ([]sshKnownHostRecord, []string, err
 	lines := strings.Split(string(data), "\n")
 	records := make([]sshKnownHostRecord, 0, len(lines))
 	for index, line := range lines {
-		entry, ok, err := parseSSHKnownHostLine(line)
+		entry, ok, err := parseSSHKnownHostLine(line, index+1)
 		if err != nil {
-			return nil, nil, fmt.Errorf("应用 SSH known_hosts 第 %d 行无效: %w", index+1, err)
+			return nil, nil, err
 		}
 		if !ok {
 			continue
@@ -262,14 +260,14 @@ func (s *sshKnownHostStore) recordsLocked() ([]sshKnownHostRecord, []string, err
 	return records, lines, nil
 }
 
-func parseSSHKnownHostLine(line string) (SSHKnownHost, bool, error) {
+func parseSSHKnownHostLine(line string, lineNumber int) (SSHKnownHost, bool, error) {
 	raw := strings.TrimSpace(line)
 	if raw == "" || strings.HasPrefix(raw, "#") {
 		return SSHKnownHost{}, false, nil
 	}
 	fields := strings.Fields(raw)
 	if len(fields) < 3 {
-		return SSHKnownHost{}, false, errors.New("缺少主机、公钥类型或公钥")
+		return SSHKnownHost{}, false, userErrorParams("errors.sshKnownHost.lineMissingFields", map[string]any{"line": lineNumber})
 	}
 	offset := 0
 	marker := ""
@@ -278,19 +276,19 @@ func parseSSHKnownHostLine(line string) (SSHKnownHost, bool, error) {
 		offset++
 	}
 	if len(fields) < offset+3 {
-		return SSHKnownHost{}, false, errors.New("缺少主机、公钥类型或公钥")
+		return SSHKnownHost{}, false, userErrorParams("errors.sshKnownHost.lineMissingFields", map[string]any{"line": lineNumber})
 	}
 	hosts := fields[offset]
 	if !validConfigValue(hosts, 4096) {
-		return SSHKnownHost{}, false, errors.New("主机匹配项无效")
+		return SSHKnownHost{}, false, userErrorParams("errors.sshKnownHost.lineHostsInvalid", map[string]any{"line": lineNumber})
 	}
 	authorizedKey := strings.Join(fields[offset+1:], " ")
 	key, comment, options, rest, err := ssh.ParseAuthorizedKey([]byte(authorizedKey))
 	if err != nil {
-		return SSHKnownHost{}, false, fmt.Errorf("公钥无效: %w", err)
+		return SSHKnownHost{}, false, userErrorParamsCause("errors.sshKnownHost.linePublicKeyInvalid", map[string]any{"line": lineNumber}, err)
 	}
 	if len(options) > 0 || strings.TrimSpace(string(rest)) != "" {
-		return SSHKnownHost{}, false, errors.New("公钥格式无效")
+		return SSHKnownHost{}, false, userErrorParams("errors.sshKnownHost.linePublicKeyFormatInvalid", map[string]any{"line": lineNumber})
 	}
 	return SSHKnownHost{
 		Hosts:       hosts,
@@ -305,25 +303,25 @@ func parseSSHKnownHostLine(line string) (SSHKnownHost, bool, error) {
 func formatSSHKnownHostLine(entry SSHKnownHost, marker string) (string, error) {
 	hosts := strings.TrimSpace(entry.Hosts)
 	if !validConfigValue(hosts, 4096) {
-		return "", errors.New("主机匹配项无效")
+		return "", userError("errors.sshKnownHost.hostsInvalid")
 	}
 	publicKey := strings.TrimSpace(entry.PublicKey)
 	if publicKey == "" {
-		return "", errors.New("公钥不能为空")
+		return "", userError("errors.sshKnownHost.publicKeyRequired")
 	}
 	key, _, options, rest, err := ssh.ParseAuthorizedKey([]byte(publicKey))
 	if err != nil {
-		return "", fmt.Errorf("公钥无效: %w", err)
+		return "", userErrorCause("errors.sshKnownHost.publicKeyInvalid", err)
 	}
 	if len(options) > 0 || strings.TrimSpace(string(rest)) != "" {
-		return "", errors.New("公钥格式无效")
+		return "", userError("errors.sshKnownHost.publicKeyFormatInvalid")
 	}
 	comment := strings.TrimSpace(entry.Comment)
 	if comment != "" && !validTextValue(comment, 4096) {
-		return "", errors.New("备注无效")
+		return "", userError("errors.sshKnownHost.commentInvalid")
 	}
 	if marker != "" && marker != "@cert-authority" && marker != "@revoked" {
-		return "", errors.New("known_hosts 标记无效")
+		return "", userError("errors.sshKnownHost.markerInvalid")
 	}
 	parts := make([]string, 0, 4)
 	if marker != "" {
@@ -526,7 +524,7 @@ func awaitSSHHostKeyPrompt(
 	}
 	id, result := registerSSHHostKeyPrompt()
 	if id == "" || result == nil {
-		return false, errors.New("生成 SSH 主机指纹提示 ID 失败")
+		return false, userError("errors.sshKnownHost.promptCreateFailed")
 	}
 	prompt := sshHostKeyPrompt{
 		ID:                id,

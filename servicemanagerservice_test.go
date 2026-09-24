@@ -201,7 +201,7 @@ func TestRemoteCommandLineReportsMissingCommand(t *testing.T) {
 		resolvedAt: time.Now(),
 	}
 	_, _, err := service.remoteCommandLine(source, "pm2", []string{"jlist"})
-	if err == nil || !strings.Contains(err.Error(), "远端未找到命令 pm2") {
+	if err == nil || localizedErrorKey(err) != "errors.service.remoteCommandMissing" {
 		t.Fatalf("命令缺失时应给出明确错误: %v", err)
 	}
 }

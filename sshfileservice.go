@@ -217,7 +217,7 @@ func (s *FileService) CancelFileTask(id string) error {
 	task := s.tasks[id]
 	if task == nil {
 		s.taskMu.Unlock()
-		return errors.New("文件任务不存在")
+		return userError("errors.sshFile.taskNotFound")
 	}
 	if task.cancel != nil {
 		task.cancel()
@@ -272,18 +272,18 @@ func validateSSHFileConfig(connections []SSHConnection, sources []FileSource) er
 		c := &connections[i]
 		c.ID, c.Name, c.Mode, c.Alias, c.Host, c.Username, c.PrivateKeyPath = strings.TrimSpace(c.ID), strings.TrimSpace(c.Name), strings.TrimSpace(c.Mode), strings.TrimSpace(c.Alias), strings.TrimSpace(c.Host), strings.TrimSpace(c.Username), strings.TrimSpace(c.PrivateKeyPath)
 		if !validConfigValue(c.ID, 128) || seenConnections[c.ID] {
-			return fmt.Errorf("SSH 连接 ID 无效或重复: %q", c.ID)
+			return userErrorParams("errors.sshFile.invalidConnectionID", map[string]any{"id": c.ID})
 		}
 		seenConnections[c.ID] = true
 		if c.Mode == "" {
 			c.Mode = "manual"
 		}
 		if c.Mode != "manual" && c.Mode != "local" {
-			return fmt.Errorf("SSH 连接 %q 的模式无效", c.ID)
+			return userErrorParams("errors.sshFile.invalidConnectionMode", map[string]any{"id": c.ID})
 		}
 		if c.Mode == "local" {
 			if !validSSHHost(c.Alias) {
-				return fmt.Errorf("SSH 连接 %q 的本地配置别名无效", c.ID)
+				return userErrorParams("errors.sshFile.invalidLocalAlias", map[string]any{"id": c.ID})
 			}
 			c.Host = c.Alias
 		}
@@ -294,25 +294,25 @@ func validateSSHFileConfig(connections []SSHConnection, sources []FileSource) er
 			}
 		}
 		if !validTextValue(c.Name, 256) || (c.Mode == "manual" && !validSSHHost(c.Host)) {
-			return fmt.Errorf("SSH 连接 %q 配置无效", c.ID)
+			return userErrorParams("errors.sshFile.invalidConnectionConfig", map[string]any{"id": c.ID})
 		}
 		if c.Port == 0 {
 			c.Port = 22
 		}
 		if c.Port < 1 || c.Port > 65535 || (c.Mode == "manual" && (c.Username == "" || !validConfigValue(c.Username, 256))) {
-			return fmt.Errorf("SSH 连接 %q 的端口或用户名无效", c.ID)
+			return userErrorParams("errors.sshFile.invalidConnectionPortOrUser", map[string]any{"id": c.ID})
 		}
 		if !validSecretValue(c.Password, 4096) || !validSecretValue(c.PrivateKey, 128<<10) || !validSecretValue(c.KeyPassphrase, 4096) {
-			return fmt.Errorf("SSH 连接 %q 的认证信息无效", c.ID)
+			return userErrorParams("errors.sshFile.invalidConnectionAuth", map[string]any{"id": c.ID})
 		}
 		if c.Mode == "manual" && c.Password == "" && c.PrivateKey == "" && c.PrivateKeyPath == "" {
-			return fmt.Errorf("SSH 连接 %q 未配置密码或私钥", c.ID)
+			return userErrorParams("errors.sshFile.missingCredentials", map[string]any{"id": c.ID})
 		}
 		if c.PrivateKeyPath != "" && (!validPathValue(c.PrivateKeyPath, 4096) || strings.HasPrefix(c.PrivateKeyPath, "-")) {
-			return fmt.Errorf("SSH 连接 %q 的私钥路径无效", c.ID)
+			return userErrorParams("errors.sshFile.invalidPrivateKeyPath", map[string]any{"id": c.ID})
 		}
 		if c.Mode == "manual" && c.KeyPassphrase != "" && c.PrivateKey == "" && c.PrivateKeyPath == "" {
-			return fmt.Errorf("SSH 连接 %q 的密钥口令未关联私钥", c.ID)
+			return userErrorParams("errors.sshFile.passphraseWithoutKey", map[string]any{"id": c.ID})
 		}
 	}
 	seenSources := make(map[string]bool, len(sources))
@@ -320,11 +320,11 @@ func validateSSHFileConfig(connections []SSHConnection, sources []FileSource) er
 		src := &sources[i]
 		src.ID, src.Name, src.SSHConnectionID, src.DefaultPath = strings.TrimSpace(src.ID), strings.TrimSpace(src.Name), strings.TrimSpace(src.SSHConnectionID), strings.TrimSpace(src.DefaultPath)
 		if !validConfigValue(src.ID, 128) || seenSources[src.ID] || !validConfigValue(src.SSHConnectionID, 128) || !seenConnections[src.SSHConnectionID] {
-			return fmt.Errorf("文件源 %q 配置无效", src.ID)
+			return userErrorParams("errors.sshFile.invalidFileSource", map[string]any{"id": src.ID})
 		}
 		seenSources[src.ID] = true
 		if src.Name == "" || !validTextValue(src.Name, 256) || (src.DefaultPath != "" && !validPathValue(src.DefaultPath, 4096)) {
-			return fmt.Errorf("文件源 %q 配置无效", src.ID)
+			return userErrorParams("errors.sshFile.invalidFileSource", map[string]any{"id": src.ID})
 		}
 	}
 	return nil
@@ -337,7 +337,7 @@ func (s *FileService) SaveSSHFileConfig(connections []SSHConnection, sources []F
 		return err
 	}
 	if s.config == nil {
-		return errors.New("配置服务尚未初始化")
+		return userError("errors.common.configNotInitialized")
 	}
 	cfg := s.config.Get()
 	cfg.SSHConnections, cfg.FileSources = connections, sources
@@ -349,7 +349,7 @@ func (s *FileService) SaveSSHFileConfig(connections []SSHConnection, sources []F
 func (s *FileService) SaveFileSources(sources []FileSource) error {
 	sources = copyFileSources(sources)
 	if s == nil || s.config == nil {
-		return errors.New("配置服务尚未初始化")
+		return userError("errors.common.configNotInitialized")
 	}
 	return s.config.updateConfigAllowDanglingRefs(func(cfg *Config) error {
 		profiles := make(map[string]struct{}, len(cfg.SSHProfiles))
@@ -364,23 +364,23 @@ func (s *FileService) SaveFileSources(sources []FileSource) error {
 			source.SSHConnectionID = ""
 			source.DefaultPath = strings.TrimSpace(source.DefaultPath)
 			if !validConfigValue(source.ID, 128) || source.Name == "" || !validTextValue(source.Name, 256) {
-				return fmt.Errorf("文件源 %q 配置无效", source.ID)
+				return userErrorParams("errors.sshFile.invalidFileSource", map[string]any{"id": source.ID})
 			}
 			if !validConfigValue(source.SSHProfileID, 128) {
-				return fmt.Errorf("文件源 %q 的 SSH 配置 ID 无效", source.ID)
+				return userErrorParams("errors.sshFile.invalidFileSourceSSHProfileID", map[string]any{"id": source.ID})
 			}
 			if _, ok := profiles[source.SSHProfileID]; !ok {
-				return fmt.Errorf("文件源 %q 引用的 SSH 配置不存在", source.ID)
+				return userErrorParams("errors.sshFile.fileSourceSSHProfileMissing", map[string]any{"id": source.ID})
 			}
 			if source.DefaultPath != "" && !validPathValue(source.DefaultPath, 4096) {
-				return fmt.Errorf("文件源 %q 的默认路径无效", source.ID)
+				return userErrorParams("errors.sshFile.invalidFileSourceDefaultPath", map[string]any{"id": source.ID})
 			}
 			source.FavoritePaths = normalizeFavoritePaths(source.FavoritePaths)
 		}
 		seen := make(map[string]struct{}, len(sources))
 		for _, source := range sources {
 			if _, ok := seen[source.ID]; ok {
-				return fmt.Errorf("文件源 ID 重复: %q", source.ID)
+				return userErrorParams("errors.sshFile.duplicateFileSourceID", map[string]any{"id": source.ID})
 			}
 			seen[source.ID] = struct{}{}
 		}
@@ -399,7 +399,7 @@ func (s *FileService) sourceSnapshot(sourceID string) (FileSource, SSHConnection
 		}
 	}
 	if src.ID == "" {
-		return FileSource{}, SSHConnection{}, errors.New("文件源不存在")
+		return FileSource{}, SSHConnection{}, userError("errors.sshFile.fileSourceNotFound")
 	}
 	if src.SSHProfileID != "" {
 		for _, profile := range cfg.SSHProfiles {
@@ -407,14 +407,14 @@ func (s *FileService) sourceSnapshot(sourceID string) (FileSource, SSHConnection
 				return src, sshProfileToConnection(profile), nil
 			}
 		}
-		return FileSource{}, SSHConnection{}, errors.New("文件源引用的 SSH 配置不存在")
+		return FileSource{}, SSHConnection{}, userError("errors.sshFile.fileSourceSSHProfileNotFound")
 	}
 	for _, conn := range cfg.SSHConnections {
 		if conn.ID == src.SSHConnectionID {
 			return src, conn, nil
 		}
 	}
-	return FileSource{}, SSHConnection{}, errors.New("文件源引用的 SSH 连接不存在")
+	return FileSource{}, SSHConnection{}, userError("errors.sshFile.fileSourceSSHConnectionNotFound")
 }
 
 func normalizedRemotePath(value string) string {
@@ -434,7 +434,7 @@ func resolveRemoteDirectory(client *sftp.Client, currentPath string) (string, er
 	}
 	wd, err := client.Getwd()
 	if err != nil {
-		return "", fmt.Errorf("读取远程登录目录失败: %w", err)
+		return "", userErrorCause("errors.sshFile.readWorkingDirectoryFailed", err)
 	}
 	return normalizedRemotePath(wd), nil
 }
@@ -457,7 +457,7 @@ func (s *FileService) authMethods(conn SSHConnection) ([]ssh.AuthMethod, error) 
 		keyData, err = readSSHPrivateKeyFile(conn.PrivateKeyPath)
 	}
 	if err != nil {
-		return nil, errors.New("读取 SSH 私钥文件失败")
+		return nil, userError("errors.sshFile.readPrivateKeyFailed")
 	}
 	if keyData != "" {
 		var signer ssh.Signer
@@ -467,12 +467,12 @@ func (s *FileService) authMethods(conn SSHConnection) ([]ssh.AuthMethod, error) 
 			signer, err = ssh.ParsePrivateKey([]byte(keyData))
 		}
 		if err != nil {
-			return nil, errors.New("解析 SSH 私钥失败")
+			return nil, userError("errors.sshFile.parsePrivateKeyFailed")
 		}
 		methods = append(methods, ssh.PublicKeys(signer))
 	}
 	if len(methods) == 0 {
-		return nil, errors.New("SSH 未配置认证凭据")
+		return nil, userError("errors.sshFile.noAuthCredentials")
 	}
 	return methods, nil
 }
@@ -784,7 +784,7 @@ func runRemoteCommandOutput(
 	if conn.Mode == "local" {
 		alias := strings.TrimSpace(conn.Alias)
 		if !validSSHHost(alias) {
-			return nil, errors.New("本地 SSH 配置别名无效")
+			return nil, userError("errors.sshFile.invalidLocalSSHAlias")
 		}
 		process := newSystemSSHCommand(ctx, alias, command)
 		var stdout bytes.Buffer
@@ -798,7 +798,7 @@ func runRemoteCommandOutput(
 		return stdout.Bytes(), remoteCommandError(stderr.String(), err)
 	}
 	if sshClient == nil {
-		return nil, errors.New("SSH 会话尚未建立")
+		return nil, userError("errors.sshFile.sessionNotEstablished")
 	}
 	session, err := sshClient.NewSession()
 	if err != nil {
@@ -839,7 +839,7 @@ func normalizeRemoteSearchMode(value string) (string, error) {
 	case remoteFileSearchContent:
 		return remoteFileSearchContent, nil
 	default:
-		return "", errors.New("搜索方式无效")
+		return "", userError("errors.sshFile.searchModeInvalid")
 	}
 }
 
@@ -850,7 +850,7 @@ func normalizeRemoteSearchScope(value string) (string, error) {
 	case remoteFileSearchScopeRecursive, "from-current":
 		return remoteFileSearchScopeRecursive, nil
 	default:
-		return "", errors.New("搜索范围无效")
+		return "", userError("errors.sshFile.searchScopeInvalid")
 	}
 }
 
@@ -979,7 +979,7 @@ func remoteSearchEntries(ctx context.Context, client *sftp.Client, output []byte
 			if isRemoteNotFound(err) {
 				continue
 			}
-			return nil, fmt.Errorf("读取搜索结果 %q 失败: %w", remotePath, err)
+			return nil, userErrorParamsCause("errors.sshFile.readSearchResultFailed", map[string]any{"path": remotePath}, err)
 		}
 		result = append(result, remoteFileEntryFromInfo(remotePath, info, ""))
 	}
@@ -1002,7 +1002,7 @@ func (s *FileService) SearchRemoteFiles(
 ) ([]RemoteFileEntry, error) {
 	query = strings.TrimSpace(query)
 	if !validTextValue(query, 4096) {
-		return nil, errors.New("搜索关键词无效")
+		return nil, userError("errors.sshFile.searchQueryInvalid")
 	}
 	searchMode, err := normalizeRemoteSearchMode(searchMode)
 	if err != nil {
@@ -1036,7 +1036,7 @@ func (s *FileService) SearchRemoteFiles(
 		remoteSearchCommand(query, root, searchMode, searchScope, showHidden),
 	)
 	if err != nil {
-		return nil, fmt.Errorf("远程搜索失败: %w", err)
+		return nil, userErrorCause("errors.sshFile.searchFailed", err)
 	}
 	return remoteSearchEntries(ctx, client, output)
 }
@@ -1098,30 +1098,30 @@ func (s *FileService) dialSFTPWithOptions(
 	if conn.Mode == "local" {
 		alias := strings.TrimSpace(conn.Alias)
 		if !validSSHHost(alias) {
-			return nil, nil, errors.New("本地 SSH 配置别名无效")
+			return nil, nil, userError("errors.sshFile.invalidLocalSSHAlias")
 		}
 		command := newSystemSFTPCommand(ctx, alias)
 		stdout, err := command.StdoutPipe()
 		if err != nil {
-			return nil, nil, errors.New("启动系统 SSH 失败")
+			return nil, nil, userError("errors.sshFile.startSystemSSHFailed")
 		}
 		stdin, err := command.StdinPipe()
 		if err != nil {
-			return nil, nil, errors.New("启动系统 SSH 失败")
+			return nil, nil, userError("errors.sshFile.startSystemSSHFailed")
 		}
 		var stderr bytes.Buffer
 		command.Stderr = &stderr
 		if err := command.Start(); err != nil {
-			return nil, nil, fmt.Errorf("启动系统 SSH 失败: %w", err)
+			return nil, nil, userErrorCause("errors.sshFile.startSystemSSHFailed", err)
 		}
 		client, err := sftp.NewClientPipe(stdout, stdin, options...)
 		if err != nil {
 			_ = command.Process.Kill()
 			_ = command.Wait()
 			if detail := strings.TrimSpace(stderr.String()); detail != "" {
-				return nil, nil, fmt.Errorf("系统 SSH SFTP 失败: %s", detail)
+				return nil, nil, userErrorCause("errors.sshFile.systemSFTPFailed", errors.New(detail))
 			}
-			return nil, nil, fmt.Errorf("创建 SFTP 会话失败: %w", err)
+			return nil, nil, userErrorCause("errors.sshFile.createSFTPSessionFailed", err)
 		}
 		go func() { _ = command.Wait() }()
 		return nil, client, nil
@@ -1132,7 +1132,7 @@ func (s *FileService) dialSFTPWithOptions(
 	}
 	hostKeyCallback, err := newAppSSHHostKeyCallback(s.configSnapshot().Language)
 	if err != nil {
-		return nil, nil, fmt.Errorf("读取应用 SSH known_hosts 失败: %w", err)
+		return nil, nil, userErrorCause("errors.sshFile.readKnownHostsFailed", err)
 	}
 	host := strings.TrimPrefix(strings.TrimSuffix(conn.Host, "]"), "[")
 	port := conn.Port
@@ -1151,12 +1151,12 @@ func (s *FileService) dialSFTPWithOptions(
 		if errors.As(err, &hostKeyErr) {
 			return nil, nil, hostKeyErr
 		}
-		return nil, nil, errors.New("SSH 认证失败")
+		return nil, nil, userError("errors.sshFile.authFailed")
 	}
 	sftpClient, err := sftp.NewClient(client, options...)
 	if err != nil {
 		_ = client.Close()
-		return nil, nil, fmt.Errorf("创建 SFTP 会话失败: %w", err)
+		return nil, nil, userErrorCause("errors.sshFile.createSFTPSessionFailed", err)
 	}
 	return client, sftpClient, nil
 }
@@ -1180,7 +1180,7 @@ func (s *FileService) ListRemoteFiles(sourceID, currentPath string, showHidden b
 	}
 	entries, err := client.ReadDirContext(ctx, remotePath)
 	if err != nil {
-		return RemoteDirectoryListing{}, fmt.Errorf("读取远程目录失败: %w", err)
+		return RemoteDirectoryListing{}, userErrorCause("errors.sshFile.readRemoteDirectoryFailed", err)
 	}
 	visibleEntries := make([]os.FileInfo, 0, len(entries))
 	for _, entry := range entries {
@@ -1232,7 +1232,7 @@ func (s *FileService) TestSSHFileConnection(connection SSHConnection, defaultPat
 		connection.Port = 22
 	}
 	if connection.Mode != "local" && connection.Username == "" {
-		return errors.New("SSH 用户名为空")
+		return userError("errors.sshFile.emptyUsername")
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
@@ -1248,7 +1248,7 @@ func (s *FileService) TestSSHFileConnection(connection SSHConnection, defaultPat
 	}
 	_, err = client.Stat(remotePath)
 	if err != nil {
-		return fmt.Errorf("默认路径不可访问: %w", err)
+		return userErrorCause("errors.sshFile.defaultPathInaccessible", err)
 	}
 	return nil
 }
@@ -1257,7 +1257,7 @@ func (s *FileService) TestSSHFileConnection(connection SSHConnection, defaultPat
 func (s *FileService) CreateRemoteDirectory(sourceID, remotePath string) error {
 	remotePath = normalizedRemotePath(remotePath)
 	if remotePath == "/" {
-		return errors.New("文件夹路径无效")
+		return userError("errors.sshFile.invalidFolderPath")
 	}
 	_, conn, err := s.sourceSnapshot(sourceID)
 	if err != nil {
@@ -1275,9 +1275,9 @@ func (s *FileService) CreateRemoteDirectory(sourceID, remotePath string) error {
 	info, err := client.Lstat(remotePath)
 	if err == nil {
 		if info.IsDir() {
-			return errors.New("文件夹已存在")
+			return userError("errors.sshFile.folderExists")
 		}
-		return errors.New("目标路径已存在且不是文件夹")
+		return userError("errors.sshFile.targetNotFolder")
 	}
 	if !isRemoteNotFound(err) {
 		return err
@@ -1286,7 +1286,7 @@ func (s *FileService) CreateRemoteDirectory(sourceID, remotePath string) error {
 		return err
 	}
 	if err := client.Mkdir(remotePath); err != nil {
-		return fmt.Errorf("创建远程文件夹失败: %w", err)
+		return userErrorCause("errors.sshFile.createRemoteFolderFailed", err)
 	}
 	return nil
 }
@@ -1335,7 +1335,7 @@ func ensureRemotePathAbsent(client *sftp.Client, remotePath string) error {
 		return err
 	}
 	if exists {
-		return fmt.Errorf("目标已存在: %s", remotePath)
+		return userErrorParams("errors.sshFile.targetExists", map[string]any{"path": remotePath})
 	}
 	return nil
 }
@@ -1345,7 +1345,7 @@ func ensureRemoteDirectory(client *sftp.Client, remotePath string) error {
 	info, err := client.Lstat(remotePath)
 	if err == nil {
 		if !info.IsDir() {
-			return fmt.Errorf("目标不是目录: %s", remotePath)
+			return userErrorParams("errors.sshFile.targetNotDirectory", map[string]any{"path": remotePath})
 		}
 		return nil
 	}
@@ -1353,7 +1353,7 @@ func ensureRemoteDirectory(client *sftp.Client, remotePath string) error {
 		return err
 	}
 	if err := client.MkdirAll(remotePath); err != nil {
-		return fmt.Errorf("创建远程目录失败: %w", err)
+		return userErrorCause("errors.sshFile.createRemoteDirectoryFailed", err)
 	}
 	return nil
 }
@@ -1380,11 +1380,11 @@ func validateRemoteCopyPath(client *sftp.Client, remotePath string) error {
 		return err
 	}
 	if info.Mode()&os.ModeSymlink != 0 {
-		return fmt.Errorf("不支持复制符号链接: %s", remotePath)
+		return userErrorParams("errors.sshFile.copySymlinkUnsupported", map[string]any{"path": remotePath})
 	}
 	if !info.IsDir() {
 		if !info.Mode().IsRegular() {
-			return fmt.Errorf("不支持复制该类型的远程项目: %s", remotePath)
+			return userErrorParams("errors.sshFile.copyTypeUnsupported", map[string]any{"path": remotePath})
 		}
 		return nil
 	}
@@ -1409,11 +1409,11 @@ func prepareRemoteTransfers(
 	items := make([]remoteTransferItem, 0, len(remotePaths))
 	for _, remotePath := range remotePaths {
 		if remotePath == "/" {
-			return nil, errors.New("不能复制或移动远程根目录")
+			return nil, userError("errors.sshFile.cannotTransferRoot")
 		}
 		info, err := client.Lstat(remotePath)
 		if err != nil {
-			return nil, fmt.Errorf("读取远程项目失败: %w", err)
+			return nil, userErrorCause("errors.sshFile.readRemoteItemFailed", err)
 		}
 		if operation == remoteFileOperationCopy {
 			if err := validateRemoteCopyPath(client, remotePath); err != nil {
@@ -1421,7 +1421,7 @@ func prepareRemoteTransfers(
 			}
 		}
 		if info.IsDir() && remotePathContains(remotePath, target) {
-			return nil, fmt.Errorf("不能将目录复制到自身或子目录: %s", remotePath)
+			return nil, userErrorParams("errors.sshFile.cannotCopyIntoSelf", map[string]any{"path": remotePath})
 		}
 		items = append(items, remoteTransferItem{source: remotePath, info: info})
 	}
@@ -1485,7 +1485,7 @@ func resolveRemoteTransferDestination(
 ) (string, error) {
 	if item.noOp || !item.exists {
 		if _, ok := reserved[item.destination]; ok {
-			return "", errors.New("目标目录中存在重复项目名称")
+			return "", userError("errors.sshFile.duplicateTargetName")
 		}
 		return item.destination, nil
 	}
@@ -1493,7 +1493,7 @@ func resolveRemoteTransferDestination(
 		return item.destination, nil
 	}
 	if conflictPolicy != remoteFileConflictKeepBoth {
-		return "", errors.New("未确认远程文件冲突处理方式")
+		return "", userError("errors.sshFile.conflictUnresolved")
 	}
 	for attempt := 0; ; attempt++ {
 		candidate := remoteChild(
@@ -1552,14 +1552,14 @@ func (s *FileService) operateRemoteFilesWithConnection(
 	case remoteFileOperationCopy, remoteFileOperationMove, remoteFileOperationRename,
 		remoteFileOperationDelete, remoteFileOperationExtract, remoteFileOperationCompress:
 	default:
-		return result, fmt.Errorf("不支持的文件操作: %s", operation)
+		return result, userErrorParams("errors.sshFile.unsupportedOperation", map[string]any{"operation": operation})
 	}
 	paths := normalizeRemotePaths(remotePaths)
 	if len(paths) == 0 {
-		return result, errors.New("未选择远程项目")
+		return result, userError("errors.sshFile.noRemoteItemsSelected")
 	}
 	if operation == remoteFileOperationRename && len(paths) != 1 {
-		return result, errors.New("重命名一次只能处理一个项目")
+		return result, userError("errors.sshFile.renameSingleItem")
 	}
 	if operation == remoteFileOperationCopy || operation == remoteFileOperationMove {
 		switch strings.TrimSpace(conflictPolicy) {
@@ -1567,7 +1567,7 @@ func (s *FileService) operateRemoteFilesWithConnection(
 			conflictPolicy = remoteFileConflictAsk
 		case remoteFileConflictAsk, remoteFileConflictOverwrite, remoteFileConflictKeepBoth:
 		default:
-			return result, fmt.Errorf("不支持的冲突处理方式: %s", conflictPolicy)
+			return result, userErrorParams("errors.sshFile.unsupportedConflictPolicy", map[string]any{"policy": conflictPolicy})
 		}
 	} else {
 		conflictPolicy = ""
@@ -1575,23 +1575,23 @@ func (s *FileService) operateRemoteFilesWithConnection(
 	if operation == remoteFileOperationDelete {
 		for _, remotePath := range paths {
 			if remotePath == "/" {
-				return result, errors.New("不能删除远程根目录")
+				return result, userError("errors.sshFile.cannotDeleteRoot")
 			}
 		}
 	}
 	if operation == remoteFileOperationCompress {
 		target = normalizedRemotePath(target)
 		if target == "/" {
-			return result, errors.New("压缩文件路径无效")
+			return result, userError("errors.sshFile.invalidArchivePath")
 		}
 		if remoteArchiveFormatForPath(target) == "" {
-			return result, errors.New("压缩文件必须使用 .zip、.tar、.tar.gz 或 .tgz 扩展名")
+			return result, userError("errors.sshFile.unsupportedArchiveExtension")
 		}
 	}
 	if operation == remoteFileOperationRename {
 		target = normalizedRemotePath(target)
 		if target == "/" {
-			return result, errors.New("重命名目标无效")
+			return result, userError("errors.sshFile.invalidRenameTarget")
 		}
 	}
 	if operation == remoteFileOperationCopy || operation == remoteFileOperationMove ||
@@ -1650,15 +1650,15 @@ func (s *FileService) operateRemoteFilesWithConnection(
 				return result, err
 			}
 			if _, ok := reserved[destination]; ok {
-				return result, errors.New("目标目录中存在重复项目名称")
+				return result, userError("errors.sshFile.duplicateTargetName")
 			}
 			reserved[destination] = struct{}{}
 			if item.exists && conflictPolicy == remoteFileConflictOverwrite {
 				if operation == remoteFileOperationCopy && destination == item.source {
-					return result, errors.New("复制目标与源相同，不能覆盖")
+					return result, userError("errors.sshFile.copyTargetIsSource")
 				}
 				if err := client.RemoveAll(destination); err != nil {
-					return result, fmt.Errorf("覆盖远程项目失败: %w", err)
+					return result, userErrorCause("errors.sshFile.overwriteRemoteItemFailed", err)
 				}
 			}
 			if err := runRemoteCommand(
@@ -1668,9 +1668,9 @@ func (s *FileService) operateRemoteFilesWithConnection(
 				remoteTransferCommand(operation, item.source, destination),
 			); err != nil {
 				if operation == remoteFileOperationCopy {
-					return result, fmt.Errorf("复制远程项目失败: %w", err)
+					return result, userErrorCause("errors.sshFile.copyRemoteItemFailed", err)
 				}
-				return result, fmt.Errorf("移动远程项目失败: %w", err)
+				return result, userErrorCause("errors.sshFile.moveRemoteItemFailed", err)
 			}
 			doneFiles++
 			if onProgress != nil {
@@ -1683,18 +1683,18 @@ func (s *FileService) operateRemoteFilesWithConnection(
 	case remoteFileOperationRename:
 		remotePath := paths[0]
 		if remotePath == "/" || remotePathContains(remotePath, target) {
-			return result, errors.New("重命名目标无效")
+			return result, userError("errors.sshFile.invalidRenameTarget")
 		}
 		if err := ensureRemotePathAbsent(client, target); err != nil {
 			return result, err
 		}
 		if err := client.Rename(remotePath, target); err != nil {
-			return result, fmt.Errorf("重命名远程项目失败: %w", err)
+			return result, userErrorCause("errors.sshFile.renameRemoteItemFailed", err)
 		}
 	case remoteFileOperationDelete:
 		for _, remotePath := range paths {
 			if err := client.RemoveAll(remotePath); err != nil {
-				return result, fmt.Errorf("删除远程项目失败: %w", err)
+				return result, userErrorCause("errors.sshFile.deleteRemoteItemFailed", err)
 			}
 		}
 	case remoteFileOperationCompress:
@@ -1707,15 +1707,15 @@ func (s *FileService) operateRemoteFilesWithConnection(
 		for _, remotePath := range paths {
 			info, err := client.Lstat(remotePath)
 			if err != nil {
-				return result, fmt.Errorf("读取远程项目失败: %w", err)
+				return result, userErrorCause("errors.sshFile.readRemoteItemFailed", err)
 			}
 			if remotePath == target || (info.IsDir() && remotePathContains(remotePath, target)) {
-				return result, fmt.Errorf("压缩目标不能位于待压缩目录中: %s", target)
+				return result, userErrorParams("errors.sshFile.archiveTargetInsideSource", map[string]any{"target": target})
 			}
 		}
 		_, err := collectRemoteArchiveStats(ctx, client, paths)
 		if err != nil {
-			return result, fmt.Errorf("统计待压缩项目失败: %w", err)
+			return result, userErrorCause("errors.sshFile.collectArchiveStatsFailed", err)
 		}
 		format := remoteArchiveFormatForPath(target)
 		if _, err := runRemoteArchiveCompression(
@@ -1728,7 +1728,7 @@ func (s *FileService) operateRemoteFilesWithConnection(
 			target,
 			onProgress,
 		); err != nil {
-			return result, fmt.Errorf("压缩远程项目失败: %w", err)
+			return result, userErrorCause("errors.sshFile.compressRemoteItemFailed", err)
 		}
 	case remoteFileOperationExtract:
 		if err := ensureRemoteDirectory(client, target); err != nil {
@@ -1764,7 +1764,7 @@ func (s *FileService) operateRemoteFilesWithConnection(
 				},
 			)
 			if err != nil {
-				return result, fmt.Errorf("解压远程项目失败: %w", err)
+				return result, userErrorCause("errors.sshFile.extractRemoteItemFailed", err)
 			}
 			completed += summary.completed
 			doneFiles += summary.files
@@ -1797,11 +1797,11 @@ func (s *FileService) StartRemoteFileOperation(
 ) (FileTaskSnapshot, error) {
 	operation = strings.TrimSpace(operation)
 	if !isBackgroundRemoteFileOperation(operation) {
-		return FileTaskSnapshot{}, fmt.Errorf("不支持后台执行的文件操作: %s", operation)
+		return FileTaskSnapshot{}, userErrorParams("errors.sshFile.unsupportedBackgroundOperation", map[string]any{"operation": operation})
 	}
 	paths := normalizeRemotePaths(remotePaths)
 	if len(paths) == 0 {
-		return FileTaskSnapshot{}, errors.New("未选择远程项目")
+		return FileTaskSnapshot{}, userError("errors.sshFile.noRemoteItemsSelected")
 	}
 	if operation == remoteFileOperationCopy || operation == remoteFileOperationMove {
 		switch strings.TrimSpace(conflictPolicy) {
@@ -1809,7 +1809,7 @@ func (s *FileService) StartRemoteFileOperation(
 			conflictPolicy = remoteFileConflictAsk
 		case remoteFileConflictAsk, remoteFileConflictOverwrite, remoteFileConflictKeepBoth:
 		default:
-			return FileTaskSnapshot{}, fmt.Errorf("不支持的冲突处理方式: %s", conflictPolicy)
+			return FileTaskSnapshot{}, userErrorParams("errors.sshFile.unsupportedConflictPolicy", map[string]any{"policy": conflictPolicy})
 		}
 	} else {
 		conflictPolicy = ""
@@ -1848,23 +1848,23 @@ func (s *FileService) ResolveRemoteFileTask(id, conflictPolicy string) (FileTask
 	switch strings.TrimSpace(conflictPolicy) {
 	case remoteFileConflictOverwrite, remoteFileConflictKeepBoth:
 	default:
-		return FileTaskSnapshot{}, errors.New("未确认远程文件冲突处理方式")
+		return FileTaskSnapshot{}, userError("errors.sshFile.conflictUnresolved")
 	}
 
 	s.taskMu.Lock()
 	task := s.tasks[id]
 	if task == nil {
 		s.taskMu.Unlock()
-		return FileTaskSnapshot{}, errors.New("文件任务不存在")
+		return FileTaskSnapshot{}, userError("errors.sshFile.taskNotFound")
 	}
 	if (task.Type != remoteFileOperationCopy && task.Type != remoteFileOperationMove) ||
 		task.Status != fileTaskConflict {
 		s.taskMu.Unlock()
-		return FileTaskSnapshot{}, errors.New("文件任务不在等待冲突处理")
+		return FileTaskSnapshot{}, userError("errors.sshFile.taskNotAwaitingConflict")
 	}
 	if task.ctx == nil || task.cancel == nil || task.ctx.Err() != nil {
 		s.taskMu.Unlock()
-		return FileTaskSnapshot{}, errors.New("文件任务已结束")
+		return FileTaskSnapshot{}, userError("errors.sshFile.taskFinished")
 	}
 	task.operationPolicy = conflictPolicy
 	task.Status, task.Stage = fileTaskQueued, fileTaskQueued
@@ -1994,7 +1994,7 @@ func localTree(ctx context.Context, paths []string) (int64, int, error) {
 			return nil
 		})
 		if err != nil {
-			return 0, 0, fmt.Errorf("扫描本地路径 %q 失败: %w", root, err)
+			return 0, 0, userErrorParamsCause("errors.sshFile.scanLocalPathFailed", map[string]any{"path": root}, err)
 		}
 	}
 	return total, files, nil
@@ -2005,7 +2005,7 @@ func addProgressBytes(values ...int64) (int64, error) {
 	var total int64
 	for _, value := range values {
 		if value < 0 || total > maxInt64-value {
-			return 0, errors.New("文件大小超出可统计范围")
+			return 0, userError("errors.sshFile.archiveSizeOverflow")
 		}
 		total += value
 	}
@@ -2031,11 +2031,11 @@ func collectRemoteArchivePath(
 		return err
 	}
 	if info.Mode()&os.ModeSymlink != 0 {
-		return fmt.Errorf("不支持压缩符号链接: %s", remotePath)
+		return userErrorParams("errors.sshFile.compressSymlinkUnsupported", map[string]any{"path": remotePath})
 	}
 	if !info.IsDir() {
 		if info.Size() < 0 {
-			return fmt.Errorf("远程文件大小无效: %s", remotePath)
+			return userErrorParams("errors.sshFile.remoteFileSizeInvalid", map[string]any{"path": remotePath})
 		}
 		total, err := addProgressBytes(stats.total, info.Size())
 		if err != nil {
@@ -2096,7 +2096,7 @@ func collectRemoteDirectoryProgress(
 			return remoteArchiveStats{}, nil
 		}
 		if info.Size() < 0 {
-			return remoteArchiveStats{}, fmt.Errorf("远程文件大小无效: %s", remotePath)
+			return remoteArchiveStats{}, userErrorParams("errors.sshFile.remoteFileSizeInvalid", map[string]any{"path": remotePath})
 		}
 		return remoteArchiveStats{total: info.Size(), files: 1}, nil
 	}
@@ -2144,7 +2144,7 @@ func runRemoteArchiveCompression(
 	// 归档由远端 tar/zip 直接生成，本地只通过 SFTP 读取目标文件大小。
 	command := remoteArchiveCompressCommand(format, remotePaths, target)
 	if command == "" {
-		return 0, errors.New("压缩文件格式不受支持")
+		return 0, userError("errors.sshFile.compressFormatUnsupported")
 	}
 	done := make(chan error, 1)
 	go func() {
@@ -2215,7 +2215,7 @@ func runRemoteArchiveExtraction(
 	// 归档始终在远端解压，本地只通过 SFTP 读取目标目录的元数据。
 	command := remoteArchiveExtractCommand(format, remotePath, target)
 	if command == "" {
-		return 0, errors.New("压缩文件格式不受支持")
+		return 0, userError("errors.sshFile.compressFormatUnsupported")
 	}
 	done := make(chan error, 1)
 	go func() {
@@ -2339,17 +2339,17 @@ func (s *FileService) extractRemoteArchive(
 ) (remoteArchiveExtractionResult, error) {
 	format := remoteArchiveFormatForPath(remotePath)
 	if format == "" {
-		return remoteArchiveExtractionResult{}, fmt.Errorf("不支持解压该文件格式: %s", remotePath)
+		return remoteArchiveExtractionResult{}, userErrorParams("errors.sshFile.extractFormatUnsupported", map[string]any{"path": remotePath})
 	}
 	info, err := client.Lstat(remotePath)
 	if err != nil {
 		return remoteArchiveExtractionResult{}, err
 	}
 	if info.Mode()&os.ModeSymlink != 0 {
-		return remoteArchiveExtractionResult{}, fmt.Errorf("不支持解压符号链接: %s", remotePath)
+		return remoteArchiveExtractionResult{}, userErrorParams("errors.sshFile.extractSymlinkUnsupported", map[string]any{"path": remotePath})
 	}
 	if info.IsDir() {
-		return remoteArchiveExtractionResult{}, fmt.Errorf("不能解压目录: %s", remotePath)
+		return remoteArchiveExtractionResult{}, userErrorParams("errors.sshFile.extractDirectoryUnsupported", map[string]any{"path": remotePath})
 	}
 	stats, totalKnown, err := probeRemoteArchive(ctx, conn, sshClient, format, remotePath)
 	if err != nil {
@@ -2388,7 +2388,7 @@ func (s *FileService) extractRemoteArchive(
 
 func (s *FileService) StartFileUpload(sourceID string, localPaths []string, remotePath string) (FileTaskSnapshot, error) {
 	if len(localPaths) == 0 {
-		return FileTaskSnapshot{}, errors.New("未选择上传文件")
+		return FileTaskSnapshot{}, userError("errors.sshFile.noUploadFilesSelected")
 	}
 	src, connection, err := s.sourceSnapshot(sourceID)
 	if err != nil {
@@ -2408,7 +2408,7 @@ func (s *FileService) StartFileUpload(sourceID string, localPaths []string, remo
 func (s *FileService) chooseDownloadTarget(remotePaths []string, chooseDirectory bool) (string, error) {
 	app := application.Get()
 	if app == nil || app.Dialog == nil {
-		return "", errors.New("应用尚未初始化")
+		return "", userError("errors.common.notInitialized")
 	}
 	window := app.Window.Current()
 	if len(remotePaths) == 1 && !chooseDirectory {
@@ -2428,7 +2428,7 @@ func (s *FileService) chooseDownloadTarget(remotePaths []string, chooseDirectory
 
 func (s *FileService) StartFileDownload(sourceID string, remotePaths []string) (FileTaskSnapshot, error) {
 	if len(remotePaths) == 0 {
-		return FileTaskSnapshot{}, errors.New("未选择下载文件")
+		return FileTaskSnapshot{}, userError("errors.sshFile.noDownloadFilesSelected")
 	}
 	_, conn, err := s.sourceSnapshot(sourceID)
 	if err != nil {
@@ -2448,7 +2448,7 @@ func (s *FileService) StartFileDownload(sourceID string, remotePaths []string) (
 		// 本地 SSH 模式的 SFTP 进程绑定了 ctx，必须完成 Lstat 后再取消，否则会提前断开连接。
 		cancel()
 		if statErr != nil {
-			return FileTaskSnapshot{}, fmt.Errorf("读取远程项目失败: %w", statErr)
+			return FileTaskSnapshot{}, userErrorCause("errors.sshFile.readRemoteItemFailed", statErr)
 		}
 		chooseDirectory = info.IsDir()
 	}
@@ -2761,7 +2761,7 @@ func prepareRemoteDownloadFiles(items []remoteTreeItem) ([]*remoteDownloadFile, 
 			continue
 		}
 		if err := os.MkdirAll(item.local, 0o755); err != nil {
-			return nil, fmt.Errorf("创建下载目录 %q 失败: %w", item.local, err)
+			return nil, userErrorParamsCause("errors.sshFile.createDownloadDirectoryFailed", map[string]any{"path": item.local}, err)
 		}
 	}
 
@@ -2773,12 +2773,12 @@ func prepareRemoteDownloadFiles(items []remoteTreeItem) ([]*remoteDownloadFile, 
 		parent := filepath.Dir(item.local)
 		if err := os.MkdirAll(parent, 0o755); err != nil {
 			cleanupRemoteDownloadFiles(files)
-			return nil, fmt.Errorf("创建下载目录 %q 失败: %w", parent, err)
+			return nil, userErrorParamsCause("errors.sshFile.createDownloadDirectoryFailed", map[string]any{"path": parent}, err)
 		}
 		temp, err := os.CreateTemp(parent, ".tinkerkit-download-*")
 		if err != nil {
 			cleanupRemoteDownloadFiles(files)
-			return nil, fmt.Errorf("创建下载临时文件 %q 失败: %w", item.local, err)
+			return nil, userErrorParamsCause("errors.sshFile.createDownloadTempFileFailed", map[string]any{"path": item.local}, err)
 		}
 		file := &remoteDownloadFile{
 			remotePath: item.remote,
@@ -2789,7 +2789,7 @@ func prepareRemoteDownloadFiles(items []remoteTreeItem) ([]*remoteDownloadFile, 
 		files = append(files, file)
 		if err := temp.Truncate(file.size); err != nil {
 			cleanupRemoteDownloadFiles(files)
-			return nil, fmt.Errorf("预分配下载文件 %q 失败: %w", item.local, err)
+			return nil, userErrorParamsCause("errors.sshFile.preallocateDownloadFileFailed", map[string]any{"path": item.local}, err)
 		}
 	}
 	return files, nil
@@ -2850,13 +2850,13 @@ func finalizeRemoteDownloadFiles(files []*remoteDownloadFile) error {
 		}
 		tempPath := file.temp.Name()
 		if err := file.temp.Sync(); err != nil {
-			return fmt.Errorf("同步下载文件 %q 失败: %w", file.localPath, err)
+			return userErrorParamsCause("errors.sshFile.syncDownloadFileFailed", map[string]any{"path": file.localPath}, err)
 		}
 		if err := file.temp.Close(); err != nil {
-			return fmt.Errorf("关闭下载文件 %q 失败: %w", file.localPath, err)
+			return userErrorParamsCause("errors.sshFile.closeDownloadFileFailed", map[string]any{"path": file.localPath}, err)
 		}
 		if err := os.Rename(tempPath, file.localPath); err != nil {
-			return fmt.Errorf("保存下载文件 %q 失败: %w", file.localPath, err)
+			return userErrorParamsCause("errors.sshFile.saveDownloadFileFailed", map[string]any{"path": file.localPath}, err)
 		}
 		file.temp = nil
 	}
@@ -2902,7 +2902,7 @@ func downloadRemoteSegment(
 	}
 	remote, err := segment.file.openRemote(client)
 	if err != nil {
-		return fmt.Errorf("打开远程文件 %q 失败: %w", segment.file.remotePath, err)
+		return userErrorParamsCause("errors.sshFile.openRemoteFileFailed", map[string]any{"path": segment.file.remotePath}, err)
 	}
 
 	packetSize := int(remoteDownloadPacketSize)
@@ -2952,17 +2952,19 @@ func downloadRemoteSegment(
 						if readErr == nil || errors.Is(readErr, io.EOF) {
 							readErr = io.ErrUnexpectedEOF
 						}
-						setError(fmt.Errorf(
-							"读取远程文件 %q 的分段失败（偏移 %d，长度 %d）: %w",
-							segment.file.remotePath,
-							job.offset,
-							job.length,
+						setError(userErrorParamsCause(
+							"errors.sshFile.readRemoteFileSegmentFailed",
+							map[string]any{
+								"path":   segment.file.remotePath,
+								"offset": job.offset,
+								"length": job.length,
+							},
 							readErr,
 						))
 						return
 					}
 					if readErr != nil && !errors.Is(readErr, io.EOF) {
-						setError(fmt.Errorf("读取远程文件 %q 失败: %w", segment.file.remotePath, readErr))
+						setError(userErrorParamsCause("errors.sshFile.readRemoteFileFailed", map[string]any{"path": segment.file.remotePath}, readErr))
 						return
 					}
 					if err := workCtx.Err(); err != nil {
@@ -2970,11 +2972,11 @@ func downloadRemoteSegment(
 					}
 					written, writeErr := segment.file.temp.WriteAt(chunk, job.offset)
 					if writeErr != nil {
-						setError(fmt.Errorf("写入下载文件 %q 失败: %w", segment.file.localPath, writeErr))
+						setError(userErrorParamsCause("errors.sshFile.writeDownloadFileFailed", map[string]any{"path": segment.file.localPath}, writeErr))
 						return
 					}
 					if written != job.length {
-						setError(fmt.Errorf("写入下载文件 %q: %w", segment.file.localPath, io.ErrShortWrite))
+						setError(userErrorParamsCause("errors.sshFile.writeDownloadFileShort", map[string]any{"path": segment.file.localPath}, io.ErrShortWrite))
 						return
 					}
 					left := remaining.Add(-int64(written))
@@ -3013,7 +3015,7 @@ func downloadRemoteSegment(
 		return err
 	}
 	if remaining.Load() != 0 {
-		return fmt.Errorf("读取远程文件 %q 的分段未完成", segment.file.remotePath)
+		return userErrorParams("errors.sshFile.readRemoteFileSegmentIncomplete", map[string]any{"path": segment.file.remotePath})
 	}
 	return nil
 }
@@ -3025,7 +3027,7 @@ func (s *FileService) downloadRemoteFiles(
 	taskID string,
 ) error {
 	if len(clients) == 0 {
-		return errors.New("没有可用的 SFTP 连接")
+		return userError("errors.sshFile.noAvailableSFTPConnection")
 	}
 	segments := remoteDownloadSegments(files)
 	if err := ctx.Err(); err != nil {

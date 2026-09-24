@@ -5,7 +5,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"net/url"
 	"os"
@@ -337,16 +336,16 @@ func normalizeImageSource(
 	switch source.Kind {
 	case "local":
 		if source.ID != localImageSourceID {
-			return ImageSource{}, errors.New("本机来源 ID 必须为 local")
+			return ImageSource{}, userError("errors.config.localImageSourceIDInvalid")
 		}
 		if seen[source.ID] {
-			return ImageSource{}, fmt.Errorf("本机来源 ID %q 重复", source.ID)
+			return ImageSource{}, userErrorParams("errors.config.imageSourceIDDuplicate", map[string]any{"id": source.ID})
 		}
 		if source.Name == "" {
 			source.Name = "本机"
 		}
 		if !validTextValue(source.Name, 128) {
-			return ImageSource{}, errors.New("本机来源名称非法")
+			return ImageSource{}, userError("errors.config.localImageSourceNameInvalid")
 		}
 		source.SSHHost = ""
 		source.SSHPort = 0
@@ -364,17 +363,17 @@ func normalizeImageSource(
 		}
 	case "ssh":
 		if source.ID == localImageSourceID {
-			return ImageSource{}, errors.New("SSH 来源 ID 不能为 local")
+			return ImageSource{}, userError("errors.config.sshImageSourceIDForbiddenLocal")
 		}
 		if !validImageSourceID(source.ID) {
-			return ImageSource{}, errors.New("SSH 来源 ID 非法")
+			return ImageSource{}, userError("errors.config.sshImageSourceIDInvalid")
 		}
 		if seen[source.ID] {
-			return ImageSource{}, fmt.Errorf("SSH 来源 ID %q 重复", source.ID)
+			return ImageSource{}, userErrorParams("errors.config.imageSourceIDDuplicate", map[string]any{"id": source.ID})
 		}
 		if source.SSHProfileID != "" {
 			if !validConfigValue(source.SSHProfileID, 128) {
-				return ImageSource{}, errors.New("SSH 配置 ID 非法")
+				return ImageSource{}, userError("errors.config.sshProfileIDInvalid")
 			}
 			// 名称为空，或仍是旧版本写入的 SSH 配置 ID 时，改用 SSH 配置名称。
 			if source.Name == "" || source.Name == source.SSHProfileID {
@@ -385,7 +384,7 @@ func normalizeImageSource(
 				}
 			}
 			if !validTextValue(source.Name, 128) {
-				return ImageSource{}, errors.New("SSH 来源名称非法")
+				return ImageSource{}, userError("errors.config.sshImageSourceNameInvalid")
 			}
 			source.SSHHost = ""
 			source.SSHPort = 0
@@ -401,28 +400,28 @@ func normalizeImageSource(
 		}
 		// 旧内存调用方仍可使用旧来源；启动加载配置时会先清理这些来源。
 		if !validSSHHost(source.SSHHost) {
-			return ImageSource{}, errors.New("SSH 主机非法")
+			return ImageSource{}, userError("errors.config.sshHostInvalid")
 		}
 		if source.SSHPort < 0 || source.SSHPort > 65535 {
-			return ImageSource{}, errors.New("SSH 端口超出 0-65535")
+			return ImageSource{}, userError("errors.config.sshPortOutOfRange")
 		}
 		if source.SSHUsername != "" && (!validConfigValue(source.SSHUsername, 256) || strings.HasPrefix(source.SSHUsername, "-")) {
-			return ImageSource{}, errors.New("SSH 用户名非法")
+			return ImageSource{}, userError("errors.config.sshUsernameInvalid")
 		}
 		if !validSecretValue(source.SSHPassword, 4096) {
-			return ImageSource{}, errors.New("SSH 密码非法")
+			return ImageSource{}, userError("errors.config.sshPasswordInvalid")
 		}
 		if !validSecretValue(source.SSHPrivateKey, 128<<10) {
-			return ImageSource{}, errors.New("SSH 私钥非法")
+			return ImageSource{}, userError("errors.config.sshPrivateKeyInvalid")
 		}
 		if source.SSHPrivateKeyPath != "" && (!validPathValue(source.SSHPrivateKeyPath, 4096) || strings.HasPrefix(source.SSHPrivateKeyPath, "-")) {
-			return ImageSource{}, errors.New("SSH 私钥路径非法")
+			return ImageSource{}, userError("errors.config.sshPrivateKeyPathInvalid")
 		}
 		if !validSecretValue(source.SSHKeyPassphrase, 4096) {
-			return ImageSource{}, errors.New("SSH 密钥口令非法")
+			return ImageSource{}, userError("errors.config.sshKeyPassphraseInvalid")
 		}
 		if source.SSHKeyPassphrase != "" && source.SSHPrivateKey == "" && source.SSHPrivateKeyPath == "" {
-			return ImageSource{}, errors.New("SSH 密钥口令未关联私钥")
+			return ImageSource{}, userError("errors.config.sshKeyPassphraseWithoutKey")
 		}
 		if source.SSHPort == 0 {
 			source.SSHPort = 22
@@ -431,40 +430,40 @@ func normalizeImageSource(
 			source.Name = source.SSHHost
 		}
 		if !validTextValue(source.Name, 128) {
-			return ImageSource{}, errors.New("SSH 来源名称非法")
+			return ImageSource{}, userError("errors.config.sshImageSourceNameInvalid")
 		}
 		source.RegistryURL = ""
 		source.RegistryUsername = ""
 		source.RegistryPassword = ""
 	case "registry":
 		if source.ID == localImageSourceID {
-			return ImageSource{}, errors.New("registry 来源 ID 不能为 local")
+			return ImageSource{}, userError("errors.config.registryImageSourceIDForbiddenLocal")
 		}
 		if !validImageSourceID(source.ID) {
-			return ImageSource{}, errors.New("registry 来源 ID 非法")
+			return ImageSource{}, userError("errors.config.registryImageSourceIDInvalid")
 		}
 		if seen[source.ID] {
-			return ImageSource{}, fmt.Errorf("registry 来源 ID %q 重复", source.ID)
+			return ImageSource{}, userErrorParams("errors.config.imageSourceIDDuplicate", map[string]any{"id": source.ID})
 		}
 		var ok bool
 		source.RegistryURL, ok = normalizeRegistryURL(source.RegistryURL)
 		if !ok {
-			return ImageSource{}, errors.New("registry 地址非法（需 https 且不含凭据、查询参数或路径）")
+			return ImageSource{}, userError("errors.config.registryURLInvalid")
 		}
 		if !validSecretValue(source.RegistryPassword, 4096) {
-			return ImageSource{}, errors.New("registry 密码非法")
+			return ImageSource{}, userError("errors.config.registryPasswordInvalid")
 		}
 		if source.RegistryPassword != "" && source.RegistryUsername == "" {
-			return ImageSource{}, errors.New("registry 密码缺少用户名")
+			return ImageSource{}, userError("errors.config.registryPasswordWithoutUsername")
 		}
 		if source.RegistryUsername != "" && !validTextValue(source.RegistryUsername, 256) {
-			return ImageSource{}, errors.New("registry 用户名非法")
+			return ImageSource{}, userError("errors.config.registryUsernameInvalid")
 		}
 		if source.Name == "" {
 			source.Name = source.RegistryURL
 		}
 		if !validTextValue(source.Name, 128) {
-			return ImageSource{}, errors.New("registry 来源名称非法")
+			return ImageSource{}, userError("errors.config.registryImageSourceNameInvalid")
 		}
 		source.SSHHost = ""
 		source.SSHPort = 0
@@ -475,7 +474,7 @@ func normalizeImageSource(
 		source.SSHKeyPassphrase = ""
 		source.SSHProfileID = ""
 	default:
-		return ImageSource{}, fmt.Errorf("未知来源类型 %q", source.Kind)
+		return ImageSource{}, userErrorParams("errors.config.imageSourceKindUnknown", map[string]any{"kind": source.Kind})
 	}
 	seen[source.ID] = true
 	return source, nil
@@ -552,7 +551,7 @@ func normalizeServiceTargets(
 	return result
 }
 
-// imageSourceIdentifier 返回用于错误提示的来源标识，优先 Name，其次 ID。
+// imageSourceIdentifier 返回用于错误提示的来源标识，优先 Name，其次 ID、Kind。
 func imageSourceIdentifier(source ImageSource) string {
 	if name := strings.TrimSpace(source.Name); name != "" {
 		return name
@@ -560,10 +559,16 @@ func imageSourceIdentifier(source ImageSource) string {
 	if id := strings.TrimSpace(source.ID); id != "" {
 		return id
 	}
-	if kind := strings.TrimSpace(source.Kind); kind != "" {
-		return kind
+	return strings.TrimSpace(source.Kind)
+}
+
+// imageSourceValidationError 依据来源标识构造镜像来源校验错误。
+// 标识缺失（来源字段全空）时使用不带名称的文案，避免在参数里出现未翻译的占位文本。
+func imageSourceValidationError(index int, source ImageSource, cause error) error {
+	if identifier := imageSourceIdentifier(source); identifier != "" {
+		return userErrorParamsCause("errors.config.imageSourceInvalid", map[string]any{"index": index, "name": identifier}, cause)
 	}
-	return "未知来源"
+	return userErrorParamsCause("errors.config.imageSourceInvalidUnnamed", map[string]any{"index": index}, cause)
 }
 
 // validateImageSourcesForSave 严格校验客户端提交的镜像来源；任一来源无法合法规范化
@@ -573,7 +578,7 @@ func validateImageSourcesForSave(sources []ImageSource) error {
 	seen := make(map[string]bool, len(sources))
 	for i, source := range sources {
 		if _, err := normalizeImageSource(source, seen, nil, nil); err != nil {
-			return fmt.Errorf("镜像来源无效（第 %d 项 %q）：%v", i+1, imageSourceIdentifier(source), err)
+			return imageSourceValidationError(i+1, source, err)
 		}
 	}
 	return nil
@@ -597,7 +602,7 @@ func (s *ConfigService) ValidateImageSource(source ImageSource) (ImageSource, er
 			return normalized, nil
 		}
 	}
-	return ImageSource{}, errors.New("镜像来源引用的 SSH 配置不存在")
+	return ImageSource{}, userErrorParams("errors.config.imageSourceSSHProfileNotFound", map[string]any{"name": imageSourceIdentifier(normalized)})
 }
 
 func normalizeDockerCLIPath(path string) string {
@@ -970,14 +975,14 @@ func (s *ConfigService) SaveImageSources(dockerCLIPath string, imageSources []Im
 		for index, source := range imageSources {
 			item, err := normalizeImageSource(source, seen, nil, profileNames)
 			if err != nil {
-				return fmt.Errorf("镜像来源无效（第 %d 项 %q）：%v", index+1, imageSourceIdentifier(source), err)
+				return imageSourceValidationError(index+1, source, err)
 			}
 			if item.Kind == "ssh" {
 				if item.SSHProfileID == "" {
-					return fmt.Errorf("镜像来源 %q 必须选择 SSH 配置", imageSourceIdentifier(item))
+					return userErrorParams("errors.config.imageSourceMissingSSHProfile", map[string]any{"name": imageSourceIdentifier(item)})
 				}
 				if _, ok := profiles[item.SSHProfileID]; !ok {
-					return fmt.Errorf("镜像来源 %q 引用的 SSH 配置不存在", imageSourceIdentifier(item))
+					return userErrorParams("errors.config.imageSourceSSHProfileNotFound", map[string]any{"name": imageSourceIdentifier(item)})
 				}
 			}
 			normalized = append(normalized, item)
@@ -1149,12 +1154,12 @@ func (s *ConfigService) GetHistoryContent(id int64) (HistoryContent, error) {
 	for _, entry := range s.history {
 		if entry.Item.ID == id {
 			if !s.sidebarToolEnabledLocked(entry.Item.Tool) {
-				return HistoryContent{}, errors.New("history entry not found")
+				return HistoryContent{}, userError("errors.config.historyEntryNotFound")
 			}
 			return readGzipJSON(entry.File)
 		}
 	}
-	return HistoryContent{}, errors.New("history entry not found")
+	return HistoryContent{}, userError("errors.config.historyEntryNotFound")
 }
 func (s *ConfigService) DeleteHistory(id int64) {
 	s.mu.Lock()
@@ -1215,7 +1220,7 @@ func (s *ConfigService) SaveBase64File(path string, data string) error {
 		return closeErr
 	}
 	if written > 100<<20 {
-		return errors.New("decoded file exceeds 100 MiB")
+		return userError("errors.config.decodedFileTooLarge")
 	}
 	if err := os.Chmod(tmpPath, 0o600); err != nil {
 		return err

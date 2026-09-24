@@ -149,6 +149,7 @@ import { ConfirmDialog } from './ConfirmDialog';
 import { useSSHProfiles } from './SSHProfileManagerDialog';
 import { TargetHostManagerDialog } from './TargetHostManagerDialog';
 import { toast } from './ui/toast';
+import { backendErrorKey, formatBackendError, rawErrorMessage } from '../lib/backend-error';
 
 type ManagedFileSource = FileSource;
 
@@ -635,21 +636,16 @@ function TaskProgressMeter({ task, compact = false }: { task: FileTask; compact?
 }
 
 function errorMessage(error: unknown) {
-  if (error instanceof Error) return error.message;
-  if (typeof error === 'object' && error !== null && 'message' in error) {
-    const message = (error as { message?: unknown }).message;
-    if (typeof message === 'string') return message;
-  }
-  return String(error);
+  return formatBackendError(error);
 }
 
 function isRemotePathNotFound(error: unknown) {
-  const message = errorMessage(error).toLowerCase();
+  const key = backendErrorKey(error);
+  if (key && /notfound|not_found|missing/i.test(key)) return true;
+  const message = rawErrorMessage(error).toLowerCase();
   return (
     message.includes('no such file') ||
-    /(?:file|directory|path).*(?:does not exist|not found)/.test(message) ||
-    message.includes('不存在') ||
-    message.includes('找不到')
+    /(?:file|directory|path).*(?:does not exist|not found)/.test(message)
   );
 }
 
@@ -1122,7 +1118,7 @@ export default function SshFilesTool({ active }: Props) {
         title: t('sshFilesTool.taskFailedToast', {
           operation: taskTypeLabel(task.type, t),
         }),
-        description: task.error || t('sshFilesTool.taskFailed'),
+        description: task.error ? formatBackendError(task.error) : t('sshFilesTool.taskFailed'),
         type: 'error',
       });
     }
@@ -3137,7 +3133,7 @@ export default function SshFilesTool({ active }: Props) {
                                 className="mt-1 break-all text-[10px] text-destructive"
                                 role="alert"
                               >
-                                {task.error}
+                                {formatBackendError(task.error)}
                               </div>
                             ) : null}
                           </div>

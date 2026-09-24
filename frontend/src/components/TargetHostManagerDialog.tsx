@@ -12,6 +12,7 @@ import { ScrollArea } from './ui/scroll-area';
 import { Button } from './ui/button';
 import { Spinner } from './ui/spinner';
 import { ConfirmDialog } from './ConfirmDialog';
+import { formatBackendError } from '../lib/backend-error';
 
 type Strings = {
   title: ReactNode;
@@ -122,7 +123,7 @@ export function TargetHostManagerDialog<TItem, TDraft>({
       await saveItems(draftItems);
       onOpenChange(false);
     } catch (error) {
-      setSaveError(String(error));
+      setSaveError(formatBackendError(error));
     }
   };
 

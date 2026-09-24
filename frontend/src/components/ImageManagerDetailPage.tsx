@@ -4,17 +4,7 @@ import { InspectDockerImage } from '../../bindings/changeme/imageservice';
 import type { Config as Settings, DockerImageDetail } from '../../bindings/changeme/models';
 import { ImageManagerDetailView } from './ImageManagerTool';
 import type { ToolId } from './shared';
-
-function errorMessage(error: unknown) {
-  if (error instanceof Error && error.message) return error.message;
-  if (typeof error === 'string' && error) return error;
-  if (error && typeof error === 'object') {
-    const value = error as { message?: unknown; error?: unknown };
-    if (typeof value.message === 'string' && value.message) return value.message;
-    if (typeof value.error === 'string' && value.error) return value.error;
-  }
-  return '';
-}
+import { formatBackendError as errorMessage } from '../lib/backend-error';
 
 function sourceLabel(settings: Settings, sourceId: string, localSourceLabel: string) {
   const source = (settings.imageSources ?? []).find((item) => item.id === sourceId);

@@ -2,8 +2,6 @@ package main
 
 import (
 	"encoding/base64"
-	"errors"
-	"fmt"
 	"io"
 	"mime"
 	"net/http"
@@ -45,13 +43,12 @@ func NewFileService(config ...*ConfigService) *FileService {
 
 func (s *FileService) ServiceName() string { return "FileService" }
 
-
 // SaveText 打开原生保存对话框，并将文本以 UTF-8 写入用户选择的路径。
 // 返回实际保存路径；用户取消时返回空路径和 nil error。
 func (s *FileService) SaveText(content string, filename string) (string, error) {
 	app := application.Get()
 	if app == nil || app.Dialog == nil {
-		return "", errors.New("应用尚未初始化")
+		return "", userError("errors.common.notInitialized")
 	}
 
 	dialog := app.Dialog.SaveFile().
@@ -69,14 +66,14 @@ func (s *FileService) SaveText(content string, filename string) (string, error) 
 
 	path, err := dialog.PromptForSingleSelection()
 	if err != nil {
-		return "", fmt.Errorf("选择保存路径: %w", err)
+		return "", userErrorCause("errors.file.selectSavePath", err)
 	}
 	if path == "" {
 		return "", nil
 	}
 
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
-		return "", fmt.Errorf("写入文件 %q: %w", path, err)
+		return "", userErrorParamsCause("errors.file.writeFailed", map[string]any{"path": path}, err)
 	}
 	return path, nil
 }
@@ -87,41 +84,41 @@ func (s *FileService) ReadImageFile(path string) (string, error) {
 	extension := strings.ToLower(filepath.Ext(path))
 	mimeType, ok := imageMIMETypes[extension]
 	if !ok {
-		return "", fmt.Errorf("不支持的图片文件类型 %q，仅允许 png、jpg、jpeg、svg 和 webp", extension)
+		return "", userErrorParams("errors.file.unsupportedImageType", map[string]any{"extension": extension})
 	}
 
 	info, err := os.Stat(path)
 	if err != nil {
-		return "", fmt.Errorf("获取图片文件信息 %q: %w", path, err)
+		return "", userErrorParamsCause("errors.file.imageInfoFailed", map[string]any{"path": path}, err)
 	}
 	if !info.Mode().IsRegular() {
-		return "", fmt.Errorf("图片路径 %q 不是普通文件", path)
+		return "", userErrorParams("errors.file.imageNotRegular", map[string]any{"path": path})
 	}
 	if info.Size() > maxImageFileSize {
-		return "", fmt.Errorf("图片文件 %q 超过大小限制（最大 10 MiB）", path)
+		return "", userErrorParams("errors.file.imageTooLarge", map[string]any{"path": path})
 	}
 
 	file, err := os.Open(path)
 	if err != nil {
-		return "", fmt.Errorf("打开图片文件 %q: %w", path, err)
+		return "", userErrorParamsCause("errors.file.openImageFailed", map[string]any{"path": path}, err)
 	}
 	defer file.Close()
 
 	// 打开后再次检查，避免路径在预检查与打开之间发生变化。
 	info, err = file.Stat()
 	if err != nil {
-		return "", fmt.Errorf("获取图片文件信息 %q: %w", path, err)
+		return "", userErrorParamsCause("errors.file.imageInfoFailed", map[string]any{"path": path}, err)
 	}
 	if !info.Mode().IsRegular() {
-		return "", fmt.Errorf("图片路径 %q 不是普通文件", path)
+		return "", userErrorParams("errors.file.imageNotRegular", map[string]any{"path": path})
 	}
 
 	data, err := io.ReadAll(io.LimitReader(file, maxImageFileSize+1))
 	if err != nil {
-		return "", fmt.Errorf("读取图片文件 %q: %w", path, err)
+		return "", userErrorParamsCause("errors.file.readImageFailed", map[string]any{"path": path}, err)
 	}
 	if int64(len(data)) > maxImageFileSize {
-		return "", fmt.Errorf("图片文件 %q 超过大小限制（最大 10 MiB）", path)
+		return "", userErrorParams("errors.file.imageTooLarge", map[string]any{"path": path})
 	}
 
 	return "data:" + mimeType + ";base64," + base64.StdEncoding.EncodeToString(data), nil
@@ -139,7 +136,7 @@ type LocalFile struct {
 // maxBytes <= 0 时使用默认上限 maxImageFileSize。
 func (s *FileService) ReadFile(path string, maxBytes int64) (LocalFile, error) {
 	if strings.TrimSpace(path) == "" {
-		return LocalFile{}, errors.New("文件路径为空")
+		return LocalFile{}, userError("errors.file.pathEmpty")
 	}
 	if maxBytes <= 0 {
 		maxBytes = maxImageFileSize
@@ -147,36 +144,36 @@ func (s *FileService) ReadFile(path string, maxBytes int64) (LocalFile, error) {
 
 	info, err := os.Stat(path)
 	if err != nil {
-		return LocalFile{}, fmt.Errorf("获取文件信息 %q: %w", path, err)
+		return LocalFile{}, userErrorParamsCause("errors.file.fileInfoFailed", map[string]any{"path": path}, err)
 	}
 	if !info.Mode().IsRegular() {
-		return LocalFile{}, fmt.Errorf("路径 %q 不是普通文件", path)
+		return LocalFile{}, userErrorParams("errors.file.notRegular", map[string]any{"path": path})
 	}
 	if info.Size() > maxBytes {
-		return LocalFile{}, fmt.Errorf("文件 %q 超过大小限制（最大 %d 字节）", path, maxBytes)
+		return LocalFile{}, userErrorParams("errors.file.tooLarge", map[string]any{"path": path, "max": maxBytes})
 	}
 
 	file, err := os.Open(path)
 	if err != nil {
-		return LocalFile{}, fmt.Errorf("打开文件 %q: %w", path, err)
+		return LocalFile{}, userErrorParamsCause("errors.file.openFailed", map[string]any{"path": path}, err)
 	}
 	defer file.Close()
 
 	// 打开后再次检查，避免路径在预检查与打开之间发生变化。
 	info, err = file.Stat()
 	if err != nil {
-		return LocalFile{}, fmt.Errorf("获取文件信息 %q: %w", path, err)
+		return LocalFile{}, userErrorParamsCause("errors.file.fileInfoFailed", map[string]any{"path": path}, err)
 	}
 	if !info.Mode().IsRegular() {
-		return LocalFile{}, fmt.Errorf("路径 %q 不是普通文件", path)
+		return LocalFile{}, userErrorParams("errors.file.notRegular", map[string]any{"path": path})
 	}
 
 	data, err := io.ReadAll(io.LimitReader(file, maxBytes+1))
 	if err != nil {
-		return LocalFile{}, fmt.Errorf("读取文件 %q: %w", path, err)
+		return LocalFile{}, userErrorParamsCause("errors.file.readFailed", map[string]any{"path": path}, err)
 	}
 	if int64(len(data)) > maxBytes {
-		return LocalFile{}, fmt.Errorf("文件 %q 超过大小限制（最大 %d 字节）", path, maxBytes)
+		return LocalFile{}, userErrorParams("errors.file.tooLarge", map[string]any{"path": path, "max": maxBytes})
 	}
 
 	name := filepath.Base(path)

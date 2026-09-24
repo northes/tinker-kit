@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"os/exec"
 	"regexp"
@@ -247,7 +246,7 @@ func (s *ServiceManagerService) GetServiceTargets() []ServiceTarget {
 // ConfigService.SSHProfiles，目标仅引用配置 ID。
 func (s *ServiceManagerService) SaveServiceTargets(targets []ServiceTarget) error {
 	if s == nil || s.config == nil {
-		return errors.New("配置服务尚未初始化")
+		return userError("errors.common.configNotInitialized")
 	}
 	targets = copyServiceTargets(targets)
 	return s.config.updateConfigAllowDanglingRefs(func(cfg *Config) error {
@@ -263,14 +262,14 @@ func (s *ServiceManagerService) SaveServiceTargets(targets []ServiceTarget) erro
 				continue
 			}
 			if kind != "ssh" {
-				return fmt.Errorf("目标主机（第 %d 项）类型无效", index+1)
+				return userErrorParams("errors.service.targetKindInvalid", map[string]any{"index": index + 1})
 			}
 			profileID := strings.TrimSpace(target.SSHProfileID)
 			if profileID == "" && strings.HasPrefix(strings.TrimSpace(target.ID), "ssh:") {
 				profileID = strings.TrimPrefix(strings.TrimSpace(target.ID), "ssh:")
 			}
 			if profileID == "" {
-				return fmt.Errorf("目标主机（第 %d 项）未选择 SSH 连接", index+1)
+				return userErrorParams("errors.service.targetMissingSSH", map[string]any{"index": index + 1})
 			}
 			if _, ok := names[profileID]; !ok {
 				known := make([]string, 0, len(names))
@@ -278,7 +277,7 @@ func (s *ServiceManagerService) SaveServiceTargets(targets []ServiceTarget) erro
 					known = append(known, id)
 				}
 				sort.Strings(known)
-				return fmt.Errorf("目标主机（第 %d 项）引用的 SSH 连接 %q 不存在（当前可用：%s）", index+1, profileID, strings.Join(known, ", "))
+				return userErrorParams("errors.service.targetSSHProfileMissing", map[string]any{"index": index + 1, "profileID": profileID, "available": strings.Join(known, ", ")})
 			}
 			id := "ssh:" + profileID
 			if seen[id] {
@@ -293,7 +292,7 @@ func (s *ServiceManagerService) SaveServiceTargets(targets []ServiceTarget) erro
 				name = profileID
 			}
 			if !validTextValue(name, 128) {
-				return fmt.Errorf("目标主机（第 %d 项）名称无效", index+1)
+				return userErrorParams("errors.service.targetNameInvalid", map[string]any{"index": index + 1})
 			}
 			normalized = append(normalized, ServiceTarget{ID: id, Name: name, Kind: "ssh", SSHProfileID: profileID})
 		}
@@ -312,7 +311,7 @@ func (s *ServiceManagerService) targetSnapshot(id string) (ServiceTarget, ImageS
 		return ServiceTarget{ID: "local", Name: "local", Kind: "local"}, ImageSource{ID: "local", Name: "本机", Kind: "local"}, cli, nil
 	}
 	if !strings.HasPrefix(id, "ssh:") || s == nil || s.config == nil {
-		return ServiceTarget{}, ImageSource{}, "", errors.New("服务目标不存在")
+		return ServiceTarget{}, ImageSource{}, "", userError("errors.service.targetNotFound")
 	}
 	profileID := strings.TrimPrefix(id, "ssh:")
 	for _, profile := range s.config.GetSSHProfiles() {
@@ -322,14 +321,14 @@ func (s *ServiceManagerService) targetSnapshot(id string) (ServiceTarget, ImageS
 		source := imageSourceFromSSHProfile(ImageSource{ID: id, Name: profile.Name, Kind: "ssh", SSHProfileID: profile.ID}, profile)
 		return ServiceTarget{ID: id, Name: profile.Name, Kind: "ssh", SSHProfileID: profile.ID}, source, "docker", nil
 	}
-	return ServiceTarget{}, ImageSource{}, "", errors.New("服务目标引用的 SSH 配置不存在")
+	return ServiceTarget{}, ImageSource{}, "", userError("errors.service.targetSSHProfileNotFound")
 }
 
 func (s *ServiceManagerService) run(ctx context.Context, source ImageSource, command string, args ...string) ([]byte, error) {
 	if source.Kind == "local" {
 		out, err := exec.CommandContext(ctx, command, args...).CombinedOutput()
 		if err != nil {
-			return out, fmt.Errorf("%s 执行失败: %w", command, err)
+			return out, userErrorParamsCause("errors.service.commandFailed", map[string]any{"command": command}, err)
 		}
 		return out, nil
 	}
@@ -349,7 +348,7 @@ func (s *ServiceManagerService) remoteCommandLine(source ImageSource, command st
 		return shellJoin(append([]string{command}, args...)), command, nil
 	}
 	if found, checked := env.commands[command]; checked && !found {
-		return "", "", fmt.Errorf("远端未找到命令 %s；请确认已在远端安装并加入登录 shell PATH", command)
+		return "", "", userErrorParams("errors.service.remoteCommandMissing", map[string]any{"command": command})
 	}
 	return "PATH=" + shellQuote(env.path) + " " + shellJoin(append([]string{command}, args...)), command, nil
 }
@@ -526,7 +525,7 @@ func (s *ServiceManagerService) listContainers(ctx context.Context, source Image
 	}
 	var raw []dockerInspect
 	if err := json.Unmarshal(out, &raw); err != nil {
-		return nil, errors.New("解析 Docker 容器信息失败")
+		return nil, userError("errors.service.dockerInventoryParseFailed")
 	}
 	containers := make([]DockerContainer, 0, len(raw))
 	for _, item := range raw {
@@ -591,7 +590,7 @@ func (s *ServiceManagerService) listPM2(ctx context.Context, source ImageSource)
 		} `json:"monit"`
 	}
 	if err := json.Unmarshal(out, &values); err != nil {
-		return nil, errors.New("解析 PM2 信息失败")
+		return nil, userError("errors.service.pm2ParseFailed")
 	}
 	result := make([]PM2Process, 0, len(values))
 	for _, v := range values {
@@ -632,7 +631,7 @@ func (s *ServiceManagerService) GetDockerContainerDetail(targetID, id string) (D
 		return DockerContainerDetail{}, err
 	}
 	if !validContainerID(id) {
-		return DockerContainerDetail{}, errors.New("容器 ID 无效")
+		return DockerContainerDetail{}, userError("errors.service.containerIDInvalid")
 	}
 	ctx, cancel := context.WithTimeout(s.ctx, serviceCommandTimeout)
 	defer cancel()
@@ -642,7 +641,7 @@ func (s *ServiceManagerService) GetDockerContainerDetail(targetID, id string) (D
 	}
 	var raw []dockerInspect
 	if json.Unmarshal(out, &raw) != nil || len(raw) != 1 {
-		return DockerContainerDetail{}, errors.New("解析 Docker 容器详情失败")
+		return DockerContainerDetail{}, userError("errors.service.dockerDetailParseFailed")
 	}
 	v := raw[0]
 	detail := DockerContainerDetail{Container: dockerContainerFromInspect(v), Command: v.Config.Cmd, Entrypoint: v.Config.Entrypoint, Mounts: []string{}, Networks: []string{}, RestartPolicy: v.HostConfig.RestartPolicy.Name}
@@ -662,7 +661,7 @@ func (s *ServiceManagerService) GetPM2ProcessDetail(targetID, id string) (PM2Pro
 		return PM2ProcessDetail{}, err
 	}
 	if _, err = strconv.Atoi(id); err != nil {
-		return PM2ProcessDetail{}, errors.New("PM2 ID 无效")
+		return PM2ProcessDetail{}, userError("errors.service.pm2IDInvalid")
 	}
 	ctx, cancel := context.WithTimeout(s.ctx, serviceCommandTimeout)
 	defer cancel()
@@ -675,7 +674,7 @@ func (s *ServiceManagerService) GetPM2ProcessDetail(targetID, id string) (PM2Pro
 			return PM2ProcessDetail{Process: item}, nil
 		}
 	}
-	return PM2ProcessDetail{}, errors.New("PM2 进程不存在")
+	return PM2ProcessDetail{}, userError("errors.service.pm2ProcessNotFound")
 }
 func (s *ServiceManagerService) GetSystemdUnitDetail(targetID, id, scope string) (SystemdUnitDetail, error) {
 	_, source, _, err := s.targetSnapshot(targetID)
@@ -683,7 +682,7 @@ func (s *ServiceManagerService) GetSystemdUnitDetail(targetID, id, scope string)
 		return SystemdUnitDetail{}, err
 	}
 	if !validUnitName(id) {
-		return SystemdUnitDetail{}, errors.New("Systemd unit 无效")
+		return SystemdUnitDetail{}, userError("errors.service.systemdUnitInvalid")
 	}
 	if scope != "user" {
 		scope = "system"
@@ -702,7 +701,7 @@ func (s *ServiceManagerService) GetSystemdUnitDetail(targetID, id, scope string)
 		}
 	}
 	if unit.ID == "" {
-		return SystemdUnitDetail{}, errors.New("Systemd 服务不存在")
+		return SystemdUnitDetail{}, userError("errors.service.systemdUnitNotFound")
 	}
 	args := []string{"show", id, "--property=MainPID,ExecStart,FragmentPath", "--no-pager"}
 	if scope == "user" {
@@ -759,7 +758,7 @@ func (s *ServiceManagerService) PerformServiceAction(req ServiceActionRequest) S
 			}
 		}
 		if len(resources) == 0 {
-			return ServiceActionResult{Failed: []ServiceActionItemResult{{ID: req.Resource.ID, Name: req.Resource.Name, Error: "Compose 项目不存在"}}}
+			return ServiceActionResult{Failed: []ServiceActionItemResult{{ID: req.Resource.ID, Name: req.Resource.Name, Error: userError("errors.service.composeProjectNotFound").Error()}}}
 		}
 	}
 	for _, resource := range resources {
@@ -775,10 +774,10 @@ func (s *ServiceManagerService) performOne(ctx context.Context, source ImageSour
 	switch r.Runtime {
 	case "docker":
 		if !validContainerID(r.ID) {
-			return errors.New("容器 ID 无效")
+			return userError("errors.service.containerIDInvalid")
 		}
 		if action != "start" && action != "stop" && action != "restart" && action != "delete" {
-			return errors.New("不支持的 Docker 操作")
+			return userError("errors.service.dockerActionUnsupported")
 		}
 		if action == "delete" {
 			out, err := s.run(ctx, source, cli, "container", "inspect", "--format", "{{.State.Running}}", r.ID)
@@ -786,7 +785,7 @@ func (s *ServiceManagerService) performOne(ctx context.Context, source ImageSour
 				return err
 			}
 			if strings.TrimSpace(string(out)) == "true" {
-				return errors.New("运行中的容器不能删除，请先停止容器")
+				return userError("errors.service.containerRunningDelete")
 			}
 			_, err = s.run(ctx, source, cli, "container", "rm", r.ID)
 			return err
@@ -795,16 +794,16 @@ func (s *ServiceManagerService) performOne(ctx context.Context, source ImageSour
 		return err
 	case "pm2":
 		if _, err := strconv.Atoi(r.ID); err != nil {
-			return errors.New("PM2 ID 无效")
+			return userError("errors.service.pm2IDInvalid")
 		}
 		if action != "start" && action != "stop" && action != "restart" && action != "delete" {
-			return errors.New("不支持的 PM2 操作")
+			return userError("errors.service.pm2ActionUnsupported")
 		}
 		_, err := s.run(ctx, source, "pm2", action, r.ID)
 		return err
 	case "systemd":
 		if !validUnitName(r.ID) {
-			return errors.New("Systemd unit 无效")
+			return userError("errors.service.systemdUnitInvalid")
 		}
 		args := []string{}
 		if r.Scope == "user" {
@@ -816,12 +815,12 @@ func (s *ServiceManagerService) performOne(ctx context.Context, source ImageSour
 		case "disable-now":
 			args = append(args, "disable", "--now", r.ID)
 		default:
-			return errors.New("不支持的 Systemd 操作")
+			return userError("errors.service.systemdActionUnsupported")
 		}
 		_, err := s.run(ctx, source, "systemctl", args...)
 		return err
 	}
-	return errors.New("不支持的服务类型")
+	return userError("errors.service.runtimeUnsupported")
 }
 
 func monitorID(target string, r ServiceResourceRef) string {
@@ -835,7 +834,7 @@ func (s *ServiceManagerService) StartLogMonitors(req StartLogMonitorsRequest) ([
 	out := []LogMonitor{}
 	for _, resource := range req.Resources {
 		if !validLogResource(resource) {
-			out = append(out, LogMonitor{TargetID: req.TargetID, Resource: resource, State: "failed", Error: "日志资源无效"})
+			out = append(out, LogMonitor{TargetID: req.TargetID, Resource: resource, State: "failed", Error: userError("errors.service.logResourceInvalid").Error()})
 			continue
 		}
 		id := monitorID(req.TargetID, resource)
@@ -844,13 +843,13 @@ func (s *ServiceManagerService) StartLogMonitors(req StartLogMonitorsRequest) ([
 		if existing != nil {
 			if existing.State == "stopping" {
 				s.mu.Unlock()
-				out = append(out, LogMonitor{ID: id, TargetID: req.TargetID, Resource: resource, State: "failed", Error: "日志正在停止，请稍后重试"})
+				out = append(out, LogMonitor{ID: id, TargetID: req.TargetID, Resource: resource, State: "failed", Error: userError("errors.service.logMonitorStopping").Error()})
 				continue
 			}
 			if existing.State != "monitoring" {
 				if s.activeMonitorCountLocked() >= serviceLogMaxActive {
 					s.mu.Unlock()
-					out = append(out, LogMonitor{ID: id, TargetID: req.TargetID, Resource: resource, State: "failed", Error: "同时监控的日志源已达到上限（16）"})
+					out = append(out, LogMonitor{ID: id, TargetID: req.TargetID, Resource: resource, State: "failed", Error: userErrorParams("errors.service.logMonitorLimitReached", map[string]any{"max": serviceLogMaxActive}).Error()})
 					continue
 				}
 				ctx, cancel := context.WithCancel(s.ctx)
@@ -869,7 +868,7 @@ func (s *ServiceManagerService) StartLogMonitors(req StartLogMonitorsRequest) ([
 		}
 		if s.activeMonitorCountLocked() >= serviceLogMaxActive {
 			s.mu.Unlock()
-			out = append(out, LogMonitor{ID: id, TargetID: req.TargetID, Resource: resource, State: "failed", Error: "同时监控的日志源已达到上限（16）"})
+			out = append(out, LogMonitor{ID: id, TargetID: req.TargetID, Resource: resource, State: "failed", Error: userErrorParams("errors.service.logMonitorLimitReached", map[string]any{"max": serviceLogMaxActive}).Error()})
 			continue
 		}
 		ctx, cancel := context.WithCancel(s.ctx)
@@ -1060,7 +1059,7 @@ func (s *ServiceManagerService) StopLogMonitor(id string) error {
 	m := s.monitors[id]
 	if m == nil {
 		s.mu.Unlock()
-		return errors.New("日志监控不存在")
+		return userError("errors.service.logMonitorNotFound")
 	}
 	if m.State != "monitoring" {
 		s.mu.Unlock()
@@ -1078,7 +1077,7 @@ func (s *ServiceManagerService) RemoveLogMonitor(id string) error {
 	defer s.mu.Unlock()
 	m := s.monitors[id]
 	if m == nil {
-		return errors.New("日志监控不存在")
+		return userError("errors.service.logMonitorNotFound")
 	}
 	m.cancel()
 	delete(s.monitors, id)
@@ -1089,7 +1088,7 @@ func (s *ServiceManagerService) ClearLogBuffer(id string) error {
 	defer s.mu.Unlock()
 	m := s.monitors[id]
 	if m == nil {
-		return errors.New("日志监控不存在")
+		return userError("errors.service.logMonitorNotFound")
 	}
 	m.lines = []ServiceLogLine{}
 	m.batch = nil
@@ -1151,7 +1150,7 @@ func newLogFilter(f ServiceLogFilter) (func(ServiceLogLine) bool, error) {
 		}
 		re, err = regexp.Compile(query)
 		if err != nil {
-			return nil, errors.New("日志正则表达式无效")
+			return nil, userError("errors.service.logRegexInvalid")
 		}
 	}
 	needle := query

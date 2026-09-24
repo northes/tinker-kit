@@ -67,6 +67,7 @@ import { Label } from './ui/label';
 import { Spinner } from './ui/spinner';
 import { Textarea } from './ui/textarea';
 import { toast } from './ui/toast';
+import { formatBackendError } from '../lib/backend-error';
 
 type SSHProfileContextValue = {
   profiles: SSHProfile[];
@@ -101,13 +102,7 @@ function profileIsImported(profile: SSHProfile) {
 }
 
 function errorMessage(error: unknown) {
-  if (error instanceof Error && error.message) return error.message;
-  if (typeof error === 'string') return error;
-  if (error && typeof error === 'object' && 'message' in error) {
-    const message = (error as { message?: unknown }).message;
-    if (typeof message === 'string') return message;
-  }
-  return String(error);
+  return formatBackendError(error);
 }
 
 // 密码类输入：右侧按钮切换明文显示，开启时保留焦点与已输入内容。

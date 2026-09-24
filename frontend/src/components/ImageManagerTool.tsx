@@ -98,6 +98,7 @@ import { SSHProfileSelect } from './SSHProfileSelect';
 import { useSSHProfiles } from './SSHProfileManagerDialog';
 import { ConfirmDialog } from './ConfirmDialog';
 import { TargetHostManagerDialog } from './TargetHostManagerDialog';
+import { formatBackendError } from '../lib/backend-error';
 
 const LOCAL_SOURCE_ID = 'local';
 const MANAGE_SOURCES_VALUE = '__manage-sources__';
@@ -186,14 +187,7 @@ type SourceViewState = 'connecting' | 'unavailable' | 'loading-details' | 'updat
 type ContentViewState = 'loading' | 'error' | 'empty' | 'no-results' | 'table';
 
 function errorMessage(error: unknown) {
-  if (error instanceof Error && error.message) return error.message;
-  if (typeof error === 'string' && error) return error;
-  if (error && typeof error === 'object') {
-    const value = error as { message?: unknown; error?: unknown };
-    if (typeof value.message === 'string' && value.message) return value.message;
-    if (typeof value.error === 'string' && value.error) return value.error;
-  }
-  return '';
+  return formatBackendError(error);
 }
 
 // 来源状态只由连接探测、扫描错误和后台更新事件共同决定。
@@ -1170,7 +1164,7 @@ export default function ImageManagerTool({
         } else if (task.status === 'failed') {
           toast.add({
             title: t('imageManagerTool.taskFailed', { task: t(stageKeys[task.type]) }),
-            description: task.error || undefined,
+            description: task.error ? formatBackendError(task.error) : undefined,
             type: 'error',
           });
         }
@@ -1305,7 +1299,7 @@ export default function ImageManagerTool({
         }
       }
       if (payload.error) {
-        setLoadError(payload.error);
+        setLoadError(formatBackendError(payload.error));
       }
 
       const kind =
@@ -1467,7 +1461,7 @@ export default function ImageManagerTool({
     : resolveSourceViewState(isConnecting, status, loadError, isUpdating, isInitialLoad);
   const contentError = sourceProfileMissing
     ? t('imageManagerTool.sshProfileMissingHint')
-    : loadError || status?.error || '';
+    : loadError || (status?.error ? formatBackendError(status.error) : '') || '';
   const contentViewState = resolveContentViewState(
     isConnecting,
     hasSnapshot,
@@ -1915,7 +1909,7 @@ export default function ImageManagerTool({
           .map((failure) =>
             t('imageManagerTool.operationFailureReason', {
               image: failure.image,
-              reason: failure.error,
+              reason: formatBackendError(failure.error),
             }),
           )
           .join('\n'),
@@ -2117,7 +2111,7 @@ export default function ImageManagerTool({
             .map((failure) =>
               t('imageManagerTool.deleteFailureReason', {
                 image: failure.imageID,
-                reason: failure.error,
+                reason: formatBackendError(failure.error),
               }),
             )
             .join('\n'),
@@ -3098,7 +3092,7 @@ export default function ImageManagerTool({
                             </div>
                             {task.error || task.path ? (
                               <div className="mt-1 break-all text-[10px] text-muted-foreground">
-                                {task.error || task.path}
+                                {task.error ? formatBackendError(task.error) : task.path}
                               </div>
                             ) : null}
                           </div>

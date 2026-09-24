@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"log"
 	"sort"
 	"strings"
@@ -210,13 +209,13 @@ func (s *ImageService) requestSourceRefresh(sourceID string) {
 // RefreshDockerImages 请求当前来源立即执行下一轮扫描。已有扫描不会被打断或并行。
 func (s *ImageService) RefreshDockerImages(sourceID string, clientID string) error {
 	if s == nil || sourceID == "" || clientID == "" {
-		return errors.New("sourceID 与 clientID 不能为空")
+		return userError("errors.imageSync.sourceAndClientRequired")
 	}
 	s.mu.Lock()
 	worker := s.watchWorker
 	s.mu.Unlock()
 	if worker == nil || worker.sourceID != sourceID || worker.clientID != clientID {
-		return errors.New("镜像来源未处于活动状态")
+		return userError("errors.imageSync.sourceNotActive")
 	}
 	// 扫描是单线程循环执行的：刷新请求写入带缓冲的 channel，当前轮结束后立刻再扫一轮，
 	// 不会打断或并行。若扫描期间直接丢弃请求，用户点刷新会毫无反应，要等下一个定时轮。
@@ -322,10 +321,10 @@ func (s *ImageService) stopWatch() {
 // 阻塞直到调用方 ctx 取消或本 run 被替换/服务关闭；返回 nil 表示正常结束。
 func (s *ImageService) WatchDockerImages(ctx context.Context, sourceID string, clientID string) error {
 	if s == nil {
-		return errors.New("镜像服务未配置")
+		return userError("errors.imageSync.serviceNotConfigured")
 	}
 	if sourceID == "" || clientID == "" {
-		return errors.New("sourceID 与 clientID 不能为空")
+		return userError("errors.imageSync.sourceAndClientRequired")
 	}
 	if err := ctx.Err(); err != nil {
 		return nil
@@ -487,11 +486,12 @@ func (s *ImageService) runWatchRound(worker *watchWorker) {
 		return
 	}
 	if !status.Available {
-		statusErr := status.Error
-		if statusErr == "" {
-			statusErr = "镜像来源不可用"
+		var statusErrValue error
+		if status.Error != "" {
+			statusErrValue = errors.New(status.Error)
+		} else {
+			statusErrValue = userError("errors.imageSync.sourceUnavailable")
 		}
-		statusErrValue := errors.New(statusErr)
 		finishTask(statusErrValue)
 		s.failWatchRound(worker, statusErrValue)
 		return
@@ -635,7 +635,7 @@ func (s *ImageService) scanDockerSource(ctx context.Context, worker *watchWorker
 		}
 		var item dockerImageListJSON
 		if err := json.Unmarshal([]byte(line), &item); err != nil {
-			return nil, fmt.Errorf("解析 Docker 镜像列表失败: %w", err)
+			return nil, userErrorCause("errors.imageSync.parseImageListFailed", err)
 		}
 		items = append(items, item)
 		uniqueIDs[item.ID] = true
@@ -773,7 +773,7 @@ func (s *ImageService) scanRegistryFlow(ctx context.Context, worker *watchWorker
 	options := s.registryOptions(ctx, source)
 	puller, err := remote.NewPuller(options...)
 	if err != nil {
-		return nil, fmt.Errorf("创建 Registry 客户端失败: %w", redactRegistryError(err, source))
+		return nil, userErrorCause("errors.imageSync.registryClientCreateFailed", redactRegistryError(err, source))
 	}
 	cur := make(map[string]DockerImage)
 	catalogRepos := make(map[string]bool)
@@ -841,11 +841,11 @@ func (s *ImageService) scanRegistryFlow(ctx context.Context, worker *watchWorker
 				tags, tagsErr := puller.List(callCtx, repo)
 				callCancel()
 				if tagsErr != nil {
-					setScanErr(fmt.Errorf("枚举 Registry 仓库 %q 的标签失败: %w", repositoryName, redactRegistryError(tagsErr, source)))
+					setScanErr(userErrorParamsCause("errors.imageSync.registryTagsListFailed", map[string]any{"repository": repositoryName}, redactRegistryError(tagsErr, source)))
 					return
 				}
 				if len(tags) > maxRegistryTags {
-					setScanErr(fmt.Errorf("Registry 仓库 %q 的标签数量超过限制，扫描非权威", repositoryName))
+					setScanErr(userErrorParams("errors.imageSync.registryTagsLimitExceeded", map[string]any{"repository": repositoryName}))
 					return
 				}
 				mu.Lock()
@@ -866,22 +866,22 @@ func (s *ImageService) scanRegistryFlow(ctx context.Context, worker *watchWorker
 			if discovered >= watchScanMaxRegistry {
 				probe, probeErr := s.registryCatalogPage(scanCtx, registry, last, 1, options)
 				if probeErr != nil {
-					return fmt.Errorf("确认 Registry 仓库目录是否结束失败: %w", redactRegistryError(probeErr, source))
+					return userErrorCause("errors.imageSync.registryCatalogProbeFailed", redactRegistryError(probeErr, source))
 				}
 				if len(probe) > 0 {
-					return errors.New("Registry 仓库数量达到 watch 上限，目录截断")
+					return userError("errors.imageSync.registryRepositoryLimitReached")
 				}
 				return nil
 			}
 			page, err := s.registryCatalogPage(scanCtx, registry, last, pageSize, options)
 			if err != nil {
-				return fmt.Errorf("枚举 Registry 仓库失败: %w", redactRegistryError(err, source))
+				return userErrorCause("errors.imageSync.registryCatalogListFailed", redactRegistryError(err, source))
 			}
 			if len(page) == 0 {
 				return nil
 			}
 			if len(page) > pageSize {
-				return errors.New("Registry 目录页异常，扫描非权威")
+				return userError("errors.imageSync.registryCatalogPageInvalid")
 			}
 			discovered += len(page)
 			for _, repositoryName := range page {
@@ -896,7 +896,7 @@ func (s *ImageService) scanRegistryFlow(ctx context.Context, worker *watchWorker
 			}
 			next := page[len(page)-1]
 			if next == last {
-				return errors.New("Registry 仓库目录分页未前进，扫描非权威")
+				return userError("errors.imageSync.registryCatalogPaginationStalled")
 			}
 			last = next
 		}
