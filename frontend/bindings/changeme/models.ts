@@ -406,6 +406,7 @@ export interface PipelineTablePage {
 export interface QueryLogBufferRequest {
     "monitorIDs": string[] | null;
     "filter": ServiceLogFilter;
+    "limit"?: number;
 }
 
 export interface QueryPipelineCompletionRequest {
@@ -592,6 +593,7 @@ export interface ServiceResourceRef {
     "id": string;
     "scope"?: string;
     "name"?: string;
+    "group"?: string;
 }
 
 export interface ServiceRuntimeStatus {

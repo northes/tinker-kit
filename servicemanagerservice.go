@@ -20,6 +20,8 @@ import (
 const (
 	serviceCommandTimeout = 20 * time.Second
 	serviceLogBufferBytes = 20 << 20
+	serviceLogTotalBytes  = 64 << 20
+	serviceLogMaxActive   = 16
 	serviceLogTail        = 500
 	remoteEnvProbeTimeout = 8 * time.Second
 	remoteEnvTTL          = 10 * time.Minute
@@ -101,6 +103,7 @@ type ServiceResourceRef struct {
 	ID      string `json:"id"`
 	Scope   string `json:"scope,omitempty"`
 	Name    string `json:"name,omitempty"`
+	Group   string `json:"group,omitempty"`
 }
 
 type ServiceActionRequest struct {
@@ -175,6 +178,7 @@ type ServiceLogFilter struct {
 type QueryLogBufferRequest struct {
 	MonitorIDs []string         `json:"monitorIDs"`
 	Filter     ServiceLogFilter `json:"filter"`
+	Limit      int              `json:"limit,omitempty"`
 }
 
 type ServiceLogSnapshot struct {
@@ -189,7 +193,7 @@ type serviceLogEvent struct {
 
 type logMonitorState struct {
 	LogMonitor
-	source ImageSource
+	ctx    context.Context
 	cancel context.CancelFunc
 	lines  []ServiceLogLine
 	bytes  int
@@ -838,29 +842,53 @@ func (s *ServiceManagerService) StartLogMonitors(req StartLogMonitorsRequest) ([
 		s.mu.Lock()
 		existing := s.monitors[id]
 		if existing != nil {
+			if existing.State == "stopping" {
+				s.mu.Unlock()
+				out = append(out, LogMonitor{ID: id, TargetID: req.TargetID, Resource: resource, State: "failed", Error: "日志正在停止，请稍后重试"})
+				continue
+			}
 			if existing.State != "monitoring" {
+				if s.activeMonitorCountLocked() >= serviceLogMaxActive {
+					s.mu.Unlock()
+					out = append(out, LogMonitor{ID: id, TargetID: req.TargetID, Resource: resource, State: "failed", Error: "同时监控的日志源已达到上限（16）"})
+					continue
+				}
 				ctx, cancel := context.WithCancel(s.ctx)
 				existing.State = "monitoring"
 				existing.Error = ""
-				existing.source = source
+				existing.ctx = ctx
 				existing.cancel = cancel
 				s.mu.Unlock()
 				out = append(out, existing.LogMonitor)
-				go s.runLogMonitor(ctx, existing, cli)
+				go s.runLogMonitor(ctx, existing, source, cli)
 				continue
 			}
 			s.mu.Unlock()
 			out = append(out, existing.LogMonitor)
 			continue
 		}
+		if s.activeMonitorCountLocked() >= serviceLogMaxActive {
+			s.mu.Unlock()
+			out = append(out, LogMonitor{ID: id, TargetID: req.TargetID, Resource: resource, State: "failed", Error: "同时监控的日志源已达到上限（16）"})
+			continue
+		}
 		ctx, cancel := context.WithCancel(s.ctx)
-		state := &logMonitorState{LogMonitor: LogMonitor{ID: id, TargetID: req.TargetID, Resource: resource, State: "monitoring"}, source: source, cancel: cancel, lines: []ServiceLogLine{}, batch: []ServiceLogLine{}}
+		state := &logMonitorState{LogMonitor: LogMonitor{ID: id, TargetID: req.TargetID, Resource: resource, State: "monitoring"}, ctx: ctx, cancel: cancel, lines: []ServiceLogLine{}, batch: []ServiceLogLine{}}
 		s.monitors[id] = state
 		s.mu.Unlock()
 		out = append(out, state.LogMonitor)
-		go s.runLogMonitor(ctx, state, cli)
+		go s.runLogMonitor(ctx, state, source, cli)
 	}
 	return out, nil
+}
+func (s *ServiceManagerService) activeMonitorCountLocked() int {
+	count := 0
+	for _, monitor := range s.monitors {
+		if monitor.State == "monitoring" || monitor.State == "stopping" {
+			count++
+		}
+	}
+	return count
 }
 func validLogResource(r ServiceResourceRef) bool {
 	if r.Runtime == "docker" {
@@ -872,10 +900,14 @@ func validLogResource(r ServiceResourceRef) bool {
 	}
 	return r.Runtime == "systemd" && validUnitName(r.ID)
 }
-func (s *ServiceManagerService) runLogMonitor(ctx context.Context, m *logMonitorState, dockerCLI string) {
+func (s *ServiceManagerService) runLogMonitor(ctx context.Context, m *logMonitorState, source ImageSource, dockerCLI string) {
 	command, args := logCommand(m.Resource, dockerCLI)
-	err := s.stream(ctx, m.source, command, args, func(stream, text string) { s.appendLogLine(m, stream, text) })
+	err := s.stream(ctx, source, command, args, func(stream, text string) { s.appendLogLine(ctx, m, stream, text) })
 	s.mu.Lock()
+	if s.monitors[m.ID] != m || m.ctx != ctx {
+		s.mu.Unlock()
+		return
+	}
 	if ctx.Err() != nil {
 		m.State = "stopped"
 	} else if err != nil {
@@ -961,7 +993,7 @@ func stripAnsiSequences(text string) string {
 	}
 	return ansiSequencePattern.ReplaceAllString(text, "")
 }
-func (s *ServiceManagerService) appendLogLine(m *logMonitorState, stream, text string) {
+func (s *ServiceManagerService) appendLogLine(ctx context.Context, m *logMonitorState, stream, text string) {
 	line := ServiceLogLine{Sequence: s.sequence.Add(1), MonitorID: m.ID, Runtime: m.Resource.Runtime, ResourceID: m.Resource.ID, Name: m.Resource.Name, ReceivedAt: time.Now().Format(time.RFC3339Nano), Stream: stream, Text: text}
 	if m.Resource.Runtime == "docker" {
 		if stamp, rest, ok := strings.Cut(text, " "); ok && strings.Contains(stamp, "T") {
@@ -971,6 +1003,9 @@ func (s *ServiceManagerService) appendLogLine(m *logMonitorState, stream, text s
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.monitors[m.ID] != m || m.ctx != ctx || ctx.Err() != nil {
+		return
+	}
 	m.lines = append(m.lines, line)
 	m.bytes += len(line.Text) + 128
 	for m.bytes > serviceLogBufferBytes && len(m.lines) > 0 {
@@ -978,7 +1013,28 @@ func (s *ServiceManagerService) appendLogLine(m *logMonitorState, stream, text s
 		m.lines = m.lines[1:]
 		m.Truncated = true
 	}
+	for s.totalLogBytesLocked() > serviceLogTotalBytes {
+		var oldest *logMonitorState
+		for _, candidate := range s.monitors {
+			if len(candidate.lines) > 0 && (oldest == nil || candidate.lines[0].Sequence < oldest.lines[0].Sequence) {
+				oldest = candidate
+			}
+		}
+		if oldest == nil {
+			break
+		}
+		oldest.bytes -= len(oldest.lines[0].Text) + 128
+		oldest.lines = oldest.lines[1:]
+		oldest.Truncated = true
+	}
 	m.batch = append(m.batch, line)
+}
+func (s *ServiceManagerService) totalLogBytesLocked() int {
+	total := 0
+	for _, monitor := range s.monitors {
+		total += monitor.bytes
+	}
+	return total
 }
 func (s *ServiceManagerService) emitState(m LogMonitor) {
 	if s.emit != nil {
@@ -1006,8 +1062,26 @@ func (s *ServiceManagerService) StopLogMonitor(id string) error {
 		s.mu.Unlock()
 		return errors.New("日志监控不存在")
 	}
+	if m.State != "monitoring" {
+		s.mu.Unlock()
+		return nil
+	}
+	m.State = "stopping"
+	snapshot := m.LogMonitor
 	m.cancel()
 	s.mu.Unlock()
+	s.emitState(snapshot)
+	return nil
+}
+func (s *ServiceManagerService) RemoveLogMonitor(id string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	m := s.monitors[id]
+	if m == nil {
+		return errors.New("日志监控不存在")
+	}
+	m.cancel()
+	delete(s.monitors, id)
 	return nil
 }
 func (s *ServiceManagerService) ClearLogBuffer(id string) error {
@@ -1062,6 +1136,9 @@ func (s *ServiceManagerService) QueryLogBuffer(req QueryLogBufferRequest) (Servi
 		}
 	}
 	sort.Slice(snapshot.Lines, func(i, j int) bool { return snapshot.Lines[i].Sequence < snapshot.Lines[j].Sequence })
+	if req.Limit > 0 && len(snapshot.Lines) > req.Limit {
+		snapshot.Lines = snapshot.Lines[len(snapshot.Lines)-req.Limit:]
+	}
 	return snapshot, nil
 }
 func newLogFilter(f ServiceLogFilter) (func(ServiceLogLine) bool, error) {

@@ -23,12 +23,14 @@ func TestGroupDockerContainersKeepsStandaloneAndCompose(t *testing.T) {
 }
 
 func TestAppendLogLineKeepsAnsiSequences(t *testing.T) {
-	service := &ServiceManagerService{}
+	ctx := context.Background()
 	monitor := &logMonitorState{
 		LogMonitor: LogMonitor{ID: "monitor-1", Resource: ServiceResourceRef{Runtime: "docker", ID: "0123456789abcdef"}},
+		ctx:        ctx,
 		lines:      []ServiceLogLine{},
 	}
-	service.appendLogLine(monitor, "stdout", "2026-01-02T03:04:05.000000000Z \x1b[90msrvx 0.11.21\x1b[39m")
+	service := &ServiceManagerService{monitors: map[string]*logMonitorState{monitor.ID: monitor}}
+	service.appendLogLine(ctx, monitor, "stdout", "2026-01-02T03:04:05.000000000Z \x1b[90msrvx 0.11.21\x1b[39m")
 	if len(monitor.lines) != 1 {
 		t.Fatalf("期望写入一行日志: %#v", monitor.lines)
 	}
@@ -38,6 +40,33 @@ func TestAppendLogLineKeepsAnsiSequences(t *testing.T) {
 	}
 	if line.Text != "\x1b[90msrvx 0.11.21\x1b[39m" {
 		t.Fatalf("原始控制序列应保留给前端渲染: %q", line.Text)
+	}
+}
+
+func TestRemoveLogMonitorDiscardsLateLines(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	monitor := &logMonitorState{LogMonitor: LogMonitor{ID: "local|docker||container"}, ctx: ctx, cancel: cancel}
+	service := &ServiceManagerService{monitors: map[string]*logMonitorState{monitor.ID: monitor}}
+	if err := service.RemoveLogMonitor(monitor.ID); err != nil {
+		t.Fatal(err)
+	}
+	service.appendLogLine(ctx, monitor, "stdout", "late line")
+	if len(service.GetLogMonitors("")) != 0 || len(monitor.lines) != 0 {
+		t.Fatal("移除后的监控不应重新出现或接收迟到日志")
+	}
+}
+
+func TestQueryLogBufferMergesTargetsAndLimitsVisibleLines(t *testing.T) {
+	service := &ServiceManagerService{monitors: map[string]*logMonitorState{
+		"local":  {LogMonitor: LogMonitor{ID: "local", TargetID: "local"}, lines: []ServiceLogLine{{Sequence: 1, MonitorID: "local", Text: "first"}, {Sequence: 3, MonitorID: "local", Text: "third"}}},
+		"remote": {LogMonitor: LogMonitor{ID: "remote", TargetID: "ssh:host"}, lines: []ServiceLogLine{{Sequence: 2, MonitorID: "remote", Text: "second"}}},
+	}}
+	snapshot, err := service.QueryLogBuffer(QueryLogBufferRequest{MonitorIDs: []string{"local", "remote"}, Limit: 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(snapshot.Lines) != 2 || snapshot.Lines[0].Sequence != 2 || snapshot.Lines[1].Sequence != 3 {
+		t.Fatalf("跨主机日志应按接收顺序合并并保留最近两行: %#v", snapshot.Lines)
 	}
 }
 

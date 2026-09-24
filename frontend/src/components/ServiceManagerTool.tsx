@@ -12,6 +12,7 @@ import {
   Pause,
   Play,
   Power,
+  Queue,
   Stop,
   TextAa,
   Trash,
@@ -29,6 +30,7 @@ import {
   GetServiceTargets,
   PerformServiceAction,
   QueryLogBuffer,
+  RemoveLogMonitor,
   SaveServiceTargets,
   StartLogMonitors,
   StopLogMonitor,
@@ -93,6 +95,7 @@ import { ToggleGroup, ToggleGroupItem } from './ui/toggle-group';
 import { TargetHostManagerDialog } from './TargetHostManagerDialog';
 
 const MANAGE_TARGETS_VALUE = '__manage-targets__';
+const VISIBLE_LOG_LIMIT = 5000;
 const LOCAL_TARGET: ServiceTarget = { id: 'local', name: 'local', kind: 'local' };
 
 type Runtime = 'docker' | 'pm2' | 'systemd';
@@ -140,6 +143,13 @@ function statusVariant(value: string) {
     : /failed|dead|exited/i.test(value)
       ? 'destructive'
       : 'secondary';
+}
+function MonitoringSpinner() {
+  return (
+    <span className="grid size-4 shrink-0 place-items-center">
+      <Spinner className="block size-3.5 origin-center [transform-box:fill-box] text-primary" />
+    </span>
+  );
 }
 function logDate(line: ServiceLogLine) {
   const date = new Date(line.timestamp || line.receivedAt);
@@ -189,6 +199,8 @@ export default function ServiceManagerTool({
   const [selection, setSelection] = useState<Selection | null>(null);
   const [busy, setBusy] = useState('');
   const [monitors, setMonitors] = useState<LogMonitor[]>([]);
+  const [view, setView] = useState<'resource' | 'workspace'>('resource');
+  const [excludedMonitorIDs, setExcludedMonitorIDs] = useState<Set<string>>(new Set());
   const [logDraft, setLogDraft] = useState('');
   const [logQuery, setLogQuery] = useState('');
   const [regex, setRegex] = useState(false);
@@ -211,18 +223,12 @@ export default function ServiceManagerTool({
     containers: DockerContainer[];
   } | null>(null);
   const [monitorSelection, setMonitorSelection] = useState<Set<string>>(new Set());
-  const monitorsRef = useRef<LogMonitor[]>([]);
-  monitorsRef.current = monitors;
-
-  // syncTargets 用配置中的目标刷新下拉；当前目标被移除时停掉其日志监控并回到本机。
+  const monitorLoadVersion = useRef(0);
+  // 浏览位置与监控会话独立；移除当前浏览的主机时返回本机。
   const syncTargets = (next: ServiceTarget[]) => {
     setTargets(next);
     if (next.some((item) => item.id === targetIDRef.current)) return;
-    const active = monitorsRef.current.filter((item) => item.state === 'monitoring');
-    void Promise.all(active.map((item) => StopLogMonitor(item.id).catch(() => undefined)));
-    setMonitors([]);
     setSelection(null);
-    setLines([]);
     setInventory(null);
     setTargetID('local');
   };
@@ -244,15 +250,19 @@ export default function ServiceManagerTool({
       if (targetIDRef.current === nextTarget) setLoading(false);
     }
   };
-  const loadMonitors = async (nextTarget = targetID) => {
-    const items = (await GetLogMonitors(nextTarget)) ?? [];
-    if (targetIDRef.current !== nextTarget) return;
-    setMonitors(items);
+  const loadMonitors = async () => {
+    const version = ++monitorLoadVersion.current;
+    const items = (await GetLogMonitors('')) ?? [];
+    if (version === monitorLoadVersion.current) setMonitors(items);
   };
 
+  const currentTargetMonitors = useMemo(
+    () => monitors.filter((item) => item.targetID === targetID),
+    [monitors, targetID],
+  );
   const monitoredByResource = useMemo(
-    () => new Map(monitors.map((item) => [monitorResourceKey(item), item])),
-    [monitors],
+    () => new Map(currentTargetMonitors.map((item) => [monitorResourceKey(item), item])),
+    [currentTargetMonitors],
   );
   // Compose 组选中时聚合其所有容器的监控；单资源沿用资源键匹配。
   const selectedMonitors = useMemo(() => {
@@ -260,16 +270,20 @@ export default function ServiceManagerTool({
     if (selection.kind === 'group') {
       const group = inventory?.dockerGroups?.find((item) => item.id === selection.resource.id);
       const ids = new Set((group?.containers ?? []).map((item) => item.id));
-      return monitors.filter(
+      return currentTargetMonitors.filter(
         (item) => item.resource.runtime === 'docker' && ids.has(item.resource.id),
       );
     }
     const found = monitoredByResource.get(resourceKey(selection.resource));
     return found ? [found] : [];
-  }, [selection, inventory, monitors, monitoredByResource]);
+  }, [selection, inventory, currentTargetMonitors, monitoredByResource]);
+  const workspaceMonitorIDs = useMemo(
+    () => monitors.filter((item) => !excludedMonitorIDs.has(item.id)).map((item) => item.id),
+    [monitors, excludedMonitorIDs],
+  );
   const activeMonitorIDs = useMemo(
-    () => selectedMonitors.map((item) => item.id),
-    [selectedMonitors],
+    () => (view === 'workspace' ? workspaceMonitorIDs : selectedMonitors.map((item) => item.id)),
+    [view, workspaceMonitorIDs, selectedMonitors],
   );
   const activeMonitorKey = activeMonitorIDs.join(',');
   const monitoring = selectedMonitors.some((item) => item.state === 'monitoring');
@@ -281,7 +295,7 @@ export default function ServiceManagerTool({
   }, [profiles]);
   useEffect(() => {
     void load(targetID);
-    void loadMonitors(targetID);
+    void loadMonitors();
   }, [targetID]);
   useEffect(() => {
     if (!active) return;
@@ -301,9 +315,9 @@ export default function ServiceManagerTool({
         );
         if (!accepted.length) return current;
         const ids = new Set(current.map((line) => line.sequence));
-        return [...current, ...accepted.filter((line) => !ids.has(line.sequence))].sort(
-          (a, b) => a.sequence - b.sequence,
-        );
+        return [...current, ...accepted.filter((line) => !ids.has(line.sequence))]
+          .sort((a, b) => a.sequence - b.sequence)
+          .slice(-VISIBLE_LOG_LIMIT);
       });
     });
     const offState = Events.On('service-manager:log-state', () => void loadMonitors());
@@ -313,15 +327,37 @@ export default function ServiceManagerTool({
     };
   }, [activeMonitorKey, logQuery, regex, caseSensitive, targetID]);
   useEffect(() => {
+    let cancelled = false;
     const run = async () => {
+      if (!activeMonitorIDs.length) {
+        setLines([]);
+        setTruncated(false);
+        return;
+      }
       try {
         const snapshot = await QueryLogBuffer({
           monitorIDs: activeMonitorIDs,
           filter: { query: logQuery, regex, caseSensitive, streams: [] },
+          limit: VISIBLE_LOG_LIMIT,
         });
-        setLines(snapshot.lines ?? []);
-        setTruncated(snapshot.truncated);
+        if (!cancelled) {
+          setLines((current) =>
+            [
+              ...(snapshot.lines ?? []),
+              ...current.filter(
+                (line) =>
+                  line.sequence > snapshot.maxSequence &&
+                  activeMonitorIDs.includes(line.monitorID) &&
+                  matchesLog(line, logQuery, regex, caseSensitive),
+              ),
+            ]
+              .sort((a, b) => a.sequence - b.sequence)
+              .slice(-VISIBLE_LOG_LIMIT),
+          );
+          setTruncated(snapshot.truncated);
+        }
       } catch (error) {
+        if (cancelled) return;
         toast.add({
           title: t('serviceManagerTool.filterFailed'),
           description: String(error),
@@ -330,24 +366,18 @@ export default function ServiceManagerTool({
       }
     };
     void run();
+    return () => {
+      cancelled = true;
+    };
   }, [activeMonitorKey, logQuery, regex, caseSensitive]);
 
   const selectedTarget = targets.find((target) => target.id === targetID);
 
   const selectTarget = (next: string | null) => {
     if (!next || next === targetID) return;
-    const old = monitors.filter((item) => item.state === 'monitoring');
-    if (
-      old.length &&
-      !window.confirm(t('serviceManagerTool.changeTargetConfirm', { total: old.length }))
-    )
-      return;
     setSelection(null);
-    setLines([]);
-    // 立即清空旧主机列表并进入 loading，旧主机的日志监控在后台停止。
     setInventory(null);
     setTargetID(next);
-    void Promise.all(old.map((item) => StopLogMonitor(item.id).catch(() => undefined)));
   };
   const act = (resource: ServiceResourceRef, action: string) => {
     if (action === 'delete' || action.startsWith('disable')) {
@@ -406,9 +436,17 @@ export default function ServiceManagerTool({
     }
     try {
       const created = (await StartLogMonitors({ targetID, resources })) ?? [];
+      const failed = created.filter((item) => item.state === 'failed');
+      if (failed.length)
+        toast.add({
+          title: t('serviceManagerTool.monitorFailed'),
+          description: failed.map((item) => item.error).join('\n'),
+          type: 'error',
+        });
+      ++monitorLoadVersion.current;
       setMonitors((current) => {
         const all = new Map(current.map((item) => [item.id, item]));
-        created.forEach((item) => all.set(item.id, item));
+        created.filter((item) => item.state !== 'failed').forEach((item) => all.set(item.id, item));
         return [...all.values()];
       });
     } catch (error) {
@@ -433,9 +471,25 @@ export default function ServiceManagerTool({
     const resources =
       resource.runtime === 'docker-compose'
         ? containers.map(
-            (item) => ({ runtime: 'docker', id: item.id, name: item.name }) as ServiceResourceRef,
+            (item) =>
+              ({
+                runtime: 'docker',
+                id: item.id,
+                name: item.name,
+                group: resource.name,
+              }) as ServiceResourceRef,
           )
-        : [resource];
+        : [
+            resource.runtime === 'docker'
+              ? {
+                  ...resource,
+                  group:
+                    inventory?.dockerGroups?.find((item) =>
+                      (item.containers ?? []).some((container) => container.id === resource.id),
+                    )?.name ?? '',
+                }
+              : resource,
+          ];
     await startMonitors(resources);
   };
   const toggleMonitorContainer = (id: string, checked: boolean) =>
@@ -450,7 +504,15 @@ export default function ServiceManagerTool({
     if (!dialog) return;
     const resources = dialog.containers
       .filter((item) => monitorSelection.has(item.id))
-      .map((item) => ({ runtime: 'docker', id: item.id, name: item.name }) as ServiceResourceRef);
+      .map(
+        (item) =>
+          ({
+            runtime: 'docker',
+            id: item.id,
+            name: item.name,
+            group: dialog.resource.name,
+          }) as ServiceResourceRef,
+      );
     setMonitorDialog(null);
     await startMonitors(resources);
   };
@@ -463,6 +525,45 @@ export default function ServiceManagerTool({
     setLines([]);
     setTruncated(false);
     await loadMonitors();
+  };
+  const stopWorkspaceMonitor = async (id: string) => {
+    try {
+      await StopLogMonitor(id);
+      await loadMonitors();
+    } catch (error) {
+      toast.add({
+        title: t('serviceManagerTool.stopMonitorFailed'),
+        description: String(error),
+        type: 'error',
+      });
+    }
+  };
+  const restartWorkspaceMonitor = async (item: LogMonitor) => {
+    try {
+      const result = await StartLogMonitors({
+        targetID: item.targetID,
+        resources: [item.resource],
+      });
+      const failure = result?.find((monitor) => monitor.state === 'failed');
+      if (failure) throw new Error(failure.error);
+      await loadMonitors();
+    } catch (error) {
+      toast.add({
+        title: t('serviceManagerTool.monitorFailed'),
+        description: String(error),
+        type: 'error',
+      });
+    }
+  };
+  const removeWorkspaceMonitor = async (id: string) => {
+    await RemoveLogMonitor(id);
+    ++monitorLoadVersion.current;
+    setMonitors((current) => current.filter((item) => item.id !== id));
+    setExcludedMonitorIDs((current) => {
+      const next = new Set(current);
+      next.delete(id);
+      return next;
+    });
   };
   const selectedTargetMissing =
     selectedTarget?.kind === 'ssh' &&
@@ -741,10 +842,23 @@ export default function ServiceManagerTool({
             </>
           }
           right={
-            <Button variant="outline" size="sm" onClick={() => void load()} disabled={loading}>
-              {loading ? <Spinner /> : <ArrowsClockwise weight="duotone" />}
-              {t('serviceManagerTool.refresh')}
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button
+                variant={view === 'workspace' ? 'secondary' : 'outline'}
+                size="sm"
+                onClick={() => setView('workspace')}
+              >
+                <Queue weight="duotone" />
+                {t('serviceManagerTool.workspace')}
+                <Badge variant="secondary">
+                  {monitors.filter((item) => item.state === 'monitoring').length}
+                </Badge>
+              </Button>
+              <Button variant="outline" size="sm" onClick={() => void load()} disabled={loading}>
+                {loading ? <Spinner /> : <ArrowsClockwise weight="duotone" />}
+                {t('serviceManagerTool.refresh')}
+              </Button>
+            </div>
           }
         />
         <ToolLayoutContent className="grid min-h-0 grid-cols-[minmax(230px,38%)_minmax(0,1fr)] border-t max-[800px]:grid-cols-1 max-[800px]:grid-rows-[minmax(180px,42%)_minmax(0,1fr)]">
@@ -753,12 +867,43 @@ export default function ServiceManagerTool({
             statuses={statusFilter}
             search={search}
             selection={selection}
-            onSelect={setSelection}
+            onSelect={(next) => {
+              setSelection(next);
+              setView('resource');
+            }}
             monitored={monitoredByResource}
             t={t}
           />
           <section className="min-h-0 overflow-hidden border-l max-[800px]:border-t max-[800px]:border-l-0">
-            {selection ? (
+            {view === 'workspace' ? (
+              <WorkspacePanel
+                monitors={monitors}
+                targets={targets}
+                selectedIDs={workspaceMonitorIDs}
+                excludedIDs={excludedMonitorIDs}
+                onToggle={(id, checked) =>
+                  setExcludedMonitorIDs((current) => {
+                    const next = new Set(current);
+                    if (checked) next.delete(id);
+                    else next.add(id);
+                    return next;
+                  })
+                }
+                onStop={stopWorkspaceMonitor}
+                onRestart={restartWorkspaceMonitor}
+                onRemove={removeWorkspaceMonitor}
+                lines={lines}
+                truncated={truncated}
+                logDraft={logDraft}
+                setLogDraft={setLogDraft}
+                applyFilter={() => setLogQuery(logDraft)}
+                query={logQuery}
+                regex={regex}
+                setRegex={setRegex}
+                caseSensitive={caseSensitive}
+                setCaseSensitive={setCaseSensitive}
+              />
+            ) : selection ? (
               <ResourcePanel
                 selection={selection}
                 targetID={targetID}
@@ -1006,7 +1151,7 @@ function ResourceList({
           ) : null}
         </span>
         <Badge variant={statusVariant(status)}>{status || '—'}</Badge>
-        {monitor?.state === 'monitoring' ? <Spinner className="size-3.5 text-primary" /> : null}
+        {monitor?.state === 'monitoring' ? <MonitoringSpinner /> : null}
       </button>
     );
   };
@@ -1057,7 +1202,7 @@ function ResourceList({
               monitored.get(resourceKey({ runtime: 'docker', id: container.id }))?.state ===
               'monitoring',
           ) ? (
-            <Spinner className="size-3.5 flex-none text-primary" />
+            <MonitoringSpinner />
           ) : null}
         </div>
         {collapsed
@@ -1161,6 +1306,253 @@ function RuntimeError({ name, error }: { name: string; error?: string }) {
       <WarningCircle className="mr-1 inline size-3.5" />
       {name}: {error || '—'}
     </div>
+  );
+}
+
+function WorkspacePanel({
+  monitors,
+  targets,
+  selectedIDs,
+  excludedIDs,
+  onToggle,
+  onStop,
+  onRestart,
+  onRemove,
+  lines,
+  truncated,
+  logDraft,
+  setLogDraft,
+  applyFilter,
+  query,
+  regex,
+  setRegex,
+  caseSensitive,
+  setCaseSensitive,
+}: {
+  monitors: LogMonitor[];
+  targets: ServiceTarget[];
+  selectedIDs: string[];
+  excludedIDs: Set<string>;
+  onToggle: (id: string, checked: boolean) => void;
+  onStop: (id: string) => void;
+  onRestart: (monitor: LogMonitor) => void;
+  onRemove: (id: string) => Promise<void>;
+  lines: ServiceLogLine[];
+  truncated: boolean;
+  logDraft: string;
+  setLogDraft: (value: string) => void;
+  applyFilter: () => void;
+  query: string;
+  regex: boolean;
+  setRegex: (value: boolean) => void;
+  caseSensitive: boolean;
+  setCaseSensitive: (value: boolean) => void;
+}) {
+  const { t } = useTranslation();
+  const [pendingRemove, setPendingRemove] = useState<LogMonitor | null>(null);
+  const [removing, setRemoving] = useState(false);
+  const [removeError, setRemoveError] = useState('');
+  const confirmRemove = async () => {
+    if (!pendingRemove || removing) return;
+    setRemoving(true);
+    setRemoveError('');
+    try {
+      await onRemove(pendingRemove.id);
+      setPendingRemove(null);
+    } catch (error) {
+      setRemoveError(String(error));
+    } finally {
+      setRemoving(false);
+    }
+  };
+  const visibleLines = useMemo(() => {
+    const selected = new Set(selectedIDs);
+    return lines.filter((line) => selected.has(line.monitorID));
+  }, [lines, selectedIDs]);
+  const targetNames = new Map(targets.map((target) => [target.id, targetLabel(target, t)]));
+  const sourceLabels = new Map(
+    monitors.map((monitor) => [
+      monitor.id,
+      [
+        targetNames.get(monitor.targetID) ?? t('serviceManagerTool.targetUnavailable'),
+        monitor.resource.group,
+        monitor.resource.name || monitor.resource.id,
+      ]
+        .filter(Boolean)
+        .join(' / '),
+    ]),
+  );
+  return (
+    <>
+      <div className="grid h-full min-h-0 grid-rows-[auto_auto_minmax(0,1fr)]">
+        <div className="border-b px-4 py-3">
+          <h2 className="text-sm font-semibold">{t('serviceManagerTool.workspace')}</h2>
+          <p className="mt-1 text-xs text-muted-foreground">
+            {t('serviceManagerTool.workspaceHint')}
+          </p>
+        </div>
+        <div className="min-h-0 border-b">
+          {monitors.length ? (
+            <ScrollArea className="h-40 min-h-0">
+              {monitors.map((monitor) => (
+                <div
+                  key={monitor.id}
+                  className="flex items-center gap-2 border-b px-3 py-2 text-xs last:border-b-0"
+                >
+                  <Checkbox
+                    checked={!excludedIDs.has(monitor.id)}
+                    onCheckedChange={(checked) => onToggle(monitor.id, checked === true)}
+                    aria-label={t('serviceManagerTool.includeSource', {
+                      name: sourceLabels.get(monitor.id),
+                    })}
+                  />
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate font-medium" title={sourceLabels.get(monitor.id)}>
+                      {sourceLabels.get(monitor.id)}
+                    </div>
+                    <div
+                      className="truncate text-muted-foreground"
+                      title={monitor.error || undefined}
+                    >
+                      {t(
+                        `serviceManagerTool.monitorStates.${['monitoring', 'stopping', 'stopped', 'disconnected'].includes(monitor.state) ? monitor.state : 'unknown'}`,
+                      )}
+                      {monitor.error ? ` · ${monitor.error}` : ''}
+                    </div>
+                  </div>
+                  {monitor.state === 'monitoring' ? (
+                    <Button
+                      variant="ghost"
+                      size="icon-xs"
+                      className="flex-none"
+                      onClick={() => onStop(monitor.id)}
+                      title={t('serviceManagerTool.stopMonitor')}
+                      aria-label={t('serviceManagerTool.stopMonitor')}
+                    >
+                      <Stop weight="duotone" />
+                    </Button>
+                  ) : monitor.state === 'stopping' ? (
+                    <Spinner className="size-3.5 flex-none text-muted-foreground" />
+                  ) : (
+                    <Button
+                      variant="ghost"
+                      size="icon-xs"
+                      className="flex-none"
+                      onClick={() => onRestart(monitor)}
+                      title={t('serviceManagerTool.restartMonitor')}
+                      aria-label={t('serviceManagerTool.restartMonitor')}
+                    >
+                      <Play weight="duotone" />
+                    </Button>
+                  )}
+                  <Button
+                    variant="ghost"
+                    size="icon-xs"
+                    className="flex-none"
+                    onClick={() => {
+                      setRemoveError('');
+                      setPendingRemove(monitor);
+                    }}
+                    title={t('serviceManagerTool.removeMonitor')}
+                    aria-label={t('serviceManagerTool.removeMonitor')}
+                  >
+                    <Trash weight="duotone" />
+                  </Button>
+                </div>
+              ))}
+            </ScrollArea>
+          ) : (
+            <p className="px-4 py-5 text-center text-xs text-muted-foreground">
+              {t('serviceManagerTool.workspaceEmpty')}
+            </p>
+          )}
+        </div>
+        <div className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)]">
+          <div className="border-b px-4 py-2">
+            <div className="flex items-center gap-2">
+              <Input
+                className="h-8"
+                value={logDraft}
+                onChange={(event) => setLogDraft(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') applyFilter();
+                }}
+                placeholder={t('serviceManagerTool.logFilter')}
+              />
+              <Button variant="outline" size="sm" onClick={applyFilter}>
+                {t('serviceManagerTool.apply')}
+              </Button>
+              <ToggleGroup
+                multiple
+                variant="outline"
+                size="sm"
+                value={[regex ? 'regex' : '', caseSensitive ? 'case' : ''].filter(Boolean)}
+                onValueChange={(value) => {
+                  setRegex(value.includes('regex'));
+                  setCaseSensitive(value.includes('case'));
+                }}
+              >
+                <ToggleGroupItem
+                  value="regex"
+                  title={t('serviceManagerTool.regex')}
+                  aria-label={t('serviceManagerTool.regex')}
+                >
+                  <Asterisk weight="duotone" />
+                </ToggleGroupItem>
+                <ToggleGroupItem
+                  value="case"
+                  title={t('serviceManagerTool.caseSensitive')}
+                  aria-label={t('serviceManagerTool.caseSensitive')}
+                >
+                  <TextAa weight="duotone" />
+                </ToggleGroupItem>
+              </ToggleGroup>
+            </div>
+            {truncated ? (
+              <p className="mt-2 text-xs text-amber-600">{t('serviceManagerTool.logsTruncated')}</p>
+            ) : null}
+            {visibleLines.length >= VISIBLE_LOG_LIMIT ? (
+              <p className="mt-2 text-xs text-muted-foreground">
+                {t('serviceManagerTool.visibleLogLimit')}
+              </p>
+            ) : null}
+          </div>
+          {selectedIDs.length ? (
+            <LogList
+              lines={visibleLines}
+              query={query}
+              regex={regex}
+              caseSensitive={caseSensitive}
+              sourceLabels={sourceLabels}
+            />
+          ) : (
+            <div className="grid min-h-0 place-items-center text-xs text-muted-foreground">
+              {t('serviceManagerTool.selectMonitorHint')}
+            </div>
+          )}
+        </div>
+      </div>
+      <ConfirmDialog
+        open={pendingRemove !== null}
+        onOpenChange={(open) => {
+          if (!open) {
+            setPendingRemove(null);
+            setRemoveError('');
+          }
+        }}
+        title={t('serviceManagerTool.removeMonitorTitle')}
+        description={t('serviceManagerTool.removeMonitorConfirm', {
+          name: pendingRemove ? sourceLabels.get(pendingRemove.id) : '',
+        })}
+        confirmLabel={t('serviceManagerTool.removeMonitor')}
+        destructive
+        busy={removing}
+        error={
+          removeError ? `${t('serviceManagerTool.removeMonitorFailed')}：${removeError}` : undefined
+        }
+        onConfirm={() => void confirmRemove()}
+      />
+    </>
   );
 }
 
@@ -1344,6 +1736,11 @@ function ResourcePanel({
           {truncated ? (
             <p className="mt-2 text-xs text-amber-600">{t('serviceManagerTool.logsTruncated')}</p>
           ) : null}
+          {lines.length >= VISIBLE_LOG_LIMIT ? (
+            <p className="mt-2 text-xs text-muted-foreground">
+              {t('serviceManagerTool.visibleLogLimit')}
+            </p>
+          ) : null}
         </div>
         <LogList lines={visibleLines} query={query} regex={regex} caseSensitive={caseSensitive} />
       </div>
@@ -1484,11 +1881,13 @@ function LogList({
   query,
   regex,
   caseSensitive,
+  sourceLabels,
 }: {
   lines: ServiceLogLine[];
   query: string;
   regex: boolean;
   caseSensitive: boolean;
+  sourceLabels?: Map<string, string>;
 }) {
   const { t } = useTranslation();
   const [viewport, setViewport] = useState<HTMLElement | null>(null);
@@ -1605,7 +2004,9 @@ function LogList({
                   className={`w-full border-b py-1 ${LOG_GRID}`}
                 >
                   <WheelText className="text-muted-foreground">{logTime(line)}</WheelText>
-                  <WheelText className="text-primary">{line.name}</WheelText>
+                  <WheelText className="text-primary">
+                    {sourceLabels?.get(line.monitorID) ?? line.name}
+                  </WheelText>
                   <span className="break-all whitespace-pre-wrap">
                     {renderLogText(line.text, query, regex, caseSensitive)}
                   </span>
