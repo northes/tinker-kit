@@ -1428,7 +1428,7 @@ function WorkspacePanel({
         className="min-h-0 min-w-0"
       >
         <ResizablePanel id="sources" defaultSize="40%" minSize="20%" className="min-h-0 min-w-0">
-          <div className="flex h-full min-h-0 flex-col">
+          <div className="flex h-full min-h-0 flex-col overflow-hidden">
             <div className="flex-none px-4 py-3">
               <h2 className="text-sm font-semibold">{t('serviceManagerTool.workspace')}</h2>
               <p className="mt-1 text-xs text-muted-foreground">
