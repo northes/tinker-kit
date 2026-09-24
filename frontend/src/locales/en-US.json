@@ -151,6 +151,7 @@
     "copy": "Copy",
     "clear": "Clear",
     "cancel": "Cancel",
+    "resizePanels": "Resize JSON panels",
     "commentTitle": "Content contains comments",
     "commentFormatBody": "Formatting JSON with comments may fail. Clear comments and continue?",
     "commentMinifyBody": "Minifying loses comments, so the result may not match expectations. Clear comments and continue?",

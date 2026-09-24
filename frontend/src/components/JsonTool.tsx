@@ -29,6 +29,7 @@ import {
   SelectValue,
 } from './ui/select';
 import { Switch } from './ui/switch';
+import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from './ui/resizable';
 import { Trans, useTranslation } from 'react-i18next';
 import { Clipboard } from '@wailsio/runtime';
 import CodeMirror from '@uiw/react-codemirror';
@@ -39,6 +40,7 @@ import { yaml } from '@codemirror/lang-yaml';
 import { codeFolding, syntaxTree } from '@codemirror/language';
 import { EditorView, keymap } from '@codemirror/view';
 import { acceptCompletion } from '@codemirror/autocomplete';
+import { useGroupRef, type Layout } from 'react-resizable-panels';
 import { SaveText } from '../../bindings/changeme/fileservice';
 import { JSON_CONVERT_FORMATS, type JsonConvertFormat } from '../lib/json-converter';
 import { repairJson } from '../lib/json-repair';
@@ -572,6 +574,41 @@ export default function JsonTool({
   const autoFormatRef = useRef(autoFormatOnFill);
   autoFormatRef.current = autoFormatOnFill;
   useFocusOnActivate(active, () => views.current.get('input')?.focus());
+  const splitMode = schema || pipelineMode || convertMode;
+  const splitRootRef = useRef<HTMLDivElement>(null);
+  const [splitStacked, setSplitStacked] = useState(false);
+  const splitOrientation = splitStacked ? 'vertical' : 'horizontal';
+  const mainGroupRef = useGroupRef();
+  const mainLayoutsRef = useRef<Record<string, Layout>>({});
+  const mainLayoutKey = `${schema ? 'schema' : convertMode ? 'convert' : 'pipeline'}-${splitStacked ? 'v' : 'h'}`;
+  // 初始分栏比例沿用旧布局：schema 宽屏三等分，其余模式左右均分。
+  const mainDefaultLayout = useMemo<Layout>(
+    () =>
+      schema && !splitStacked
+        ? { 'json-primary': 100 / 3, 'json-secondary': 200 / 3 }
+        : { 'json-primary': 50, 'json-secondary': 50 },
+    [schema, splitStacked],
+  );
+  // 分栏方向跟随实际可用宽度：窄屏上下分栏，宽屏左右分栏。
+  useLayoutEffect(() => {
+    const el = splitRootRef.current;
+    if (!el) return;
+    const update = () => setSplitStacked(el.clientWidth < 960);
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+  // 单栏模式把右侧面板压到 0；分栏模式恢复该模式上次比例或旧默认值。
+  useLayoutEffect(() => {
+    const group = mainGroupRef.current;
+    if (!group) return;
+    if (!splitMode) {
+      group.setLayout({ 'json-primary': 100, 'json-secondary': 0 });
+      return;
+    }
+    group.setLayout(mainLayoutsRef.current[mainLayoutKey] ?? mainDefaultLayout);
+  }, [splitMode, mainLayoutKey, mainDefaultLayout, mainGroupRef]);
   const cmTheme = quietEditorTheme;
   const inputPreview = useMemo(() => {
     // 流水线模式下不再在主线程解析输入；输入表格按需使用后端结果。
@@ -1043,13 +1080,6 @@ export default function JsonTool({
       ]}
     />
   );
-  const jsonGridClass = convertMode
-    ? 'grid-cols-2 grid-rows-[minmax(0,1fr)] gap-3'
-    : pipelineMode
-      ? 'grid-cols-2 grid-rows-[minmax(0,1fr)] gap-3'
-      : schema
-        ? 'grid-cols-2 grid-rows-[minmax(0,1fr)] gap-3 @max-[959px]/json-page:grid-cols-2 @max-[959px]/json-page:grid-rows-1 @min-[960px]/json-page:grid-cols-3 @min-[960px]/json-page:grid-rows-1'
-        : 'grid-cols-1 grid-rows-[minmax(0,1fr)] gap-0';
   const footerGridClass = convertMode
     ? 'grid-cols-1'
     : pipelineMode
@@ -1278,228 +1308,272 @@ export default function JsonTool({
                 </span>
               </div>
             ) : null}
-            <div
-              className={`json-schema-layout relative grid h-full min-h-0 min-w-0 ${jsonGridClass}${pipelineMode ? ' pipeline-layout' : ''}`}
-            >
-              <div
-                className={
-                  pipelineMode
-                    ? 'json-pipeline-source grid h-full min-h-0 min-w-0 grid-rows-[minmax(0,1fr)_minmax(0,1fr)] gap-3 overflow-hidden'
-                    : 'contents'
-                }
+            <div ref={splitRootRef} className="json-schema-layout h-full min-h-0 min-w-0">
+              <ResizablePanelGroup
+                id="json-main-split"
+                orientation={splitOrientation}
+                className="min-h-0 min-w-0"
+                groupRef={mainGroupRef}
+                onLayoutChanged={(layout, meta) => {
+                  if (meta.isUserInteraction) mainLayoutsRef.current[mainLayoutKey] = layout;
+                }}
               >
-                <JsonEditorPane
-                  label={t('jsonTool.input')}
-                  value={input}
-                  onChange={changeInput}
-                  foldExt={foldExt}
-                  onCreate={(v) => views.current.set('input', v)}
-                  theme={cmTheme}
-                  emptyHint
-                  cmClassName="json-input-cm"
-                  formatOnPaste={autoFormatOnFill ? tryAutoFormat : undefined}
-                  tableMode={inputTableMode}
-                  active={active}
-                  tableDisabled={!input.trim() || !inputPreview.valid}
-                  tableHint={t('jsonTool.tablePreviewInvalid')}
-                  onToggleTable={toggleInputTable}
-                  tablePreview={<JsonTablePreview value={inputPreview.value} t={t} />}
-                  schemaMode={inputSchemaPreviewMode}
-                  onToggleSchema={inputIsSchema ? toggleInputSchemaPreview : undefined}
-                  schemaPreview={
-                    inputIsSchema ? <JsonSchemaPreview value={inputPreview.value} /> : null
-                  }
-                  onOpenFile={() => void fileDrop.pick()}
-                />
-                <div
-                  className={`json-pipeline-output-slot min-h-0 min-w-0${
-                    pipelineMode ? ' h-full' : modeHostHidden(false)
-                  }`}
-                  aria-hidden={!pipelineMode}
-                  {...(!pipelineMode ? { inert: true } : {})}
+                <ResizablePanel
+                  key="primary"
+                  id="json-primary"
+                  minSize={splitStacked ? '25%' : 220}
+                  className="min-h-0 min-w-0"
                 >
-                  <PipelineOutputPane
-                    evaluation={pipeline.evaluation}
-                    theme={cmTheme}
-                    foldExt={foldExt}
-                  />
-                </div>
-              </div>
-              <div
-                className={`json-convert-pane flex min-h-0 min-w-0 flex-col gap-2${modeHostHidden(convertMode)}`}
-                aria-hidden={!convertMode}
-                {...(!convertMode ? { inert: true } : {})}
-              >
-                <span className="json-pane-label flex-none font-mono text-[10px] font-medium leading-none tracking-[.04em] text-muted-foreground uppercase">
-                  {t('jsonTool.convert.format')}
-                </span>
-                <Select
-                  items={convertFormats}
-                  value={convertFormat}
-                  onValueChange={(value) => {
-                    if (value === 'xml' || value === 'toml' || value === 'yaml' || value === 'csv')
-                      setConvertFormat(value);
-                  }}
-                >
-                  <SelectTrigger
-                    size="sm"
-                    className="h-7 w-full min-w-0 text-[11px]"
-                    aria-label={t('jsonTool.convert.format')}
-                  >
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectGroup>
-                      {convertFormats.map((option) => (
-                        <SelectItem key={option.value} value={option.value}>
-                          {option.label}
-                        </SelectItem>
-                      ))}
-                    </SelectGroup>
-                  </SelectContent>
-                </Select>
-                <div className="json-pane-editor relative flex min-h-0 min-w-0 flex-1">
-                  <CodeMirror
-                    className="json-cm"
-                    height="100%"
-                    value={displayedConvert.text}
-                    editable={false}
-                    theme={cmTheme}
-                    onCreateEditor={(v) => {
-                      v.contentDOM.setAttribute('aria-label', t('jsonTool.convert.output'));
-                      views.current.set('convert', v);
-                    }}
-                    extensions={convertLang}
-                  />
-                  {conversion.status === 'error' ? (
-                    <div className="absolute inset-0 z-10 flex min-h-0">
-                      <JsonErrorPanel
-                        title={t('jsonTool.convert.errorTitle')}
-                        description={convertErrorMessage}
-                      />
-                    </div>
-                  ) : null}
-                </div>
-              </div>
-              <div
-                className={
-                  schema
-                    ? 'json-schema-right grid min-h-0 min-w-0 grid-rows-[minmax(0,1fr)_minmax(0,1fr)] gap-3 @max-[959px]/json-page:grid @min-[960px]/json-page:contents'
-                    : `json-schema-right min-h-0 min-w-0${modeHostHidden(false)}`
-                }
-                aria-hidden={!schema}
-                {...(!schema ? { inert: true } : {})}
-              >
-                <div
-                  className={schema ? 'contents' : modeHostHidden(false).trim()}
-                  aria-hidden={!schema}
-                  {...(!schema ? { inert: true } : {})}
-                >
-                  <div className="json-path flex min-w-0 flex-col gap-2 min-h-0">
-                    <span className="flex-none font-mono text-[10px] font-medium leading-none tracking-[.04em] text-muted-foreground uppercase">
-                      {t('jsonTool.schema')}
-                    </span>
-                    <div className="json-path-field flex min-h-0 min-w-0 flex-1">
-                      <CodeMirror
-                        className="json-cm json-path-cm"
-                        height="100%"
-                        value={path}
-                        onChange={setPath}
+                  <div className="json-pipeline-source flex h-full min-h-0 min-w-0 flex-col gap-3">
+                    <JsonEditorPane
+                      label={t('jsonTool.input')}
+                      value={input}
+                      onChange={changeInput}
+                      foldExt={foldExt}
+                      onCreate={(v) => views.current.set('input', v)}
+                      theme={cmTheme}
+                      emptyHint
+                      cmClassName="json-input-cm"
+                      formatOnPaste={autoFormatOnFill ? tryAutoFormat : undefined}
+                      tableMode={inputTableMode}
+                      active={active}
+                      tableDisabled={!input.trim() || !inputPreview.valid}
+                      tableHint={t('jsonTool.tablePreviewInvalid')}
+                      onToggleTable={toggleInputTable}
+                      tablePreview={<JsonTablePreview value={inputPreview.value} t={t} />}
+                      schemaMode={inputSchemaPreviewMode}
+                      onToggleSchema={inputIsSchema ? toggleInputSchemaPreview : undefined}
+                      schemaPreview={
+                        inputIsSchema ? <JsonSchemaPreview value={inputPreview.value} /> : null
+                      }
+                      onOpenFile={() => void fileDrop.pick()}
+                    />
+                    <div
+                      className={`json-pipeline-output-slot min-h-0 min-w-0${
+                        pipelineMode ? ' flex-1' : modeHostHidden(false)
+                      }`}
+                      aria-hidden={!pipelineMode}
+                      {...(!pipelineMode ? { inert: true } : {})}
+                    >
+                      <PipelineOutputPane
+                        evaluation={pipeline.evaluation}
                         theme={cmTheme}
-                        indentWithTab={false}
-                        onCreateEditor={(v) => {
-                          v.contentDOM.setAttribute('aria-label', t('jsonTool.schema'));
-                          views.current.set('path', v);
-                        }}
-                        basicSetup={{
-                          lineNumbers: false,
-                          foldGutter: false,
-                          autocompletion: false,
-                          closeBrackets: false,
-                        }}
-                        extensions={pathExt}
-                        placeholder={t('jsonTool.schemaPathPlaceholder')}
+                        foldExt={foldExt}
                       />
                     </div>
                   </div>
-                  <div className="json-pane flex h-full min-h-0 min-w-0 flex-1 flex-col gap-2">
-                    <span className="json-pane-label flex-none font-mono text-[10px] font-medium leading-none tracking-[.04em] text-muted-foreground uppercase">
-                      {t('jsonTool.result')}
-                    </span>
-                    <div className="json-pane-editor relative flex min-h-0 min-w-0 flex-1">
-                      <CodeMirror
-                        className="json-cm"
-                        height="100%"
-                        value={result}
-                        editable={false}
-                        theme={cmTheme}
-                        onCreateEditor={(v) => {
-                          v.contentDOM.setAttribute('aria-label', t('jsonTool.result'));
-                          views.current.set('result', v);
+                </ResizablePanel>
+                {splitMode ? (
+                  <ResizableHandle
+                    key="main-handle"
+                    variant="handle"
+                    className={splitStacked ? 'my-1' : 'mx-1'}
+                    aria-label={t('jsonTool.resizePanels')}
+                  />
+                ) : null}
+                <ResizablePanel
+                  key="secondary"
+                  id="json-secondary"
+                  collapsible
+                  collapsedSize={0}
+                  minSize={splitStacked ? '25%' : 220}
+                  className="min-h-0 min-w-0"
+                >
+                  <div className="relative h-full min-h-0 min-w-0">
+                    <div
+                      className={`json-convert-pane flex h-full min-h-0 min-w-0 flex-col gap-2${modeHostHidden(convertMode)}`}
+                      aria-hidden={!convertMode}
+                      {...(!convertMode ? { inert: true } : {})}
+                    >
+                      <span className="json-pane-label flex-none font-mono text-[10px] font-medium leading-none tracking-[.04em] text-muted-foreground uppercase">
+                        {t('jsonTool.convert.format')}
+                      </span>
+                      <Select
+                        items={convertFormats}
+                        value={convertFormat}
+                        onValueChange={(value) => {
+                          if (
+                            value === 'xml' ||
+                            value === 'toml' ||
+                            value === 'yaml' ||
+                            value === 'csv'
+                          )
+                            setConvertFormat(value);
                         }}
-                        extensions={schemaResultExt}
+                      >
+                        <SelectTrigger
+                          size="sm"
+                          className="h-7 w-full min-w-0 text-[11px]"
+                          aria-label={t('jsonTool.convert.format')}
+                        >
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectGroup>
+                            {convertFormats.map((option) => (
+                              <SelectItem key={option.value} value={option.value}>
+                                {option.label}
+                              </SelectItem>
+                            ))}
+                          </SelectGroup>
+                        </SelectContent>
+                      </Select>
+                      <div className="json-pane-editor relative flex min-h-0 min-w-0 flex-1">
+                        <CodeMirror
+                          className="json-cm"
+                          height="100%"
+                          value={displayedConvert.text}
+                          editable={false}
+                          theme={cmTheme}
+                          onCreateEditor={(v) => {
+                            v.contentDOM.setAttribute('aria-label', t('jsonTool.convert.output'));
+                            views.current.set('convert', v);
+                          }}
+                          extensions={convertLang}
+                        />
+                        {conversion.status === 'error' ? (
+                          <div className="absolute inset-0 z-10 flex min-h-0">
+                            <JsonErrorPanel
+                              title={t('jsonTool.convert.errorTitle')}
+                              description={convertErrorMessage}
+                            />
+                          </div>
+                        ) : null}
+                      </div>
+                    </div>
+                    <ResizablePanelGroup
+                      id="json-schema-split"
+                      orientation={splitOrientation}
+                      className={`json-schema-right min-h-0 min-w-0${schema ? '' : modeHostHidden(false)}`}
+                      aria-hidden={!schema}
+                      {...(!schema ? { inert: true } : {})}
+                    >
+                      <ResizablePanel
+                        id="json-path"
+                        defaultSize="50%"
+                        minSize={splitStacked ? '20%' : 120}
+                        className="min-h-0 min-w-0"
+                      >
+                        <div className="json-path flex h-full min-w-0 flex-col gap-2 min-h-0">
+                          <span className="flex-none font-mono text-[10px] font-medium leading-none tracking-[.04em] text-muted-foreground uppercase">
+                            {t('jsonTool.schema')}
+                          </span>
+                          <div className="json-path-field flex min-h-0 min-w-0 flex-1">
+                            <CodeMirror
+                              className="json-cm json-path-cm"
+                              height="100%"
+                              value={path}
+                              onChange={setPath}
+                              theme={cmTheme}
+                              indentWithTab={false}
+                              onCreateEditor={(v) => {
+                                v.contentDOM.setAttribute('aria-label', t('jsonTool.schema'));
+                                views.current.set('path', v);
+                              }}
+                              basicSetup={{
+                                lineNumbers: false,
+                                foldGutter: false,
+                                autocompletion: false,
+                                closeBrackets: false,
+                              }}
+                              extensions={pathExt}
+                              placeholder={t('jsonTool.schemaPathPlaceholder')}
+                            />
+                          </div>
+                        </div>
+                      </ResizablePanel>
+                      <ResizableHandle
+                        variant="handle"
+                        className={splitStacked ? 'my-1' : 'mx-1'}
+                        aria-label={t('jsonTool.resizePanels')}
                       />
-                      {pathError ? (
-                        <div className="absolute inset-0 z-10 flex min-h-0">
-                          <JsonErrorPanel
-                            title={t('jsonTool.pipeline.errorTitle')}
-                            description={pathError}
-                          />
+                      <ResizablePanel
+                        id="json-result"
+                        defaultSize="50%"
+                        minSize={splitStacked ? '25%' : 200}
+                        className="min-h-0 min-w-0"
+                      >
+                        <div className="json-pane flex h-full min-h-0 min-w-0 flex-col gap-2">
+                          <span className="json-pane-label flex-none font-mono text-[10px] font-medium leading-none tracking-[.04em] text-muted-foreground uppercase">
+                            {t('jsonTool.result')}
+                          </span>
+                          <div className="json-pane-editor relative flex min-h-0 min-w-0 flex-1">
+                            <CodeMirror
+                              className="json-cm"
+                              height="100%"
+                              value={result}
+                              editable={false}
+                              theme={cmTheme}
+                              onCreateEditor={(v) => {
+                                v.contentDOM.setAttribute('aria-label', t('jsonTool.result'));
+                                views.current.set('result', v);
+                              }}
+                              extensions={schemaResultExt}
+                            />
+                            {pathError ? (
+                              <div className="absolute inset-0 z-10 flex min-h-0">
+                                <JsonErrorPanel
+                                  title={t('jsonTool.pipeline.errorTitle')}
+                                  description={pathError}
+                                />
+                              </div>
+                            ) : null}
+                            {!pathError && (
+                              <div
+                                className={`json-table-layer${resultTableMode && active ? ' is-visible' : ''}`}
+                                aria-hidden={!resultTableMode || !active}
+                                {...(!resultTableMode || !active ? { inert: true } : {})}
+                              >
+                                <JsonTablePreview value={resultPreview.value} t={t} />
+                              </div>
+                            )}
+                            {!pathError && (
+                              <Button
+                                type="button"
+                                variant={resultTableMode ? 'secondary' : 'ghost'}
+                                size="icon-sm"
+                                className="json-table-toggle absolute top-2 right-2 z-20"
+                                disabled={!result.trim() || !resultPreview.valid}
+                                aria-label={t('jsonTool.tablePreview')}
+                                title={
+                                  !result.trim() || !resultPreview.valid
+                                    ? t('jsonTool.tablePreviewInvalid')
+                                    : t(
+                                        resultTableMode
+                                          ? 'jsonTool.tablePreviewOn'
+                                          : 'jsonTool.tablePreview',
+                                      )
+                                }
+                                onClick={() => setResultTableMode((current) => !current)}
+                              >
+                                <TableIcon />
+                              </Button>
+                            )}
+                          </div>
                         </div>
-                      ) : null}
-                      {!pathError && (
-                        <div
-                          className={`json-table-layer${resultTableMode && active ? ' is-visible' : ''}`}
-                          aria-hidden={!resultTableMode || !active}
-                          {...(!resultTableMode || !active ? { inert: true } : {})}
-                        >
-                          <JsonTablePreview value={resultPreview.value} t={t} />
-                        </div>
-                      )}
-                      {!pathError && (
-                        <Button
-                          type="button"
-                          variant={resultTableMode ? 'secondary' : 'ghost'}
-                          size="icon-sm"
-                          className="json-table-toggle absolute top-2 right-2 z-20"
-                          disabled={!result.trim() || !resultPreview.valid}
-                          aria-label={t('jsonTool.tablePreview')}
-                          title={
-                            !result.trim() || !resultPreview.valid
-                              ? t('jsonTool.tablePreviewInvalid')
-                              : t(
-                                  resultTableMode
-                                    ? 'jsonTool.tablePreviewOn'
-                                    : 'jsonTool.tablePreview',
-                                )
-                          }
-                          onClick={() => setResultTableMode((current) => !current)}
-                        >
-                          <TableIcon />
-                        </Button>
-                      )}
+                      </ResizablePanel>
+                    </ResizablePanelGroup>
+                    <div
+                      className={`json-pipeline-slot min-h-0 min-w-0${
+                        pipelineMode ? ' h-full overflow-hidden' : modeHostHidden(false)
+                      }`}
+                      aria-hidden={!pipelineMode}
+                      {...(!pipelineMode ? { inert: true } : {})}
+                    >
+                      <PipelinePanel
+                        context={pipeline.context}
+                        rules={pipelineRules}
+                        theme={cmTheme}
+                        focusItemId={pipelineFocusId}
+                        onFocusHandled={() => setPipelineFocusId(null)}
+                        onChange={setPipelineRules}
+                        onRemove={removePipelineItem}
+                        onMove={movePipelineItem}
+                      />
                     </div>
                   </div>
-                </div>
-              </div>
-              <div
-                className={`json-pipeline-slot min-h-0 min-w-0${
-                  pipelineMode ? ' h-full overflow-hidden' : modeHostHidden(false)
-                }`}
-                aria-hidden={!pipelineMode}
-                {...(!pipelineMode ? { inert: true } : {})}
-              >
-                <PipelinePanel
-                  context={pipeline.context}
-                  rules={pipelineRules}
-                  theme={cmTheme}
-                  focusItemId={pipelineFocusId}
-                  onFocusHandled={() => setPipelineFocusId(null)}
-                  onChange={setPipelineRules}
-                  onRemove={removePipelineItem}
-                  onMove={movePipelineItem}
-                />
-              </div>
+                </ResizablePanel>
+              </ResizablePanelGroup>
             </div>
             <div className={`detected hidden${input && !jsonValue ? ' invalid' : ''}`}>
               <span>{t('jsonTool.detected')}</span>

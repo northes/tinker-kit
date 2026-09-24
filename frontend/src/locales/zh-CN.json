@@ -151,6 +151,7 @@
     "copy": "复制",
     "clear": "清空",
     "cancel": "取消",
+    "resizePanels": "调整 JSON 面板大小",
     "commentTitle": "内容包含注释",
     "commentFormatBody": "格式化带注释的 JSON 可能失败。是否清除注释后继续？",
     "commentMinifyBody": "压缩会丢失注释，压缩后结果可能与预期不符。是否清除注释后继续？",
