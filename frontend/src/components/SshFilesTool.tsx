@@ -978,6 +978,14 @@ export default function SshFilesTool({ active }: Props) {
     }
   };
 
+  const reloadCurrentView = () => {
+    if (searchActive && searchQuery) {
+      void executeSearch(searchQuery);
+    } else if (sourceID) {
+      void loadDirectory(sourceID, currentPath, showHidden);
+    }
+  };
+
   const clearSearch = () => {
     const shouldReload = searchActive || Boolean(searchQuery);
     resetSearchState();
@@ -2010,11 +2018,7 @@ export default function SshFilesTool({ active }: Props) {
             size="icon-sm"
             className="h-7 w-7 flex-none"
             disabled={!sourceUsable || isLoading}
-            onClick={() =>
-              searchActive && searchQuery
-                ? void executeSearch(searchQuery)
-                : void loadDirectory(sourceID, currentPath, showHidden)
-            }
+            onClick={reloadCurrentView}
             aria-label={t('sshFilesTool.refresh')}
           >
             <ArrowClockwise size={14} />
@@ -2140,11 +2144,7 @@ export default function SshFilesTool({ active }: Props) {
                   <Button
                     variant="outline"
                     className="mt-1 h-8 text-xs"
-                    onClick={() =>
-                      searchActive && searchQuery
-                        ? void executeSearch(searchQuery)
-                        : void loadDirectory(sourceID, currentPath, showHidden)
-                    }
+                    onClick={reloadCurrentView}
                   >
                     <ArrowClockwise data-icon="inline-start" size={14} />
                     {t('sshFilesTool.refresh')}
@@ -2477,6 +2477,13 @@ export default function SshFilesTool({ active }: Props) {
                     ? 'sshFilesTool.removeFavoritePath'
                     : 'sshFilesTool.addFavoritePath',
                 )}
+              </ContextMenuItem>
+            </ContextMenuGroup>
+            <ContextMenuSeparator />
+            <ContextMenuGroup>
+              <ContextMenuItem disabled={!sourceUsable || isLoading} onClick={reloadCurrentView}>
+                <ArrowClockwise size={14} weight="duotone" aria-hidden="true" />
+                {t('sshFilesTool.refresh')}
               </ContextMenuItem>
             </ContextMenuGroup>
           </ContextMenuContent>
