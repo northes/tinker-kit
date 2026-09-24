@@ -5,6 +5,9 @@
 @import './styles/foundation.css';
 
 @custom-variant dark (&:is(.dark *));
+/* Base UI 用 data-orientation="horizontal|vertical"，映射为短变体供 Tailwind 使用。 */
+@custom-variant data-horizontal (&:where([data-orientation='horizontal']));
+@custom-variant data-vertical (&:where([data-orientation='vertical']));
 @theme inline {
   --radius-sm: calc(var(--radius) * 0.6);
   --radius-md: calc(var(--radius) * 0.8);
