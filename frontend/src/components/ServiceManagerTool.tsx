@@ -7,9 +7,11 @@ import {
   ArrowCounterClockwise,
   Asterisk,
   CaretDown,
+  ChartLineUp,
   Eraser,
   GearSix,
   Info,
+  ListBullets,
   Pause,
   Play,
   Power,
@@ -96,6 +98,7 @@ import { toast } from './ui/toast';
 import { ToggleGroup, ToggleGroupItem } from './ui/toggle-group';
 import { TargetHostManagerDialog } from './TargetHostManagerDialog';
 import { formatBackendError } from '../lib/backend-error';
+import { ServiceMetricsPanel } from './ServiceMetricsPanel';
 
 const MANAGE_TARGETS_VALUE = '__manage-targets__';
 const VISIBLE_LOG_LIMIT = 5000;
@@ -202,7 +205,7 @@ export default function ServiceManagerTool({
   const [selection, setSelection] = useState<Selection | null>(null);
   const [busy, setBusy] = useState('');
   const [monitors, setMonitors] = useState<LogMonitor[]>([]);
-  const [view, setView] = useState<'resource' | 'workspace'>('resource');
+  const [view, setView] = useState<'resource' | 'metrics' | 'workspace'>('resource');
   const [panelOrientation, setPanelOrientation] = useState<'horizontal' | 'vertical'>(() =>
     window.matchMedia('(max-width: 800px)').matches ? 'vertical' : 'horizontal',
   );
@@ -750,113 +753,131 @@ export default function ServiceManagerTool({
         />
         <ToolLayoutToolbar
           left={
-            <>
-              <div className="flex min-w-0 flex-col gap-1 max-[700px]:w-full">
-                <span className="text-[10px] font-medium text-muted-foreground">
-                  {t('serviceManagerTool.target')}
-                </span>
-                <Select
-                  items={targets.map((item) => ({ value: item.id, label: targetLabel(item, t) }))}
-                  value={targetID}
-                  onValueChange={(value) => {
-                    if (value === MANAGE_TARGETS_VALUE) {
-                      openManage();
-                      return;
-                    }
-                    selectTarget(value);
-                  }}
-                >
-                  <SelectTrigger className="min-w-48">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectGroup>
-                      {targets.map((item) => (
-                        <SelectItem key={item.id} value={item.id}>
-                          {targetLabel(item, t)}
-                        </SelectItem>
-                      ))}
-                      {targets.length > 0 ? <SelectSeparator /> : null}
-                      <SelectItem value={MANAGE_TARGETS_VALUE}>
-                        <span className="flex items-center gap-2">
-                          <GearSix size={14} weight="duotone" />
-                          {t('serviceManagerTool.manageTargets')}
-                        </span>
-                      </SelectItem>
-                    </SelectGroup>
-                  </SelectContent>
-                </Select>
-                {selectedTargetMissing ? (
-                  <Badge variant="destructive" className="h-5 text-[10px]">
-                    {t('serviceManagerTool.sshProfileMissing')}
-                  </Badge>
-                ) : null}
-              </div>
-              <div className="flex min-w-0 flex-col gap-1 max-[700px]:w-full">
-                <span className="text-[10px] font-medium text-muted-foreground">
-                  {t('serviceManagerTool.status')}
-                </span>
-                <DropdownMenu>
-                  <DropdownMenuTrigger
-                    render={
-                      <Button variant="outline" size="sm" className="min-w-48 justify-between" />
-                    }
+            view === 'metrics' ? null : (
+              <>
+                <div className="flex min-w-0 flex-col gap-1 max-[700px]:w-full">
+                  <span className="text-[10px] font-medium text-muted-foreground">
+                    {t('serviceManagerTool.target')}
+                  </span>
+                  <Select
+                    items={targets.map((item) => ({ value: item.id, label: targetLabel(item, t) }))}
+                    value={targetID}
+                    onValueChange={(value) => {
+                      if (value === MANAGE_TARGETS_VALUE) {
+                        openManage();
+                        return;
+                      }
+                      selectTarget(value);
+                    }}
                   >
-                    <span className="truncate">
-                      {statusFilter.size === 0
-                        ? t('serviceManagerTool.statusAll')
-                        : t('serviceManagerTool.statusSelected', { count: statusFilter.size })}
-                    </span>
-                    <CaretDown data-icon="inline-end" aria-hidden="true" />
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="start" className="max-h-80 w-56 overflow-y-auto">
-                    {STATUS_GROUPS.map((group) => (
-                      <DropdownMenuGroup key={group.runtime}>
-                        <DropdownMenuLabel>
-                          {t(`serviceManagerTool.runtimes.${group.runtime}`)}
-                        </DropdownMenuLabel>
-                        {group.statuses.map((status) => (
-                          <DropdownMenuCheckboxItem
-                            key={statusKey(group.runtime, status)}
-                            checked={statusFilter.has(statusKey(group.runtime, status))}
-                            closeOnClick={false}
-                            onCheckedChange={(checked) =>
-                              toggleStatus(group.runtime, status, checked === true)
-                            }
-                          >
-                            {status}
-                          </DropdownMenuCheckboxItem>
+                    <SelectTrigger className="min-w-48">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectGroup>
+                        {targets.map((item) => (
+                          <SelectItem key={item.id} value={item.id}>
+                            {targetLabel(item, t)}
+                          </SelectItem>
                         ))}
-                      </DropdownMenuGroup>
-                    ))}
-                    {statusFilter.size > 0 ? (
-                      <>
-                        <DropdownMenuSeparator />
-                        <DropdownMenuItem onClick={clearStatusFilter}>
-                          {t('serviceManagerTool.clearStatusFilter')}
-                        </DropdownMenuItem>
-                      </>
-                    ) : null}
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              </div>
-              <div className="flex min-w-0 flex-col gap-1 max-[700px]:w-full">
-                <span className="text-[10px] font-medium text-muted-foreground">
-                  {t('serviceManagerTool.search')}
-                </span>
-                <Input
-                  value={searchDraft}
-                  onChange={(event) => setSearchDraft(event.target.value)}
-                  onKeyDown={(event) => {
-                    if (event.key === 'Enter') setSearch(searchDraft.trim().toLowerCase());
-                  }}
-                  placeholder={t('serviceManagerTool.searchPlaceholder')}
-                />
-              </div>
-            </>
+                        {targets.length > 0 ? <SelectSeparator /> : null}
+                        <SelectItem value={MANAGE_TARGETS_VALUE}>
+                          <span className="flex items-center gap-2">
+                            <GearSix size={14} weight="duotone" />
+                            {t('serviceManagerTool.manageTargets')}
+                          </span>
+                        </SelectItem>
+                      </SelectGroup>
+                    </SelectContent>
+                  </Select>
+                  {selectedTargetMissing ? (
+                    <Badge variant="destructive" className="h-5 text-[10px]">
+                      {t('serviceManagerTool.sshProfileMissing')}
+                    </Badge>
+                  ) : null}
+                </div>
+                <div className="flex min-w-0 flex-col gap-1 max-[700px]:w-full">
+                  <span className="text-[10px] font-medium text-muted-foreground">
+                    {t('serviceManagerTool.status')}
+                  </span>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger
+                      render={
+                        <Button variant="outline" size="sm" className="min-w-48 justify-between" />
+                      }
+                    >
+                      <span className="truncate">
+                        {statusFilter.size === 0
+                          ? t('serviceManagerTool.statusAll')
+                          : t('serviceManagerTool.statusSelected', { count: statusFilter.size })}
+                      </span>
+                      <CaretDown data-icon="inline-end" aria-hidden="true" />
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="start" className="max-h-80 w-56 overflow-y-auto">
+                      {STATUS_GROUPS.map((group) => (
+                        <DropdownMenuGroup key={group.runtime}>
+                          <DropdownMenuLabel>
+                            {t(`serviceManagerTool.runtimes.${group.runtime}`)}
+                          </DropdownMenuLabel>
+                          {group.statuses.map((status) => (
+                            <DropdownMenuCheckboxItem
+                              key={statusKey(group.runtime, status)}
+                              checked={statusFilter.has(statusKey(group.runtime, status))}
+                              closeOnClick={false}
+                              onCheckedChange={(checked) =>
+                                toggleStatus(group.runtime, status, checked === true)
+                              }
+                            >
+                              {status}
+                            </DropdownMenuCheckboxItem>
+                          ))}
+                        </DropdownMenuGroup>
+                      ))}
+                      {statusFilter.size > 0 ? (
+                        <>
+                          <DropdownMenuSeparator />
+                          <DropdownMenuItem onClick={clearStatusFilter}>
+                            {t('serviceManagerTool.clearStatusFilter')}
+                          </DropdownMenuItem>
+                        </>
+                      ) : null}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </div>
+                <div className="flex min-w-0 flex-col gap-1 max-[700px]:w-full">
+                  <span className="text-[10px] font-medium text-muted-foreground">
+                    {t('serviceManagerTool.search')}
+                  </span>
+                  <Input
+                    value={searchDraft}
+                    onChange={(event) => setSearchDraft(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter') setSearch(searchDraft.trim().toLowerCase());
+                    }}
+                    placeholder={t('serviceManagerTool.searchPlaceholder')}
+                  />
+                </div>
+              </>
+            )
           }
           right={
             <div className="flex items-center gap-2">
+              <Button
+                variant={view === 'resource' ? 'secondary' : 'outline'}
+                size="sm"
+                onClick={() => setView('resource')}
+              >
+                <ListBullets weight="duotone" />
+                {t('serviceManagerTool.resources')}
+              </Button>
+              <Button
+                variant={view === 'metrics' ? 'secondary' : 'outline'}
+                size="sm"
+                onClick={() => setView('metrics')}
+              >
+                <ChartLineUp weight="duotone" />
+                {t('serviceManagerTool.metrics.title')}
+              </Button>
               <Button
                 variant={view === 'workspace' ? 'secondary' : 'outline'}
                 size="sm"
@@ -875,8 +896,20 @@ export default function ServiceManagerTool({
             </div>
           }
         />
-        <ToolLayoutContent className="min-h-0 border-t">
-          <ResizablePanelGroup orientation={panelOrientation} className="min-h-0 min-w-0">
+        <ToolLayoutContent className="relative min-h-0 border-t">
+          <div
+            className={`absolute inset-0 min-h-0 min-w-0 ${view === 'metrics' ? '' : 'invisible pointer-events-none'}`}
+            inert={view !== 'metrics' ? true : undefined}
+            aria-hidden={view !== 'metrics'}
+          >
+            <ServiceMetricsPanel enabled={active && view === 'metrics'} targets={targets} />
+          </div>
+          <ResizablePanelGroup
+            orientation={panelOrientation}
+            className={`min-h-0 min-w-0 ${view === 'metrics' ? 'invisible pointer-events-none' : ''}`}
+            inert={view === 'metrics' ? true : undefined}
+            aria-hidden={view === 'metrics'}
+          >
             <ResizablePanel
               id="resources"
               defaultSize={panelOrientation === 'horizontal' ? '38%' : '42%'}

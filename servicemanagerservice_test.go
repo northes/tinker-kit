@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -224,5 +225,95 @@ func TestBuildRemoteEnvProbeScriptIncludesManagersAndCommands(t *testing.T) {
 		if !strings.Contains(script, want) {
 			t.Fatalf("探测脚本缺少 %q: %s", want, script)
 		}
+	}
+}
+
+func TestParseMetricBytesAndPair(t *testing.T) {
+	for input, want := range map[string]float64{
+		"0B":      0,
+		"1.5kB":   1500,
+		"2 MiB":   2 * 1024 * 1024,
+		"1.25GiB": 1.25 * 1024 * 1024 * 1024,
+	} {
+		got := parseMetricBytes(input)
+		if got == nil || *got != want {
+			t.Fatalf("parseMetricBytes(%q) = %v, 期望 %v", input, got, want)
+		}
+	}
+	left, right := parseMetricPair("12.5MB / 2GiB")
+	if left == nil || right == nil || *left != 12.5e6 || *right != 2*1024*1024*1024 {
+		t.Fatalf("指标对解析错误: left=%v right=%v", left, right)
+	}
+	if parseMetricBytes("unknown") != nil {
+		t.Fatal("无效容量不应伪装为 0")
+	}
+}
+
+func TestParseHostMetricOutputPreservesUnavailableDisk(t *testing.T) {
+	value, err := parseHostMetricOutput("noise\n__TK_METRIC__\tdarwin\t8\t12.5\t1000\t2000\t3000\t4000\t\t\n")
+	if err != nil {
+		t.Fatalf("解析主机指标失败: %v", err)
+	}
+	if value.CPUCores != 8 || value.CPUPercent == nil || *value.CPUPercent != 12.5 {
+		t.Fatalf("CPU 指标错误: %#v", value)
+	}
+	if value.NetworkRxBytes == nil || *value.NetworkRxBytes != 3000 || value.NetworkTxBytes == nil || *value.NetworkTxBytes != 4000 {
+		t.Fatalf("网络指标错误: %#v", value)
+	}
+	if value.DiskReadBytes != nil || value.DiskWriteBytes != nil {
+		t.Fatalf("不可用的磁盘指标不应伪装为 0: %#v", value)
+	}
+	availability := hostMetricSample(ServiceTarget{ID: "local", Name: "local"}, value).Availability
+	if availability.Disk != "unsupported" {
+		t.Fatalf("macOS 磁盘指标应明确标记不支持: %#v", availability)
+	}
+}
+
+func TestHostMetricScriptReturnsParsableLocalSnapshot(t *testing.T) {
+	out, err := exec.Command("sh", "-lc", hostMetricScript).CombinedOutput()
+	if err != nil {
+		t.Fatalf("本机性能脚本执行失败: %v\n%s", err, out)
+	}
+	value, err := parseHostMetricOutput(string(out))
+	if err != nil {
+		t.Fatalf("本机性能脚本输出无法解析: %v\n%s", err, out)
+	}
+	if value.System == "" || value.CPUCores < 1 {
+		t.Fatalf("本机性能脚本缺少平台或核心数: %#v\n%s", value, out)
+	}
+}
+
+func TestParseSystemdMetricOutputKeepsAccountingState(t *testing.T) {
+	values := parseSystemdMetricOutput("Id=api.service\nActiveState=active\nCPUUsageNSec=1200000000\nMemoryCurrent=4096\nMemoryMax=infinity\nIOReadBytes=1024\nIOWriteBytes=2048\nIPIngressBytes=[not set]\nIPEgressBytes=[not set]\n\n")
+	value, ok := values["api.service"]
+	if !ok || value.CPUTimeNS == nil || value.MemoryBytes == nil {
+		t.Fatalf("systemd 基础指标缺失: %#v", values)
+	}
+	if value.MemoryLimit != nil || value.NetworkRxBytes != nil || value.NetworkTxBytes != nil {
+		t.Fatalf("未启用的 systemd accounting 不应产生数值: %#v", value)
+	}
+	if value.DiskReadBytes == nil || *value.DiskReadBytes != 1024 || value.DiskWriteBytes == nil || *value.DiskWriteBytes != 2048 {
+		t.Fatalf("systemd 磁盘计数错误: %#v", value)
+	}
+}
+
+func TestAggregateComposeMetricsMarksPartialValues(t *testing.T) {
+	cpu := 10.0
+	memory := 1024.0
+	containers := []DockerContainer{
+		{ID: "aaaaaaaaaaaa", Name: "api", ComposeProject: "demo", Running: true},
+		{ID: "bbbbbbbbbbbb", Name: "worker", ComposeProject: "demo", Running: false},
+	}
+	groups, _ := groupDockerContainers(containers)
+	resources := []ServiceMetricSample{
+		{ID: containers[0].ID, CPUPercent: &cpu, MemoryBytes: &memory},
+		{ID: containers[1].ID},
+	}
+	result := aggregateComposeMetrics(ServiceTarget{ID: "local"}, groups, resources, 8)
+	if len(result) != 1 || !result[0].Partial {
+		t.Fatalf("部分可用的 Compose 应标记 partial: %#v", result)
+	}
+	if result[0].Availability.CPU != "partial" || result[0].Availability.Network != "unavailable" {
+		t.Fatalf("Compose 可用性聚合错误: %#v", result[0].Availability)
 	}
 }

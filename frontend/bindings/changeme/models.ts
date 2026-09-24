@@ -588,6 +588,43 @@ export interface ServiceLogSnapshot {
     "truncated": boolean;
 }
 
+export interface ServiceMetricAvailability {
+    "cpu": string;
+    "memory": string;
+    "network": string;
+    "disk": string;
+}
+
+export interface ServiceMetricSample {
+    "targetID": string;
+    "targetName": string;
+    "kind": string;
+    "runtime": string;
+    "id": string;
+    "name": string;
+    "group"?: string;
+    "status"?: string;
+    "cpuCores": number;
+    "cpuPercent"?: number | null;
+    "cpuTimeNS"?: number | null;
+    "memoryBytes"?: number | null;
+    "memoryLimit"?: number | null;
+    "networkRxBytes"?: number | null;
+    "networkTxBytes"?: number | null;
+    "diskReadBytes"?: number | null;
+    "diskWriteBytes"?: number | null;
+    "availability": ServiceMetricAvailability;
+    "partial"?: boolean;
+}
+
+export interface ServiceMetricSnapshot {
+    "target": ServiceTarget;
+    "timestamp": string;
+    "samples": ServiceMetricSample[] | null;
+    "errors": { [_ in string]?: string } | null;
+    "error"?: string;
+}
+
 export interface ServiceResourceRef {
     "runtime": string;
     "id": string;
