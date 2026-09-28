@@ -1249,12 +1249,12 @@ export default function ServiceManagerTool({
             >
               {view === 'workspace' ? (
                 <div className="flex h-full min-h-0 flex-col">
-                  <div className="flex min-h-11 flex-none items-center justify-between gap-2 border-b px-3 has-[>[data-workspace-select]:hover]:bg-muted/50">
+                  <div className="flex h-11 flex-none items-center justify-between gap-2 border-b px-3 has-[>[data-workspace-select]:hover]:bg-muted/50">
                     <button
                       type="button"
                       data-workspace-select
                       aria-pressed={selection?.kind === 'workspace'}
-                      className={`-ml-3 flex min-h-11 min-w-0 flex-1 items-center gap-2 px-3 text-left text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${selection?.kind === 'workspace' ? 'bg-muted' : ''}`}
+                      className={`-ml-3 flex h-11 min-w-0 flex-1 items-center gap-2 px-3 text-left text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${selection?.kind === 'workspace' ? 'bg-muted' : ''}`}
                       onClick={() => setSelection(WORKSPACE_SELECTION)}
                     >
                       <span className="font-semibold">{t('serviceManagerTool.workspace')}</span>
@@ -1291,7 +1291,7 @@ export default function ServiceManagerTool({
                             aria-pressed={
                               selection?.kind === 'host' && selection.targetID === hostID
                             }
-                            className={`flex w-full items-center border-b px-3 py-2 text-left text-xs font-semibold hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${selection?.kind === 'host' && selection.targetID === hostID ? 'bg-muted text-foreground' : 'text-muted-foreground'}`}
+                            className={`flex h-11 w-full min-w-0 items-center border-b px-3 text-left text-xs font-semibold hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${selection?.kind === 'host' && selection.targetID === hostID ? 'bg-muted text-foreground' : 'text-muted-foreground'}`}
                             onClick={() => {
                               const host = targets.find((item) => item.id === hostID);
                               setSelection({
@@ -1307,12 +1307,14 @@ export default function ServiceManagerTool({
                               });
                             }}
                           >
-                            {targets.find((item) => item.id === hostID)
-                              ? targetLabel(
-                                  targets.find((item) => item.id === hostID)!,
-                                  t,
-                                )
-                              : t('serviceManagerTool.targetUnavailable')}
+                            <span className="truncate">
+                              {targets.find((item) => item.id === hostID)
+                                ? targetLabel(
+                                    targets.find((item) => item.id === hostID)!,
+                                    t,
+                                  )
+                                : t('serviceManagerTool.targetUnavailable')}
+                            </span>
                           </button>
                           {workspaceErrors[hostID] ? (
                             <RuntimeError
@@ -1743,7 +1745,7 @@ function ResourceList({
           render={
             <button
               type="button"
-              className={`flex w-full items-center gap-2 border-b px-3 py-2 text-left text-sm hover:bg-muted/50 ${active ? 'bg-muted' : ''} ${running ? '' : 'text-muted-foreground'}`}
+              className={`flex h-11 w-full items-center gap-2 border-b px-3 text-left text-sm hover:bg-muted/50 ${active ? 'bg-muted' : ''} ${running ? '' : 'text-muted-foreground'}`}
               onClick={() => onSelect({ targetID, resource, kind })}
             />
           }
@@ -1841,7 +1843,7 @@ function ResourceList({
               <div
                 role="button"
                 tabIndex={0}
-                className={`flex cursor-pointer items-center gap-2 border-b px-3 py-2 text-xs font-semibold hover:bg-muted/50 ${active ? 'bg-muted text-foreground' : 'text-muted-foreground'}`}
+                className={`flex h-11 cursor-pointer items-center gap-2 border-b px-3 text-xs font-semibold hover:bg-muted/50 ${active ? 'bg-muted text-foreground' : 'text-muted-foreground'}`}
                 onClick={() => onSelect({ targetID, resource, kind: 'group' })}
                 onKeyDown={(event) => {
                   if (event.key === 'Enter') onSelect({ targetID, resource, kind: 'group' });
