@@ -313,6 +313,11 @@ export default function ServiceManagerTool({
     media.addEventListener('change', update);
     return () => media.removeEventListener('change', update);
   }, []);
+  // 记录资源视图的目标主机；工作台内的主机筛选不影响它，返回时按此恢复。
+  const resourceTargetRef = useRef(targetID);
+  useEffect(() => {
+    if (view === 'resource') resourceTargetRef.current = targetID;
+  }, [view, targetID]);
   // 浏览位置与监控会话独立；移除当前浏览的主机时返回本机。
   const syncTargets = (next: ServiceTarget[]) => {
     setTargets(next);
@@ -546,8 +551,20 @@ export default function ServiceManagerTool({
     setInventory(null);
     setTargetID(next);
   };
+  const openWorkspace = () => {
+    resourceTargetRef.current = targetID;
+    setView('workspace');
+    setSelection(WORKSPACE_SELECTION);
+  };
   const showResources = () => {
     setView('resource');
+    // 工作台内可能切换过浏览主机，返回资源视图时恢复进入前的目标主机。
+    if (targetID !== resourceTargetRef.current) {
+      setSelection(null);
+      setInventory(null);
+      setTargetID(resourceTargetRef.current);
+      return;
+    }
     if (
       selection?.kind === 'workspace' ||
       selection?.kind === 'host' ||
@@ -1162,14 +1179,13 @@ export default function ServiceManagerTool({
               <Button
                 variant={view === 'workspace' ? 'secondary' : 'outline'}
                 size="sm"
-                onClick={() => {
-                  setView('workspace');
-                  setSelection(WORKSPACE_SELECTION);
-                }}
+                onClick={openWorkspace}
               >
                 <Queue weight="duotone" />
                 {t('serviceManagerTool.workspace')}
-                <Badge variant="secondary">{workspaceMembers.length}</Badge>
+                <Badge variant={workspaceMembers.length > 0 ? 'warning' : 'secondary'}>
+                  {workspaceMembers.length}
+                </Badge>
               </Button>
               <Button
                 variant="outline"
@@ -1758,10 +1774,13 @@ function ResourceList({
   };
   const group = (item: DockerComposeGroup) => {
     const containers = item.containers ?? [];
+    // 搜索时按 Compose 组名或容器名匹配，未命中的组合整体隐藏。
+    const groupMatched = match(item.name || item.id);
     const visibleContainers = containers.filter(
       (container) =>
         matchesStatusFilter(statuses, 'docker', container.status) &&
-        (!allowed || allowed.has(resourceKey({ runtime: 'docker', id: container.id }))),
+        (!allowed || allowed.has(resourceKey({ runtime: 'docker', id: container.id }))) &&
+        (groupMatched || match(container.name || container.id)),
     );
     if (!visibleContainers.length) return null;
     const resource = { runtime: 'docker-compose', id: item.id, name: item.name };
@@ -1875,18 +1894,21 @@ function ResourceList({
   const standaloneContainers = (inventory?.containers ?? []).filter(
     (container) =>
       matchesStatusFilter(statuses, 'docker', container.status) &&
-      (!allowed || allowed.has(resourceKey({ runtime: 'docker', id: container.id }))),
+      (!allowed || allowed.has(resourceKey({ runtime: 'docker', id: container.id }))) &&
+      match(container.name || container.id),
   );
   const pm2Processes = (inventory?.pm2Processes ?? []).filter(
     (process) =>
       matchesStatusFilter(statuses, 'pm2', process.status) &&
-      (!allowed || allowed.has(resourceKey({ runtime: 'pm2', id: process.id }))),
+      (!allowed || allowed.has(resourceKey({ runtime: 'pm2', id: process.id }))) &&
+      match(process.name || process.id),
   );
   const systemUnits = (inventory?.systemUnits ?? []).filter(
     (unit) =>
       matchesStatusFilter(statuses, 'systemd', unit.activeState) &&
       (!allowed ||
-        allowed.has(resourceKey({ runtime: 'systemd', id: unit.id, scope: unit.scope }))),
+        allowed.has(resourceKey({ runtime: 'systemd', id: unit.id, scope: unit.scope }))) &&
+      match(unit.name || unit.id),
   );
   const hasWorkspaceRuntime = (runtime: Runtime) =>
     !allowed || [...allowed].some((key) => key.startsWith(`${runtime}|`));
@@ -1913,7 +1935,7 @@ function ResourceList({
                 </>
               ) : null}
             </>
-          ) : hasWorkspaceRuntime('docker') ? (
+          ) : !search && hasWorkspaceRuntime('docker') ? (
             <RuntimeError name="Docker" error={inventory.docker.error} />
           ) : null}
         </>
@@ -1921,20 +1943,22 @@ function ResourceList({
       {inventory && runtimeFiltered(statuses, 'pm2') ? (
         <>
           {inventory.pm2.available ? (
-            <>
-              <div className="border-b px-3 py-2 text-xs font-semibold text-muted-foreground">
-                PM2
-              </div>
-              {pm2Processes.map((process) =>
-                row(
-                  { runtime: 'pm2', id: process.id, name: process.name },
-                  'pm2',
-                  process.status,
-                  process.script,
-                ),
-              )}
-            </>
-          ) : hasWorkspaceRuntime('pm2') ? (
+            !search || pm2Processes.length ? (
+              <>
+                <div className="border-b px-3 py-2 text-xs font-semibold text-muted-foreground">
+                  PM2
+                </div>
+                {pm2Processes.map((process) =>
+                  row(
+                    { runtime: 'pm2', id: process.id, name: process.name },
+                    'pm2',
+                    process.status,
+                    process.script,
+                  ),
+                )}
+              </>
+            ) : null
+          ) : !search && hasWorkspaceRuntime('pm2') ? (
             <RuntimeError name="PM2" error={inventory.pm2.error} />
           ) : null}
         </>
@@ -1942,20 +1966,22 @@ function ResourceList({
       {inventory && runtimeFiltered(statuses, 'systemd') ? (
         <>
           {inventory.systemd.available ? (
-            <>
-              <div className="border-b px-3 py-2 text-xs font-semibold text-muted-foreground">
-                Systemd
-              </div>
-              {systemUnits.map((unit: SystemdUnit) =>
-                row(
-                  { runtime: 'systemd', id: unit.id, scope: unit.scope, name: unit.name },
-                  'systemd',
-                  unit.activeState,
-                  unit.description,
-                ),
-              )}
-            </>
-          ) : hasWorkspaceRuntime('systemd') ? (
+            !search || systemUnits.length ? (
+              <>
+                <div className="border-b px-3 py-2 text-xs font-semibold text-muted-foreground">
+                  Systemd
+                </div>
+                {systemUnits.map((unit: SystemdUnit) =>
+                  row(
+                    { runtime: 'systemd', id: unit.id, scope: unit.scope, name: unit.name },
+                    'systemd',
+                    unit.activeState,
+                    unit.description,
+                  ),
+                )}
+              </>
+            ) : null
+          ) : !search && hasWorkspaceRuntime('systemd') ? (
             <RuntimeError name="Systemd" error={inventory.systemd.error} />
           ) : null}
         </>
