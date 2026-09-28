@@ -38,6 +38,7 @@ export interface Config {
     "fileSources": FileSource[] | null;
     "serviceTargets": ServiceTarget[] | null;
     "portSources": PortSource[] | null;
+    "portForwards": PortForwardConfig[] | null;
 }
 
 export interface DockerComposeGroup {
@@ -443,6 +444,19 @@ export interface PortForward {
     "status": string;
     "retries": number;
     "error"?: string;
+}
+
+/**
+ * PortForwardConfig 是转发定义（持久化部分）；运行态（状态、重试、错误）只存在于内存。
+ */
+export interface PortForwardConfig {
+    "id": string;
+    "sourceID": string;
+    "direction": string;
+    "listenHost": string;
+    "listenPort": number;
+    "targetHost": string;
+    "targetPort": number;
 }
 
 export interface PortForwardRequest {

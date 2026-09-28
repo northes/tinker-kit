@@ -31,3 +31,29 @@ func TestNormalizeForward(t *testing.T) {
 		t.Fatal("expected invalid port rejection")
 	}
 }
+
+func TestNormalizePortForwardsDropsInvalidAndKeepsDanglingSource(t *testing.T) {
+	forwards := []PortForwardConfig{
+		{ID: "a", SourceID: "port:one", Direction: "local", ListenHost: "", ListenPort: 8080, TargetHost: "", TargetPort: 80},
+		{ID: "a", SourceID: "port:dupe", Direction: "local", ListenPort: 8081, TargetPort: 80},
+		{ID: "b", SourceID: "local", Direction: "local", ListenPort: 8082, TargetPort: 80},
+		{ID: "", SourceID: "port:empty", Direction: "local", ListenPort: 8083, TargetPort: 80},
+		{ID: "c", SourceID: "port:deleted", Direction: "remote", ListenPort: 70000, TargetPort: 80},
+	}
+	result := normalizePortForwards(forwards)
+	if len(result) != 1 {
+		t.Fatalf("expected only the first valid definition, got %+v", result)
+	}
+	if result[0].ID != "a" || result[0].SourceID != "port:one" || result[0].ListenHost != "127.0.0.1" || result[0].TargetHost != "127.0.0.1" {
+		t.Fatalf("unexpected normalized definition: %+v", result[0])
+	}
+}
+
+func TestNormalizePortForwardsKeepsMissingSourceReference(t *testing.T) {
+	result := normalizePortForwards([]PortForwardConfig{
+		{ID: "d", SourceID: "port:deleted", Direction: "local", ListenPort: 9000, TargetPort: 8080},
+	})
+	if len(result) != 1 || result[0].SourceID != "port:deleted" {
+		t.Fatalf("dangling source reference should be kept: %+v", result)
+	}
+}

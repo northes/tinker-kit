@@ -8,11 +8,13 @@ import {
   GearSix,
   MagnifyingGlass,
   Plus,
-  Stop,
+  Trash,
   XCircle,
 } from '@phosphor-icons/react';
 import { useTranslation } from 'react-i18next';
 import {
+  AddForward,
+  DeleteForward,
   GetForwards,
   GetPortSources,
   ListPorts,
@@ -43,6 +45,7 @@ import {
 } from './shared';
 import { Badge } from './ui/badge';
 import { Button } from './ui/button';
+import { ButtonGroup } from './ui/button-group';
 import {
   Dialog,
   DialogContent,
@@ -51,6 +54,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from './ui/dialog';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from './ui/dropdown-menu';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { ScrollArea } from './ui/scroll-area';
@@ -103,15 +112,24 @@ const FORWARD_COLUMNS = ['direction', 'source', 'listen', 'target', 'status', 'r
 type ForwardSortKey = (typeof FORWARD_COLUMNS)[number];
 const FORWARD_COLUMN_WIDTHS: Record<ForwardSortKey, string> = {
   direction: 'w-[150px]',
-  source: 'w-[160px]',
+  source: 'w-[120px]',
   listen: 'w-[200px]',
   target: 'w-[200px]',
-  status: 'w-[200px]',
-  retries: 'w-[96px]',
+  status: 'w-[100px]',
+  retries: 'w-[84px]',
 };
 type PortSortKey = (typeof PORT_COLUMNS)[number];
 type SortDirection = 'asc' | 'desc';
 type SortState<Key extends string> = { key: Key; direction: SortDirection };
+
+// 转发处于活动状态（含连接中与重连中）；其余（已停止、失败）可再次启动。
+function isForwardRunning(forward: PortForward) {
+  return (
+    forward.status === 'connecting' ||
+    forward.status === 'connected' ||
+    forward.status === 'reconnecting'
+  );
+}
 
 function SortableHead({
   label,
@@ -282,9 +300,10 @@ export default function PortTool({ active }: { active: boolean }) {
   const [form, setForm] = useState<PortForwardRequest>(initialForward);
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState('');
-  const [stop, setStop] = useState<PortForward | null>(null);
-  const [stopping, setStopping] = useState(false);
-  const [stopError, setStopError] = useState('');
+  const [busyForward, setBusyForward] = useState('');
+  const [deleteTarget, setDeleteTarget] = useState<PortForward | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState('');
   const [manageOpen, setManageOpen] = useState(false);
   const [savingSources, setSavingSources] = useState(false);
 
@@ -333,13 +352,13 @@ export default function PortTool({ active }: { active: boolean }) {
     return () => window.clearInterval(timer);
   }, [active, refreshForwards]);
 
-  const startForward = async (event: FormEvent) => {
+  const submitForward = async (event: FormEvent) => {
     event.preventDefault();
     if (saving) return;
     setSaving(true);
     setFormError('');
     try {
-      await StartForward(form);
+      await AddForward(form);
       setDialog(false);
       setTab('forwards');
       await refreshForwards();
@@ -349,18 +368,44 @@ export default function PortTool({ active }: { active: boolean }) {
       setSaving(false);
     }
   };
-  const stopForward = async () => {
-    if (!stop || stopping) return;
-    setStopping(true);
-    setStopError('');
+  const startForward = async (forward: PortForward) => {
+    if (busyForward) return;
+    setBusyForward(forward.id);
+    setError('');
     try {
-      await StopForward(stop.id);
-      setStop(null);
+      await StartForward(forward.id);
       await refreshForwards();
     } catch (cause) {
-      setStopError(formatBackendError(cause));
+      setError(formatBackendError(cause));
     } finally {
-      setStopping(false);
+      setBusyForward('');
+    }
+  };
+  const stopForward = async (forward: PortForward) => {
+    if (busyForward) return;
+    setBusyForward(forward.id);
+    setError('');
+    try {
+      await StopForward(forward.id);
+      await refreshForwards();
+    } catch (cause) {
+      setError(formatBackendError(cause));
+    } finally {
+      setBusyForward('');
+    }
+  };
+  const deleteForward = async () => {
+    if (!deleteTarget || deleting) return;
+    setDeleting(true);
+    setDeleteError('');
+    try {
+      await DeleteForward(deleteTarget.id);
+      setDeleteTarget(null);
+      await refreshForwards();
+    } catch (cause) {
+      setDeleteError(formatBackendError(cause));
+    } finally {
+      setDeleting(false);
     }
   };
   const selectedSource = sources.find((item) => item.id === source);
@@ -371,6 +416,23 @@ export default function PortTool({ active }: { active: boolean }) {
   const forwardSourceOptions = sources
     .filter((item) => item.kind === 'ssh')
     .map((item) => ({ value: item.id, label: item.name }));
+  // 点击端口行时按当前来源推断转发方向并预填端口：来源为远程时做本地转发，
+  // 来源为本机时做远程转发（把本机端口暴露到 SSH 主机）。
+  const openForwardForPort = (entry: PortEntry) => {
+    setForm({
+      ...initialForward,
+      sourceID:
+        selectedSource?.kind === 'ssh' ? selectedSource.id : (forwardSourceOptions[0]?.value ?? ''),
+      direction: source === 'local' ? 'remote' : 'local',
+      listenHost: '127.0.0.1',
+      listenPort: entry.port,
+      targetHost: '127.0.0.1',
+      targetPort: entry.port,
+    });
+    setError('');
+    setFormError('');
+    setDialog(true);
+  };
   const collator = useMemo(
     () => new Intl.Collator(i18n.language, { numeric: true, sensitivity: 'base' }),
     [i18n.language],
@@ -579,7 +641,7 @@ export default function PortTool({ active }: { active: boolean }) {
       />
       <ToolLayoutContent>
         <Tabs value={tab} onValueChange={(value) => setTab(value)} className="h-full min-h-0">
-          <TabsList variant="line">
+          <TabsList>
             <TabsTrigger value="ports">{t('portTool.ports')}</TabsTrigger>
             <TabsTrigger value="forwards">{t('portTool.forwards')}</TabsTrigger>
           </TabsList>
@@ -652,7 +714,16 @@ export default function PortTool({ active }: { active: boolean }) {
                         ref={portVirtualizer.measureElement}
                         data-index={row.index}
                       >
-                        <TableCell>{entry.port}</TableCell>
+                        <TableCell>
+                          <Button
+                            variant="link"
+                            size="sm"
+                            className="h-auto px-0"
+                            onClick={() => openForwardForPort(entry)}
+                          >
+                            {entry.port}
+                          </Button>
+                        </TableCell>
                         <TableCell>
                           <WheelText>{entry.address}</WheelText>
                         </TableCell>
@@ -743,7 +814,7 @@ export default function PortTool({ active }: { active: boolean }) {
               options={{ overflow: { x: 'scroll' } }}
               onViewport={setForwardViewport}
             >
-              <Table className="min-w-[1126px] table-fixed" containerClassName="overflow-x-visible">
+              <Table className="min-w-[954px] table-fixed" containerClassName="overflow-x-visible">
                 <TableHeader className="sticky top-0 z-10 bg-background">
                   <TableRow>
                     {FORWARD_COLUMNS.map((key) => (
@@ -756,7 +827,7 @@ export default function PortTool({ active }: { active: boolean }) {
                         onSort={() => changeForwardSort(key)}
                       />
                     ))}
-                    <TableHead className="w-[120px]">{t('portTool.action')}</TableHead>
+                    <TableHead className="w-[100px]">{t('portTool.action')}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -795,17 +866,48 @@ export default function PortTool({ active }: { active: boolean }) {
                         </TableCell>
                         <TableCell>{forward.retries}/5</TableCell>
                         <TableCell>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => {
-                              setStopError('');
-                              setStop(forward);
-                            }}
-                          >
-                            <Stop weight="duotone" />
-                            {t('portTool.stop')}
-                          </Button>
+                          <div className="flex justify-end">
+                            <ButtonGroup>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                disabled={busyForward !== ''}
+                                onClick={() =>
+                                  isForwardRunning(forward)
+                                    ? void stopForward(forward)
+                                    : void startForward(forward)
+                                }
+                              >
+                                {t(isForwardRunning(forward) ? 'portTool.stop' : 'portTool.start')}
+                              </Button>
+                              <DropdownMenu>
+                                <DropdownMenuTrigger
+                                  render={
+                                    <Button
+                                      variant="outline"
+                                      size="icon-sm"
+                                      className="flex-none"
+                                      aria-label={t('portTool.actions')}
+                                    />
+                                  }
+                                >
+                                  <CaretDown aria-hidden="true" />
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent align="end" className="w-40">
+                                  <DropdownMenuItem
+                                    variant="destructive"
+                                    onClick={() => {
+                                      setDeleteError('');
+                                      setDeleteTarget(forward);
+                                    }}
+                                  >
+                                    <Trash weight="duotone" />
+                                    {t('portTool.delete')}
+                                  </DropdownMenuItem>
+                                </DropdownMenuContent>
+                              </DropdownMenu>
+                            </ButtonGroup>
+                          </div>
                         </TableCell>
                       </TableRow>
                     );
@@ -859,6 +961,7 @@ export default function PortTool({ active }: { active: boolean }) {
                         : (forwardSourceOptions[0]?.value ?? ''),
                   });
                   setError('');
+                  setFormError('');
                   setDialog(true);
                 },
               },
@@ -875,12 +978,18 @@ export default function PortTool({ active }: { active: boolean }) {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>{t('portTool.add')}</DialogTitle>
-            <DialogDescription>{t('portTool.forwardHint')}</DialogDescription>
+            <DialogDescription>
+              {t(
+                form.direction === 'remote'
+                  ? 'portTool.forwardHintRemote'
+                  : 'portTool.forwardHintLocal',
+              )}
+            </DialogDescription>
           </DialogHeader>
           <form
             id="port-forward-form"
             className="grid gap-3"
-            onSubmit={(event) => void startForward(event)}
+            onSubmit={(event) => void submitForward(event)}
           >
             <div>
               <Label htmlFor="forward-source">{t('portTool.source')}</Label>
@@ -930,7 +1039,13 @@ export default function PortTool({ active }: { active: boolean }) {
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <Label htmlFor="forward-listen-host">{t('portTool.listenHost')}</Label>
+                <Label htmlFor="forward-listen-host">
+                  {t(
+                    form.direction === 'remote'
+                      ? 'portTool.listenHostRemote'
+                      : 'portTool.listenHostLocal',
+                  )}
+                </Label>
                 <Input
                   id="forward-listen-host"
                   className="mt-1"
@@ -942,7 +1057,13 @@ export default function PortTool({ active }: { active: boolean }) {
                 />
               </div>
               <div>
-                <Label htmlFor="forward-listen-port">{t('portTool.listenPort')}</Label>
+                <Label htmlFor="forward-listen-port">
+                  {t(
+                    form.direction === 'remote'
+                      ? 'portTool.listenPortRemote'
+                      : 'portTool.listenPortLocal',
+                  )}
+                </Label>
                 <Input
                   id="forward-listen-port"
                   className="mt-1"
@@ -959,7 +1080,13 @@ export default function PortTool({ active }: { active: boolean }) {
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <Label htmlFor="forward-target-host">{t('portTool.targetHost')}</Label>
+                <Label htmlFor="forward-target-host">
+                  {t(
+                    form.direction === 'remote'
+                      ? 'portTool.targetHostRemote'
+                      : 'portTool.targetHostLocal',
+                  )}
+                </Label>
                 <Input
                   id="forward-target-host"
                   className="mt-1"
@@ -971,7 +1098,13 @@ export default function PortTool({ active }: { active: boolean }) {
                 />
               </div>
               <div>
-                <Label htmlFor="forward-target-port">{t('portTool.targetPort')}</Label>
+                <Label htmlFor="forward-target-port">
+                  {t(
+                    form.direction === 'remote'
+                      ? 'portTool.targetPortRemote'
+                      : 'portTool.targetPortLocal',
+                  )}
+                </Label>
                 <Input
                   id="forward-target-port"
                   className="mt-1"
@@ -1003,18 +1136,19 @@ export default function PortTool({ active }: { active: boolean }) {
         </DialogContent>
       </Dialog>
       <ConfirmDialog
-        open={stop !== null}
+        open={deleteTarget !== null}
         onOpenChange={(open) => {
-          if (!open) setStop(null);
+          if (!open) setDeleteTarget(null);
         }}
-        title={t('portTool.stopConfirmTitle')}
-        description={t('portTool.stopConfirmDescription', {
-          listen: stop ? `${stop.listenHost}:${stop.listenPort}` : '',
+        title={t('portTool.deleteConfirmTitle')}
+        description={t('portTool.deleteConfirmDescription', {
+          listen: deleteTarget ? `${deleteTarget.listenHost}:${deleteTarget.listenPort}` : '',
         })}
-        confirmLabel={t('portTool.stop')}
-        busy={stopping}
-        error={stopError}
-        onConfirm={() => void stopForward()}
+        confirmLabel={t('portTool.delete')}
+        destructive
+        busy={deleting}
+        error={deleteError}
+        onConfirm={() => void deleteForward()}
       />
       <TargetHostManagerDialog<PortSource, PortSource>
         open={manageOpen}

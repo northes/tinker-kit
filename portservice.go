@@ -60,6 +60,17 @@ type PortForward struct {
 	Error      string `json:"error,omitempty"`
 }
 
+// PortForwardConfig 是转发定义（持久化部分）；运行态（状态、重试、错误）只存在于内存。
+type PortForwardConfig struct {
+	ID         string `json:"id"`
+	SourceID   string `json:"sourceID"`
+	Direction  string `json:"direction"`
+	ListenHost string `json:"listenHost"`
+	ListenPort int    `json:"listenPort"`
+	TargetHost string `json:"targetHost"`
+	TargetPort int    `json:"targetPort"`
+}
+
 type portTunnel struct {
 	PortForward
 	profile  SSHProfile
@@ -420,7 +431,85 @@ func normalizeForward(request PortForwardRequest) (PortForwardRequest, error) {
 	return request, nil
 }
 
-func (s *PortService) StartForward(request PortForwardRequest) (PortForward, error) {
+// normalizePortForwards 通过 normalizeForward 统一校验转发定义，丢弃非法或重复项。
+// 来源已失效（引用的 PortSource 被删除）的定义会保留，交由界面提示，不在此处静默删除。
+func normalizePortForwards(forwards []PortForwardConfig) []PortForwardConfig {
+	result := make([]PortForwardConfig, 0, len(forwards))
+	seen := make(map[string]bool, len(forwards))
+	for _, forward := range forwards {
+		forward.ID = strings.TrimSpace(forward.ID)
+		if forward.ID == "" || seen[forward.ID] {
+			continue
+		}
+		request, err := normalizeForward(PortForwardRequest{
+			SourceID:   forward.SourceID,
+			Direction:  forward.Direction,
+			ListenHost: forward.ListenHost,
+			ListenPort: forward.ListenPort,
+			TargetHost: forward.TargetHost,
+			TargetPort: forward.TargetPort,
+		})
+		if err != nil {
+			continue
+		}
+		seen[forward.ID] = true
+		result = append(result, PortForwardConfig{
+			ID:         forward.ID,
+			SourceID:   request.SourceID,
+			Direction:  request.Direction,
+			ListenHost: request.ListenHost,
+			ListenPort: request.ListenPort,
+			TargetHost: request.TargetHost,
+			TargetPort: request.TargetPort,
+		})
+	}
+	return result
+}
+
+func newPortTunnel(definition PortForwardConfig, profile SSHProfile) *portTunnel {
+	ctx, cancel := context.WithCancel(context.Background())
+	return &portTunnel{
+		PortForward: PortForward{
+			ID:         definition.ID,
+			SourceID:   definition.SourceID,
+			Direction:  definition.Direction,
+			ListenHost: definition.ListenHost,
+			ListenPort: definition.ListenPort,
+			TargetHost: definition.TargetHost,
+			TargetPort: definition.TargetPort,
+			Status:     "connecting",
+		},
+		profile: profile,
+		ctx:     ctx,
+		cancel:  cancel,
+	}
+}
+
+// persistForwards 在配置锁内改写转发定义并持久化，避免读取到过期快照。
+func (s *PortService) persistForwards(mutate func([]PortForwardConfig) []PortForwardConfig) error {
+	if s == nil || s.config == nil {
+		return userError("errors.common.configNotInitialized")
+	}
+	return s.config.updateConfigAllowDanglingRefs(func(cfg *Config) error {
+		cfg.PortForwards = normalizePortForwards(mutate(cfg.PortForwards))
+		return nil
+	})
+}
+
+func (s *PortService) forwardDefinition(id string) (PortForwardConfig, bool) {
+	if s == nil || s.config == nil {
+		return PortForwardConfig{}, false
+	}
+	for _, forward := range s.config.Get().PortForwards {
+		if forward.ID == id {
+			return forward, true
+		}
+	}
+	return PortForwardConfig{}, false
+}
+
+// AddForward 创建一条转发定义并立即启动；启动或持久化失败时回滚，不留下半成品。
+func (s *PortService) AddForward(request PortForwardRequest) (PortForward, error) {
 	request, err := normalizeForward(request)
 	if err != nil {
 		return PortForward{}, err
@@ -429,20 +518,73 @@ func (s *PortService) StartForward(request PortForwardRequest) (PortForward, err
 	if err != nil {
 		return PortForward{}, err
 	}
-	ctx, cancel := context.WithCancel(context.Background())
-	tunnel := &portTunnel{PortForward: PortForward{ID: fmt.Sprintf("port-forward-%d", s.counter.Add(1)), SourceID: request.SourceID, Direction: request.Direction, ListenHost: request.ListenHost, ListenPort: request.ListenPort, TargetHost: request.TargetHost, TargetPort: request.TargetPort, Status: "connecting"}, profile: profile, ctx: ctx, cancel: cancel}
-	client, listener, err := s.openTunnel(ctx, tunnel)
+	definition := PortForwardConfig{
+		ID:         fmt.Sprintf("port-forward-%d", s.counter.Add(1)),
+		SourceID:   request.SourceID,
+		Direction:  request.Direction,
+		ListenHost: request.ListenHost,
+		ListenPort: request.ListenPort,
+		TargetHost: request.TargetHost,
+		TargetPort: request.TargetPort,
+	}
+	tunnel := newPortTunnel(definition, profile)
+	client, listener, err := s.openTunnel(tunnel.ctx, tunnel)
 	if err != nil {
-		cancel()
+		tunnel.cancel()
 		return PortForward{}, err
 	}
 	tunnel.client, tunnel.listener, tunnel.Status = client, listener, "connected"
+	if err := s.persistForwards(func(defs []PortForwardConfig) []PortForwardConfig {
+		return append(defs, definition)
+	}); err != nil {
+		tunnel.cancel()
+		_ = listener.Close()
+		_ = client.Close()
+		return PortForward{}, err
+	}
 	s.mu.Lock()
-	s.tunnels[tunnel.ID] = tunnel
+	s.tunnels[definition.ID] = tunnel
 	s.mu.Unlock()
-	snapshot := tunnel.PortForward
 	go s.runTunnel(tunnel)
-	return snapshot, nil
+	return tunnel.PortForward, nil
+}
+
+// StartForward 启动一条已持久化但未运行的转发（已停止或重连失败）。
+func (s *PortService) StartForward(id string) error {
+	id = strings.TrimSpace(id)
+	definition, ok := s.forwardDefinition(id)
+	if !ok {
+		return userError("errors.port.forwardNotFound")
+	}
+	profile, err := s.sourceProfile(definition.SourceID)
+	if err != nil {
+		return err
+	}
+	s.mu.Lock()
+	existing := s.tunnels[id]
+	if existing != nil && existing.Status != "failed" {
+		s.mu.Unlock()
+		return nil
+	}
+	if existing != nil {
+		delete(s.tunnels, id)
+	}
+	s.mu.Unlock()
+	if existing != nil {
+		existing.cancel()
+	}
+	tunnel := newPortTunnel(definition, profile)
+	client, listener, err := s.openTunnel(tunnel.ctx, tunnel)
+	if err != nil {
+		tunnel.cancel()
+		return err
+	}
+	tunnel.client, tunnel.listener, tunnel.Status = client, listener, "connected"
+	s.mu.Lock()
+	s.tunnels[id] = tunnel
+	s.mu.Unlock()
+	go s.runTunnel(tunnel)
+	return nil
 }
 
 func (s *PortService) openTunnel(ctx context.Context, tunnel *portTunnel) (*ssh.Client, net.Listener, error) {
@@ -596,16 +738,44 @@ func (s *PortService) runTunnel(tunnel *portTunnel) {
 	}
 }
 
+// configForwards 复制当前持久化的转发定义；无配置服务时返回空。
+func (s *PortService) configForwards() []PortForwardConfig {
+	if s == nil || s.config == nil {
+		return nil
+	}
+	return append([]PortForwardConfig(nil), s.config.Get().PortForwards...)
+}
+
+// GetForwards 返回所有持久化定义及其运行态；未运行的转发状态为 stopped。
 func (s *PortService) GetForwards() []PortForward {
+	definitions := s.configForwards()
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	result := make([]PortForward, 0, len(s.tunnels))
-	for _, tunnel := range s.tunnels {
-		result = append(result, tunnel.PortForward)
+	result := make([]PortForward, 0, len(definitions))
+	for _, definition := range definitions {
+		forward := PortForward{
+			ID:         definition.ID,
+			SourceID:   definition.SourceID,
+			Direction:  definition.Direction,
+			ListenHost: definition.ListenHost,
+			ListenPort: definition.ListenPort,
+			TargetHost: definition.TargetHost,
+			TargetPort: definition.TargetPort,
+			Status:     "stopped",
+		}
+		if tunnel := s.tunnels[definition.ID]; tunnel != nil {
+			forward.Status = tunnel.Status
+			forward.Retries = tunnel.Retries
+			forward.Error = tunnel.Error
+		}
+		result = append(result, forward)
 	}
 	return result
 }
+
+// StopForward 断开运行中的隧道但保留定义，之后可通过 StartForward 再次启动。
 func (s *PortService) StopForward(id string) error {
+	id = strings.TrimSpace(id)
 	s.mu.Lock()
 	tunnel := s.tunnels[id]
 	if tunnel != nil {
@@ -613,7 +783,10 @@ func (s *PortService) StopForward(id string) error {
 	}
 	s.mu.Unlock()
 	if tunnel == nil {
-		return userError("errors.port.forwardNotFound")
+		if _, ok := s.forwardDefinition(id); !ok {
+			return userError("errors.port.forwardNotFound")
+		}
+		return nil
 	}
 	tunnel.cancel()
 	s.mu.Lock()
@@ -626,6 +799,26 @@ func (s *PortService) StopForward(id string) error {
 		_ = client.Close()
 	}
 	return nil
+}
+
+// DeleteForward 先停止隧道，再从持久化定义中移除。
+func (s *PortService) DeleteForward(id string) error {
+	id = strings.TrimSpace(id)
+	if _, ok := s.forwardDefinition(id); !ok {
+		return userError("errors.port.forwardNotFound")
+	}
+	if err := s.StopForward(id); err != nil {
+		return err
+	}
+	return s.persistForwards(func(defs []PortForwardConfig) []PortForwardConfig {
+		result := make([]PortForwardConfig, 0, len(defs))
+		for _, forward := range defs {
+			if forward.ID != id {
+				result = append(result, forward)
+			}
+		}
+		return result
+	})
 }
 func (s *PortService) shutdown() {
 	s.mu.Lock()
