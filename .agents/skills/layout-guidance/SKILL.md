@@ -56,6 +56,13 @@ user-invocable: false
 - 剪贴板或长文本预览用固定高度 + 自动换行 + 垂直滚动（如 `h-24 whitespace-pre-wrap break-all overflow-y-auto`），不要按字符截断成不可滚动，也不要只靠 `max-h` 裁切。
 - 圆角统一使用 shadcn 的 `--radius` 和既有组件圆角，不新增全局圆角覆盖层。
 
+### WebView 小尺寸旋转图标
+
+- Wails WebView 中，小尺寸 SVG 即使是正方形且 `transform-origin` 正确，落在半物理像素位置时仍可能因逐帧栅格化出现约 1px 的视觉跳动，看起来像旋转中心偏移。先检查静态外框坐标乘以 `devicePixelRatio` 是否为整数，再判断是否属于此问题。
+- 不要仅凭旋转后的 `getBoundingClientRect()` 或 `getScreenCTM()` 判断中心漂移：旋转会改变轴对齐包围盒，变换矩阵也会反映正在执行的动画。用未旋转的固定尺寸外层记录布局位置，并以原生 WebView 的连续截图或像素重心对比验证实际绘制结果。
+- 只有确认是设备像素对齐问题后，才在具体调用处增加固定尺寸、非旋转的外层，并在 `useLayoutEffect` 中按 `round(position * dpr) / dpr - position` 平移承载原 Spinner 的内层。窗口缩放、滚动、分栏拖动可能只改变位置而不改变图标尺寸，因此通过 `ResizeObserver`、`resize` 和捕获阶段 `scroll` 重新对齐。
+- 保留共享 `Spinner` 的官方实现和动画；不要用 `transform-box`、额外 `transform-origin`、文字基线调整或写死 `0.25px` 掩盖问题。修复后在目标 WebView 连续采样，确认中心波动消失，并移除诊断代码。
+
 ## footer band 与共享分割线
 
 - 侧栏底部（`.sidebar-footer`，命令面板入口）与工具页 footer 共用同一条水平分割线时，两侧 band 的几何必须一致：底部内边距、分隔线到内容的顶部间距、控件高度三者取同一套值。
