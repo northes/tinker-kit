@@ -15,7 +15,6 @@ import {
   Power,
   Queue,
   Plus,
-  Stop,
   TextAa,
   Trash,
   WarningCircle,
@@ -35,7 +34,6 @@ import {
   RemoveLogMonitor,
   SaveServiceTargets,
   StartLogMonitors,
-  StopLogMonitor,
 } from '../../bindings/changeme/servicemanagerservice';
 import type {
   DockerComposeGroup,
@@ -107,7 +105,7 @@ import { toast } from './ui/toast';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
 import { ToggleGroup, ToggleGroupItem } from './ui/toggle-group';
 import { TargetHostManagerDialog } from './TargetHostManagerDialog';
-import { formatBackendError } from '../lib/backend-error';
+import { backendErrorKey, formatBackendError } from '../lib/backend-error';
 import { formatBytes } from './ServiceMetricChart';
 import { ServiceResourcePerformance } from './ServiceResourcePerformance';
 import { ServiceWorkspacePerformance } from './ServiceWorkspacePerformance';
@@ -115,6 +113,7 @@ import { ServiceWorkspacePerformance } from './ServiceWorkspacePerformance';
 const MANAGE_TARGETS_VALUE = '__manage-targets__';
 const WORKSPACE_TARGET_VALUE = '__workspace-targets__';
 const VISIBLE_LOG_LIMIT = 5000;
+const LOG_LIMIT_ERROR_KEY = 'errors.service.logMonitorLimitReached';
 const LOCAL_TARGET: ServiceTarget = { id: 'local', name: 'local', kind: 'local' };
 
 type Runtime = 'docker' | 'pm2' | 'systemd';
@@ -165,19 +164,37 @@ function resourceKey(resource: ServiceResourceRef) {
 function monitorResourceKey(monitor: LogMonitor) {
   return resourceKey(monitor.resource);
 }
+// Compose 组对应的容器列表。
+function composeGroupContainers(resource: ServiceResourceRef, inventory: ServiceInventory | null) {
+  return inventory?.dockerGroups?.find((item) => item.id === resource.id)?.containers ?? [];
+}
+// 容器所属 Compose 组的名称；非 Compose 容器返回空串。
+function dockerGroupName(resource: ServiceResourceRef, inventory: ServiceInventory | null) {
+  return (
+    inventory?.dockerGroups?.find((item) =>
+      (item.containers ?? []).some((container) => container.id === resource.id),
+    )?.name ?? ''
+  );
+}
+// 把容器列表转换为日志监控使用的资源引用。
+function containerRefs(containers: DockerContainer[], groupName: string): ServiceResourceRef[] {
+  return containers.map((container) => ({
+    runtime: 'docker',
+    id: container.id,
+    name: container.name,
+    group: groupName,
+  }));
+}
+// 后端因并发日志源达到上限而拒绝启动监控。
+function isLogLimitFailure(monitor: LogMonitor) {
+  return monitor.state === 'failed' && backendErrorKey(monitor.error) === LOG_LIMIT_ERROR_KEY;
+}
 function statusVariant(value: string) {
   return /running|active|online/i.test(value)
     ? 'success'
     : /failed|dead|exited/i.test(value)
       ? 'destructive'
       : 'secondary';
-}
-function MonitoringSpinner() {
-  return (
-    <span className="grid size-4 shrink-0 place-items-center">
-      <Spinner className="block size-3.5 origin-center [transform-box:fill-box] text-primary" />
-    </span>
-  );
 }
 function logDate(line: ServiceLogLine) {
   const date = new Date(line.timestamp || line.receivedAt);
@@ -352,7 +369,6 @@ export default function ServiceManagerTool({
     [selectedMonitors],
   );
   const activeMonitorKey = activeMonitorIDs.join(',');
-  const monitoring = selectedMonitors.some((item) => item.state === 'monitoring');
   // 选中 Compose 组时，信息页展示组内容器列表。
   const selectedGroupContainers = useMemo(() => {
     if (!selection || selection.kind !== 'group') return [] as DockerContainer[];
@@ -557,15 +573,19 @@ export default function ServiceManagerTool({
       setBusy('');
     }
   };
-  const startMonitors = async (target: string, resources: ServiceResourceRef[]) => {
+  const startMonitors = async (
+    target: string,
+    resources: ServiceResourceRef[],
+    notify = true,
+  ): Promise<LogMonitor[]> => {
     if (!resources.length) {
-      toast.add({ title: t('serviceManagerTool.monitorFailed'), type: 'error' });
-      return;
+      if (notify) toast.add({ title: t('serviceManagerTool.monitorFailed'), type: 'error' });
+      return [];
     }
     try {
       const created = (await StartLogMonitors({ targetID: target, resources })) ?? [];
       const failed = created.filter((item) => item.state === 'failed');
-      if (failed.length)
+      if (notify && failed.length)
         toast.add({
           title: t('serviceManagerTool.monitorFailed'),
           description: failed.map((item) => formatBackendError(item.error)).join('\n'),
@@ -577,20 +597,22 @@ export default function ServiceManagerTool({
         created.filter((item) => item.state !== 'failed').forEach((item) => all.set(item.id, item));
         return [...all.values()];
       });
+      return created;
     } catch (error) {
-      toast.add({
-        title: t('serviceManagerTool.monitorFailed'),
-        description: formatBackendError(error),
-        type: 'error',
-      });
+      if (notify)
+        toast.add({
+          title: t('serviceManagerTool.monitorFailed'),
+          description: formatBackendError(error),
+          type: 'error',
+        });
+      return [];
     }
   };
   const monitor = async (resource: ServiceResourceRef) => {
     const target = selectedTargetID;
     const containers =
       resource.runtime === 'docker-compose'
-        ? (selectedInventory?.dockerGroups?.find((item) => item.id === resource.id)?.containers ??
-          [])
+        ? composeGroupContainers(resource, selectedInventory)
         : [];
     // Compose 组有多个容器时先让用户选择要监控哪些，默认全选。
     if (containers.length > 1) {
@@ -600,24 +622,10 @@ export default function ServiceManagerTool({
     }
     const resources =
       resource.runtime === 'docker-compose'
-        ? containers.map(
-            (item) =>
-              ({
-                runtime: 'docker',
-                id: item.id,
-                name: item.name,
-                group: resource.name,
-              }) as ServiceResourceRef,
-          )
+        ? containerRefs(containers, resource.name ?? '')
         : [
             resource.runtime === 'docker'
-              ? {
-                  ...resource,
-                  group:
-                    selectedInventory?.dockerGroups?.find((item) =>
-                      (item.containers ?? []).some((container) => container.id === resource.id),
-                    )?.name ?? '',
-                }
+              ? { ...resource, group: dockerGroupName(resource, selectedInventory) }
               : resource,
           ];
     await startMonitors(target, resources);
@@ -646,10 +654,76 @@ export default function ServiceManagerTool({
     setMonitorDialog(null);
     await startMonitors(dialog.targetID, resources);
   };
-  const stop = async () => {
-    await Promise.all(activeMonitorIDs.map((id) => StopLogMonitor(id).catch(() => undefined)));
-    await loadMonitors();
+  // 自动启动所选资源/Compose 组的日志监控并保留在后台；达到并发上限时淘汰最久未查看的一路后重试。
+  const autoMonitorsRef = useRef(new Map<string, number>());
+  const autoSequenceRef = useRef(0);
+  const ensureSelectionMonitors = async (sel: Selection) => {
+    const sourceInventory =
+      sel.targetID === targetID ? inventory : workspaceInventories[sel.targetID];
+    const resources =
+      sel.kind === 'group'
+        ? containerRefs(
+            composeGroupContainers(sel.resource, sourceInventory),
+            sel.resource.name ?? '',
+          )
+        : [
+            sel.resource.runtime === 'docker'
+              ? { ...sel.resource, group: dockerGroupName(sel.resource, sourceInventory) }
+              : sel.resource,
+          ];
+    if (!resources.length) return;
+    const sequence = ++autoSequenceRef.current;
+    const tracked = autoMonitorsRef.current;
+    const monitorOf = (resource: ServiceResourceRef) =>
+      monitoredByResource.get(`${sel.targetID}|${resourceKey(resource)}`);
+    resources.forEach((resource) => {
+      const existing = monitorOf(resource);
+      // 仅刷新自动启动过的监控；工作台手动添加的监控不参与淘汰。
+      if (!existing || !tracked.has(existing.id)) return;
+      tracked.delete(existing.id);
+      tracked.set(existing.id, sequence);
+    });
+    const missing = resources.filter((resource) => monitorOf(resource)?.state !== 'monitoring');
+    if (!missing.length) return;
+    let created = await startMonitors(sel.targetID, missing, false);
+    if (created.some(isLogLimitFailure)) {
+      const currentKeys = new Set(resources.map((resource) => resourceKey(resource)));
+      const oldest = [...tracked.keys()].find((id) => {
+        const item = monitors.find((candidate) => candidate.id === id);
+        return (
+          item !== undefined &&
+          item.targetID === sel.targetID &&
+          !currentKeys.has(resourceKey(item.resource)) &&
+          (item.state === 'monitoring' || item.state === 'stopping')
+        );
+      });
+      if (oldest) {
+        tracked.delete(oldest);
+        await RemoveLogMonitor(oldest).catch(() => undefined);
+        created = await startMonitors(sel.targetID, missing, false);
+      }
+    }
+    created
+      .filter((item) => item.state !== 'failed')
+      .forEach((item) => {
+        tracked.delete(item.id);
+        tracked.set(item.id, sequence);
+      });
+    const failed = created.filter((item) => item.state === 'failed');
+    if (failed.length)
+      toast.add({
+        title: t('serviceManagerTool.monitorFailed'),
+        description: failed.map((item) => formatBackendError(item.error)).join('\n'),
+        type: 'error',
+      });
   };
+  // 浏览资源时自动开始采集日志，无需手动启动；选择变化即触发一次，不随监控列表刷新重复触发。
+  useEffect(() => {
+    if (!active || view !== 'resource' || !selection) return;
+    if (selection.kind === 'workspace' || selection.kind === 'host') return;
+    void ensureSelectionMonitors(selection);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [active, view, selection]);
   const clear = async () => {
     await Promise.all(activeMonitorIDs.map((id) => ClearLogBuffer(id).catch(() => undefined)));
     setLines([]);
@@ -1248,7 +1322,6 @@ export default function ServiceManagerTool({
                     tab={detailTab}
                     onTabChange={setDetailTab}
                     monitorIDs={activeMonitorIDs}
-                    monitoring={monitoring}
                     lines={lines}
                     truncated={truncated}
                     logDraft={logDraft}
@@ -1259,8 +1332,6 @@ export default function ServiceManagerTool({
                     setRegex={setRegex}
                     caseSensitive={caseSensitive}
                     setCaseSensitive={setCaseSensitive}
-                    onMonitor={monitor}
-                    onStop={stop}
                     onClear={clear}
                     monitors={selectedMonitors}
                     targets={targets}
@@ -1603,7 +1674,6 @@ function ResourceList({
               <span className="block truncate text-xs text-muted-foreground">{description}</span>
             ) : null}
           </span>
-          {monitor?.state === 'monitoring' ? <MonitoringSpinner /> : null}
         </ContextMenuTrigger>
         <ContextMenuContent className="min-w-44">
           <ContextMenuGroup>
@@ -1696,13 +1766,6 @@ function ResourceList({
             <span className="min-w-0 flex-1 truncate">
               {t('serviceManagerTool.composeGroup', { name: item.name })}
             </span>
-            {containers.some(
-              (container) =>
-                monitored.get(`${targetID}|${resourceKey({ runtime: 'docker', id: container.id })}`)
-                  ?.state === 'monitoring',
-            ) ? (
-              <MonitoringSpinner />
-            ) : null}
           </ContextMenuTrigger>
           <ContextMenuContent className="min-w-44">
             <ContextMenuGroup>
@@ -1900,7 +1963,6 @@ function ResourcePanel({
   tab,
   onTabChange,
   monitorIDs,
-  monitoring,
   lines,
   truncated,
   logDraft,
@@ -1911,8 +1973,6 @@ function ResourcePanel({
   setRegex,
   caseSensitive,
   setCaseSensitive,
-  onMonitor,
-  onStop,
   onClear,
   monitors,
   targets,
@@ -1927,7 +1987,6 @@ function ResourcePanel({
   tab: string;
   onTabChange: (value: string) => void;
   monitorIDs: string[];
-  monitoring: boolean;
   lines: ServiceLogLine[];
   truncated: boolean;
   logDraft: string;
@@ -1938,8 +1997,6 @@ function ResourcePanel({
   setRegex: (value: boolean) => void;
   caseSensitive: boolean;
   setCaseSensitive: (value: boolean) => void;
-  onMonitor: (resource: ServiceResourceRef) => void;
-  onStop: () => void;
   onClear: () => void;
   monitors: LogMonitor[];
   targets: ServiceTarget[];
@@ -2025,29 +2082,6 @@ function ResourcePanel({
           <div className="grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)]">
             <div className="border-b px-4 py-2">
               <div className="flex items-center gap-2">
-                {scope ? null : monitoring ? (
-                  <Button
-                    variant="outline"
-                    size="icon-sm"
-                    className="flex-none"
-                    title={t('serviceManagerTool.stopMonitor')}
-                    aria-label={t('serviceManagerTool.stopMonitor')}
-                    onClick={() => void onStop()}
-                  >
-                    <Stop weight="duotone" />
-                  </Button>
-                ) : (
-                  <Button
-                    variant="outline"
-                    size="icon-sm"
-                    className="flex-none"
-                    title={t('serviceManagerTool.monitor')}
-                    aria-label={t('serviceManagerTool.monitor')}
-                    onClick={() => onMonitor(resource)}
-                  >
-                    <Play weight="duotone" />
-                  </Button>
-                )}
                 <Input
                   className="h-8"
                   value={logDraft}
