@@ -2152,12 +2152,7 @@ function ResourcePanel({
         onValueChange={(value) => onTabChange(value)}
         className="h-full min-h-0 gap-0"
       >
-        <div className="flex flex-wrap items-center justify-between gap-2 border-b px-4 py-2">
-          {scope ? (
-            <span className="min-w-0 truncate text-sm font-semibold">
-              {selection.kind === 'workspace' ? t('serviceManagerTool.workspace') : resource.name}
-            </span>
-          ) : null}
+        <div className="flex items-center border-b px-4 py-2">
           <TabsList>
             <TabsTrigger value="info">{t('serviceManagerTool.detailTabs.info')}</TabsTrigger>
             <TabsTrigger value="performance">
