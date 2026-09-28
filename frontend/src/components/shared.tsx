@@ -421,7 +421,7 @@ export function ToolLayoutContent({
 }) {
   return (
     <div
-      className={`tool-layout-content row-start-3 h-full min-h-0 min-w-0 overflow-hidden ${className}`}
+      className={`tool-layout-content row-start-3 h-full min-h-0 min-w-0 overflow-hidden px-1 ${className}`}
     >
       {children}
     </div>
