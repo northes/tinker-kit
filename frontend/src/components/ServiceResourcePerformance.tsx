@@ -51,10 +51,12 @@ export function ServiceResourcePerformance({
   enabled,
   targetID,
   resource,
+  sampleKind = 'resource',
 }: {
   enabled: boolean;
   targetID: string;
   resource: ServiceResourceRef;
+  sampleKind?: 'resource' | 'source';
 }) {
   const { t, i18n } = useTranslation();
   const pickerLocale = i18n.language === 'zh-CN' ? zhCN : enUS;
@@ -67,7 +69,8 @@ export function ServiceResourcePerformance({
   const [customStart, setCustomStart] = useState(() => new Date(Date.now() - 30 * MINUTE_MS));
   const [customEnd, setCustomEnd] = useState(() => new Date());
 
-  const key = `${targetID}|${resource.runtime === 'docker-compose' ? 'compose' : 'resource'}|${resource.runtime}|${resource.id}`;
+  const kind = resource.runtime === 'docker-compose' ? 'compose' : sampleKind;
+  const key = `${targetID}|${kind}|${resource.runtime}|${resource.id}`;
   const availability = useMemo(() => {
     for (const snapshot of snapshots) {
       for (const sample of snapshot.samples ?? []) {

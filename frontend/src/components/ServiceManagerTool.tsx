@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import type { Layout } from 'react-resizable-panels';
 import { Events } from '@wailsio/runtime';
 import {
   ArrowsClockwise,
@@ -15,6 +14,7 @@ import {
   Play,
   Power,
   Queue,
+  Plus,
   Stop,
   TextAa,
   Trash,
@@ -110,13 +110,24 @@ import { TargetHostManagerDialog } from './TargetHostManagerDialog';
 import { formatBackendError } from '../lib/backend-error';
 import { formatBytes } from './ServiceMetricChart';
 import { ServiceResourcePerformance } from './ServiceResourcePerformance';
+import { ServiceWorkspacePerformance } from './ServiceWorkspacePerformance';
 
 const MANAGE_TARGETS_VALUE = '__manage-targets__';
+const WORKSPACE_TARGET_VALUE = '__workspace-targets__';
 const VISIBLE_LOG_LIMIT = 5000;
 const LOCAL_TARGET: ServiceTarget = { id: 'local', name: 'local', kind: 'local' };
 
 type Runtime = 'docker' | 'pm2' | 'systemd';
-type Selection = { resource: ServiceResourceRef; kind: 'container' | 'group' | 'pm2' | 'systemd' };
+type Selection = {
+  targetID: string;
+  resource: ServiceResourceRef;
+  kind: 'container' | 'group' | 'pm2' | 'systemd' | 'host' | 'workspace';
+};
+const WORKSPACE_SELECTION: Selection = {
+  targetID: '',
+  resource: { runtime: 'workspace', id: 'workspace' },
+  kind: 'workspace',
+};
 type LogEvent = { lines?: ServiceLogLine[] };
 
 // 每个运行时支持的状态，作为状态筛选里的分组。
@@ -222,8 +233,17 @@ export default function ServiceManagerTool({
   const [panelOrientation, setPanelOrientation] = useState<'horizontal' | 'vertical'>(() =>
     window.matchMedia('(max-width: 800px)').matches ? 'vertical' : 'horizontal',
   );
-  const [workspaceLayout, setWorkspaceLayout] = useState<Layout>({ sources: 40, logs: 60 });
-  const [excludedMonitorIDs, setExcludedMonitorIDs] = useState<Set<string>>(new Set());
+  const [workspaceInventories, setWorkspaceInventories] = useState<
+    Record<string, ServiceInventory>
+  >({});
+  const [workspaceErrors, setWorkspaceErrors] = useState<Record<string, string>>({});
+  const [pendingWorkspaceRemove, setPendingWorkspaceRemove] = useState<{
+    members: LogMonitor[];
+    name: string;
+    all: boolean;
+  } | null>(null);
+  const [workspaceRemoveError, setWorkspaceRemoveError] = useState('');
+  const [workspaceRemoving, setWorkspaceRemoving] = useState(false);
   const [logDraft, setLogDraft] = useState('');
   const [logQuery, setLogQuery] = useState('');
   const [regex, setRegex] = useState(false);
@@ -240,10 +260,15 @@ export default function ServiceManagerTool({
   const [pendingAction, setPendingAction] = useState<{
     resource: ServiceResourceRef;
     action: string;
+    targetID: string;
   } | null>(null);
-  const [updateDialog, setUpdateDialog] = useState<ServiceResourceRef | null>(null);
+  const [updateDialog, setUpdateDialog] = useState<{
+    resource: ServiceResourceRef;
+    targetID: string;
+  } | null>(null);
   const [monitorDialog, setMonitorDialog] = useState<{
     resource: ServiceResourceRef;
+    targetID: string;
     containers: DockerContainer[];
   } | null>(null);
   const [monitorSelection, setMonitorSelection] = useState<Set<string>>(new Set());
@@ -289,43 +314,53 @@ export default function ServiceManagerTool({
     if (version === monitorLoadVersion.current) setMonitors(items);
   };
 
+  const selectedTargetID =
+    view === 'workspace' && selection?.kind !== 'workspace'
+      ? (selection?.targetID ?? targetID)
+      : targetID;
+  const selectedInventory =
+    selectedTargetID === targetID ? inventory : workspaceInventories[selectedTargetID];
   const currentTargetMonitors = useMemo(
-    () => monitors.filter((item) => item.targetID === targetID),
-    [monitors, targetID],
+    () => monitors.filter((item) => item.targetID === selectedTargetID),
+    [monitors, selectedTargetID],
   );
   const monitoredByResource = useMemo(
-    () => new Map(currentTargetMonitors.map((item) => [monitorResourceKey(item), item])),
-    [currentTargetMonitors],
+    () => new Map(monitors.map((item) => [`${item.targetID}|${monitorResourceKey(item)}`, item])),
+    [monitors],
   );
   // Compose 组选中时聚合其所有容器的监控；单资源沿用资源键匹配。
   const selectedMonitors = useMemo(() => {
     if (!selection) return [] as LogMonitor[];
+    if (view === 'workspace' && selection.kind === 'workspace') return monitors;
+    if (view === 'workspace' && selection.kind === 'host') return currentTargetMonitors;
     if (selection.kind === 'group') {
-      const group = inventory?.dockerGroups?.find((item) => item.id === selection.resource.id);
+      const group = selectedInventory?.dockerGroups?.find(
+        (item) => item.id === selection.resource.id,
+      );
       const ids = new Set((group?.containers ?? []).map((item) => item.id));
       return currentTargetMonitors.filter(
         (item) => item.resource.runtime === 'docker' && ids.has(item.resource.id),
       );
     }
-    const found = monitoredByResource.get(resourceKey(selection.resource));
+    const found = monitoredByResource.get(
+      `${selection.targetID}|${resourceKey(selection.resource)}`,
+    );
     return found ? [found] : [];
-  }, [selection, inventory, currentTargetMonitors, monitoredByResource]);
-  const workspaceMonitorIDs = useMemo(
-    () => monitors.filter((item) => !excludedMonitorIDs.has(item.id)).map((item) => item.id),
-    [monitors, excludedMonitorIDs],
-  );
+  }, [view, selection, monitors, selectedInventory, currentTargetMonitors, monitoredByResource]);
   const activeMonitorIDs = useMemo(
-    () => (view === 'workspace' ? workspaceMonitorIDs : selectedMonitors.map((item) => item.id)),
-    [view, workspaceMonitorIDs, selectedMonitors],
+    () => selectedMonitors.map((item) => item.id),
+    [selectedMonitors],
   );
   const activeMonitorKey = activeMonitorIDs.join(',');
   const monitoring = selectedMonitors.some((item) => item.state === 'monitoring');
   // 选中 Compose 组时，信息页展示组内容器列表。
   const selectedGroupContainers = useMemo(() => {
     if (!selection || selection.kind !== 'group') return [] as DockerContainer[];
-    const group = inventory?.dockerGroups?.find((item) => item.id === selection.resource.id);
+    const group = selectedInventory?.dockerGroups?.find(
+      (item) => item.id === selection.resource.id,
+    );
     return group?.containers ?? [];
-  }, [selection, inventory]);
+  }, [selection, selectedInventory]);
 
   useEffect(() => {
     void GetServiceTargets()
@@ -341,6 +376,42 @@ export default function ServiceManagerTool({
     const timer = window.setInterval(() => void load(), 5000);
     return () => window.clearInterval(timer);
   }, [active, targetID]);
+  useEffect(() => {
+    if (view !== 'workspace') return;
+    const hostIDs = [...new Set(monitors.map((item) => item.targetID))];
+    if (!hostIDs.length) return;
+    let cancelled = false;
+    const refresh = async () => {
+      const results = await Promise.allSettled(hostIDs.map((id) => GetServiceInventory(id)));
+      if (cancelled) return;
+      setWorkspaceInventories((current) => {
+        const next = { ...current };
+        results.forEach((result, index) => {
+          if (result.status === 'fulfilled') next[hostIDs[index]] = result.value;
+        });
+        return next;
+      });
+      setWorkspaceErrors((current) => {
+        const next = { ...current };
+        results.forEach((result, index) => {
+          if (result.status === 'rejected')
+            next[hostIDs[index]] = formatBackendError(result.reason);
+          else delete next[hostIDs[index]];
+        });
+        return next;
+      });
+    };
+    void refresh();
+    if (!active)
+      return () => {
+        cancelled = true;
+      };
+    const timer = window.setInterval(() => void refresh(), 5000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [view, active, monitors.map((item) => item.targetID).join('|')]);
   useEffect(() => {
     const off = Events.On('service-manager:logs', (event) => {
       const data = event.data as LogEvent;
@@ -410,7 +481,7 @@ export default function ServiceManagerTool({
     };
   }, [activeMonitorKey, logQuery, regex, caseSensitive]);
 
-  const selectedTarget = targets.find((target) => target.id === targetID);
+  const selectedTarget = targets.find((target) => target.id === selectedTargetID);
 
   const selectTarget = (next: string | null) => {
     if (!next || next === targetID) return;
@@ -418,29 +489,39 @@ export default function ServiceManagerTool({
     setInventory(null);
     setTargetID(next);
   };
-  const act = (resource: ServiceResourceRef, action: string) => {
+  const showResources = () => {
+    setView('resource');
+    if (
+      selection?.kind === 'workspace' ||
+      selection?.kind === 'host' ||
+      selection?.targetID !== targetID
+    ) {
+      setSelection(null);
+    }
+  };
+  const act = (target: string, resource: ServiceResourceRef, action: string) => {
     if (action === 'update') {
-      setUpdateDialog(resource);
+      setUpdateDialog({ resource, targetID: target });
       return;
     }
     if (action === 'delete' || action.startsWith('disable')) {
-      setPendingAction({ resource, action });
+      setPendingAction({ resource, action, targetID: target });
       return;
     }
-    void performAction(resource, action);
+    void performAction(target, resource, action);
   };
   const confirmPendingAction = async () => {
     const pending = pendingAction;
     if (!pending) return;
-    await performAction(pending.resource, pending.action);
+    await performAction(pending.targetID, pending.resource, pending.action);
     setPendingAction(null);
   };
-  const performAction = async (resource: ServiceResourceRef, action: string) => {
-    const key = `${resourceKey(resource)}:${action}`;
+  const performAction = async (target: string, resource: ServiceResourceRef, action: string) => {
+    const key = `${target}|${resourceKey(resource)}:${action}`;
     setBusy(key);
     try {
       const result = await PerformServiceAction({
-        targetID,
+        targetID: target,
         resource,
         action,
       } as ServiceActionRequest);
@@ -450,7 +531,7 @@ export default function ServiceManagerTool({
         record(
           'service-manager',
           action,
-          `${selectedTarget ? targetLabel(selectedTarget, t) : targetID} · ${resource.name || resource.id}`,
+          `${targets.find((item) => item.id === target)?.name ?? target} · ${resource.name || resource.id}`,
           '',
           failed.map((item) => formatBackendError(item.error)).join('\n'),
         );
@@ -461,7 +542,11 @@ export default function ServiceManagerTool({
           type: 'error',
         });
       else toast.add({ title: t('serviceManagerTool.actionSucceeded'), type: 'success' });
-      await load();
+      if (target === targetID) await load();
+      if (view === 'workspace') {
+        const updated = await GetServiceInventory(target);
+        setWorkspaceInventories((current) => ({ ...current, [target]: updated }));
+      }
     } catch (error) {
       toast.add({
         title: t('serviceManagerTool.actionFailed'),
@@ -472,13 +557,13 @@ export default function ServiceManagerTool({
       setBusy('');
     }
   };
-  const startMonitors = async (resources: ServiceResourceRef[]) => {
+  const startMonitors = async (target: string, resources: ServiceResourceRef[]) => {
     if (!resources.length) {
       toast.add({ title: t('serviceManagerTool.monitorFailed'), type: 'error' });
       return;
     }
     try {
-      const created = (await StartLogMonitors({ targetID, resources })) ?? [];
+      const created = (await StartLogMonitors({ targetID: target, resources })) ?? [];
       const failed = created.filter((item) => item.state === 'failed');
       if (failed.length)
         toast.add({
@@ -501,14 +586,16 @@ export default function ServiceManagerTool({
     }
   };
   const monitor = async (resource: ServiceResourceRef) => {
+    const target = selectedTargetID;
     const containers =
       resource.runtime === 'docker-compose'
-        ? (inventory?.dockerGroups?.find((item) => item.id === resource.id)?.containers ?? [])
+        ? (selectedInventory?.dockerGroups?.find((item) => item.id === resource.id)?.containers ??
+          [])
         : [];
     // Compose 组有多个容器时先让用户选择要监控哪些，默认全选。
     if (containers.length > 1) {
       setMonitorSelection(new Set(containers.map((item) => item.id)));
-      setMonitorDialog({ resource, containers });
+      setMonitorDialog({ resource, targetID: target, containers });
       return;
     }
     const resources =
@@ -527,13 +614,13 @@ export default function ServiceManagerTool({
               ? {
                   ...resource,
                   group:
-                    inventory?.dockerGroups?.find((item) =>
+                    selectedInventory?.dockerGroups?.find((item) =>
                       (item.containers ?? []).some((container) => container.id === resource.id),
                     )?.name ?? '',
                 }
               : resource,
           ];
-    await startMonitors(resources);
+    await startMonitors(target, resources);
   };
   const toggleMonitorContainer = (id: string, checked: boolean) =>
     setMonitorSelection((current) => {
@@ -557,7 +644,7 @@ export default function ServiceManagerTool({
           }) as ServiceResourceRef,
       );
     setMonitorDialog(null);
-    await startMonitors(resources);
+    await startMonitors(dialog.targetID, resources);
   };
   const stop = async () => {
     await Promise.all(activeMonitorIDs.map((id) => StopLogMonitor(id).catch(() => undefined)));
@@ -569,44 +656,83 @@ export default function ServiceManagerTool({
     setTruncated(false);
     await loadMonitors();
   };
-  const stopWorkspaceMonitor = async (id: string) => {
-    try {
-      await StopLogMonitor(id);
-      await loadMonitors();
-    } catch (error) {
-      toast.add({
-        title: t('serviceManagerTool.stopMonitorFailed'),
-        description: formatBackendError(error),
-        type: 'error',
+  const workspaceMembers = (target: string, resource: ServiceResourceRef) => {
+    if (resource.runtime === 'docker-compose') {
+      const group = (
+        target === targetID ? inventory : workspaceInventories[target]
+      )?.dockerGroups?.find((item) => item.id === resource.id);
+      const ids = new Set((group?.containers ?? []).map((item) => item.id));
+      return monitors.filter(
+        (item) =>
+          item.targetID === target &&
+          item.resource.runtime === 'docker' &&
+          ids.has(item.resource.id),
+      );
+    }
+    return monitors.filter(
+      (item) => item.targetID === target && resourceKey(item.resource) === resourceKey(resource),
+    );
+  };
+  const changeWorkspace = (target: string, resource: ServiceResourceRef) => {
+    const members = workspaceMembers(target, resource);
+    if (members.length) {
+      setWorkspaceRemoveError('');
+      setPendingWorkspaceRemove({ members, name: resource.name || resource.id, all: false });
+    } else {
+      // 添加 Compose 组时继续复用现有容器选择流程。
+      setSelection({
+        targetID: target,
+        resource,
+        kind:
+          resource.runtime === 'docker-compose'
+            ? 'group'
+            : resource.runtime === 'docker'
+              ? 'container'
+              : resource.runtime === 'pm2'
+                ? 'pm2'
+                : 'systemd',
       });
+      void monitor(resource);
     }
   };
-  const restartWorkspaceMonitor = async (item: LogMonitor) => {
+  const confirmWorkspaceRemove = async () => {
+    if (!pendingWorkspaceRemove || workspaceRemoving) return;
+    setWorkspaceRemoving(true);
     try {
-      const result = await StartLogMonitors({
-        targetID: item.targetID,
-        resources: [item.resource],
-      });
-      const failure = result?.find((monitor) => monitor.state === 'failed');
-      if (failure) throw new Error(failure.error);
-      await loadMonitors();
-    } catch (error) {
-      toast.add({
-        title: t('serviceManagerTool.monitorFailed'),
-        description: formatBackendError(error),
-        type: 'error',
-      });
+      const results = await Promise.allSettled(
+        pendingWorkspaceRemove.members.map((item) => RemoveLogMonitor(item.id)),
+      );
+      const removed = new Set(
+        pendingWorkspaceRemove.members
+          .filter((_, index) => results[index].status === 'fulfilled')
+          .map((item) => item.id),
+      );
+      ++monitorLoadVersion.current;
+      setMonitors((current) => current.filter((item) => !removed.has(item.id)));
+      if (view === 'workspace') {
+        if (monitors.every((item) => removed.has(item.id))) showResources();
+        else if (
+          selection?.kind !== 'workspace' &&
+          selectedMonitors.length > 0 &&
+          selectedMonitors.every((item) => removed.has(item.id))
+        ) {
+          setSelection(WORKSPACE_SELECTION);
+        }
+      }
+      const failed = pendingWorkspaceRemove.members.filter((item) => !removed.has(item.id));
+      if (failed.length) {
+        setPendingWorkspaceRemove({ ...pendingWorkspaceRemove, members: failed });
+        const error = results.find((result) => result.status === 'rejected');
+        setWorkspaceRemoveError(
+          error?.status === 'rejected' ? formatBackendError(error.reason) : '',
+        );
+      } else {
+        setPendingWorkspaceRemove(null);
+        setWorkspaceRemoveError('');
+      }
+    } finally {
+      setWorkspaceRemoving(false);
     }
-  };
-  const removeWorkspaceMonitor = async (id: string) => {
-    await RemoveLogMonitor(id);
-    ++monitorLoadVersion.current;
-    setMonitors((current) => current.filter((item) => item.id !== id));
-    setExcludedMonitorIDs((current) => {
-      const next = new Set(current);
-      next.delete(id);
-      return next;
-    });
   };
   const selectedTargetMissing =
     selectedTarget?.kind === 'ssh' &&
@@ -785,8 +911,23 @@ export default function ServiceManagerTool({
                   {t('serviceManagerTool.target')}
                 </span>
                 <Select
-                  items={targets.map((item) => ({ value: item.id, label: targetLabel(item, t) }))}
-                  value={targetID}
+                  disabled={view === 'workspace'}
+                  items={[
+                    ...(view === 'workspace' && selection?.kind === 'workspace'
+                      ? [
+                          {
+                            value: WORKSPACE_TARGET_VALUE,
+                            label: t('serviceManagerTool.allTargets'),
+                          },
+                        ]
+                      : []),
+                    ...targets.map((item) => ({ value: item.id, label: targetLabel(item, t) })),
+                  ]}
+                  value={
+                    view === 'workspace' && selection?.kind === 'workspace'
+                      ? WORKSPACE_TARGET_VALUE
+                      : selectedTargetID
+                  }
                   onValueChange={(value) => {
                     if (value === MANAGE_TARGETS_VALUE) {
                       openManage();
@@ -800,6 +941,11 @@ export default function ServiceManagerTool({
                   </SelectTrigger>
                   <SelectContent>
                     <SelectGroup>
+                      {view === 'workspace' && selection?.kind === 'workspace' ? (
+                        <SelectItem value={WORKSPACE_TARGET_VALUE}>
+                          {t('serviceManagerTool.allTargets')}
+                        </SelectItem>
+                      ) : null}
                       {targets.map((item) => (
                         <SelectItem key={item.id} value={item.id}>
                           {targetLabel(item, t)}
@@ -889,7 +1035,7 @@ export default function ServiceManagerTool({
               <Button
                 variant={view === 'resource' ? 'secondary' : 'outline'}
                 size="sm"
-                onClick={() => setView('resource')}
+                onClick={showResources}
               >
                 <ListBullets weight="duotone" />
                 {t('serviceManagerTool.resources')}
@@ -897,15 +1043,42 @@ export default function ServiceManagerTool({
               <Button
                 variant={view === 'workspace' ? 'secondary' : 'outline'}
                 size="sm"
-                onClick={() => setView('workspace')}
+                onClick={() => {
+                  setView('workspace');
+                  setSelection(WORKSPACE_SELECTION);
+                }}
               >
                 <Queue weight="duotone" />
                 {t('serviceManagerTool.workspace')}
-                <Badge variant="secondary">
-                  {monitors.filter((item) => item.state === 'monitoring').length}
-                </Badge>
+                <Badge variant="secondary">{monitors.length}</Badge>
               </Button>
-              <Button variant="outline" size="sm" onClick={() => void load()} disabled={loading}>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() =>
+                  void (view === 'workspace'
+                    ? Promise.allSettled(
+                        [...new Set(monitors.map((item) => item.targetID))].map(async (id) => {
+                          try {
+                            const next = await GetServiceInventory(id);
+                            setWorkspaceInventories((current) => ({ ...current, [id]: next }));
+                            setWorkspaceErrors((current) => {
+                              const nextErrors = { ...current };
+                              delete nextErrors[id];
+                              return nextErrors;
+                            });
+                          } catch (error) {
+                            setWorkspaceErrors((current) => ({
+                              ...current,
+                              [id]: formatBackendError(error),
+                            }));
+                          }
+                        }),
+                      )
+                    : load())
+                }
+                disabled={loading}
+              >
                 {loading ? <Spinner className="size-3.5" /> : <ArrowsClockwise weight="duotone" />}
                 {t('serviceManagerTool.refresh')}
               </Button>
@@ -922,20 +1095,134 @@ export default function ServiceManagerTool({
               collapsedSize={0}
               className="min-h-0 min-w-0"
             >
-              <ResourceList
-                inventory={inventory}
-                statuses={statusFilter}
-                search={search}
-                selection={selection}
-                onSelect={(next) => {
-                  setSelection(next);
-                  setView('resource');
-                }}
-                monitored={monitoredByResource}
-                onAction={act}
-                busy={busy}
-                t={t}
-              />
+              {view === 'workspace' ? (
+                <div className="flex h-full min-h-0 flex-col">
+                  <div className="flex min-h-11 flex-none items-center justify-between gap-2 border-b px-3 has-[>[data-workspace-select]:hover]:bg-muted/50">
+                    <button
+                      type="button"
+                      data-workspace-select
+                      aria-pressed={selection?.kind === 'workspace'}
+                      className={`-ml-3 flex min-h-11 min-w-0 flex-1 items-center gap-2 px-3 text-left text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${selection?.kind === 'workspace' ? 'bg-muted' : ''}`}
+                      onClick={() => setSelection(WORKSPACE_SELECTION)}
+                    >
+                      <span className="font-semibold">{t('serviceManagerTool.workspace')}</span>
+                      <span className="truncate text-muted-foreground">
+                        {t('serviceManagerTool.workspaceMembers', { total: monitors.length })}
+                      </span>
+                    </button>
+                    {monitors.length ? (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="-mr-3 h-11 rounded-none px-3"
+                        onClick={() => {
+                          setWorkspaceRemoveError('');
+                          setPendingWorkspaceRemove({
+                            members: [...monitors],
+                            name: '',
+                            all: true,
+                          });
+                        }}
+                      >
+                        <Trash weight="duotone" />
+                        {t('serviceManagerTool.removeAllFromWorkspace')}
+                      </Button>
+                    ) : null}
+                  </div>
+                  <ScrollArea className="min-h-0 flex-1">
+                    {monitors.length ? (
+                      [...new Set(monitors.map((item) => item.targetID))].map((hostID) => (
+                        <div key={hostID}>
+                          <button
+                            type="button"
+                            aria-pressed={
+                              selection?.kind === 'host' && selection.targetID === hostID
+                            }
+                            className={`flex w-full items-center border-b px-3 py-2 text-left text-xs font-semibold hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${selection?.kind === 'host' && selection.targetID === hostID ? 'bg-muted text-foreground' : 'text-muted-foreground'}`}
+                            onClick={() => {
+                              const host = targets.find((item) => item.id === hostID);
+                              setSelection({
+                                targetID: hostID,
+                                resource: {
+                                  runtime: 'host',
+                                  id: hostID,
+                                  name: host
+                                    ? targetLabel(host, t)
+                                    : t('serviceManagerTool.targetUnavailable'),
+                                },
+                                kind: 'host',
+                              });
+                            }}
+                          >
+                            {targets.find((item) => item.id === hostID)
+                              ? targetLabel(
+                                  targets.find((item) => item.id === hostID)!,
+                                  t,
+                                )
+                              : t('serviceManagerTool.targetUnavailable')}
+                          </button>
+                          {workspaceErrors[hostID] ? (
+                            <RuntimeError
+                              name={t('serviceManagerTool.target')}
+                              error={workspaceErrors[hostID]}
+                            />
+                          ) : null}
+                          <ResourceList
+                            targetID={hostID}
+                            inventory={
+                              workspaceErrors[hostID]
+                                ? null
+                                : (workspaceInventories[hostID] ?? null)
+                            }
+                            workspaceResources={monitors
+                              .filter((item) => item.targetID === hostID)
+                              .map((item) => item.resource)}
+                            allowed={
+                              new Set(
+                                monitors
+                                  .filter((item) => item.targetID === hostID)
+                                  .map((item) => resourceKey(item.resource)),
+                              )
+                            }
+                            embedded
+                            statuses={statusFilter}
+                            search={search}
+                            selection={selection}
+                            onSelect={(next) => {
+                              setSelection(next);
+                            }}
+                            monitored={monitoredByResource}
+                            onAction={act}
+                            onWorkspaceChange={changeWorkspace}
+                            busy={busy}
+                            t={t}
+                          />
+                        </div>
+                      ))
+                    ) : (
+                      <p className="px-4 py-5 text-center text-xs text-muted-foreground">
+                        {t('serviceManagerTool.workspaceEmpty')}
+                      </p>
+                    )}
+                  </ScrollArea>
+                </div>
+              ) : (
+                <ResourceList
+                  targetID={targetID}
+                  inventory={inventory}
+                  statuses={statusFilter}
+                  search={search}
+                  selection={selection}
+                  onSelect={(next) => {
+                    setSelection(next);
+                  }}
+                  monitored={monitoredByResource}
+                  onAction={act}
+                  onWorkspaceChange={changeWorkspace}
+                  busy={busy}
+                  t={t}
+                />
+              )}
             </ResizablePanel>
             <ResizableHandle withHandle aria-label={t('serviceManagerTool.resizeMainPanels')} />
             <ResizablePanel
@@ -944,45 +1231,20 @@ export default function ServiceManagerTool({
               className="min-h-0 min-w-0"
             >
               <section className="h-full min-h-0 overflow-hidden">
-                {view === 'workspace' ? (
-                  <WorkspacePanel
-                    layout={workspaceLayout}
-                    onLayoutChanged={(next, meta) => {
-                      if (meta.isUserInteraction) setWorkspaceLayout(next);
-                    }}
-                    monitors={monitors}
-                    targets={targets}
-                    selectedIDs={workspaceMonitorIDs}
-                    excludedIDs={excludedMonitorIDs}
-                    onToggle={(id, checked) =>
-                      setExcludedMonitorIDs((current) => {
-                        const next = new Set(current);
-                        if (checked) next.delete(id);
-                        else next.add(id);
-                        return next;
-                      })
-                    }
-                    onStop={stopWorkspaceMonitor}
-                    onRestart={restartWorkspaceMonitor}
-                    onRemove={removeWorkspaceMonitor}
-                    lines={lines}
-                    truncated={truncated}
-                    logDraft={logDraft}
-                    setLogDraft={setLogDraft}
-                    applyFilter={() => setLogQuery(logDraft)}
-                    query={logQuery}
-                    regex={regex}
-                    setRegex={setRegex}
-                    caseSensitive={caseSensitive}
-                    setCaseSensitive={setCaseSensitive}
-                  />
-                ) : selection ? (
+                {selection &&
+                (view === 'resource' ||
+                  selection.kind === 'workspace' ||
+                  selectedMonitors.length > 0) ? (
                   <ResourcePanel
                     selection={selection}
-                    targetID={targetID}
+                    targetID={selectedTargetID}
                     metricsActive={active}
                     groupContainers={selectedGroupContainers}
-                    refreshToken={inventoryVersion}
+                    refreshToken={
+                      view === 'workspace'
+                        ? (workspaceInventories[selectedTargetID]?.containers?.length ?? 0)
+                        : inventoryVersion
+                    }
                     tab={detailTab}
                     onTabChange={setDetailTab}
                     monitorIDs={activeMonitorIDs}
@@ -1000,6 +1262,20 @@ export default function ServiceManagerTool({
                     onMonitor={monitor}
                     onStop={stop}
                     onClear={clear}
+                    monitors={selectedMonitors}
+                    targets={targets}
+                    onSelectResource={(item) => {
+                      setSelection({
+                        targetID: item.targetID,
+                        resource: item.resource,
+                        kind:
+                          item.resource.runtime === 'docker'
+                            ? 'container'
+                            : item.resource.runtime === 'pm2'
+                              ? 'pm2'
+                              : 'systemd',
+                      });
+                    }}
                     t={t}
                   />
                 ) : (
@@ -1111,9 +1387,39 @@ export default function ServiceManagerTool({
         destructive
         busy={
           pendingAction !== null &&
-          busy === `${resourceKey(pendingAction.resource)}:${pendingAction.action}`
+          busy ===
+            `${pendingAction.targetID}|${resourceKey(pendingAction.resource)}:${pendingAction.action}`
         }
         onConfirm={() => void confirmPendingAction()}
+      />
+      <ConfirmDialog
+        open={pendingWorkspaceRemove !== null}
+        onOpenChange={(open) => {
+          if (!open) setPendingWorkspaceRemove(null);
+        }}
+        title={t(
+          pendingWorkspaceRemove?.all
+            ? 'serviceManagerTool.removeAllFromWorkspaceTitle'
+            : 'serviceManagerTool.removeFromWorkspaceTitle',
+        )}
+        description={
+          pendingWorkspaceRemove?.all
+            ? t('serviceManagerTool.removeAllFromWorkspaceConfirm', {
+                total: pendingWorkspaceRemove.members.length,
+              })
+            : t('serviceManagerTool.removeFromWorkspaceConfirm', {
+                name: pendingWorkspaceRemove?.name ?? '',
+              })
+        }
+        confirmLabel={t(
+          pendingWorkspaceRemove?.all
+            ? 'serviceManagerTool.removeAllFromWorkspace'
+            : 'serviceManagerTool.removeFromWorkspace',
+        )}
+        destructive
+        busy={workspaceRemoving}
+        error={workspaceRemoveError || undefined}
+        onConfirm={() => void confirmWorkspaceRemove()}
       />
       <Dialog open={updateDialog !== null} onOpenChange={(open) => !open && setUpdateDialog(null)}>
         <DialogContent className="sm:max-w-md">
@@ -1121,7 +1427,7 @@ export default function ServiceManagerTool({
             <DialogTitle>{t('serviceManagerTool.updateTitle')}</DialogTitle>
             <DialogDescription>
               {t('serviceManagerTool.updateDescription', {
-                name: updateDialog?.name || updateDialog?.id || '',
+                name: updateDialog?.resource.name || updateDialog?.resource.id || '',
               })}
             </DialogDescription>
           </DialogHeader>
@@ -1133,9 +1439,9 @@ export default function ServiceManagerTool({
               variant="outline"
               disabled={busy !== ''}
               onClick={() => {
-                const resource = updateDialog;
+                const pending = updateDialog;
                 setUpdateDialog(null);
-                if (resource) void performAction(resource, 'update-pull');
+                if (pending) void performAction(pending.targetID, pending.resource, 'update-pull');
               }}
             >
               {t('serviceManagerTool.pullOnly')}
@@ -1143,9 +1449,9 @@ export default function ServiceManagerTool({
             <Button
               disabled={busy !== ''}
               onClick={() => {
-                const resource = updateDialog;
+                const pending = updateDialog;
                 setUpdateDialog(null);
-                if (resource) void performAction(resource, 'update-start');
+                if (pending) void performAction(pending.targetID, pending.resource, 'update-start');
               }}
             >
               {t('serviceManagerTool.pullAndStart')}
@@ -1209,23 +1515,33 @@ export default function ServiceManagerTool({
 }
 
 function ResourceList({
+  targetID,
   inventory,
+  workspaceResources,
+  allowed,
+  embedded = false,
   statuses,
   search,
   selection,
   onSelect,
   monitored,
   onAction,
+  onWorkspaceChange,
   busy,
   t,
 }: {
+  targetID: string;
   inventory: ServiceInventory | null;
+  workspaceResources?: ServiceResourceRef[];
+  allowed?: Set<string>;
+  embedded?: boolean;
   statuses: Set<string>;
   search: string;
   selection: Selection | null;
   onSelect: (next: Selection) => void;
   monitored: Map<string, LogMonitor>;
-  onAction: (resource: ServiceResourceRef, action: string) => void;
+  onAction: (targetID: string, resource: ServiceResourceRef, action: string) => void;
+  onWorkspaceChange: (targetID: string, resource: ServiceResourceRef) => void;
   busy: string;
   t: ReturnType<typeof useTranslation>['t'];
 }) {
@@ -1237,7 +1553,7 @@ function ResourceList({
       else next.add(id);
       return next;
     });
-  if (!inventory)
+  if (!inventory && !workspaceResources)
     return (
       <div className="grid h-full place-items-center">
         <div className="flex flex-col items-center gap-2 text-center">
@@ -1253,10 +1569,14 @@ function ResourceList({
     status: string,
     description = '',
   ) => {
+    if (allowed && !allowed.has(resourceKey(resource))) return null;
     if (!match(resource.name || resource.id)) return null;
     if (!matchesStatusFilter(statuses, resource.runtime as Runtime, status)) return null;
-    const active = selection && resourceKey(selection.resource) === resourceKey(resource);
-    const monitor = monitored.get(resourceKey(resource));
+    const active =
+      selection &&
+      selection.targetID === targetID &&
+      resourceKey(selection.resource) === resourceKey(resource);
+    const monitor = monitored.get(`${targetID}|${resourceKey(resource)}`);
     const running = ['running', 'online', 'active'].includes(status.toLowerCase());
     const actions = [running ? 'stop' : 'start', 'restart'];
     if (resource.runtime === 'systemd') actions.push('disable', 'disable-now');
@@ -1269,7 +1589,7 @@ function ResourceList({
             <button
               type="button"
               className={`flex w-full items-center gap-2 border-b px-3 py-2 text-left text-sm hover:bg-muted/50 ${active ? 'bg-muted' : ''} ${running ? '' : 'text-muted-foreground'}`}
-              onClick={() => onSelect({ resource, kind })}
+              onClick={() => onSelect({ targetID, resource, kind })}
             />
           }
         >
@@ -1293,8 +1613,8 @@ function ResourceList({
                 variant={
                   action === 'delete' || action.startsWith('disable') ? 'destructive' : 'default'
                 }
-                disabled={busy.startsWith(`${resourceKey(resource)}:`)}
-                onClick={() => onAction(resource, action)}
+                disabled={busy.startsWith(`${targetID}|${resourceKey(resource)}:`)}
+                onClick={() => onAction(targetID, resource, action)}
               >
                 {action === 'start' ? <Play size={14} weight="duotone" /> : null}
                 {action === 'stop' ? <Pause size={14} weight="duotone" /> : null}
@@ -1305,6 +1625,17 @@ function ResourceList({
                 {t(`serviceManagerTool.actions.${action}`)}
               </ContextMenuItem>
             ))}
+            <ContextMenuItem
+              disabled={busy.startsWith(`${targetID}|${resourceKey(resource)}:`)}
+              onClick={() => onWorkspaceChange(targetID, resource)}
+            >
+              {monitor ? <Trash size={14} weight="duotone" /> : <Plus size={14} weight="duotone" />}
+              {t(
+                monitor
+                  ? 'serviceManagerTool.removeFromWorkspace'
+                  : 'serviceManagerTool.addToWorkspace',
+              )}
+            </ContextMenuItem>
           </ContextMenuGroup>
         </ContextMenuContent>
       </ContextMenu>
@@ -1312,12 +1643,18 @@ function ResourceList({
   };
   const group = (item: DockerComposeGroup) => {
     const containers = item.containers ?? [];
-    const visibleContainers = containers.filter((container) =>
-      matchesStatusFilter(statuses, 'docker', container.status),
+    const visibleContainers = containers.filter(
+      (container) =>
+        matchesStatusFilter(statuses, 'docker', container.status) &&
+        (!allowed || allowed.has(resourceKey({ runtime: 'docker', id: container.id }))),
     );
     if (!visibleContainers.length) return null;
     const resource = { runtime: 'docker-compose', id: item.id, name: item.name };
-    const collapsed = collapsedGroups.has(item.id);
+    const active =
+      selection?.kind === 'group' &&
+      selection.targetID === targetID &&
+      resourceKey(selection.resource) === resourceKey(resource);
+    const collapsed = collapsedGroups.has(`${targetID}|${item.id}`);
     const running = containers.some((container) => container.status.toLowerCase() === 'running');
     const groupActions = [running ? 'stop' : 'start', 'restart', 'delete', 'update'];
     return (
@@ -1328,10 +1665,10 @@ function ResourceList({
               <div
                 role="button"
                 tabIndex={0}
-                className="flex cursor-pointer items-center gap-2 border-b px-3 py-2 text-xs font-semibold text-muted-foreground hover:bg-muted/50"
-                onClick={() => onSelect({ resource, kind: 'group' })}
+                className={`flex cursor-pointer items-center gap-2 border-b px-3 py-2 text-xs font-semibold hover:bg-muted/50 ${active ? 'bg-muted text-foreground' : 'text-muted-foreground'}`}
+                onClick={() => onSelect({ targetID, resource, kind: 'group' })}
                 onKeyDown={(event) => {
-                  if (event.key === 'Enter') onSelect({ resource, kind: 'group' });
+                  if (event.key === 'Enter') onSelect({ targetID, resource, kind: 'group' });
                 }}
               />
             }
@@ -1347,7 +1684,7 @@ function ResourceList({
               )}
               onClick={(event) => {
                 event.stopPropagation();
-                toggleGroup(item.id);
+                toggleGroup(`${targetID}|${item.id}`);
               }}
               onKeyDown={(event) => event.stopPropagation()}
             >
@@ -1361,8 +1698,8 @@ function ResourceList({
             </span>
             {containers.some(
               (container) =>
-                monitored.get(resourceKey({ runtime: 'docker', id: container.id }))?.state ===
-                'monitoring',
+                monitored.get(`${targetID}|${resourceKey({ runtime: 'docker', id: container.id })}`)
+                  ?.state === 'monitoring',
             ) ? (
               <MonitoringSpinner />
             ) : null}
@@ -1373,8 +1710,8 @@ function ResourceList({
                 <ContextMenuItem
                   key={action}
                   variant={action === 'delete' ? 'destructive' : 'default'}
-                  disabled={busy.startsWith(`${resourceKey(resource)}:`)}
-                  onClick={() => onAction(resource, action)}
+                  disabled={busy.startsWith(`${targetID}|${resourceKey(resource)}:`)}
+                  onClick={() => onAction(targetID, resource, action)}
                 >
                   {action === 'start' ? <Play size={14} weight="duotone" /> : null}
                   {action === 'stop' ? <Pause size={14} weight="duotone" /> : null}
@@ -1386,6 +1723,26 @@ function ResourceList({
                   {t(`serviceManagerTool.actions.${action}`)}
                 </ContextMenuItem>
               ))}
+              <ContextMenuItem onClick={() => onWorkspaceChange(targetID, resource)}>
+                {visibleContainers.some((container) =>
+                  monitored.has(
+                    `${targetID}|${resourceKey({ runtime: 'docker', id: container.id })}`,
+                  ),
+                ) ? (
+                  <Trash size={14} weight="duotone" />
+                ) : (
+                  <Plus size={14} weight="duotone" />
+                )}
+                {t(
+                  visibleContainers.some((container) =>
+                    monitored.has(
+                      `${targetID}|${resourceKey({ runtime: 'docker', id: container.id })}`,
+                    ),
+                  )
+                    ? 'serviceManagerTool.removeFromWorkspace'
+                    : 'serviceManagerTool.addToWorkspace',
+                )}
+              </ContextMenuItem>
             </ContextMenuGroup>
           </ContextMenuContent>
         </ContextMenu>
@@ -1407,18 +1764,27 @@ function ResourceList({
       </div>
     );
   };
-  const standaloneContainers = (inventory.containers ?? []).filter((container) =>
-    matchesStatusFilter(statuses, 'docker', container.status),
+  const standaloneContainers = (inventory?.containers ?? []).filter(
+    (container) =>
+      matchesStatusFilter(statuses, 'docker', container.status) &&
+      (!allowed || allowed.has(resourceKey({ runtime: 'docker', id: container.id }))),
   );
-  const pm2Processes = (inventory.pm2Processes ?? []).filter((process) =>
-    matchesStatusFilter(statuses, 'pm2', process.status),
+  const pm2Processes = (inventory?.pm2Processes ?? []).filter(
+    (process) =>
+      matchesStatusFilter(statuses, 'pm2', process.status) &&
+      (!allowed || allowed.has(resourceKey({ runtime: 'pm2', id: process.id }))),
   );
-  const systemUnits = (inventory.systemUnits ?? []).filter((unit) =>
-    matchesStatusFilter(statuses, 'systemd', unit.activeState),
+  const systemUnits = (inventory?.systemUnits ?? []).filter(
+    (unit) =>
+      matchesStatusFilter(statuses, 'systemd', unit.activeState) &&
+      (!allowed ||
+        allowed.has(resourceKey({ runtime: 'systemd', id: unit.id, scope: unit.scope }))),
   );
-  return (
-    <ScrollArea className="h-full min-h-0">
-      {runtimeFiltered(statuses, 'docker') ? (
+  const hasWorkspaceRuntime = (runtime: Runtime) =>
+    !allowed || [...allowed].some((key) => key.startsWith(`${runtime}|`));
+  const content = (
+    <>
+      {inventory && runtimeFiltered(statuses, 'docker') ? (
         <>
           {inventory.docker.available ? (
             <>
@@ -1439,12 +1805,12 @@ function ResourceList({
                 </>
               ) : null}
             </>
-          ) : (
+          ) : hasWorkspaceRuntime('docker') ? (
             <RuntimeError name="Docker" error={inventory.docker.error} />
-          )}
+          ) : null}
         </>
       ) : null}
-      {runtimeFiltered(statuses, 'pm2') ? (
+      {inventory && runtimeFiltered(statuses, 'pm2') ? (
         <>
           {inventory.pm2.available ? (
             <>
@@ -1460,12 +1826,12 @@ function ResourceList({
                 ),
               )}
             </>
-          ) : (
+          ) : hasWorkspaceRuntime('pm2') ? (
             <RuntimeError name="PM2" error={inventory.pm2.error} />
-          )}
+          ) : null}
         </>
       ) : null}
-      {runtimeFiltered(statuses, 'systemd') ? (
+      {inventory && runtimeFiltered(statuses, 'systemd') ? (
         <>
           {inventory.systemd.available ? (
             <>
@@ -1481,13 +1847,40 @@ function ResourceList({
                 ),
               )}
             </>
-          ) : (
+          ) : hasWorkspaceRuntime('systemd') ? (
             <RuntimeError name="Systemd" error={inventory.systemd.error} />
-          )}
+          ) : null}
         </>
       ) : null}
-    </ScrollArea>
+      {workspaceResources
+        ?.filter((resource) => {
+          if (!inventory) return true;
+          if (resource.runtime === 'docker')
+            return ![
+              ...(inventory.containers ?? []),
+              ...(inventory.dockerGroups ?? []).flatMap((group) => group.containers ?? []),
+            ].some((item) => item.id === resource.id);
+          if (resource.runtime === 'pm2')
+            return !(inventory.pm2Processes ?? []).some((item) => item.id === resource.id);
+          return !(inventory.systemUnits ?? []).some(
+            (item) => item.id === resource.id && item.scope === resource.scope,
+          );
+        })
+        .map((resource) =>
+          row(
+            resource,
+            resource.runtime === 'docker'
+              ? 'container'
+              : resource.runtime === 'pm2'
+                ? 'pm2'
+                : 'systemd',
+            '',
+            t('serviceManagerTool.resourceUnavailable'),
+          ),
+        )}
+    </>
   );
+  return embedded ? content : <ScrollArea className="h-full min-h-0">{content}</ScrollArea>;
 }
 function RuntimeError({ name, error }: { name: string; error?: string }) {
   return (
@@ -1495,278 +1888,6 @@ function RuntimeError({ name, error }: { name: string; error?: string }) {
       <WarningCircle className="mr-1 inline size-3.5" />
       {name}: {error ? formatBackendError(error) : '—'}
     </div>
-  );
-}
-
-function WorkspacePanel({
-  layout,
-  onLayoutChanged,
-  monitors,
-  targets,
-  selectedIDs,
-  excludedIDs,
-  onToggle,
-  onStop,
-  onRestart,
-  onRemove,
-  lines,
-  truncated,
-  logDraft,
-  setLogDraft,
-  applyFilter,
-  query,
-  regex,
-  setRegex,
-  caseSensitive,
-  setCaseSensitive,
-}: {
-  layout: Layout;
-  onLayoutChanged: (layout: Layout, meta: { isUserInteraction: boolean }) => void;
-  monitors: LogMonitor[];
-  targets: ServiceTarget[];
-  selectedIDs: string[];
-  excludedIDs: Set<string>;
-  onToggle: (id: string, checked: boolean) => void;
-  onStop: (id: string) => void;
-  onRestart: (monitor: LogMonitor) => void;
-  onRemove: (id: string) => Promise<void>;
-  lines: ServiceLogLine[];
-  truncated: boolean;
-  logDraft: string;
-  setLogDraft: (value: string) => void;
-  applyFilter: () => void;
-  query: string;
-  regex: boolean;
-  setRegex: (value: boolean) => void;
-  caseSensitive: boolean;
-  setCaseSensitive: (value: boolean) => void;
-}) {
-  const { t } = useTranslation();
-  const [pendingRemove, setPendingRemove] = useState<LogMonitor | null>(null);
-  const [removing, setRemoving] = useState(false);
-  const [removeError, setRemoveError] = useState('');
-  const confirmRemove = async () => {
-    if (!pendingRemove || removing) return;
-    setRemoving(true);
-    setRemoveError('');
-    try {
-      await onRemove(pendingRemove.id);
-      setPendingRemove(null);
-    } catch (error) {
-      setRemoveError(formatBackendError(error));
-    } finally {
-      setRemoving(false);
-    }
-  };
-  const visibleLines = useMemo(() => {
-    const selected = new Set(selectedIDs);
-    return lines.filter((line) => selected.has(line.monitorID));
-  }, [lines, selectedIDs]);
-  const targetNames = new Map(targets.map((target) => [target.id, targetLabel(target, t)]));
-  const sourceLabels = new Map(
-    monitors.map((monitor) => [
-      monitor.id,
-      [
-        targetNames.get(monitor.targetID) ?? t('serviceManagerTool.targetUnavailable'),
-        monitor.resource.group,
-        monitor.resource.name || monitor.resource.id,
-      ]
-        .filter(Boolean)
-        .join(' / '),
-    ]),
-  );
-  return (
-    <>
-      <ResizablePanelGroup
-        orientation="vertical"
-        defaultLayout={layout}
-        onLayoutChanged={onLayoutChanged}
-        className="min-h-0 min-w-0"
-      >
-        <ResizablePanel
-          id="sources"
-          defaultSize="40%"
-          minSize="20%"
-          collapsible
-          collapsedSize={0}
-          className="min-h-0 min-w-0"
-        >
-          <div className="flex h-full min-h-0 flex-col overflow-hidden">
-            <div className="flex-none px-4 py-3">
-              <h2 className="text-sm font-semibold">{t('serviceManagerTool.workspace')}</h2>
-              <p className="mt-1 text-xs text-muted-foreground">
-                {t('serviceManagerTool.workspaceHint')}
-              </p>
-            </div>
-            <div className="min-h-0 flex-1">
-              {monitors.length ? (
-                <ScrollArea className="h-full min-h-0">
-                  {monitors.map((monitor) => (
-                    <div
-                      key={monitor.id}
-                      className="flex items-center gap-2 border-b px-3 py-2 text-xs last:border-b-0"
-                    >
-                      <Checkbox
-                        checked={!excludedIDs.has(monitor.id)}
-                        onCheckedChange={(checked) => onToggle(monitor.id, checked === true)}
-                        aria-label={t('serviceManagerTool.includeSource', {
-                          name: sourceLabels.get(monitor.id),
-                        })}
-                      />
-                      <div className="min-w-0 flex-1">
-                        <div className="truncate font-medium" title={sourceLabels.get(monitor.id)}>
-                          {sourceLabels.get(monitor.id)}
-                        </div>
-                        <div
-                          className="truncate text-muted-foreground"
-                          title={monitor.error ? formatBackendError(monitor.error) : undefined}
-                        >
-                          {t(
-                            `serviceManagerTool.monitorStates.${['monitoring', 'stopping', 'stopped', 'disconnected'].includes(monitor.state) ? monitor.state : 'unknown'}`,
-                          )}
-                          {monitor.error ? ` · ${formatBackendError(monitor.error)}` : ''}
-                        </div>
-                      </div>
-                      {monitor.state === 'monitoring' ? (
-                        <Button
-                          variant="ghost"
-                          size="icon-xs"
-                          className="flex-none"
-                          onClick={() => onStop(monitor.id)}
-                          title={t('serviceManagerTool.stopMonitor')}
-                          aria-label={t('serviceManagerTool.stopMonitor')}
-                        >
-                          <Stop weight="duotone" />
-                        </Button>
-                      ) : monitor.state === 'stopping' ? (
-                        <Spinner className="size-3.5 flex-none text-muted-foreground" />
-                      ) : (
-                        <Button
-                          variant="ghost"
-                          size="icon-xs"
-                          className="flex-none"
-                          onClick={() => onRestart(monitor)}
-                          title={t('serviceManagerTool.restartMonitor')}
-                          aria-label={t('serviceManagerTool.restartMonitor')}
-                        >
-                          <Play weight="duotone" />
-                        </Button>
-                      )}
-                      <Button
-                        variant="ghost"
-                        size="icon-xs"
-                        className="flex-none"
-                        onClick={() => {
-                          setRemoveError('');
-                          setPendingRemove(monitor);
-                        }}
-                        title={t('serviceManagerTool.removeMonitor')}
-                        aria-label={t('serviceManagerTool.removeMonitor')}
-                      >
-                        <Trash weight="duotone" />
-                      </Button>
-                    </div>
-                  ))}
-                </ScrollArea>
-              ) : (
-                <p className="px-4 py-5 text-center text-xs text-muted-foreground">
-                  {t('serviceManagerTool.workspaceEmpty')}
-                </p>
-              )}
-            </div>
-          </div>
-        </ResizablePanel>
-        <ResizableHandle withHandle aria-label={t('serviceManagerTool.resizeWorkspacePanels')} />
-        <ResizablePanel id="logs" minSize="30%" className="min-h-0 min-w-0">
-          <div className="grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)]">
-            <div className="border-b px-4 py-2">
-              <div className="flex items-center gap-2">
-                <Input
-                  className="h-8"
-                  value={logDraft}
-                  onChange={(event) => setLogDraft(event.target.value)}
-                  onKeyDown={(event) => {
-                    if (event.key === 'Enter') applyFilter();
-                  }}
-                  placeholder={t('serviceManagerTool.logFilter')}
-                />
-                <Button variant="outline" size="sm" onClick={applyFilter}>
-                  {t('serviceManagerTool.apply')}
-                </Button>
-                <ToggleGroup
-                  multiple
-                  variant="outline"
-                  size="sm"
-                  value={[regex ? 'regex' : '', caseSensitive ? 'case' : ''].filter(Boolean)}
-                  onValueChange={(value) => {
-                    setRegex(value.includes('regex'));
-                    setCaseSensitive(value.includes('case'));
-                  }}
-                >
-                  <ToggleGroupItem
-                    value="regex"
-                    title={t('serviceManagerTool.regex')}
-                    aria-label={t('serviceManagerTool.regex')}
-                  >
-                    <Asterisk weight="duotone" />
-                  </ToggleGroupItem>
-                  <ToggleGroupItem
-                    value="case"
-                    title={t('serviceManagerTool.caseSensitive')}
-                    aria-label={t('serviceManagerTool.caseSensitive')}
-                  >
-                    <TextAa weight="duotone" />
-                  </ToggleGroupItem>
-                </ToggleGroup>
-              </div>
-              {truncated ? (
-                <p className="mt-2 text-xs text-amber-600">
-                  {t('serviceManagerTool.logsTruncated')}
-                </p>
-              ) : null}
-              {visibleLines.length >= VISIBLE_LOG_LIMIT ? (
-                <p className="mt-2 text-xs text-muted-foreground">
-                  {t('serviceManagerTool.visibleLogLimit')}
-                </p>
-              ) : null}
-            </div>
-            {selectedIDs.length ? (
-              <LogList
-                lines={visibleLines}
-                query={query}
-                regex={regex}
-                caseSensitive={caseSensitive}
-                sourceLabels={sourceLabels}
-              />
-            ) : (
-              <div className="grid min-h-0 place-items-center text-xs text-muted-foreground">
-                {t('serviceManagerTool.selectMonitorHint')}
-              </div>
-            )}
-          </div>
-        </ResizablePanel>
-      </ResizablePanelGroup>
-      <ConfirmDialog
-        open={pendingRemove !== null}
-        onOpenChange={(open) => {
-          if (!open) {
-            setPendingRemove(null);
-            setRemoveError('');
-          }
-        }}
-        title={t('serviceManagerTool.removeMonitorTitle')}
-        description={t('serviceManagerTool.removeMonitorConfirm', {
-          name: pendingRemove ? sourceLabels.get(pendingRemove.id) : '',
-        })}
-        confirmLabel={t('serviceManagerTool.removeMonitor')}
-        destructive
-        busy={removing}
-        error={
-          removeError ? `${t('serviceManagerTool.removeMonitorFailed')}：${removeError}` : undefined
-        }
-        onConfirm={() => void confirmRemove()}
-      />
-    </>
   );
 }
 
@@ -1793,6 +1914,9 @@ function ResourcePanel({
   onMonitor,
   onStop,
   onClear,
+  monitors,
+  targets,
+  onSelectResource,
   t,
 }: {
   selection: Selection;
@@ -1817,9 +1941,31 @@ function ResourcePanel({
   onMonitor: (resource: ServiceResourceRef) => void;
   onStop: () => void;
   onClear: () => void;
+  monitors: LogMonitor[];
+  targets: ServiceTarget[];
+  onSelectResource: (monitor: LogMonitor) => void;
   t: ReturnType<typeof useTranslation>['t'];
 }) {
   const resource = selection.resource;
+  const scope = selection.kind === 'workspace' || selection.kind === 'host';
+  const sourceLabels = useMemo(() => {
+    if (!scope) return undefined;
+    const targetNames = new Map(targets.map((item) => [item.id, targetLabel(item, t)]));
+    return new Map(
+      monitors.map((item) => [
+        item.id,
+        [
+          selection.kind === 'workspace'
+            ? (targetNames.get(item.targetID) ?? t('serviceManagerTool.targetUnavailable'))
+            : '',
+          item.resource.group,
+          item.resource.name || item.resource.id,
+        ]
+          .filter(Boolean)
+          .join(' / '),
+      ]),
+    );
+  }, [scope, monitors, targets, selection.kind, t]);
   const visibleLines = useMemo(
     () => lines.filter((line) => monitorIDs.includes(line.monitorID)),
     [lines, monitorIDs],
@@ -1832,7 +1978,12 @@ function ResourcePanel({
         onValueChange={(value) => onTabChange(value)}
         className="h-full min-h-0 gap-0"
       >
-        <div className="flex items-center border-b px-4 py-2">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b px-4 py-2">
+          {scope ? (
+            <span className="min-w-0 truncate text-sm font-semibold">
+              {selection.kind === 'workspace' ? t('serviceManagerTool.workspace') : resource.name}
+            </span>
+          ) : null}
           <TabsList>
             <TabsTrigger value="info">{t('serviceManagerTool.detailTabs.info')}</TabsTrigger>
             <TabsTrigger value="performance">
@@ -1842,25 +1993,39 @@ function ResourcePanel({
           </TabsList>
         </div>
         <TabsContent value="info" className="flex min-h-0 flex-col overflow-hidden">
-          <ResourceInfoTab
-            targetID={targetID}
-            resource={resource}
-            groupContainers={groupContainers}
-            refreshToken={refreshToken}
-          />
+          {scope ? (
+            <ScopeInfoTab selection={selection} monitors={monitors} targets={targets} t={t} />
+          ) : (
+            <ResourceInfoTab
+              targetID={targetID}
+              resource={resource}
+              groupContainers={groupContainers}
+              refreshToken={refreshToken}
+            />
+          )}
         </TabsContent>
         <TabsContent value="performance" className="flex min-h-0 flex-col overflow-hidden">
-          <ServiceResourcePerformance
-            enabled={metricsActive}
-            targetID={targetID}
-            resource={resource}
-          />
+          {selection.kind === 'workspace' ? (
+            <ServiceWorkspacePerformance
+              enabled={metricsActive}
+              monitors={monitors}
+              targets={targets}
+              onSelectResource={onSelectResource}
+            />
+          ) : (
+            <ServiceResourcePerformance
+              enabled={metricsActive}
+              targetID={targetID}
+              resource={resource}
+              sampleKind={selection.kind === 'host' ? 'source' : 'resource'}
+            />
+          )}
         </TabsContent>
         <TabsContent value="logs" className="flex min-h-0 flex-col overflow-hidden">
           <div className="grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)]">
             <div className="border-b px-4 py-2">
               <div className="flex items-center gap-2">
-                {monitoring ? (
+                {scope ? null : monitoring ? (
                   <Button
                     variant="outline"
                     size="icon-sm"
@@ -1920,17 +2085,19 @@ function ResourcePanel({
                     <TextAa weight="duotone" />
                   </ToggleGroupItem>
                 </ToggleGroup>
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
-                  className="ml-auto flex-none text-muted-foreground hover:text-destructive"
-                  disabled={!monitorIDs.length}
-                  title={t('serviceManagerTool.clearLogs')}
-                  aria-label={t('serviceManagerTool.clearLogs')}
-                  onClick={() => setConfirmingClear(true)}
-                >
-                  <Eraser weight="duotone" />
-                </Button>
+                {!scope ? (
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    className="ml-auto flex-none text-muted-foreground hover:text-destructive"
+                    disabled={!monitorIDs.length}
+                    title={t('serviceManagerTool.clearLogs')}
+                    aria-label={t('serviceManagerTool.clearLogs')}
+                    onClick={() => setConfirmingClear(true)}
+                  >
+                    <Eraser weight="duotone" />
+                  </Button>
+                ) : null}
               </div>
               {truncated ? (
                 <p className="mt-2 text-xs text-amber-600">
@@ -1948,6 +2115,7 @@ function ResourcePanel({
               query={query}
               regex={regex}
               caseSensitive={caseSensitive}
+              sourceLabels={sourceLabels}
             />
           </div>
         </TabsContent>
@@ -2009,6 +2177,58 @@ function InfoField({ label, children }: { label: string; children: ReactNode }) 
       <dt className="truncate text-muted-foreground">{label}</dt>
       <dd className="min-w-0 break-words font-mono text-foreground">{children}</dd>
     </>
+  );
+}
+
+function ScopeInfoTab({
+  selection,
+  monitors,
+  targets,
+  t,
+}: {
+  selection: Selection;
+  monitors: LogMonitor[];
+  targets: ServiceTarget[];
+  t: ReturnType<typeof useTranslation>['t'];
+}) {
+  const hostIDs = [...new Set(monitors.map((item) => item.targetID))];
+  return (
+    <ScrollArea className="h-full min-h-0">
+      <InfoSection>
+        <InfoFields>
+          <InfoField label={t('serviceManagerTool.target')}>
+            {selection.kind === 'workspace' ? hostIDs.length : selection.resource.name}
+          </InfoField>
+          <InfoField label={t('serviceManagerTool.scopeInfo.members')}>{monitors.length}</InfoField>
+          {STATUS_GROUPS.map(({ runtime }) => (
+            <InfoField key={runtime} label={t(`serviceManagerTool.runtimes.${runtime}`)}>
+              {monitors.filter((item) => item.resource.runtime === runtime).length}
+            </InfoField>
+          ))}
+        </InfoFields>
+      </InfoSection>
+      {selection.kind === 'workspace' && hostIDs.length ? (
+        <InfoSection title={t('serviceManagerTool.target')}>
+          <InfoFields>
+            {hostIDs.map((id) => {
+              const target = targets.find((item) => item.id === id);
+              return (
+                <InfoField
+                  key={id}
+                  label={
+                    target ? targetLabel(target, t) : t('serviceManagerTool.targetUnavailable')
+                  }
+                >
+                  {t('serviceManagerTool.workspaceMembers', {
+                    total: monitors.filter((item) => item.targetID === id).length,
+                  })}
+                </InfoField>
+              );
+            })}
+          </InfoFields>
+        </InfoSection>
+      ) : null}
+    </ScrollArea>
   );
 }
 
