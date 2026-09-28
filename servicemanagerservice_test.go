@@ -23,6 +23,42 @@ func TestGroupDockerContainersKeepsStandaloneAndCompose(t *testing.T) {
 	}
 }
 
+func TestParseDockerVolumeSizes(t *testing.T) {
+	sizes := parseDockerVolumeSizes("cache:::1.5MB;;;empty:::0B;;;unknown:::N/A;;;malformed;;;")
+	if sizes["cache"] != 1_500_000 {
+		t.Fatalf("卷大小解析错误: %#v", sizes)
+	}
+	if size, ok := sizes["empty"]; !ok || size != 0 {
+		t.Fatalf("空卷应保留为可用的 0 字节: %#v", sizes)
+	}
+	if _, ok := sizes["unknown"]; ok {
+		t.Fatalf("未知大小不应伪装为 0 字节: %#v", sizes)
+	}
+}
+
+func TestOrderedDockerMountsUsesBindDeclarationOrder(t *testing.T) {
+	item := dockerInspect{}
+	item.Mounts = []dockerMount{
+		{Type: "volume", Name: "data", Source: "/var/lib/docker/volumes/data/_data", Destination: "/var/lib/app"},
+		{Type: "bind", Source: "/host/config", Destination: "/etc/app"},
+		{Type: "tmpfs", Destination: "/run"},
+	}
+	item.HostConfig.Binds = []string{"/host/config:/etc/app:ro", "data:/var/lib/app:rw"}
+	ordered := orderedDockerMounts(item)
+	if len(ordered) != 3 || ordered[0].Destination != "/etc/app" || ordered[1].Destination != "/var/lib/app" || ordered[2].Destination != "/run" {
+		t.Fatalf("挂载顺序错误: %#v", ordered)
+	}
+}
+
+func TestParseDUSize(t *testing.T) {
+	if size, ok := parseDUSize([]byte("13225536\t/var/lib/dagger\n")); !ok || size != 13_542_948_864 {
+		t.Fatalf("du 大小解析错误: size=%d ok=%v", size, ok)
+	}
+	if _, ok := parseDUSize([]byte("invalid")); ok {
+		t.Fatal("无效 du 输出不应被接受")
+	}
+}
+
 func TestAppendLogLineKeepsAnsiSequences(t *testing.T) {
 	ctx := context.Background()
 	monitor := &logMonitorState{

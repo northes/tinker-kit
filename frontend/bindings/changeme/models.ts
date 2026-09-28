@@ -67,6 +67,22 @@ export interface DockerContainerDetail {
     "restartPolicy": string;
 }
 
+export interface DockerContainerMountSize {
+    "type": string;
+    "name"?: string;
+    "source": string;
+    "destination": string;
+    "size": number;
+    "available": boolean;
+}
+
+export interface DockerContainerSize {
+    "total": number;
+    "container": number;
+    "mounts": DockerContainerMountSize[] | null;
+    "complete": boolean;
+}
+
 export interface DockerDeleteFailure {
     "imageID": string;
     "error": string;

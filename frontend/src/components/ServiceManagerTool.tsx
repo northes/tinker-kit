@@ -1,4 +1,12 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { Events } from '@wailsio/runtime';
 import {
@@ -25,6 +33,7 @@ import { ansiPlainText, parseAnsi, type AnsiSpan } from '../lib/ansi';
 import {
   ClearLogBuffer,
   GetDockerContainerDetail,
+  GetDockerContainerSize,
   GetLogMonitors,
   GetPM2ProcessDetail,
   GetServiceInventory,
@@ -40,6 +49,7 @@ import type {
   DockerComposeGroup,
   DockerContainer,
   DockerContainerDetail,
+  DockerContainerSize,
   LogMonitor,
   PM2ProcessDetail,
   ServiceActionRequest,
@@ -103,6 +113,7 @@ import {
   SelectValue,
 } from './ui/select';
 import { Spinner } from './ui/spinner';
+import { Popover, PopoverContent, PopoverTitle, PopoverTrigger } from './ui/popover';
 import { toast } from './ui/toast';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
 import { ToggleGroup, ToggleGroupItem } from './ui/toggle-group';
@@ -255,7 +266,7 @@ export default function ServiceManagerTool({
   const targetIDRef = useRef(targetID);
   targetIDRef.current = targetID;
   const [inventory, setInventory] = useState<ServiceInventory | null>(null);
-  const [inventoryVersion, setInventoryVersion] = useState(0);
+  const [detailRefreshVersion, setDetailRefreshVersion] = useState(0);
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState<Set<string>>(new Set());
   const [searchDraft, setSearchDraft] = useState('');
@@ -329,14 +340,13 @@ export default function ServiceManagerTool({
     setTargetID('local');
   };
 
-  const load = async (nextTarget = targetID) => {
+  const load = async (nextTarget = targetID, refreshDetails = false) => {
     setLoading(true);
     try {
       const next = await GetServiceInventory(nextTarget);
       if (targetIDRef.current !== nextTarget) return;
       setInventory(next);
-      // 通知详情面板同步刷新，右上角刷新按钮即可更新信息页数据。
-      setInventoryVersion((value) => value + 1);
+      if (refreshDetails) setDetailRefreshVersion((value) => value + 1);
     } catch (error) {
       if (targetIDRef.current !== nextTarget) return;
       toast.add({
@@ -618,10 +628,11 @@ export default function ServiceManagerTool({
           type: 'error',
         });
       else toast.add({ title: t('serviceManagerTool.actionSucceeded'), type: 'success' });
-      if (target === targetID) await load();
+      if (target === targetID) await load(target, view !== 'workspace');
       if (view === 'workspace') {
         const updated = await GetServiceInventory(target);
         setWorkspaceInventories((current) => ({ ...current, [target]: updated }));
+        setDetailRefreshVersion((value) => value + 1);
       }
     } catch (error) {
       toast.add({
@@ -1193,26 +1204,30 @@ export default function ServiceManagerTool({
                 variant="outline"
                 size="sm"
                 onClick={() =>
-                  void (view === 'workspace'
-                    ? Promise.allSettled(
-                        workspaceTargetIDs.map(async (id) => {
-                          try {
-                            const next = await GetServiceInventory(id);
-                            setWorkspaceInventories((current) => ({ ...current, [id]: next }));
-                            setWorkspaceErrors((current) => {
-                              const nextErrors = { ...current };
-                              delete nextErrors[id];
-                              return nextErrors;
-                            });
-                          } catch (error) {
-                            setWorkspaceErrors((current) => ({
-                              ...current,
-                              [id]: formatBackendError(error),
-                            }));
-                          }
-                        }),
-                      )
-                    : load())
+                  void (
+                    view === 'workspace'
+                      ? Promise.allSettled(
+                          workspaceTargetIDs.map(async (id) => {
+                            try {
+                              const next = await GetServiceInventory(id);
+                              setWorkspaceInventories((current) => ({ ...current, [id]: next }));
+                              setWorkspaceErrors((current) => {
+                                const nextErrors = { ...current };
+                                delete nextErrors[id];
+                                return nextErrors;
+                              });
+                            } catch (error) {
+                              setWorkspaceErrors((current) => ({
+                                ...current,
+                                [id]: formatBackendError(error),
+                              }));
+                            }
+                          }),
+                        )
+                      : load(targetID, true)
+                  ).then(() => {
+                    if (view === 'workspace') setDetailRefreshVersion((value) => value + 1);
+                  })
                 }
                 disabled={loading}
               >
@@ -1378,11 +1393,7 @@ export default function ServiceManagerTool({
                     targetID={selectedTargetID}
                     metricsActive={active}
                     groupContainers={selectedGroupContainers}
-                    refreshToken={
-                      view === 'workspace'
-                        ? (workspaceInventories[selectedTargetID]?.containers?.length ?? 0)
-                        : inventoryVersion
-                    }
+                    refreshToken={detailRefreshVersion}
                     tab={detailTab}
                     onTabChange={setDetailTab}
                     monitorIDs={activeMonitorIDs}
@@ -2318,6 +2329,141 @@ function InfoField({ label, children }: { label: string; children: ReactNode }) 
   );
 }
 
+function ContainerSizeSpinner() {
+  const anchorRef = useRef<HTMLSpanElement>(null);
+  const contentRef = useRef<HTMLSpanElement>(null);
+
+  useLayoutEffect(() => {
+    const anchor = anchorRef.current;
+    const content = contentRef.current;
+    if (!anchor || !content) return;
+    let frame = 0;
+    const align = () => {
+      const { left, top } = anchor.getBoundingClientRect();
+      const scale = window.devicePixelRatio || 1;
+      // WebView 在半物理像素位置栅格化旋转 SVG 时会偏心；对齐静态容器，保留原动画。
+      content.style.left = `${Math.round(left * scale) / scale - left}px`;
+      content.style.top = `${Math.round(top * scale) / scale - top}px`;
+    };
+    const scheduleAlign = () => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(align);
+    };
+    const observer = new ResizeObserver(scheduleAlign);
+    // 分栏拖动会改变位置而不改变图标尺寸，因此同时观察布局祖先。
+    for (let element: Element | null = anchor; element; element = element.parentElement) {
+      observer.observe(element);
+    }
+    window.addEventListener('resize', scheduleAlign);
+    window.addEventListener('scroll', scheduleAlign, true);
+    align();
+    return () => {
+      observer.disconnect();
+      cancelAnimationFrame(frame);
+      window.removeEventListener('resize', scheduleAlign);
+      window.removeEventListener('scroll', scheduleAlign, true);
+    };
+  }, []);
+
+  return (
+    <span ref={anchorRef} className="inline-flex size-4 shrink-0">
+      <span ref={contentRef} className="relative inline-flex">
+        <Spinner />
+      </span>
+    </span>
+  );
+}
+
+function ContainerSizePopover({
+  size,
+  loading,
+  error,
+}: {
+  size: DockerContainerSize | null;
+  loading: boolean;
+  error: string;
+}) {
+  const { t } = useTranslation();
+  const rows = size
+    ? [
+        {
+          key: 'container',
+          label: t('serviceManagerTool.detail.containerWritableLayer'),
+          detail: '',
+          size: size.container,
+          available: true,
+        },
+        ...(size.mounts ?? []).map((mount, index) => ({
+          key: `${mount.type}-${mount.source}-${mount.destination}-${index}`,
+          label:
+            mount.type === 'volume'
+              ? t('serviceManagerTool.detail.dockerVolume')
+              : t('serviceManagerTool.detail.bindMount'),
+          detail:
+            mount.type === 'volume'
+              ? `${mount.name || mount.source} → ${mount.destination}`
+              : `${mount.source} → ${mount.destination}`,
+          size: mount.size,
+          available: mount.available,
+        })),
+      ]
+    : [];
+  return (
+    <Popover>
+      <PopoverTrigger
+        render={
+          <Button
+            variant="link"
+            size="sm"
+            className="h-auto min-h-0 min-w-0 gap-1.5 px-0 py-0 align-middle font-mono"
+            aria-label={t('serviceManagerTool.detail.showSizeBreakdown')}
+          />
+        }
+      >
+        {size ? formatBytes(size.total) : '—'}
+        {loading ? <ContainerSizeSpinner /> : null}
+      </PopoverTrigger>
+      <PopoverContent align="start" className="w-80 max-w-[calc(100vw-2rem)]">
+        <div className="flex items-center justify-between gap-3">
+          <PopoverTitle>{t('serviceManagerTool.detail.sizeBreakdown')}</PopoverTitle>
+          {loading && size ? <ContainerSizeSpinner /> : null}
+        </div>
+        {size ? (
+          <div className="flex flex-col gap-2">
+            {rows.map((row) => (
+              <div key={row.key} className="flex items-start justify-between gap-4 text-xs">
+                <span className="min-w-0">
+                  <span className="block text-foreground">{row.label}</span>
+                  {row.detail ? (
+                    <span className="block break-all font-mono text-[10px] text-muted-foreground">
+                      {row.detail}
+                    </span>
+                  ) : null}
+                </span>
+                <span className="flex-none font-mono tabular-nums text-foreground">
+                  {row.available
+                    ? formatBytes(row.size)
+                    : t('serviceManagerTool.detail.sizeUnavailable')}
+                </span>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="flex min-h-12 items-center justify-center text-xs text-muted-foreground">
+            {loading ? <ContainerSizeSpinner /> : t('serviceManagerTool.detail.sizeUnavailable')}
+          </div>
+        )}
+        {error ? <p className="m-0 text-[10px] text-destructive">{error}</p> : null}
+        {size && !size.complete ? (
+          <p className="m-0 text-[10px] text-muted-foreground">
+            {t('serviceManagerTool.detail.sizePartial')}
+          </p>
+        ) : null}
+      </PopoverContent>
+    </Popover>
+  );
+}
+
 function ScopeInfoTab({
   selection,
   monitors,
@@ -2381,7 +2527,17 @@ function InfoList({ items }: { items: string[] }) {
 }
 
 // 各类资源的详情字段不同，这里按运行时渲染结构化的键值信息，避免直接暴露原始 JSON。
-function ContainerInfoView({ info }: { info: ContainerInfo }) {
+function ContainerInfoView({
+  info,
+  containerSize,
+  sizeLoading,
+  sizeError,
+}: {
+  info: ContainerInfo;
+  containerSize: DockerContainerSize | null;
+  sizeLoading: boolean;
+  sizeError: string;
+}) {
   const { t } = useTranslation();
   if (info.runtime === 'docker') {
     const { container, command, entrypoint, mounts, networks, restartPolicy } = info.detail;
@@ -2394,6 +2550,9 @@ function ContainerInfoView({ info }: { info: ContainerInfo }) {
             </InfoField>
             <InfoField label={t('serviceManagerTool.detail.image')}>
               {container.image || '—'}
+            </InfoField>
+            <InfoField label={t('serviceManagerTool.detail.size')}>
+              <ContainerSizePopover size={containerSize} loading={sizeLoading} error={sizeError} />
             </InfoField>
             <InfoField label={t('serviceManagerTool.status')}>
               <Badge variant={statusVariant(container.status)}>{container.status}</Badge>
@@ -2538,41 +2697,74 @@ function ResourceInfoTab({
   refreshToken: number;
 }) {
   const { t } = useTranslation();
-  const [loading, setLoading] = useState(true);
-  const [info, setInfo] = useState<ContainerInfo | null>(null);
+  const identity = `${targetID}|${resource.runtime}|${resource.scope ?? ''}|${resource.id}`;
+  const [infoState, setInfoState] = useState<{ identity: string; value: ContainerInfo } | null>(
+    null,
+  );
+  const [sizeState, setSizeState] = useState<{
+    identity: string;
+    value: DockerContainerSize;
+  } | null>(null);
+  const [sizeLoading, setSizeLoading] = useState(false);
+  const [sizeError, setSizeError] = useState('');
   const [error, setError] = useState('');
   const [rawOpen, setRawOpen] = useState(false);
+  const detailRequestVersion = useRef(0);
+  const sizeRequestVersion = useRef(0);
   const isGroup = resource.runtime === 'docker-compose';
-
-  const load = async () => {
-    setLoading(true);
-    setInfo(null);
-    setError('');
-    try {
-      if (resource.runtime === 'docker') {
-        setInfo({
-          runtime: 'docker',
-          detail: await GetDockerContainerDetail(targetID, resource.id),
-        });
-      } else if (resource.runtime === 'pm2') {
-        setInfo({ runtime: 'pm2', detail: await GetPM2ProcessDetail(targetID, resource.id) });
-      } else {
-        setInfo({
-          runtime: 'systemd',
-          detail: await GetSystemdUnitDetail(targetID, resource.id, resource.scope ?? 'system'),
-        });
-      }
-    } catch (reason) {
-      setError(formatBackendError(reason));
-    } finally {
-      setLoading(false);
-    }
-  };
+  const info = infoState?.identity === identity ? infoState.value : null;
+  const containerSize = sizeState?.identity === identity ? sizeState.value : null;
 
   useEffect(() => {
-    if (isGroup) return;
-    void load();
-  }, [isGroup, targetID, resource.runtime, resource.id, resource.scope, refreshToken]);
+    const detailVersion = ++detailRequestVersion.current;
+    const sizeVersion = ++sizeRequestVersion.current;
+    if (isGroup) {
+      setSizeLoading(false);
+      return;
+    }
+    setError('');
+    void (async () => {
+      try {
+        let next: ContainerInfo;
+        if (resource.runtime === 'docker') {
+          next = {
+            runtime: 'docker',
+            detail: await GetDockerContainerDetail(targetID, resource.id),
+          };
+        } else if (resource.runtime === 'pm2') {
+          next = {
+            runtime: 'pm2',
+            detail: await GetPM2ProcessDetail(targetID, resource.id),
+          };
+        } else {
+          next = {
+            runtime: 'systemd',
+            detail: await GetSystemdUnitDetail(targetID, resource.id, resource.scope ?? 'system'),
+          };
+        }
+        if (detailRequestVersion.current === detailVersion) setInfoState({ identity, value: next });
+      } catch (reason) {
+        if (detailRequestVersion.current === detailVersion) setError(formatBackendError(reason));
+      }
+    })();
+    if (resource.runtime === 'docker') {
+      setSizeLoading(true);
+      setSizeError('');
+      void GetDockerContainerSize(targetID, resource.id)
+        .then((next) => {
+          if (sizeRequestVersion.current === sizeVersion) setSizeState({ identity, value: next });
+        })
+        .catch((reason) => {
+          if (sizeRequestVersion.current === sizeVersion) setSizeError(formatBackendError(reason));
+        })
+        .finally(() => {
+          if (sizeRequestVersion.current === sizeVersion) setSizeLoading(false);
+        });
+    } else {
+      setSizeLoading(false);
+      setSizeError('');
+    }
+  }, [identity, isGroup, refreshToken]);
 
   if (isGroup) {
     return (
@@ -2606,17 +2798,22 @@ function ResourceInfoTab({
     <>
       <div className="grid h-full min-h-0 grid-rows-[minmax(0,1fr)_auto]">
         <ScrollArea className="min-h-0 overflow-hidden">
-          {error ? (
+          {!info && error ? (
             <p className="m-0 px-4 py-3 text-xs text-destructive" role="alert">
               {error}
             </p>
-          ) : loading || !info ? (
+          ) : !info ? (
             <div className="flex h-full items-center justify-center gap-2 text-xs text-muted-foreground">
               <Spinner />
               {t('common.loading')}
             </div>
           ) : (
-            <ContainerInfoView info={info} />
+            <ContainerInfoView
+              info={info}
+              containerSize={containerSize}
+              sizeLoading={sizeLoading}
+              sizeError={sizeError}
+            />
           )}
         </ScrollArea>
         <div className="flex items-center justify-end border-t px-4 py-2">
@@ -2634,7 +2831,13 @@ function ResourceInfoTab({
           </DialogHeader>
           <ScrollArea className="min-h-0 flex-1 rounded-md border border-border bg-muted/20 p-3">
             <pre className="m-0 font-mono text-[11px] break-all whitespace-pre-wrap text-foreground">
-              {JSON.stringify(info?.detail ?? null, null, 2)}
+              {JSON.stringify(
+                info?.runtime === 'docker'
+                  ? { ...info.detail, size: containerSize }
+                  : (info?.detail ?? null),
+                null,
+                2,
+              )}
             </pre>
           </ScrollArea>
           <DialogFooter className="flex-none">

@@ -18,6 +18,7 @@ import (
 
 const (
 	serviceCommandTimeout = 20 * time.Second
+	serviceSizeTimeout    = 2 * time.Minute
 	serviceUpdateTimeout  = 10 * time.Minute
 	serviceLogBufferBytes = 20 << 20
 	serviceLogTotalBytes  = 64 << 20
@@ -130,6 +131,22 @@ type DockerContainerDetail struct {
 	Mounts        []string        `json:"mounts"`
 	Networks      []string        `json:"networks"`
 	RestartPolicy string          `json:"restartPolicy"`
+}
+
+type DockerContainerMountSize struct {
+	Type        string `json:"type"`
+	Name        string `json:"name,omitempty"`
+	Source      string `json:"source"`
+	Destination string `json:"destination"`
+	Size        int64  `json:"size"`
+	Available   bool   `json:"available"`
+}
+
+type DockerContainerSize struct {
+	Total     int64                      `json:"total"`
+	Container int64                      `json:"container"`
+	Mounts    []DockerContainerMountSize `json:"mounts"`
+	Complete  bool                       `json:"complete"`
 }
 
 type PM2ProcessDetail struct {
@@ -494,6 +511,7 @@ type dockerInspect struct {
 	ID      string `json:"Id"`
 	Name    string `json:"Name"`
 	Created string `json:"Created"`
+	SizeRw  int64  `json:"SizeRw"`
 	Config  struct {
 		Image      string            `json:"Image"`
 		Labels     map[string]string `json:"Labels"`
@@ -511,16 +529,48 @@ type dockerInspect struct {
 		} `json:"Ports"`
 		Networks map[string]any `json:"Networks"`
 	} `json:"NetworkSettings"`
-	Mounts []struct {
-		Source      string `json:"Source"`
-		Destination string `json:"Destination"`
-		Type        string `json:"Type"`
-	} `json:"Mounts"`
+	Mounts     []dockerMount `json:"Mounts"`
 	HostConfig struct {
+		Binds         []string `json:"Binds"`
 		RestartPolicy struct {
 			Name string `json:"Name"`
 		} `json:"RestartPolicy"`
 	} `json:"HostConfig"`
+}
+
+type dockerMount struct {
+	Name        string `json:"Name"`
+	Source      string `json:"Source"`
+	Destination string `json:"Destination"`
+	Type        string `json:"Type"`
+}
+
+func orderedDockerMounts(item dockerInspect) []dockerMount {
+	if len(item.HostConfig.Binds) == 0 || len(item.Mounts) < 2 {
+		return item.Mounts
+	}
+	ordered := make([]dockerMount, 0, len(item.Mounts))
+	used := make([]bool, len(item.Mounts))
+	for _, bind := range item.HostConfig.Binds {
+		for index, mount := range item.Mounts {
+			if used[index] || !dockerBindTargetsMount(bind, mount.Destination) {
+				continue
+			}
+			ordered = append(ordered, mount)
+			used[index] = true
+			break
+		}
+	}
+	for index, mount := range item.Mounts {
+		if !used[index] {
+			ordered = append(ordered, mount)
+		}
+	}
+	return ordered
+}
+
+func dockerBindTargetsMount(bind, destination string) bool {
+	return strings.HasSuffix(bind, ":"+destination) || strings.Contains(bind, ":"+destination+":")
 }
 
 func (s *ServiceManagerService) listContainers(ctx context.Context, source ImageSource, cli string) ([]DockerContainer, error) {
@@ -659,7 +709,7 @@ func (s *ServiceManagerService) GetDockerContainerDetail(targetID, id string) (D
 	}
 	v := raw[0]
 	detail := DockerContainerDetail{Container: dockerContainerFromInspect(v), Command: v.Config.Cmd, Entrypoint: v.Config.Entrypoint, Mounts: []string{}, Networks: []string{}, RestartPolicy: v.HostConfig.RestartPolicy.Name}
-	for _, m := range v.Mounts {
+	for _, m := range orderedDockerMounts(v) {
 		detail.Mounts = append(detail.Mounts, m.Type+": "+m.Source+" → "+m.Destination)
 	}
 	for n := range v.NetworkSettings.Networks {
@@ -667,6 +717,126 @@ func (s *ServiceManagerService) GetDockerContainerDetail(targetID, id string) (D
 	}
 	sort.Strings(detail.Networks)
 	return detail, nil
+}
+
+func (s *ServiceManagerService) GetDockerContainerSize(targetID, id string) (DockerContainerSize, error) {
+	target, source, cli, err := s.targetSnapshot(targetID)
+	_ = target
+	if err != nil {
+		return DockerContainerSize{}, err
+	}
+	if !validContainerID(id) {
+		return DockerContainerSize{}, userError("errors.service.containerIDInvalid")
+	}
+	ctx, cancel := context.WithTimeout(s.ctx, serviceSizeTimeout)
+	defer cancel()
+	out, err := s.run(ctx, source, cli, "container", "inspect", "--size", id)
+	if err != nil {
+		return DockerContainerSize{}, err
+	}
+	var raw []dockerInspect
+	if json.Unmarshal(out, &raw) != nil || len(raw) != 1 {
+		return DockerContainerSize{}, userError("errors.service.dockerDetailParseFailed")
+	}
+	v := raw[0]
+	result := DockerContainerSize{Container: v.SizeRw, Total: v.SizeRw, Mounts: []DockerContainerMountSize{}, Complete: true}
+	needsVolumeFallback := false
+	for _, mount := range orderedDockerMounts(v) {
+		if mount.Type != "volume" && mount.Type != "bind" {
+			continue
+		}
+		item := DockerContainerMountSize{Type: mount.Type, Name: mount.Name, Source: mount.Source, Destination: mount.Destination}
+		if mount.Type == "bind" {
+			item.Size, item.Available = s.hostPathSize(ctx, source, mount.Source)
+		} else if v.State.Running {
+			item.Size, item.Available = s.containerPathSize(ctx, source, cli, id, mount.Destination)
+			needsVolumeFallback = needsVolumeFallback || !item.Available
+		} else {
+			needsVolumeFallback = true
+		}
+		result.Mounts = append(result.Mounts, item)
+	}
+	volumeSizes := map[string]int64{}
+	volumeSizesAvailable := true
+	if needsVolumeFallback {
+		volumeSizes, volumeSizesAvailable = s.dockerVolumeSizes(ctx, source, cli)
+	}
+	for index := range result.Mounts {
+		item := &result.Mounts[index]
+		if item.Type == "volume" && !item.Available && volumeSizesAvailable {
+			item.Size, item.Available = volumeSizes[item.Name]
+		}
+		if item.Available {
+			result.Total += item.Size
+		} else {
+			result.Complete = false
+		}
+	}
+	return result, nil
+}
+
+const dockerVolumeSizeFormat = `{{range .Volumes}}{{.Name}}:::{{.Size}};;;{{end}}`
+
+func (s *ServiceManagerService) dockerVolumeSizes(ctx context.Context, source ImageSource, cli string) (map[string]int64, bool) {
+	out, err := s.run(ctx, source, cli, "system", "df", "--verbose", "--format", dockerVolumeSizeFormat)
+	if err != nil {
+		return map[string]int64{}, false
+	}
+	return parseDockerVolumeSizes(string(out)), true
+}
+
+func parseDockerVolumeSizes(output string) map[string]int64 {
+	result := map[string]int64{}
+	for _, item := range strings.Split(output, ";;;") {
+		name, value, ok := strings.Cut(strings.TrimSpace(item), ":::")
+		if !ok || name == "" {
+			continue
+		}
+		if size, valid := parseDockerDiskSize(value); valid {
+			result[name] = size
+		}
+	}
+	return result
+}
+
+func parseDockerDiskSize(value string) (int64, bool) {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" || strings.EqualFold(trimmed, "N/A") {
+		return 0, false
+	}
+	if trimmed == "0" || strings.EqualFold(trimmed, "0B") {
+		return 0, true
+	}
+	size := parseDockerImageSize(trimmed)
+	return size, size > 0
+}
+
+func (s *ServiceManagerService) hostPathSize(ctx context.Context, source ImageSource, path string) (int64, bool) {
+	out, err := s.run(ctx, source, "du", "-sk", "--", path)
+	if err != nil {
+		return 0, false
+	}
+	return parseDUSize(out)
+}
+
+func (s *ServiceManagerService) containerPathSize(ctx context.Context, source ImageSource, cli, id, path string) (int64, bool) {
+	out, err := s.run(ctx, source, cli, "exec", id, "du", "-sk", "--", path)
+	if err != nil {
+		return 0, false
+	}
+	return parseDUSize(out)
+}
+
+func parseDUSize(out []byte) (int64, bool) {
+	fields := strings.Fields(string(out))
+	if len(fields) == 0 {
+		return 0, false
+	}
+	blocks, err := strconv.ParseInt(fields[0], 10, 64)
+	if err != nil || blocks < 0 || blocks > (1<<63-1)/1024 {
+		return 0, false
+	}
+	return blocks * 1024, true
 }
 func (s *ServiceManagerService) GetPM2ProcessDetail(targetID, id string) (PM2ProcessDetail, error) {
 	target, source, _, err := s.targetSnapshot(targetID)
