@@ -1034,7 +1034,7 @@
     "refreshFailed": "刷新服务列表失败",
     "loading": "正在加载服务列表…",
     "selectHint": "选择一个容器或服务查看详情与日志",
-    "resources": "资源",
+    "hosts": "主机",
     "metrics": {
       "name": "名称",
       "metric": { "cpu": "CPU", "memory": "内存", "network": "网络", "disk": "磁盘 I/O" },

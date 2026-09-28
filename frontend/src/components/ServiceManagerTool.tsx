@@ -16,6 +16,8 @@ import {
   CaretDown,
   CodeSimple,
   Copy,
+  Cube,
+  DesktopTower,
   Eraser,
   GearSix,
   ListBullets,
@@ -26,6 +28,7 @@ import {
   Plus,
   TextAa,
   Trash,
+  Stack,
   WarningCircle,
 } from '@phosphor-icons/react';
 import { useTranslation } from 'react-i18next';
@@ -124,7 +127,6 @@ import { ServiceResourcePerformance } from './ServiceResourcePerformance';
 import { ServiceWorkspacePerformance } from './ServiceWorkspacePerformance';
 
 const MANAGE_TARGETS_VALUE = '__manage-targets__';
-const WORKSPACE_TARGET_VALUE = '__workspace-targets__';
 const VISIBLE_LOG_LIMIT = 5000;
 const LOG_LIMIT_ERROR_KEY = 'errors.service.logMonitorLimitReached';
 const LOCAL_TARGET: ServiceTarget = { id: 'local', name: 'local', kind: 'local' };
@@ -326,11 +328,6 @@ export default function ServiceManagerTool({
     media.addEventListener('change', update);
     return () => media.removeEventListener('change', update);
   }, []);
-  // 记录资源视图的目标主机；工作台内的主机筛选不影响它，返回时按此恢复。
-  const resourceTargetRef = useRef(targetID);
-  useEffect(() => {
-    if (view === 'resource') resourceTargetRef.current = targetID;
-  }, [view, targetID]);
   // 浏览位置与监控会话独立；移除当前浏览的主机时返回本机。
   const syncTargets = (next: ServiceTarget[]) => {
     setTargets(next);
@@ -555,7 +552,7 @@ export default function ServiceManagerTool({
     };
   }, [activeMonitorKey, logQuery, regex, caseSensitive]);
 
-  const selectedTarget = targets.find((target) => target.id === selectedTargetID);
+  const toolbarTarget = targets.find((target) => target.id === targetID);
 
   const selectTarget = (next: string | null) => {
     if (!next || next === targetID) return;
@@ -564,19 +561,11 @@ export default function ServiceManagerTool({
     setTargetID(next);
   };
   const openWorkspace = () => {
-    resourceTargetRef.current = targetID;
     setView('workspace');
     setSelection(WORKSPACE_SELECTION);
   };
   const showResources = () => {
     setView('resource');
-    // 工作台内可能切换过浏览主机，返回资源视图时恢复进入前的目标主机。
-    if (targetID !== resourceTargetRef.current) {
-      setSelection(null);
-      setInventory(null);
-      setTargetID(resourceTargetRef.current);
-      return;
-    }
     if (
       selection?.kind === 'workspace' ||
       selection?.kind === 'host' ||
@@ -884,8 +873,8 @@ export default function ServiceManagerTool({
     }
   };
   const selectedTargetMissing =
-    selectedTarget?.kind === 'ssh' &&
-    !profiles.some((profile) => profile.id === selectedTarget.sshProfileID);
+    toolbarTarget?.kind === 'ssh' &&
+    !profiles.some((profile) => profile.id === toolbarTarget.sshProfileID);
   const openManage = () => {
     void reload().catch(() => undefined);
     setEditingTarget(null);
@@ -1061,22 +1050,11 @@ export default function ServiceManagerTool({
                 </span>
                 <Select
                   disabled={view === 'workspace'}
-                  items={[
-                    ...(view === 'workspace' && selection?.kind === 'workspace'
-                      ? [
-                          {
-                            value: WORKSPACE_TARGET_VALUE,
-                            label: t('serviceManagerTool.allTargets'),
-                          },
-                        ]
-                      : []),
-                    ...targets.map((item) => ({ value: item.id, label: targetLabel(item, t) })),
-                  ]}
-                  value={
-                    view === 'workspace' && selection?.kind === 'workspace'
-                      ? WORKSPACE_TARGET_VALUE
-                      : selectedTargetID
-                  }
+                  items={targets.map((item) => ({
+                    value: item.id,
+                    label: targetLabel(item, t),
+                  }))}
+                  value={targetID}
                   onValueChange={(value) => {
                     if (value === MANAGE_TARGETS_VALUE) {
                       openManage();
@@ -1090,11 +1068,6 @@ export default function ServiceManagerTool({
                   </SelectTrigger>
                   <SelectContent>
                     <SelectGroup>
-                      {view === 'workspace' && selection?.kind === 'workspace' ? (
-                        <SelectItem value={WORKSPACE_TARGET_VALUE}>
-                          {t('serviceManagerTool.allTargets')}
-                        </SelectItem>
-                      ) : null}
                       {targets.map((item) => (
                         <SelectItem key={item.id} value={item.id}>
                           {targetLabel(item, t)}
@@ -1187,7 +1160,7 @@ export default function ServiceManagerTool({
                 onClick={showResources}
               >
                 <ListBullets weight="duotone" />
-                {t('serviceManagerTool.resources')}
+                {t('serviceManagerTool.hosts')}
               </Button>
               <Button
                 variant={view === 'workspace' ? 'secondary' : 'outline'}
@@ -1196,7 +1169,7 @@ export default function ServiceManagerTool({
               >
                 <Queue weight="duotone" />
                 {t('serviceManagerTool.workspace')}
-                <Badge variant={workspaceMembers.length > 0 ? 'warning' : 'secondary'}>
+                <Badge variant={workspaceMembers.length > 0 ? 'success' : 'secondary'}>
                   {workspaceMembers.length}
                 </Badge>
               </Button>
@@ -1249,16 +1222,18 @@ export default function ServiceManagerTool({
             >
               {view === 'workspace' ? (
                 <div className="flex h-full min-h-0 flex-col">
-                  <div className="flex h-11 flex-none items-center justify-between gap-2 border-b px-3 has-[>[data-workspace-select]:hover]:bg-muted/50">
+                  <div
+                    className={`flex h-10 flex-none items-center justify-between gap-2 border-b px-3 hover:bg-muted/50 ${selection?.kind === 'workspace' ? 'bg-muted' : ''}`}
+                  >
                     <button
                       type="button"
-                      data-workspace-select
                       aria-pressed={selection?.kind === 'workspace'}
-                      className={`-ml-3 flex h-11 min-w-0 flex-1 items-center gap-2 px-3 text-left text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${selection?.kind === 'workspace' ? 'bg-muted' : ''}`}
+                      className="-ml-3 flex h-10 min-w-0 flex-1 items-center gap-2 px-3 text-left text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                       onClick={() => setSelection(WORKSPACE_SELECTION)}
                     >
-                      <span className="font-semibold">{t('serviceManagerTool.workspace')}</span>
-                      <span className="truncate text-muted-foreground">
+                      <Queue className="size-4 flex-none text-muted-foreground" weight="duotone" />
+                      <span className="font-medium">{t('serviceManagerTool.workspace')}</span>
+                      <span className="truncate text-[10px] text-muted-foreground">
                         {t('serviceManagerTool.workspaceMembers', {
                           total: workspaceMembers.length,
                         })}
@@ -1267,8 +1242,10 @@ export default function ServiceManagerTool({
                     {workspaceMembers.length ? (
                       <Button
                         variant="ghost"
-                        size="sm"
-                        className="-mr-3 h-11 rounded-none px-3"
+                        size="icon-xs"
+                        className="flex-none text-muted-foreground hover:text-destructive"
+                        aria-label={t('serviceManagerTool.removeAllFromWorkspace')}
+                        title={t('serviceManagerTool.removeAllFromWorkspace')}
                         onClick={() => {
                           setPendingWorkspaceRemove({
                             members: [...workspaceMembers],
@@ -1278,7 +1255,6 @@ export default function ServiceManagerTool({
                         }}
                       >
                         <Trash weight="duotone" />
-                        {t('serviceManagerTool.removeAllFromWorkspace')}
                       </Button>
                     ) : null}
                   </div>
@@ -1291,7 +1267,7 @@ export default function ServiceManagerTool({
                             aria-pressed={
                               selection?.kind === 'host' && selection.targetID === hostID
                             }
-                            className={`flex h-11 w-full min-w-0 items-center border-b px-3 text-left text-xs font-semibold hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${selection?.kind === 'host' && selection.targetID === hostID ? 'bg-muted text-foreground' : 'text-muted-foreground'}`}
+                            className={`flex h-9 w-full min-w-0 items-center gap-2 border-b px-3 text-left text-xs font-medium hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${selection?.kind === 'host' && selection.targetID === hostID ? 'bg-muted text-foreground' : 'text-foreground'}`}
                             onClick={() => {
                               const host = targets.find((item) => item.id === hostID);
                               setSelection({
@@ -1307,6 +1283,10 @@ export default function ServiceManagerTool({
                               });
                             }}
                           >
+                            <DesktopTower
+                              className="size-4 flex-none text-muted-foreground"
+                              weight="duotone"
+                            />
                             <span className="truncate">
                               {targets.find((item) => item.id === hostID)
                                 ? targetLabel(
@@ -1735,6 +1715,8 @@ function ResourceList({
       resourceKey(selection.resource) === resourceKey(resource);
     const member = workspaceKeys.has(`${targetID}|${resourceKey(resource)}`);
     const running = ['running', 'online', 'active'].includes(status.toLowerCase());
+    const nested = resource.runtime === 'docker' && Boolean(resource.group);
+    const failed = /failed|dead|exited|errored/i.test(status);
     const actions = [running ? 'stop' : 'start', 'restart'];
     if (resource.runtime === 'systemd') actions.push('disable', 'disable-now');
     else actions.push('delete');
@@ -1745,19 +1727,21 @@ function ResourceList({
           render={
             <button
               type="button"
-              className={`flex h-11 w-full items-center gap-2 border-b px-3 text-left text-sm hover:bg-muted/50 ${active ? 'bg-muted' : ''} ${running ? '' : 'text-muted-foreground'}`}
+              className={`flex h-10 w-full items-center gap-2 border-b text-left text-xs hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${nested ? 'pl-10 pr-3' : 'px-3'} ${active ? 'bg-muted text-foreground' : 'text-foreground'}`}
               onClick={() => onSelect({ targetID, resource, kind })}
             />
           }
         >
+          <span
+            aria-hidden="true"
+            className={`size-1.5 flex-none rounded-full ${running ? 'bg-success' : failed ? 'bg-destructive' : 'bg-muted-foreground/45'}`}
+          />
           <span className="min-w-0 flex-1">
-            <span
-              className={`block truncate font-medium ${running ? '' : 'text-muted-foreground'}`}
-            >
-              {resource.name || resource.id}
-            </span>
+            <span className="block truncate font-medium">{resource.name || resource.id}</span>
             {description ? (
-              <span className="block truncate text-xs text-muted-foreground">{description}</span>
+              <span className="block truncate text-[10px] leading-4 text-muted-foreground">
+                {description}
+              </span>
             ) : null}
           </span>
         </ContextMenuTrigger>
@@ -1843,7 +1827,7 @@ function ResourceList({
               <div
                 role="button"
                 tabIndex={0}
-                className={`flex h-11 cursor-pointer items-center gap-2 border-b px-3 text-xs font-semibold hover:bg-muted/50 ${active ? 'bg-muted text-foreground' : 'text-muted-foreground'}`}
+                className={`flex h-9 cursor-pointer items-center gap-2 border-b px-3 text-xs font-medium hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${active ? 'bg-muted text-foreground' : 'text-foreground'}`}
                 onClick={() => onSelect({ targetID, resource, kind: 'group' })}
                 onKeyDown={(event) => {
                   if (event.key === 'Enter') onSelect({ targetID, resource, kind: 'group' });
@@ -1868,9 +1852,11 @@ function ResourceList({
             >
               <CaretDown
                 weight="bold"
+                size={12}
                 className={`transition-transform ${collapsed ? '-rotate-90' : ''}`}
               />
             </Button>
+            <Stack className="size-4 flex-none text-muted-foreground" weight="duotone" />
             <span className="min-w-0 flex-1 truncate">
               {t('serviceManagerTool.composeGroup', { name: item.name })}
             </span>
@@ -1957,6 +1943,7 @@ function ResourceList({
   );
   const hasWorkspaceRuntime = (runtime: Runtime) =>
     !allowed || [...allowed].some((key) => key.startsWith(`${runtime}|`));
+  const showRuntimeSection = (visibleItems: number) => visibleItems > 0 || (!allowed && !search);
   const content = (
     <>
       {inventory && runtimeFiltered(statuses, 'docker') ? (
@@ -1966,7 +1953,8 @@ function ResourceList({
               {(inventory.dockerGroups ?? []).map(group)}
               {standaloneContainers.length ? (
                 <>
-                  <div className="border-b px-3 py-2 text-xs font-semibold text-muted-foreground">
+                  <div className="flex h-8 items-center gap-2 border-b px-3 text-[10px] font-medium tracking-[0.04em] text-muted-foreground">
+                    <Cube className="size-3.5" weight="duotone" />
                     {t('serviceManagerTool.standalone')}
                   </div>
                   {standaloneContainers.map((container: DockerContainer) =>
@@ -1989,9 +1977,9 @@ function ResourceList({
       {inventory && runtimeFiltered(statuses, 'pm2') ? (
         <>
           {inventory.pm2.available ? (
-            !search || pm2Processes.length ? (
+            showRuntimeSection(pm2Processes.length) ? (
               <>
-                <div className="border-b px-3 py-2 text-xs font-semibold text-muted-foreground">
+                <div className="flex h-8 items-center border-b px-3 text-[10px] font-medium tracking-[0.04em] text-muted-foreground">
                   PM2
                 </div>
                 {pm2Processes.map((process) =>
@@ -2012,9 +2000,9 @@ function ResourceList({
       {inventory && runtimeFiltered(statuses, 'systemd') ? (
         <>
           {inventory.systemd.available ? (
-            !search || systemUnits.length ? (
+            showRuntimeSection(systemUnits.length) ? (
               <>
-                <div className="border-b px-3 py-2 text-xs font-semibold text-muted-foreground">
+                <div className="flex h-8 items-center border-b px-3 text-[10px] font-medium tracking-[0.04em] text-muted-foreground">
                   Systemd
                 </div>
                 {systemUnits.map((unit: SystemdUnit) =>

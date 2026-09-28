@@ -1034,7 +1034,7 @@
     "refreshFailed": "Unable to refresh services",
     "loading": "Loading services…",
     "selectHint": "Select a container or service to view details and logs",
-    "resources": "Resources",
+    "hosts": "Host",
     "metrics": {
       "name": "Name",
       "metric": { "cpu": "CPU", "memory": "Memory", "network": "Network", "disk": "Disk I/O" },
