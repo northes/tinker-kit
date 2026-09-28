@@ -75,11 +75,14 @@ user-invocable: false
 - `DialogFooter` 自带 `border-t`；dialog 主体不要再加 `border-b`，否则相邻两条 1px 边框叠成 2px，分割线看起来比官方粗。
 - Base UI `Select`：条目必须包在 `SelectGroup` 内；浮层内边距来自 `SelectGroup` 的 `p-1`，不要给 Popup 另加 padding 覆盖官方样式。
 - 保持 `SelectContent` 的 `alignItemWithTrigger` 默认值（原生对齐：选中项与 trigger 对齐）；不要为了“展开在下方”而设为 `false`，也不要在各处混用两种定位。
+- 允许切换来源或主机的 `Select` 必须在列表底部固定提供“管理”项，左侧带语义匹配的 phosphor icon；该项不随来源/主机数据排序或滚动，选中后打开对应的管理界面，不写入业务选中值。
+- 工具页 header 中的字段 label 统一抽成共享组件，尺寸、字重、颜色和间距以镜像管理 header 的 label 为基准；不要在各工具内重复拼接 label 样式。
 - 浮层在暗色下“没有阴影”通常是主题 token 问题：`--shadow-*` 明暗同值（10% 黑），在深色背景上不可见；要改的是暗色 token，不要改组件或加局部阴影覆盖。
-- 图标统一使用 phosphor 的 `weight="duotone"`（按钮、下拉项等装饰性图标），新增或调整控件时不要遗漏个别图标。
+- 图标默认使用 phosphor 的 `weight="duotone"`（按钮、下拉项等装饰性图标）；表格排序图标例外使用 Regular 的 `CaretUpDown` / `CaretDown` / `CaretUp`。新增或调整控件时不要遗漏个别图标。
 - 表格/列表右键不应改变选中项；右键菜单操作在目标行未被选中时回退到该行，已选中时作用于整个选择集，不要靠右键来建立选中。
 - 批量复制多项内容用「1. 值 / 2. 值 / … / 共 N 个」的编号格式（每项一行、末行汇总数量）；单选取原始值。
 - 搜索输入默认回车才触发（本地 `draft` + `onKeyDown` Enter），不要实时过滤，也不要引入防抖或 `useDeferredValue`。
+- 搜索输入在内部靠右放置 phosphor `XCircle` 清空按钮，使用 `weight="duotone"`；仅在有输入时可用，需有可访问名称，且清空后按搜索的触发语义同步更新结果。
 - 多个工具重复的同类字段抽为共享组件（如来源或配置选择字段），由各工具共同使用，不要在工具内各写一套 Select + 管理入口。
 - 与下拉框相关的管理入口放进该下拉框（如来源下拉框底部的「管理」项，内部哨兵值触发实际动作），不再额外放独立管理按钮；空列表时也不渲染多余的分隔线。
 - 所有用户触发的删除或移除数据、资源的操作（包括单项和批量、持久化数据和本次会话数据）都必须先显示确认框；按钮、菜单项和快捷键只打开确认框，不直接执行删除。确认内容应明确对象及影响，用户确认后才执行。
@@ -94,7 +97,10 @@ user-invocable: false
 
 ## 长列表虚拟化
 
-- 长列表用 `@tanstack/react-virtual`：滚动容器加 `ref`，`useVirtualizer` 只渲染 `getVirtualItems()` 的可视行；`<table>` 用上下占位 `<tr><td colSpan={n} style={{ height }} />` 撑出滚动高度，保留 `table-fixed`、粘性表头、列宽和右键菜单。
+- 主内容为列表时统一用 `@tanstack/react-virtual`，不以当前数据量少为理由改用全量 DOM 渲染。滚动容器加 `ref`，`useVirtualizer` 只渲染 `getVirtualItems()` 的可视行；`<table>` 用上下占位 `<tr><td colSpan={n} style={{ height }} />` 撑出滚动高度。
+- 列表表头固定，各列使用明确的固定宽度。单元格内容超出时不换行、不截断，保留水平滚动能力；支持滚轮的水平滚动，但单元格内不显示水平或垂直滚动条。
+- 所有业务上可排序的列都必须提供排序交互：未激活使用 Regular `CaretUpDown`，升序使用 Regular `CaretUp`，降序使用 Regular `CaretDown`；不用空白代替未激活状态。
+- 主列表工具的 footer 左侧放置当前统计；统计基于搜索和筛选后的可见结果，条件变化时立即同步，不显示未过滤的总数冒充当前结果数。
 - 占位行用普通 `<tr>/<td>`，不要复用 `TableRow`/`TableCell`，否则会带上 hover 和边框样式。
 - 行高不固定时（例如搜索态文件名下多一行父路径）用 `measureElement` 测量：把 `ref={virtualizer.measureElement}` 和 `data-index` 挂到行元素上，否则按 `estimateSize` 布局会产生错位。
 - Base UI 组件通过 `render` 接收元素时会与该元素自身的 `ref` 合并，测量 ref 可直接写在 `render={<TableRow ref={...} data-index={...} />}` 上，不必改组件。
