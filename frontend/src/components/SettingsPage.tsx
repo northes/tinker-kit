@@ -640,10 +640,10 @@ export default function SettingsPage({
           detail: available ? 'available' : 'finished',
         }),
       );
-    } catch {
+    } catch (error) {
       toast.add({
         title: t('settings.updateFailed'),
-        description: t('settings.updateFailedDesc'),
+        description: formatBackendError(error) || t('settings.updateFailedDesc'),
         type: 'error',
       });
       window.dispatchEvent(new CustomEvent('tinkerkit:update-check', { detail: 'finished' }));

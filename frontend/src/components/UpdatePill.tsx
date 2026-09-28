@@ -5,6 +5,7 @@ import { Button } from './ui/button';
 import { Spinner } from './ui/spinner';
 import { useTranslation } from 'react-i18next';
 import { InstallUpdate, RestartApp } from '../../bindings/changeme/updateservice';
+import { formatBackendError } from '../lib/backend-error';
 import { toast } from './ui/toast';
 import './UpdatePill.css';
 
@@ -78,7 +79,7 @@ export default function UpdatePill() {
           errorHandled.current = true;
           toast.add({
             title: t('updatePill.error'),
-            description: payload(e)?.message || '',
+            description: formatBackendError(payload(e)?.message) || '',
             type: 'error',
           });
           setState('available');
@@ -91,9 +92,13 @@ export default function UpdatePill() {
   const start = () => {
     errorHandled.current = false;
     setState('downloading');
-    void InstallUpdate().catch(() => {
+    void InstallUpdate().catch((error) => {
       if (!errorHandled.current) {
-        toast.add({ title: t('updatePill.error'), type: 'error' });
+        toast.add({
+          title: t('updatePill.error'),
+          description: formatBackendError(error) || undefined,
+          type: 'error',
+        });
         setState('available');
       }
     });

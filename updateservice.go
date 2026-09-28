@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"log"
+	"strings"
 	"sync"
 	"time"
 
@@ -12,6 +13,9 @@ import (
 const (
 	autoCheckInitialDelay = 30 * time.Second
 	autoCheckInterval     = 24 * time.Hour
+	// updateRateLimitCooldown 是识别到 GitHub 限流后暂停请求的时长，避免在
+	// 配额耗尽时继续空转并消耗后续恢复的额度。
+	updateRateLimitCooldown = 5 * time.Minute
 )
 
 type UpdateService struct {
@@ -25,6 +29,8 @@ type UpdateService struct {
 	done           chan struct{}
 	beforeRestart  func()
 	stopOnce       sync.Once
+
+	rateLimitedUntil time.Time
 }
 
 func (s *UpdateService) setBeforeRestart(before func()) {
@@ -71,9 +77,12 @@ func (s *UpdateService) CheckForUpdates() (bool, error) {
 	if u == nil {
 		return false, userError("errors.update.notInitialized")
 	}
+	if remaining := s.rateLimitRemaining(); remaining > 0 {
+		return false, rateLimitedError(remaining)
+	}
 	release, err := u.Check(context.Background())
 	if err != nil {
-		return false, err
+		return false, s.updateErrorFromCheck(err)
 	}
 	return release != nil, nil
 }
@@ -87,11 +96,14 @@ func (s *UpdateService) InstallUpdate() error {
 		return userError("errors.update.notInitialized")
 	}
 	if u.State() != updater.StateAvailable {
+		if remaining := s.rateLimitRemaining(); remaining > 0 {
+			return rateLimitedError(remaining)
+		}
 		s.checkMu.Lock()
 		release, err := u.Check(context.Background())
 		s.checkMu.Unlock()
 		if err != nil {
-			return err
+			return s.updateErrorFromCheck(err)
 		}
 		if release == nil {
 			return userError("errors.update.noUpdate")
@@ -163,6 +175,9 @@ func (s *UpdateService) checkAutomatically() {
 		return
 	}
 	if _, err := u.Check(context.Background()); err != nil {
+		if isRateLimitError(err) {
+			s.markRateLimited()
+		}
 		log.Printf("自动检查更新失败: %v", err)
 	}
 }
@@ -177,4 +192,68 @@ func (s *UpdateService) isAutoEnabled() bool {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.autoEnabled
+}
+
+// --- 检查错误分类 ---
+
+// updateErrorFromCheck 把一次 Check 的原始错误映射为前端可渲染的用户错误。
+// updater 在聚合 provider 失败时会重建错误字符串并丢弃底层错误链（见 joinErrors），
+// 因此这里只能依据错误文本区分限流、网络故障与其余检查失败；原始文本通过
+// localizedError.Detail 原样透出，不参与翻译。识别到限流时记录冷却窗口。
+func (s *UpdateService) updateErrorFromCheck(err error) error {
+	switch {
+	case isRateLimitError(err):
+		s.markRateLimited()
+		return rateLimitedError(updateRateLimitCooldown)
+	case isNetworkError(err):
+		return userErrorCause("errors.update.network", err)
+	default:
+		return userErrorCause("errors.update.checkFailed", err)
+	}
+}
+
+func rateLimitedError(remaining time.Duration) error {
+	minutes := int(remaining.Minutes())
+	if minutes < 1 {
+		minutes = 1
+	}
+	return userErrorParams("errors.update.rateLimited", map[string]any{"minutes": minutes})
+}
+
+func isRateLimitError(err error) bool {
+	message := strings.ToLower(err.Error())
+	return strings.Contains(message, "rate limit") ||
+		strings.Contains(message, "api 403") ||
+		strings.Contains(message, "api 429")
+}
+
+func isNetworkError(err error) bool {
+	message := strings.ToLower(err.Error())
+	for _, marker := range []string{
+		"api request",
+		"dial tcp",
+		"no such host",
+		"connection refused",
+		"connection reset",
+		"i/o timeout",
+		"tls handshake",
+		"context deadline exceeded",
+	} {
+		if strings.Contains(message, marker) {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *UpdateService) markRateLimited() {
+	s.mu.Lock()
+	s.rateLimitedUntil = time.Now().Add(updateRateLimitCooldown)
+	s.mu.Unlock()
+}
+
+func (s *UpdateService) rateLimitRemaining() time.Duration {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return time.Until(s.rateLimitedUntil)
 }

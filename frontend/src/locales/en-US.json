@@ -1671,7 +1671,10 @@
     },
     "update": {
       "notInitialized": "The update service is not initialized",
-      "noUpdate": "No update is available"
+      "noUpdate": "No update is available",
+      "rateLimited": "GitHub is temporarily rate limiting update requests. Try again in about {{minutes}} min.",
+      "network": "Could not reach the update server. Check your network and try again.",
+      "checkFailed": "Failed to check for updates: {{detail}}"
     },
     "ssh": {
       "connectFailed": "Failed to connect to the SSH host: {{detail}}"

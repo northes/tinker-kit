@@ -1671,7 +1671,10 @@
     },
     "update": {
       "notInitialized": "更新服务尚未初始化",
-      "noUpdate": "暂无可用更新"
+      "noUpdate": "暂无可用更新",
+      "rateLimited": "GitHub 暂时限制了更新请求，请在约 {{minutes}} 分钟后重试",
+      "network": "无法连接更新服务器，请检查网络后重试",
+      "checkFailed": "检查更新失败：{{detail}}"
     },
     "ssh": {
       "connectFailed": "连接 SSH 主机失败：{{detail}}"
