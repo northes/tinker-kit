@@ -625,6 +625,34 @@ export interface ServiceMetricSnapshot {
     "error"?: string;
 }
 
+/**
+ * ServiceMetricTrend 是一次趋势拉取的返回：Snapshots 为每个目标的最新快照（表格与错误展示），
+ * Points 为序列号大于请求游标的增量点。
+ */
+export interface ServiceMetricTrend {
+    "running": boolean;
+    "sequence": number;
+    "snapshots": ServiceMetricSnapshot[] | null;
+    "points": ServiceMetricTrendPoint[] | null;
+}
+
+/**
+ * ServiceMetricTrendPoint 是后端换算后的趋势点：CPU 与网络/磁盘速率都已按相邻采样算好，
+ * 前端只按时间序列绘制，不再自己维护上一次采样。
+ */
+export interface ServiceMetricTrendPoint {
+    "key": string;
+    "sequence": number;
+    "timestamp": number;
+    "cpu"?: number | null;
+    "memory"?: number | null;
+    "memoryLimit"?: number | null;
+    "networkRx"?: number | null;
+    "networkTx"?: number | null;
+    "diskRead"?: number | null;
+    "diskWrite"?: number | null;
+}
+
 export interface ServiceResourceRef {
     "runtime": string;
     "id": string;

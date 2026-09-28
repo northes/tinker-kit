@@ -12,6 +12,8 @@ import (
 )
 
 const serviceMetricTimeout = 25 * time.Second
+const serviceMetricInterval = 5 * time.Second
+const serviceMetricRetention = 24 * time.Hour
 const metricHostParseError = "metric-host-parse-failed"
 
 type ServiceMetricAvailability struct {
@@ -51,6 +53,35 @@ type ServiceMetricSnapshot struct {
 	Error     string                `json:"error,omitempty"`
 }
 
+// ServiceMetricTrendPoint 是后端换算后的趋势点：CPU 与网络/磁盘速率都已按相邻采样算好，
+// 前端只按时间序列绘制，不再自己维护上一次采样。
+type ServiceMetricTrendPoint struct {
+	Key         string   `json:"key"`
+	Sequence    uint64   `json:"sequence"`
+	Timestamp   int64    `json:"timestamp"`
+	CPU         *float64 `json:"cpu,omitempty"`
+	Memory      *float64 `json:"memory,omitempty"`
+	MemoryLimit *float64 `json:"memoryLimit,omitempty"`
+	NetworkRx   *float64 `json:"networkRx,omitempty"`
+	NetworkTx   *float64 `json:"networkTx,omitempty"`
+	DiskRead    *float64 `json:"diskRead,omitempty"`
+	DiskWrite   *float64 `json:"diskWrite,omitempty"`
+}
+
+// ServiceMetricTrend 是一次趋势拉取的返回：Snapshots 为每个目标的最新快照（表格与错误展示），
+// Points 为序列号大于请求游标的增量点。
+type ServiceMetricTrend struct {
+	Running   bool                      `json:"running"`
+	Sequence  uint64                    `json:"sequence"`
+	Snapshots []ServiceMetricSnapshot   `json:"snapshots"`
+	Points    []ServiceMetricTrendPoint `json:"points"`
+}
+
+type serviceMetricRaw struct {
+	timestamp time.Time
+	sample    ServiceMetricSample
+}
+
 type hostMetricValues struct {
 	System         string
 	CPUCores       int
@@ -63,22 +94,93 @@ type hostMetricValues struct {
 	DiskWriteBytes *float64
 }
 
-// GetServiceMetrics 返回一次只读快照。趋势与速率换算由前端在本次应用会话内完成，
-// 不写配置、不持久化历史，也不与日志监控状态耦合。
-func (s *ServiceManagerService) GetServiceMetrics(targetIDs []string) []ServiceMetricSnapshot {
-	if len(targetIDs) == 0 {
-		return []ServiceMetricSnapshot{}
+// StartServiceMetrics 启动常驻采样：按固定间隔采集目标，并在内存保留最近一小时的趋势，
+// 页面离开后仍继续。幂等：目标集合未变时重复调用无副作用，目标变化时替换采样循环。
+func (s *ServiceManagerService) StartServiceMetrics(targetIDs []string) error {
+	if s == nil {
+		return nil
 	}
-	seen := map[string]bool{}
-	ids := make([]string, 0, len(targetIDs))
-	for _, id := range targetIDs {
-		id = strings.TrimSpace(id)
-		if id == "" || seen[id] {
-			continue
+	ids := normalizeServiceMetricTargetIDs(targetIDs)
+	s.metricMu.Lock()
+	defer s.metricMu.Unlock()
+	if s.metricRunning && sameServiceMetricTargets(s.metricTargets, ids) {
+		return nil
+	}
+	if s.metricCancel != nil {
+		s.metricCancel()
+		s.metricCancel = nil
+	}
+	s.metricCtx = nil
+	if len(ids) == 0 {
+		s.metricRunning = false
+		s.metricTargets = nil
+		return nil
+	}
+	if len(s.metricTargets) > 0 {
+		s.pruneServiceMetricStateLocked(ids)
+	}
+	ctx, cancel := context.WithCancel(s.ctx)
+	s.metricCtx = ctx
+	s.metricCancel = cancel
+	s.metricRunning = true
+	s.metricTargets = ids
+	go s.runServiceMetrics(ctx, ids)
+	return nil
+}
+
+// StopServiceMetrics 停止常驻采样，保留已缓存趋势，恢复后继续追加。
+func (s *ServiceManagerService) StopServiceMetrics() error {
+	if s == nil {
+		return nil
+	}
+	s.metricMu.Lock()
+	defer s.metricMu.Unlock()
+	if s.metricCancel != nil {
+		s.metricCancel()
+		s.metricCancel = nil
+	}
+	s.metricRunning = false
+	s.metricCtx = nil
+	return nil
+}
+
+// GetServiceMetricsTrend 返回序号大于 sinceSequence 的增量趋势点，以及每个目标的最新快照。
+func (s *ServiceManagerService) GetServiceMetricsTrend(sinceSequence uint64) ServiceMetricTrend {
+	result := ServiceMetricTrend{Running: false, Snapshots: []ServiceMetricSnapshot{}, Points: []ServiceMetricTrendPoint{}}
+	if s == nil {
+		return result
+	}
+	s.metricMu.Lock()
+	defer s.metricMu.Unlock()
+	result.Running = s.metricRunning
+	result.Sequence = s.metricSequence
+	for _, point := range s.metricPoints {
+		if point.Sequence > sinceSequence {
+			result.Points = append(result.Points, point)
 		}
-		seen[id] = true
-		ids = append(ids, id)
 	}
+	for _, id := range s.metricTargets {
+		if snapshot, ok := s.metricSnapshots[id]; ok {
+			result.Snapshots = append(result.Snapshots, snapshot)
+		}
+	}
+	return result
+}
+
+func (s *ServiceManagerService) runServiceMetrics(ctx context.Context, ids []string) {
+	ticker := time.NewTicker(serviceMetricInterval)
+	defer ticker.Stop()
+	for {
+		s.sampleServiceMetrics(ctx, ids)
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
+	}
+}
+
+func (s *ServiceManagerService) sampleServiceMetrics(ctx context.Context, ids []string) {
 	results := make([]ServiceMetricSnapshot, len(ids))
 	var wg sync.WaitGroup
 	for index, id := range ids {
@@ -89,7 +191,147 @@ func (s *ServiceManagerService) GetServiceMetrics(targetIDs []string) []ServiceM
 		}()
 	}
 	wg.Wait()
-	return results
+
+	timestamp := time.Now()
+	s.metricMu.Lock()
+	defer s.metricMu.Unlock()
+	if !s.metricRunning || s.metricCtx != ctx {
+		return
+	}
+	for index, snapshot := range results {
+		s.metricSnapshots[ids[index]] = snapshot
+		for _, sample := range snapshot.Samples {
+			key := serviceMetricKey(sample)
+			previous, ok := s.metricRaw[key]
+			var previousValue *serviceMetricRaw
+			if ok {
+				previousValue = &previous
+			}
+			s.metricSequence++
+			s.metricPoints = append(s.metricPoints, trendPointFromSample(key, sample, timestamp, previousValue, s.metricSequence))
+			s.metricRaw[key] = serviceMetricRaw{timestamp: timestamp, sample: sample}
+		}
+	}
+	s.trimServiceMetricPointsLocked(timestamp)
+}
+
+func (s *ServiceManagerService) trimServiceMetricPointsLocked(timestamp time.Time) {
+	cutoff := timestamp.Add(-serviceMetricRetention).UnixMilli()
+	index := 0
+	for index < len(s.metricPoints) && s.metricPoints[index].Timestamp < cutoff {
+		index++
+	}
+	if index == 0 {
+		return
+	}
+	s.metricPoints = s.metricPoints[index:]
+	if cap(s.metricPoints) > 2*len(s.metricPoints) {
+		compacted := make([]ServiceMetricTrendPoint, len(s.metricPoints))
+		copy(compacted, s.metricPoints)
+		s.metricPoints = compacted
+	}
+}
+
+func (s *ServiceManagerService) pruneServiceMetricStateLocked(targetIDs []string) {
+	keep := make(map[string]bool, len(targetIDs))
+	for _, id := range targetIDs {
+		keep[id] = true
+	}
+	filtered := make([]ServiceMetricTrendPoint, 0, len(s.metricPoints))
+	for _, point := range s.metricPoints {
+		targetID, _, _ := strings.Cut(point.Key, "|")
+		if keep[targetID] {
+			filtered = append(filtered, point)
+		}
+	}
+	s.metricPoints = filtered
+	for key := range s.metricRaw {
+		targetID, _, _ := strings.Cut(key, "|")
+		if !keep[targetID] {
+			delete(s.metricRaw, key)
+		}
+	}
+	for id := range s.metricSnapshots {
+		if !keep[id] {
+			delete(s.metricSnapshots, id)
+		}
+	}
+}
+
+func normalizeServiceMetricTargetIDs(targetIDs []string) []string {
+	seen := map[string]bool{}
+	ids := make([]string, 0, len(targetIDs))
+	for _, id := range targetIDs {
+		id = strings.TrimSpace(id)
+		if id == "" || seen[id] {
+			continue
+		}
+		seen[id] = true
+		ids = append(ids, id)
+	}
+	return ids
+}
+
+func sameServiceMetricTargets(left, right []string) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for index := range left {
+		if left[index] != right[index] {
+			return false
+		}
+	}
+	return true
+}
+
+func serviceMetricKey(sample ServiceMetricSample) string {
+	return sample.TargetID + "|" + sample.Kind + "|" + sample.Runtime + "|" + sample.ID
+}
+
+func trendPointFromSample(key string, sample ServiceMetricSample, timestamp time.Time, previous *serviceMetricRaw, sequence uint64) ServiceMetricTrendPoint {
+	point := ServiceMetricTrendPoint{Key: key, Sequence: sequence, Timestamp: timestamp.UnixMilli()}
+	seconds := 0.0
+	if previous != nil {
+		seconds = timestamp.Sub(previous.timestamp).Seconds()
+	}
+	if sample.CPUPercent != nil {
+		point.CPU = copyMetricFloat(sample.CPUPercent)
+	} else if previous != nil && sample.CPUTimeNS != nil && previous.sample.CPUTimeNS != nil {
+		elapsed := *sample.CPUTimeNS - *previous.sample.CPUTimeNS
+		cores := sample.CPUCores
+		if cores < 1 {
+			cores = 1
+		}
+		if elapsed >= 0 && seconds > 0 {
+			value := elapsed / (seconds * 1_000_000_000 * float64(cores)) * 100
+			point.CPU = &value
+		}
+	}
+	point.Memory = copyMetricFloat(sample.MemoryBytes)
+	point.MemoryLimit = copyMetricFloat(sample.MemoryLimit)
+	if previous != nil {
+		point.NetworkRx = metricRate(sample.NetworkRxBytes, previous.sample.NetworkRxBytes, seconds)
+		point.NetworkTx = metricRate(sample.NetworkTxBytes, previous.sample.NetworkTxBytes, seconds)
+		point.DiskRead = metricRate(sample.DiskReadBytes, previous.sample.DiskReadBytes, seconds)
+		point.DiskWrite = metricRate(sample.DiskWriteBytes, previous.sample.DiskWriteBytes, seconds)
+	}
+	return point
+}
+
+func metricRate(current, previous *float64, seconds float64) *float64 {
+	if current == nil || previous == nil || seconds <= 0 || *current < *previous {
+		return nil
+	}
+	value := (*current - *previous) / seconds
+	return &value
+}
+
+func copyMetricFloat(value *float64) *float64 {
+	if value == nil {
+		return nil
+	}
+	copied := *value
+	return &copied
 }
 
 func (s *ServiceManagerService) collectServiceMetricSnapshot(targetID string) ServiceMetricSnapshot {

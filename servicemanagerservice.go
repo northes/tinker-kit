@@ -18,6 +18,7 @@ import (
 
 const (
 	serviceCommandTimeout = 20 * time.Second
+	serviceUpdateTimeout  = 10 * time.Minute
 	serviceLogBufferBytes = 20 << 20
 	serviceLogTotalBytes  = 64 << 20
 	serviceLogMaxActive   = 16
@@ -29,7 +30,7 @@ const (
 // remoteCommandNames 是需要通过远端环境解析的命令。这些命令可能只存在于
 // 交互式登录 shell 的 PATH 中（典型是 nvm/volta 等版本管理器），非交互式
 // SSH 会话默认 PATH 找不到它们。
-var remoteCommandNames = []string{"docker", "pm2", "systemctl", "journalctl"}
+var remoteCommandNames = []string{"docker", "docker-compose", "pm2", "systemctl", "journalctl"}
 
 type ServiceTarget struct {
 	ID           string `json:"id"`
@@ -209,6 +210,19 @@ type ServiceManagerService struct {
 	remoteEnv   map[string]remoteCommandEnv
 	emit        func(string, any)
 	sequence    atomic.Uint64
+
+	metricMu        sync.Mutex
+	metricRunning   bool
+	metricCtx       context.Context
+	metricCancel    context.CancelFunc
+	metricTargets   []string
+	metricSequence  uint64
+	metricPoints    []ServiceMetricTrendPoint
+	metricRaw       map[string]serviceMetricRaw
+	metricSnapshots map[string]ServiceMetricSnapshot
+
+	composeMu    sync.Mutex
+	composeCache map[string]composeCommand
 }
 
 // remoteCommandEnv 是远端登录 shell 解析出的执行环境：登录 PATH 与命令可解析状态。
@@ -220,7 +234,7 @@ type remoteCommandEnv struct {
 
 func NewServiceManagerService(config *ConfigService) *ServiceManagerService {
 	ctx, cancel := context.WithCancel(context.Background())
-	return &ServiceManagerService{config: config, ctx: ctx, cancel: cancel, monitors: map[string]*logMonitorState{}, remoteEnv: map[string]remoteCommandEnv{}}
+	return &ServiceManagerService{config: config, ctx: ctx, cancel: cancel, monitors: map[string]*logMonitorState{}, remoteEnv: map[string]remoteCommandEnv{}, metricRaw: map[string]serviceMetricRaw{}, metricSnapshots: map[string]ServiceMetricSnapshot{}, composeCache: map[string]composeCommand{}}
 }
 func (s *ServiceManagerService) ServiceName() string                    { return "ServiceManagerService" }
 func (s *ServiceManagerService) setEventEmitter(emit func(string, any)) { s.emit = emit }
@@ -737,39 +751,189 @@ func validUnitName(id string) bool {
 }
 
 func (s *ServiceManagerService) PerformServiceAction(req ServiceActionRequest) ServiceActionResult {
+	if strings.HasPrefix(req.Action, "update-") && req.Action != "update-pull" && req.Action != "update-start" {
+		return serviceActionFailure(req.Resource, userError("errors.service.dockerActionUnsupported"))
+	}
 	_, source, cli, err := s.targetSnapshot(req.TargetID)
 	if err != nil {
-		return ServiceActionResult{Failed: []ServiceActionItemResult{{ID: req.Resource.ID, Name: req.Resource.Name, Error: err.Error()}}}
+		return serviceActionFailure(req.Resource, err)
 	}
-	ctx, cancel := context.WithTimeout(s.ctx, serviceCommandTimeout)
+	timeout := serviceCommandTimeout
+	if strings.HasPrefix(req.Action, "update-") {
+		timeout = serviceUpdateTimeout
+	}
+	ctx, cancel := context.WithTimeout(s.ctx, timeout)
 	defer cancel()
-	result := ServiceActionResult{Succeeded: []ServiceActionItemResult{}, Failed: []ServiceActionItemResult{}}
-	resources := []ServiceResourceRef{req.Resource}
+
+	// Compose 管理的资源（分组或分组内容器）统一走 compose 命令，不再逐容器调用
+	// docker container，避免重启等操作与 compose 的编排状态脱节。
+	if isComposeResource(req.Resource) {
+		return s.performComposeAction(ctx, source, cli, req)
+	}
+	if err := s.performOne(ctx, source, cli, req.Resource, req.Action); err != nil {
+		return serviceActionFailure(req.Resource, err)
+	}
+	return ServiceActionResult{Succeeded: []ServiceActionItemResult{{ID: req.Resource.ID, Name: req.Resource.Name}}, Failed: []ServiceActionItemResult{}}
+}
+
+func serviceActionFailure(resource ServiceResourceRef, err error) ServiceActionResult {
+	return ServiceActionResult{Succeeded: []ServiceActionItemResult{}, Failed: []ServiceActionItemResult{{ID: resource.ID, Name: resource.Name, Error: err.Error()}}}
+}
+
+func isComposeResource(resource ServiceResourceRef) bool {
+	return resource.Runtime == "docker-compose" || (resource.Runtime == "docker" && resource.Group != "")
+}
+
+// performComposeAction 把分组或其成员的操作折叠成一次 compose 调用：先按项目解析出
+// 目标容器与服务名，再复用 compose 的项目目录与配置文件信息执行。
+func (s *ServiceManagerService) performComposeAction(ctx context.Context, source ImageSource, cli string, req ServiceActionRequest) ServiceActionResult {
+	containers, err := s.listContainers(ctx, source, cli)
+	if err != nil {
+		return serviceActionFailure(req.Resource, err)
+	}
+	project := req.Resource.Group
 	if req.Resource.Runtime == "docker-compose" {
-		containers, e := s.listContainers(ctx, source, cli)
-		if e != nil {
-			return ServiceActionResult{Failed: []ServiceActionItemResult{{ID: req.Resource.ID, Name: req.Resource.Name, Error: e.Error()}}}
+		project = strings.TrimPrefix(req.Resource.ID, "compose:")
+	}
+	if project == "" {
+		return serviceActionFailure(req.Resource, userError("errors.service.composeProjectNotFound"))
+	}
+	selected := make([]DockerContainer, 0, len(containers))
+	found := false
+	for _, container := range containers {
+		if container.ComposeProject != project {
+			continue
 		}
-		resources = []ServiceResourceRef{}
-		project := strings.TrimPrefix(req.Resource.ID, "compose:")
-		for _, c := range containers {
-			if c.ComposeProject == project {
-				resources = append(resources, ServiceResourceRef{Runtime: "docker", ID: c.ID, Name: c.Name})
+		if req.Resource.Runtime == "docker" && container.ID != req.Resource.ID {
+			continue
+		}
+		if container.ID == req.Resource.ID {
+			found = true
+		}
+		selected = append(selected, container)
+	}
+	if len(selected) == 0 || (req.Resource.Runtime == "docker" && !found) {
+		return serviceActionFailure(req.Resource, userError("errors.service.composeProjectNotFound"))
+	}
+	if err := s.runComposeAction(ctx, source, cli, project, selected, req.Action); err != nil {
+		return serviceActionFailure(req.Resource, err)
+	}
+	return ServiceActionResult{Succeeded: []ServiceActionItemResult{{ID: req.Resource.ID, Name: req.Resource.Name}}, Failed: []ServiceActionItemResult{}}
+}
+
+func (s *ServiceManagerService) runComposeAction(ctx context.Context, source ImageSource, cli, project string, selected []DockerContainer, action string) error {
+	labels := selected[0].Labels
+	if labels == nil {
+		return userError("errors.service.composeMetadataMissing")
+	}
+	services := make([]string, 0, len(selected))
+	seen := map[string]bool{}
+	for _, container := range selected {
+		if container.ComposeService == "" {
+			return userError("errors.service.composeMetadataMissing")
+		}
+		if seen[container.ComposeService] {
+			continue
+		}
+		seen[container.ComposeService] = true
+		services = append(services, container.ComposeService)
+	}
+	sort.Strings(services)
+	command, err := s.resolveComposeCommand(ctx, source, cli)
+	if err != nil {
+		return err
+	}
+	base, err := composeCommandArgs(command, labels, project)
+	if err != nil {
+		return err
+	}
+	runComposeServices := func(parts ...string) error {
+		args := append(composeArgs(base, parts...), services...)
+		_, runErr := s.run(ctx, source, command.command, args...)
+		return runErr
+	}
+	switch action {
+	case "start", "stop", "restart":
+		return runComposeServices(action)
+	case "delete":
+		for _, container := range selected {
+			if container.Running {
+				return userError("errors.service.containerRunningDelete")
 			}
 		}
-		if len(resources) == 0 {
-			return ServiceActionResult{Failed: []ServiceActionItemResult{{ID: req.Resource.ID, Name: req.Resource.Name, Error: userError("errors.service.composeProjectNotFound").Error()}}}
+		return runComposeServices("rm", "-f")
+	case "update-pull":
+		return runComposeServices("pull")
+	case "update-start":
+		if err := runComposeServices("pull"); err != nil {
+			return err
 		}
+		return runComposeServices("up", "-d", "--no-deps")
+	default:
+		return userError("errors.service.dockerActionUnsupported")
 	}
-	for _, resource := range resources {
-		if e := s.performOne(ctx, source, cli, resource, req.Action); e != nil {
-			result.Failed = append(result.Failed, ServiceActionItemResult{ID: resource.ID, Name: resource.Name, Error: e.Error()})
-		} else {
-			result.Succeeded = append(result.Succeeded, ServiceActionItemResult{ID: resource.ID, Name: resource.Name})
-		}
-	}
-	return result
 }
+
+// composeCommand 表示目标主机上可用的 compose 调用方式：docker compose 插件或独立的
+// docker-compose 命令。
+type composeCommand struct {
+	command string
+	prefix  []string
+}
+
+// composeCommand 探测 compose 的调用方式并缓存结果。优先使用 `<docker> compose` 插件，
+// 不可用时回退到独立的 docker-compose。
+func (s *ServiceManagerService) resolveComposeCommand(ctx context.Context, source ImageSource, cli string) (composeCommand, error) {
+	key := remoteEnvKey(source) + "|" + cli
+	s.composeMu.Lock()
+	cached, ok := s.composeCache[key]
+	s.composeMu.Unlock()
+	if ok {
+		return cached, nil
+	}
+	candidates := []composeCommand{{command: cli, prefix: []string{"compose"}}}
+	if cli != "docker-compose" {
+		candidates = append(candidates, composeCommand{command: "docker-compose"})
+	}
+	for _, candidate := range candidates {
+		args := append(append([]string(nil), candidate.prefix...), "version")
+		if _, err := s.run(ctx, source, candidate.command, args...); err != nil {
+			continue
+		}
+		s.composeMu.Lock()
+		s.composeCache[key] = candidate
+		s.composeMu.Unlock()
+		return candidate, nil
+	}
+	return composeCommand{}, userError("errors.service.composeUnavailable")
+}
+
+func composeCommandArgs(command composeCommand, labels map[string]string, project string) ([]string, error) {
+	args := append([]string(nil), command.prefix...)
+	if dir := labels["com.docker.compose.project.working_dir"]; dir != "" {
+		args = append(args, "--project-directory", dir)
+	}
+	fileCount := 0
+	for _, file := range strings.Split(labels["com.docker.compose.project.config_files"], ",") {
+		file = strings.TrimSpace(file)
+		if file == "" {
+			continue
+		}
+		args = append(args, "-f", file)
+		fileCount++
+	}
+	if fileCount == 0 {
+		return nil, userError("errors.service.composeMetadataMissing")
+	}
+	return append(args, "-p", project), nil
+}
+
+func composeArgs(base []string, tail ...string) []string {
+	args := make([]string, 0, len(base)+len(tail))
+	args = append(args, base...)
+	return append(args, tail...)
+}
+
 func (s *ServiceManagerService) performOne(ctx context.Context, source ImageSource, cli string, r ServiceResourceRef, action string) error {
 	switch r.Runtime {
 	case "docker":

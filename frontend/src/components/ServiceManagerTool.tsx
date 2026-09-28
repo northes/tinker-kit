@@ -7,10 +7,9 @@ import {
   ArrowCounterClockwise,
   Asterisk,
   CaretDown,
-  ChartLineUp,
+  CodeSimple,
   Eraser,
   GearSix,
-  Info,
   ListBullets,
   Pause,
   Play,
@@ -41,13 +40,16 @@ import {
 import type {
   DockerComposeGroup,
   DockerContainer,
+  DockerContainerDetail,
   LogMonitor,
+  PM2ProcessDetail,
   ServiceActionRequest,
   ServiceInventory,
   ServiceLogLine,
   ServiceResourceRef,
   ServiceTarget,
   SystemdUnit,
+  SystemdUnitDetail,
 } from '../../bindings/changeme/models';
 import {
   Reveal,
@@ -60,6 +62,13 @@ import { useSSHProfiles } from './SSHProfileManagerDialog';
 import { SSHProfileSelect } from './SSHProfileSelect';
 import { ConfirmDialog } from './ConfirmDialog';
 import { Badge } from './ui/badge';
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuGroup,
+  ContextMenuItem,
+  ContextMenuTrigger,
+} from './ui/context-menu';
 import { ScrollArea } from './ui/scroll-area';
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from './ui/resizable';
 import { Button } from './ui/button';
@@ -95,10 +104,12 @@ import {
 } from './ui/select';
 import { Spinner } from './ui/spinner';
 import { toast } from './ui/toast';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
 import { ToggleGroup, ToggleGroupItem } from './ui/toggle-group';
 import { TargetHostManagerDialog } from './TargetHostManagerDialog';
 import { formatBackendError } from '../lib/backend-error';
-import { ServiceMetricsPanel } from './ServiceMetricsPanel';
+import { formatBytes } from './ServiceMetricChart';
+import { ServiceResourcePerformance } from './ServiceResourcePerformance';
 
 const MANAGE_TARGETS_VALUE = '__manage-targets__';
 const VISIBLE_LOG_LIMIT = 5000;
@@ -198,6 +209,7 @@ export default function ServiceManagerTool({
   const targetIDRef = useRef(targetID);
   targetIDRef.current = targetID;
   const [inventory, setInventory] = useState<ServiceInventory | null>(null);
+  const [inventoryVersion, setInventoryVersion] = useState(0);
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState<Set<string>>(new Set());
   const [searchDraft, setSearchDraft] = useState('');
@@ -205,7 +217,8 @@ export default function ServiceManagerTool({
   const [selection, setSelection] = useState<Selection | null>(null);
   const [busy, setBusy] = useState('');
   const [monitors, setMonitors] = useState<LogMonitor[]>([]);
-  const [view, setView] = useState<'resource' | 'metrics' | 'workspace'>('resource');
+  const [view, setView] = useState<'resource' | 'workspace'>('resource');
+  const [detailTab, setDetailTab] = useState('info');
   const [panelOrientation, setPanelOrientation] = useState<'horizontal' | 'vertical'>(() =>
     window.matchMedia('(max-width: 800px)').matches ? 'vertical' : 'horizontal',
   );
@@ -228,6 +241,7 @@ export default function ServiceManagerTool({
     resource: ServiceResourceRef;
     action: string;
   } | null>(null);
+  const [updateDialog, setUpdateDialog] = useState<ServiceResourceRef | null>(null);
   const [monitorDialog, setMonitorDialog] = useState<{
     resource: ServiceResourceRef;
     containers: DockerContainer[];
@@ -256,6 +270,8 @@ export default function ServiceManagerTool({
       const next = await GetServiceInventory(nextTarget);
       if (targetIDRef.current !== nextTarget) return;
       setInventory(next);
+      // 通知详情面板同步刷新，右上角刷新按钮即可更新信息页数据。
+      setInventoryVersion((value) => value + 1);
     } catch (error) {
       if (targetIDRef.current !== nextTarget) return;
       toast.add({
@@ -304,6 +320,12 @@ export default function ServiceManagerTool({
   );
   const activeMonitorKey = activeMonitorIDs.join(',');
   const monitoring = selectedMonitors.some((item) => item.state === 'monitoring');
+  // 选中 Compose 组时，信息页展示组内容器列表。
+  const selectedGroupContainers = useMemo(() => {
+    if (!selection || selection.kind !== 'group') return [] as DockerContainer[];
+    const group = inventory?.dockerGroups?.find((item) => item.id === selection.resource.id);
+    return group?.containers ?? [];
+  }, [selection, inventory]);
 
   useEffect(() => {
     void GetServiceTargets()
@@ -397,6 +419,10 @@ export default function ServiceManagerTool({
     setTargetID(next);
   };
   const act = (resource: ServiceResourceRef, action: string) => {
+    if (action === 'update') {
+      setUpdateDialog(resource);
+      return;
+    }
     if (action === 'delete' || action.startsWith('disable')) {
       setPendingAction({ resource, action });
       return;
@@ -753,112 +779,110 @@ export default function ServiceManagerTool({
         />
         <ToolLayoutToolbar
           left={
-            view === 'metrics' ? null : (
-              <>
-                <div className="flex min-w-0 flex-col gap-1 max-[700px]:w-full">
-                  <span className="text-[10px] font-medium text-muted-foreground">
-                    {t('serviceManagerTool.target')}
-                  </span>
-                  <Select
-                    items={targets.map((item) => ({ value: item.id, label: targetLabel(item, t) }))}
-                    value={targetID}
-                    onValueChange={(value) => {
-                      if (value === MANAGE_TARGETS_VALUE) {
-                        openManage();
-                        return;
-                      }
-                      selectTarget(value);
-                    }}
-                  >
-                    <SelectTrigger className="min-w-48">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectGroup>
-                        {targets.map((item) => (
-                          <SelectItem key={item.id} value={item.id}>
-                            {targetLabel(item, t)}
-                          </SelectItem>
-                        ))}
-                        {targets.length > 0 ? <SelectSeparator /> : null}
-                        <SelectItem value={MANAGE_TARGETS_VALUE}>
-                          <span className="flex items-center gap-2">
-                            <GearSix size={14} weight="duotone" />
-                            {t('serviceManagerTool.manageTargets')}
-                          </span>
+            <>
+              <div className="flex min-w-0 flex-col gap-1 max-[700px]:w-full">
+                <span className="text-[10px] font-medium text-muted-foreground">
+                  {t('serviceManagerTool.target')}
+                </span>
+                <Select
+                  items={targets.map((item) => ({ value: item.id, label: targetLabel(item, t) }))}
+                  value={targetID}
+                  onValueChange={(value) => {
+                    if (value === MANAGE_TARGETS_VALUE) {
+                      openManage();
+                      return;
+                    }
+                    selectTarget(value);
+                  }}
+                >
+                  <SelectTrigger className="min-w-48">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectGroup>
+                      {targets.map((item) => (
+                        <SelectItem key={item.id} value={item.id}>
+                          {targetLabel(item, t)}
                         </SelectItem>
-                      </SelectGroup>
-                    </SelectContent>
-                  </Select>
-                  {selectedTargetMissing ? (
-                    <Badge variant="destructive" className="h-5 text-[10px]">
-                      {t('serviceManagerTool.sshProfileMissing')}
-                    </Badge>
-                  ) : null}
-                </div>
-                <div className="flex min-w-0 flex-col gap-1 max-[700px]:w-full">
-                  <span className="text-[10px] font-medium text-muted-foreground">
-                    {t('serviceManagerTool.status')}
-                  </span>
-                  <DropdownMenu>
-                    <DropdownMenuTrigger
-                      render={
-                        <Button variant="outline" size="sm" className="min-w-48 justify-between" />
-                      }
-                    >
-                      <span className="truncate">
-                        {statusFilter.size === 0
-                          ? t('serviceManagerTool.statusAll')
-                          : t('serviceManagerTool.statusSelected', { count: statusFilter.size })}
-                      </span>
-                      <CaretDown data-icon="inline-end" aria-hidden="true" />
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="start" className="max-h-80 w-56 overflow-y-auto">
-                      {STATUS_GROUPS.map((group) => (
-                        <DropdownMenuGroup key={group.runtime}>
-                          <DropdownMenuLabel>
-                            {t(`serviceManagerTool.runtimes.${group.runtime}`)}
-                          </DropdownMenuLabel>
-                          {group.statuses.map((status) => (
-                            <DropdownMenuCheckboxItem
-                              key={statusKey(group.runtime, status)}
-                              checked={statusFilter.has(statusKey(group.runtime, status))}
-                              closeOnClick={false}
-                              onCheckedChange={(checked) =>
-                                toggleStatus(group.runtime, status, checked === true)
-                              }
-                            >
-                              {status}
-                            </DropdownMenuCheckboxItem>
-                          ))}
-                        </DropdownMenuGroup>
                       ))}
-                      {statusFilter.size > 0 ? (
-                        <>
-                          <DropdownMenuSeparator />
-                          <DropdownMenuItem onClick={clearStatusFilter}>
-                            {t('serviceManagerTool.clearStatusFilter')}
-                          </DropdownMenuItem>
-                        </>
-                      ) : null}
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                </div>
-                <div className="flex min-w-0 flex-col gap-1 max-[700px]:w-full">
-                  <span className="text-[10px] font-medium text-muted-foreground">
-                    {t('serviceManagerTool.search')}
-                  </span>
-                  <Input
-                    value={searchDraft}
-                    onChange={(event) => setSearchDraft(event.target.value)}
-                    onKeyDown={(event) => {
-                      if (event.key === 'Enter') setSearch(searchDraft.trim().toLowerCase());
-                    }}
-                    placeholder={t('serviceManagerTool.searchPlaceholder')}
-                  />
-                </div>
-              </>
-            )
+                      {targets.length > 0 ? <SelectSeparator /> : null}
+                      <SelectItem value={MANAGE_TARGETS_VALUE}>
+                        <span className="flex items-center gap-2">
+                          <GearSix size={14} weight="duotone" />
+                          {t('serviceManagerTool.manageTargets')}
+                        </span>
+                      </SelectItem>
+                    </SelectGroup>
+                  </SelectContent>
+                </Select>
+                {selectedTargetMissing ? (
+                  <Badge variant="destructive" className="h-5 text-[10px]">
+                    {t('serviceManagerTool.sshProfileMissing')}
+                  </Badge>
+                ) : null}
+              </div>
+              <div className="flex min-w-0 flex-col gap-1 max-[700px]:w-full">
+                <span className="text-[10px] font-medium text-muted-foreground">
+                  {t('serviceManagerTool.status')}
+                </span>
+                <DropdownMenu>
+                  <DropdownMenuTrigger
+                    render={
+                      <Button variant="outline" size="sm" className="min-w-48 justify-between" />
+                    }
+                  >
+                    <span className="truncate">
+                      {statusFilter.size === 0
+                        ? t('serviceManagerTool.statusAll')
+                        : t('serviceManagerTool.statusSelected', { count: statusFilter.size })}
+                    </span>
+                    <CaretDown data-icon="inline-end" aria-hidden="true" />
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="start" className="max-h-80 w-56 overflow-y-auto">
+                    {STATUS_GROUPS.map((group) => (
+                      <DropdownMenuGroup key={group.runtime}>
+                        <DropdownMenuLabel>
+                          {t(`serviceManagerTool.runtimes.${group.runtime}`)}
+                        </DropdownMenuLabel>
+                        {group.statuses.map((status) => (
+                          <DropdownMenuCheckboxItem
+                            key={statusKey(group.runtime, status)}
+                            checked={statusFilter.has(statusKey(group.runtime, status))}
+                            closeOnClick={false}
+                            onCheckedChange={(checked) =>
+                              toggleStatus(group.runtime, status, checked === true)
+                            }
+                          >
+                            {status}
+                          </DropdownMenuCheckboxItem>
+                        ))}
+                      </DropdownMenuGroup>
+                    ))}
+                    {statusFilter.size > 0 ? (
+                      <>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem onClick={clearStatusFilter}>
+                          {t('serviceManagerTool.clearStatusFilter')}
+                        </DropdownMenuItem>
+                      </>
+                    ) : null}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
+              <div className="flex min-w-0 flex-col gap-1 max-[700px]:w-full">
+                <span className="text-[10px] font-medium text-muted-foreground">
+                  {t('serviceManagerTool.search')}
+                </span>
+                <Input
+                  value={searchDraft}
+                  onChange={(event) => setSearchDraft(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter') setSearch(searchDraft.trim().toLowerCase());
+                  }}
+                  placeholder={t('serviceManagerTool.searchPlaceholder')}
+                />
+              </div>
+            </>
           }
           right={
             <div className="flex items-center gap-2">
@@ -869,14 +893,6 @@ export default function ServiceManagerTool({
               >
                 <ListBullets weight="duotone" />
                 {t('serviceManagerTool.resources')}
-              </Button>
-              <Button
-                variant={view === 'metrics' ? 'secondary' : 'outline'}
-                size="sm"
-                onClick={() => setView('metrics')}
-              >
-                <ChartLineUp weight="duotone" />
-                {t('serviceManagerTool.metrics.title')}
               </Button>
               <Button
                 variant={view === 'workspace' ? 'secondary' : 'outline'}
@@ -897,19 +913,7 @@ export default function ServiceManagerTool({
           }
         />
         <ToolLayoutContent className="relative min-h-0 border-t">
-          <div
-            className={`absolute inset-0 min-h-0 min-w-0 ${view === 'metrics' ? '' : 'invisible pointer-events-none'}`}
-            inert={view !== 'metrics' ? true : undefined}
-            aria-hidden={view !== 'metrics'}
-          >
-            <ServiceMetricsPanel enabled={active && view === 'metrics'} targets={targets} />
-          </div>
-          <ResizablePanelGroup
-            orientation={panelOrientation}
-            className={`min-h-0 min-w-0 ${view === 'metrics' ? 'invisible pointer-events-none' : ''}`}
-            inert={view === 'metrics' ? true : undefined}
-            aria-hidden={view === 'metrics'}
-          >
+          <ResizablePanelGroup orientation={panelOrientation} className="min-h-0 min-w-0">
             <ResizablePanel
               id="resources"
               defaultSize={panelOrientation === 'horizontal' ? '38%' : '42%'}
@@ -928,6 +932,8 @@ export default function ServiceManagerTool({
                   setView('resource');
                 }}
                 monitored={monitoredByResource}
+                onAction={act}
+                busy={busy}
                 t={t}
               />
             </ResizablePanel>
@@ -974,6 +980,11 @@ export default function ServiceManagerTool({
                   <ResourcePanel
                     selection={selection}
                     targetID={targetID}
+                    metricsActive={active}
+                    groupContainers={selectedGroupContainers}
+                    refreshToken={inventoryVersion}
+                    tab={detailTab}
+                    onTabChange={setDetailTab}
                     monitorIDs={activeMonitorIDs}
                     monitoring={monitoring}
                     lines={lines}
@@ -989,8 +1000,6 @@ export default function ServiceManagerTool({
                     onMonitor={monitor}
                     onStop={stop}
                     onClear={clear}
-                    onAction={act}
-                    busy={busy}
                     t={t}
                   />
                 ) : (
@@ -1106,6 +1115,44 @@ export default function ServiceManagerTool({
         }
         onConfirm={() => void confirmPendingAction()}
       />
+      <Dialog open={updateDialog !== null} onOpenChange={(open) => !open && setUpdateDialog(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>{t('serviceManagerTool.updateTitle')}</DialogTitle>
+            <DialogDescription>
+              {t('serviceManagerTool.updateDescription', {
+                name: updateDialog?.name || updateDialog?.id || '',
+              })}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setUpdateDialog(null)}>
+              {t('common.cancel')}
+            </Button>
+            <Button
+              variant="outline"
+              disabled={busy !== ''}
+              onClick={() => {
+                const resource = updateDialog;
+                setUpdateDialog(null);
+                if (resource) void performAction(resource, 'update-pull');
+              }}
+            >
+              {t('serviceManagerTool.pullOnly')}
+            </Button>
+            <Button
+              disabled={busy !== ''}
+              onClick={() => {
+                const resource = updateDialog;
+                setUpdateDialog(null);
+                if (resource) void performAction(resource, 'update-start');
+              }}
+            >
+              {t('serviceManagerTool.pullAndStart')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
       <Dialog
         open={monitorDialog !== null}
         onOpenChange={(open) => {
@@ -1168,6 +1215,8 @@ function ResourceList({
   selection,
   onSelect,
   monitored,
+  onAction,
+  busy,
   t,
 }: {
   inventory: ServiceInventory | null;
@@ -1176,6 +1225,8 @@ function ResourceList({
   selection: Selection | null;
   onSelect: (next: Selection) => void;
   monitored: Map<string, LogMonitor>;
+  onAction: (resource: ServiceResourceRef, action: string) => void;
+  busy: string;
   t: ReturnType<typeof useTranslation>['t'];
 }) {
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
@@ -1206,22 +1257,57 @@ function ResourceList({
     if (!matchesStatusFilter(statuses, resource.runtime as Runtime, status)) return null;
     const active = selection && resourceKey(selection.resource) === resourceKey(resource);
     const monitor = monitored.get(resourceKey(resource));
+    const running = ['running', 'online', 'active'].includes(status.toLowerCase());
+    const actions = [running ? 'stop' : 'start', 'restart'];
+    if (resource.runtime === 'systemd') actions.push('disable', 'disable-now');
+    else actions.push('delete');
+    if (resource.runtime === 'docker' && resource.group) actions.push('update');
     return (
-      <button
-        key={resourceKey(resource)}
-        type="button"
-        className={`flex w-full items-center gap-2 border-b px-3 py-2 text-left text-sm hover:bg-muted/50 ${active ? 'bg-muted' : ''}`}
-        onClick={() => onSelect({ resource, kind })}
-      >
-        <span className="min-w-0 flex-1">
-          <span className="block truncate font-medium">{resource.name || resource.id}</span>
-          {description ? (
-            <span className="block truncate text-xs text-muted-foreground">{description}</span>
-          ) : null}
-        </span>
-        <Badge variant={statusVariant(status)}>{status || '—'}</Badge>
-        {monitor?.state === 'monitoring' ? <MonitoringSpinner /> : null}
-      </button>
+      <ContextMenu key={resourceKey(resource)}>
+        <ContextMenuTrigger
+          render={
+            <button
+              type="button"
+              className={`flex w-full items-center gap-2 border-b px-3 py-2 text-left text-sm hover:bg-muted/50 ${active ? 'bg-muted' : ''} ${running ? '' : 'text-muted-foreground'}`}
+              onClick={() => onSelect({ resource, kind })}
+            />
+          }
+        >
+          <span className="min-w-0 flex-1">
+            <span
+              className={`block truncate font-medium ${running ? '' : 'text-muted-foreground'}`}
+            >
+              {resource.name || resource.id}
+            </span>
+            {description ? (
+              <span className="block truncate text-xs text-muted-foreground">{description}</span>
+            ) : null}
+          </span>
+          {monitor?.state === 'monitoring' ? <MonitoringSpinner /> : null}
+        </ContextMenuTrigger>
+        <ContextMenuContent className="min-w-44">
+          <ContextMenuGroup>
+            {actions.map((action) => (
+              <ContextMenuItem
+                key={action}
+                variant={
+                  action === 'delete' || action.startsWith('disable') ? 'destructive' : 'default'
+                }
+                disabled={busy.startsWith(`${resourceKey(resource)}:`)}
+                onClick={() => onAction(resource, action)}
+              >
+                {action === 'start' ? <Play size={14} weight="duotone" /> : null}
+                {action === 'stop' ? <Pause size={14} weight="duotone" /> : null}
+                {action === 'restart' ? <ArrowCounterClockwise size={14} weight="duotone" /> : null}
+                {action === 'delete' ? <Trash size={14} weight="duotone" /> : null}
+                {action.startsWith('disable') ? <Power size={14} weight="duotone" /> : null}
+                {action === 'update' ? <ArrowsClockwise size={14} weight="duotone" /> : null}
+                {t(`serviceManagerTool.actions.${action}`)}
+              </ContextMenuItem>
+            ))}
+          </ContextMenuGroup>
+        </ContextMenuContent>
+      </ContextMenu>
     );
   };
   const group = (item: DockerComposeGroup) => {
@@ -1232,53 +1318,87 @@ function ResourceList({
     if (!visibleContainers.length) return null;
     const resource = { runtime: 'docker-compose', id: item.id, name: item.name };
     const collapsed = collapsedGroups.has(item.id);
+    const running = containers.some((container) => container.status.toLowerCase() === 'running');
+    const groupActions = [running ? 'stop' : 'start', 'restart', 'delete', 'update'];
     return (
       <div key={item.id}>
-        <div
-          role="button"
-          tabIndex={0}
-          className="flex cursor-pointer items-center gap-2 border-b px-3 py-2 text-xs font-semibold text-muted-foreground hover:bg-muted/50"
-          onClick={() => onSelect({ resource, kind: 'group' })}
-          onKeyDown={(event) => {
-            if (event.key === 'Enter') onSelect({ resource, kind: 'group' });
-          }}
-        >
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon-xs"
-            className="flex-none"
-            aria-expanded={!collapsed}
-            aria-label={t(
-              collapsed ? 'serviceManagerTool.expandGroup' : 'serviceManagerTool.collapseGroup',
-            )}
-            onClick={(event) => {
-              event.stopPropagation();
-              toggleGroup(item.id);
-            }}
-            onKeyDown={(event) => event.stopPropagation()}
+        <ContextMenu>
+          <ContextMenuTrigger
+            render={
+              <div
+                role="button"
+                tabIndex={0}
+                className="flex cursor-pointer items-center gap-2 border-b px-3 py-2 text-xs font-semibold text-muted-foreground hover:bg-muted/50"
+                onClick={() => onSelect({ resource, kind: 'group' })}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') onSelect({ resource, kind: 'group' });
+                }}
+              />
+            }
           >
-            <CaretDown
-              weight="bold"
-              className={`transition-transform ${collapsed ? '-rotate-90' : ''}`}
-            />
-          </Button>
-          <span className="min-w-0 flex-1 truncate">
-            {t('serviceManagerTool.composeGroup', { name: item.name })}
-          </span>
-          {containers.some(
-            (container) =>
-              monitored.get(resourceKey({ runtime: 'docker', id: container.id }))?.state ===
-              'monitoring',
-          ) ? (
-            <MonitoringSpinner />
-          ) : null}
-        </div>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-xs"
+              className="flex-none"
+              aria-expanded={!collapsed}
+              aria-label={t(
+                collapsed ? 'serviceManagerTool.expandGroup' : 'serviceManagerTool.collapseGroup',
+              )}
+              onClick={(event) => {
+                event.stopPropagation();
+                toggleGroup(item.id);
+              }}
+              onKeyDown={(event) => event.stopPropagation()}
+            >
+              <CaretDown
+                weight="bold"
+                className={`transition-transform ${collapsed ? '-rotate-90' : ''}`}
+              />
+            </Button>
+            <span className="min-w-0 flex-1 truncate">
+              {t('serviceManagerTool.composeGroup', { name: item.name })}
+            </span>
+            {containers.some(
+              (container) =>
+                monitored.get(resourceKey({ runtime: 'docker', id: container.id }))?.state ===
+                'monitoring',
+            ) ? (
+              <MonitoringSpinner />
+            ) : null}
+          </ContextMenuTrigger>
+          <ContextMenuContent className="min-w-44">
+            <ContextMenuGroup>
+              {groupActions.map((action) => (
+                <ContextMenuItem
+                  key={action}
+                  variant={action === 'delete' ? 'destructive' : 'default'}
+                  disabled={busy.startsWith(`${resourceKey(resource)}:`)}
+                  onClick={() => onAction(resource, action)}
+                >
+                  {action === 'start' ? <Play size={14} weight="duotone" /> : null}
+                  {action === 'stop' ? <Pause size={14} weight="duotone" /> : null}
+                  {action === 'restart' ? (
+                    <ArrowCounterClockwise size={14} weight="duotone" />
+                  ) : null}
+                  {action === 'delete' ? <Trash size={14} weight="duotone" /> : null}
+                  {action === 'update' ? <ArrowsClockwise size={14} weight="duotone" /> : null}
+                  {t(`serviceManagerTool.actions.${action}`)}
+                </ContextMenuItem>
+              ))}
+            </ContextMenuGroup>
+          </ContextMenuContent>
+        </ContextMenu>
         {collapsed
           ? null
           : visibleContainers.map((container) =>
               row(
-                { runtime: 'docker', id: container.id, name: container.name },
+                {
+                  runtime: 'docker',
+                  id: container.id,
+                  name: container.name,
+                  group: container.composeProject,
+                },
                 'container',
                 container.status,
                 container.image,
@@ -1653,6 +1773,11 @@ function WorkspacePanel({
 function ResourcePanel({
   selection,
   targetID,
+  metricsActive,
+  groupContainers,
+  refreshToken,
+  tab,
+  onTabChange,
   monitorIDs,
   monitoring,
   lines,
@@ -1668,12 +1793,15 @@ function ResourcePanel({
   onMonitor,
   onStop,
   onClear,
-  onAction,
-  busy,
   t,
 }: {
   selection: Selection;
   targetID: string;
+  metricsActive: boolean;
+  groupContainers: DockerContainer[];
+  refreshToken: number;
+  tab: string;
+  onTabChange: (value: string) => void;
   monitorIDs: string[];
   monitoring: boolean;
   lines: ServiceLogLine[];
@@ -1689,8 +1817,6 @@ function ResourcePanel({
   onMonitor: (resource: ServiceResourceRef) => void;
   onStop: () => void;
   onClear: () => void;
-  onAction: (resource: ServiceResourceRef, action: string) => void;
-  busy: string;
   t: ReturnType<typeof useTranslation>['t'];
 }) {
   const resource = selection.resource;
@@ -1698,72 +1824,39 @@ function ResourcePanel({
     () => lines.filter((line) => monitorIDs.includes(line.monitorID)),
     [lines, monitorIDs],
   );
-  const actions =
-    resource.runtime === 'systemd'
-      ? ['start', 'stop', 'restart', 'disable', 'disable-now']
-      : ['start', 'stop', 'restart', 'delete'];
   const [confirmingClear, setConfirmingClear] = useState(false);
-  const [infoOpen, setInfoOpen] = useState(false);
   return (
     <>
-      <ResizablePanelGroup orientation="vertical" className="min-h-0 min-w-0">
-        <ResizablePanel
-          id="resource-header"
-          defaultSize={68}
-          minSize={60}
-          collapsible
-          collapsedSize={0}
-          className="min-h-0 min-w-0 overflow-hidden"
-        >
-          <div className="h-full overflow-hidden px-4 py-3">
-            <div className="flex items-center gap-2">
-              <div className="min-w-0 flex-1">
-                <h2 className="truncate text-sm font-semibold">{resource.name || resource.id}</h2>
-                <p className="mt-0.5 truncate text-xs text-muted-foreground">
-                  {resource.runtime}
-                  {resource.scope ? ` · ${resource.scope}` : ''}
-                </p>
-              </div>
-              {actions.map((action) => (
-                <Button
-                  key={action}
-                  variant={
-                    action === 'delete' || action.startsWith('disable') ? 'destructive' : 'outline'
-                  }
-                  size="icon-xs"
-                  disabled={busy === `${resourceKey(resource)}:${action}`}
-                  title={t(`serviceManagerTool.actions.${action}`)}
-                  onClick={() => onAction(resource, action)}
-                >
-                  {action === 'start' ? (
-                    <Play weight="duotone" />
-                  ) : action === 'stop' ? (
-                    <Pause weight="duotone" />
-                  ) : action === 'restart' ? (
-                    <ArrowCounterClockwise weight="duotone" />
-                  ) : action === 'delete' ? (
-                    <Trash weight="duotone" />
-                  ) : (
-                    <Power weight="duotone" />
-                  )}
-                </Button>
-              ))}
-              {selection.kind !== 'group' ? (
-                <Button
-                  variant="outline"
-                  size="icon-xs"
-                  title={t('serviceManagerTool.info')}
-                  aria-label={t('serviceManagerTool.info')}
-                  onClick={() => setInfoOpen(true)}
-                >
-                  <Info weight="duotone" />
-                </Button>
-              ) : null}
-            </div>
-          </div>
-        </ResizablePanel>
-        <ResizableHandle withHandle aria-label={t('serviceManagerTool.resizeResourcePanels')} />
-        <ResizablePanel id="resource-logs" minSize="30%" className="min-h-0 min-w-0">
+      <Tabs
+        value={tab}
+        onValueChange={(value) => onTabChange(value)}
+        className="h-full min-h-0 gap-0"
+      >
+        <div className="flex items-center border-b px-4 py-2">
+          <TabsList>
+            <TabsTrigger value="info">{t('serviceManagerTool.detailTabs.info')}</TabsTrigger>
+            <TabsTrigger value="performance">
+              {t('serviceManagerTool.detailTabs.performance')}
+            </TabsTrigger>
+            <TabsTrigger value="logs">{t('serviceManagerTool.detailTabs.logs')}</TabsTrigger>
+          </TabsList>
+        </div>
+        <TabsContent value="info" className="flex min-h-0 flex-col overflow-hidden">
+          <ResourceInfoTab
+            targetID={targetID}
+            resource={resource}
+            groupContainers={groupContainers}
+            refreshToken={refreshToken}
+          />
+        </TabsContent>
+        <TabsContent value="performance" className="flex min-h-0 flex-col overflow-hidden">
+          <ServiceResourcePerformance
+            enabled={metricsActive}
+            targetID={targetID}
+            resource={resource}
+          />
+        </TabsContent>
+        <TabsContent value="logs" className="flex min-h-0 flex-col overflow-hidden">
           <div className="grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)]">
             <div className="border-b px-4 py-2">
               <div className="flex items-center gap-2">
@@ -1857,8 +1950,8 @@ function ResourcePanel({
               caseSensitive={caseSensitive}
             />
           </div>
-        </ResizablePanel>
-      </ResizablePanelGroup>
+        </TabsContent>
+      </Tabs>
       <ConfirmDialog
         open={confirmingClear}
         onOpenChange={setConfirmingClear}
@@ -1871,43 +1964,246 @@ function ResourcePanel({
           setConfirmingClear(false);
         }}
       />
-      <ResourceInfoDialog
-        open={infoOpen}
-        onOpenChange={setInfoOpen}
-        targetID={targetID}
-        resource={resource}
-      />
     </>
   );
 }
-function ResourceInfoDialog({
-  open,
-  onOpenChange,
+
+type ContainerInfo =
+  | { runtime: 'docker'; detail: DockerContainerDetail }
+  | { runtime: 'pm2'; detail: PM2ProcessDetail }
+  | { runtime: 'systemd'; detail: SystemdUnitDetail };
+
+function formatMoment(value: string | number) {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleString();
+}
+
+function describeCommand(parts: string[] | null | undefined) {
+  return parts?.length ? parts.join(' ') : '—';
+}
+
+function InfoSection({ title, children }: { title?: string; children: ReactNode }) {
+  return (
+    <section className="border-b px-4 py-3 last:border-b-0">
+      {title ? (
+        <h3 className="mb-2 text-[10px] font-medium uppercase tracking-[.04em] text-muted-foreground">
+          {title}
+        </h3>
+      ) : null}
+      {children}
+    </section>
+  );
+}
+
+function InfoFields({ children }: { children: ReactNode }) {
+  return (
+    <dl className="grid grid-cols-[minmax(0,6.5rem)_minmax(0,1fr)] items-baseline gap-x-3 gap-y-1.5 text-xs">
+      {children}
+    </dl>
+  );
+}
+
+function InfoField({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <>
+      <dt className="truncate text-muted-foreground">{label}</dt>
+      <dd className="min-w-0 break-words font-mono text-foreground">{children}</dd>
+    </>
+  );
+}
+
+function InfoList({ items }: { items: string[] }) {
+  return (
+    <ul className="m-0 flex flex-col gap-1 font-mono text-[11px] break-all text-foreground">
+      {items.map((item, index) => (
+        <li key={`${index}-${item}`}>{item}</li>
+      ))}
+    </ul>
+  );
+}
+
+// 各类资源的详情字段不同，这里按运行时渲染结构化的键值信息，避免直接暴露原始 JSON。
+function ContainerInfoView({ info }: { info: ContainerInfo }) {
+  const { t } = useTranslation();
+  if (info.runtime === 'docker') {
+    const { container, command, entrypoint, mounts, networks, restartPolicy } = info.detail;
+    return (
+      <div className="flex flex-col">
+        <InfoSection>
+          <InfoFields>
+            <InfoField label={t('serviceManagerTool.metrics.name')}>
+              {container.name || container.id}
+            </InfoField>
+            <InfoField label={t('serviceManagerTool.detail.image')}>
+              {container.image || '—'}
+            </InfoField>
+            <InfoField label={t('serviceManagerTool.status')}>
+              <Badge variant={statusVariant(container.status)}>{container.status}</Badge>
+            </InfoField>
+            <InfoField label={t('serviceManagerTool.detail.id')}>{container.id}</InfoField>
+            {container.composeProject ? (
+              <InfoField label={t('serviceManagerTool.detail.composeProject')}>
+                {container.composeProject}
+              </InfoField>
+            ) : null}
+            {container.composeService ? (
+              <InfoField label={t('serviceManagerTool.detail.composeService')}>
+                {container.composeService}
+              </InfoField>
+            ) : null}
+            {container.createdAt ? (
+              <InfoField label={t('serviceManagerTool.detail.createdAt')}>
+                {formatMoment(container.createdAt)}
+              </InfoField>
+            ) : null}
+            {container.ports?.length ? (
+              <InfoField label={t('serviceManagerTool.detail.ports')}>
+                {container.ports.join(', ')}
+              </InfoField>
+            ) : null}
+          </InfoFields>
+        </InfoSection>
+        <InfoSection title={t('serviceManagerTool.detail.config')}>
+          <InfoFields>
+            <InfoField label={t('serviceManagerTool.detail.command')}>
+              {describeCommand(command)}
+            </InfoField>
+            <InfoField label={t('serviceManagerTool.detail.entrypoint')}>
+              {describeCommand(entrypoint)}
+            </InfoField>
+            <InfoField label={t('serviceManagerTool.detail.restartPolicy')}>
+              {restartPolicy || '—'}
+            </InfoField>
+          </InfoFields>
+        </InfoSection>
+        {mounts?.length ? (
+          <InfoSection title={t('serviceManagerTool.detail.mounts')}>
+            <InfoList items={mounts} />
+          </InfoSection>
+        ) : null}
+        {networks?.length ? (
+          <InfoSection title={t('serviceManagerTool.detail.networks')}>
+            <InfoList items={networks} />
+          </InfoSection>
+        ) : null}
+      </div>
+    );
+  }
+  if (info.runtime === 'pm2') {
+    const proc = info.detail.process;
+    return (
+      <div className="flex flex-col">
+        <InfoSection>
+          <InfoFields>
+            <InfoField label={t('serviceManagerTool.metrics.name')}>
+              {proc.name || proc.id}
+            </InfoField>
+            <InfoField label={t('serviceManagerTool.status')}>
+              <Badge variant={statusVariant(proc.status)}>{proc.status}</Badge>
+            </InfoField>
+            <InfoField label={t('serviceManagerTool.detail.id')}>{proc.id}</InfoField>
+            <InfoField label={t('serviceManagerTool.detail.pid')}>{String(proc.pid)}</InfoField>
+            <InfoField label={t('serviceManagerTool.detail.restarts')}>
+              {String(proc.restarts)}
+            </InfoField>
+            <InfoField label={t('serviceManagerTool.metrics.metric.cpu')}>
+              {`${proc.cpu.toFixed(1)}%`}
+            </InfoField>
+            <InfoField label={t('serviceManagerTool.metrics.metric.memory')}>
+              {formatBytes(proc.memory)}
+            </InfoField>
+            {proc.uptime ? (
+              <InfoField label={t('serviceManagerTool.detail.startedAt')}>
+                {formatMoment(proc.uptime)}
+              </InfoField>
+            ) : null}
+          </InfoFields>
+        </InfoSection>
+        <InfoSection title={t('serviceManagerTool.detail.process')}>
+          <InfoFields>
+            <InfoField label={t('serviceManagerTool.detail.script')}>
+              {proc.script || '—'}
+            </InfoField>
+            <InfoField label={t('serviceManagerTool.detail.cwd')}>{proc.cwd || '—'}</InfoField>
+            <InfoField label={t('serviceManagerTool.detail.interpreter')}>
+              {proc.interpreter || '—'}
+            </InfoField>
+          </InfoFields>
+        </InfoSection>
+      </div>
+    );
+  }
+  const { unit, mainPID, execStart, fragmentPath } = info.detail;
+  return (
+    <div className="flex flex-col">
+      <InfoSection>
+        <InfoFields>
+          <InfoField label={t('serviceManagerTool.metrics.name')}>{unit.name || unit.id}</InfoField>
+          <InfoField label={t('serviceManagerTool.status')}>
+            <Badge variant={statusVariant(unit.activeState)}>{unit.activeState}</Badge>
+          </InfoField>
+          <InfoField label={t('serviceManagerTool.detail.id')}>{unit.id}</InfoField>
+          {unit.description ? (
+            <InfoField label={t('serviceManagerTool.detail.description')}>
+              {unit.description}
+            </InfoField>
+          ) : null}
+          <InfoField label={t('serviceManagerTool.detail.scope')}>{unit.scope}</InfoField>
+          <InfoField label={t('serviceManagerTool.detail.loadState')}>{unit.loadState}</InfoField>
+          <InfoField label={t('serviceManagerTool.detail.subState')}>{unit.subState}</InfoField>
+          <InfoField label={t('serviceManagerTool.detail.mainPID')}>
+            {mainPID ? String(mainPID) : '—'}
+          </InfoField>
+        </InfoFields>
+      </InfoSection>
+      <InfoSection title={t('serviceManagerTool.detail.unit')}>
+        <InfoFields>
+          <InfoField label={t('serviceManagerTool.detail.execStart')}>{execStart || '—'}</InfoField>
+          <InfoField label={t('serviceManagerTool.detail.fragmentPath')}>
+            {fragmentPath || '—'}
+          </InfoField>
+        </InfoFields>
+      </InfoSection>
+    </div>
+  );
+}
+
+function ResourceInfoTab({
   targetID,
   resource,
+  groupContainers,
+  refreshToken,
 }: {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
   targetID: string;
   resource: ServiceResourceRef;
+  groupContainers: DockerContainer[];
+  refreshToken: number;
 }) {
   const { t } = useTranslation();
   const [loading, setLoading] = useState(true);
-  const [detail, setDetail] = useState<Record<string, unknown> | null>(null);
+  const [info, setInfo] = useState<ContainerInfo | null>(null);
   const [error, setError] = useState('');
+  const [rawOpen, setRawOpen] = useState(false);
+  const isGroup = resource.runtime === 'docker-compose';
 
   const load = async () => {
     setLoading(true);
-    setDetail(null);
+    setInfo(null);
     setError('');
     try {
-      const value =
-        resource.runtime === 'docker'
-          ? await GetDockerContainerDetail(targetID, resource.id)
-          : resource.runtime === 'pm2'
-            ? await GetPM2ProcessDetail(targetID, resource.id)
-            : await GetSystemdUnitDetail(targetID, resource.id, resource.scope ?? 'system');
-      setDetail(value as unknown as Record<string, unknown>);
+      if (resource.runtime === 'docker') {
+        setInfo({
+          runtime: 'docker',
+          detail: await GetDockerContainerDetail(targetID, resource.id),
+        });
+      } else if (resource.runtime === 'pm2') {
+        setInfo({ runtime: 'pm2', detail: await GetPM2ProcessDetail(targetID, resource.id) });
+      } else {
+        setInfo({
+          runtime: 'systemd',
+          detail: await GetSystemdUnitDetail(targetID, resource.id, resource.scope ?? 'system'),
+        });
+      }
     } catch (reason) {
       setError(formatBackendError(reason));
     } finally {
@@ -1916,53 +2212,81 @@ function ResourceInfoDialog({
   };
 
   useEffect(() => {
-    if (!open) {
-      setLoading(true);
-      setDetail(null);
-      setError('');
-      return;
-    }
+    if (isGroup) return;
     void load();
-  }, [open, targetID, resource.runtime, resource.id, resource.scope]);
+  }, [isGroup, targetID, resource.runtime, resource.id, resource.scope, refreshToken]);
+
+  if (isGroup) {
+    return (
+      <ScrollArea className="h-full min-h-0">
+        {groupContainers.length ? (
+          <ul className="divide-y">
+            {groupContainers.map((container) => (
+              <li key={container.id} className="flex items-center gap-3 px-4 py-2.5 text-xs">
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate font-medium">
+                    {container.name || container.id}
+                  </span>
+                  <span className="block truncate text-[10px] text-muted-foreground">
+                    {container.image}
+                  </span>
+                </span>
+                <Badge variant={statusVariant(container.status)}>{container.status}</Badge>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <div className="grid min-h-24 place-items-center px-6 text-center text-xs text-muted-foreground">
+            {t('serviceManagerTool.metrics.empty')}
+          </div>
+        )}
+      </ScrollArea>
+    );
+  }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="flex h-[75dvh] min-h-0 flex-col sm:max-w-lg">
-        <DialogHeader className="flex-none">
-          <DialogTitle>{resource.name || resource.id}</DialogTitle>
-          <DialogDescription>{t('serviceManagerTool.info')}</DialogDescription>
-        </DialogHeader>
-        <ScrollArea className="min-h-0 flex-1 rounded-md border border-border bg-muted/20 p-3">
-          {loading ? (
+    <>
+      <div className="grid h-full min-h-0 grid-rows-[minmax(0,1fr)_auto]">
+        <ScrollArea className="min-h-0 overflow-hidden">
+          {error ? (
+            <p className="m-0 px-4 py-3 text-xs text-destructive" role="alert">
+              {error}
+            </p>
+          ) : loading || !info ? (
             <div className="flex h-full items-center justify-center gap-2 text-xs text-muted-foreground">
               <Spinner />
               {t('common.loading')}
             </div>
-          ) : error ? (
-            <p className="m-0 text-xs text-destructive" role="alert">
-              {error}
-            </p>
           ) : (
-            <pre className="m-0 font-mono text-[11px] break-all whitespace-pre-wrap text-foreground">
-              {JSON.stringify(detail, null, 2)}
-            </pre>
+            <ContainerInfoView info={info} />
           )}
         </ScrollArea>
-        <DialogFooter className="flex-none">
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
-            {t('common.close')}
+        <div className="flex items-center justify-end border-t px-4 py-2">
+          <Button variant="outline" size="sm" disabled={!info} onClick={() => setRawOpen(true)}>
+            <CodeSimple data-icon="inline-start" />
+            {t('serviceManagerTool.detail.viewRaw')}
           </Button>
-          <Button disabled={loading} onClick={() => void load()}>
-            {loading ? (
-              <Spinner data-icon="inline-start" />
-            ) : (
-              <ArrowsClockwise data-icon="inline-start" />
-            )}
-            {t('serviceManagerTool.refresh')}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+        </div>
+      </div>
+      <Dialog open={rawOpen} onOpenChange={setRawOpen}>
+        <DialogContent className="flex h-[75dvh] min-h-0 flex-col sm:max-w-2xl">
+          <DialogHeader className="flex-none">
+            <DialogTitle>{resource.name || resource.id}</DialogTitle>
+            <DialogDescription>{t('serviceManagerTool.detail.rawTitle')}</DialogDescription>
+          </DialogHeader>
+          <ScrollArea className="min-h-0 flex-1 rounded-md border border-border bg-muted/20 p-3">
+            <pre className="m-0 font-mono text-[11px] break-all whitespace-pre-wrap text-foreground">
+              {JSON.stringify(info?.detail ?? null, null, 2)}
+            </pre>
+          </ScrollArea>
+          <DialogFooter className="flex-none">
+            <Button variant="outline" onClick={() => setRawOpen(false)}>
+              {t('common.close')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }
 const LOG_GRID =
