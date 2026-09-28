@@ -31,8 +31,15 @@ type PortEntry struct {
 	ParentPath string `json:"parentPath"`
 }
 
+type PortSource struct {
+	ID           string `json:"id"`
+	Name         string `json:"name"`
+	Kind         string `json:"kind"`
+	SSHProfileID string `json:"sshProfileID"`
+}
+
 type PortForwardRequest struct {
-	ProfileID  string `json:"profileID"`
+	SourceID   string `json:"sourceID"`
 	Direction  string `json:"direction"`
 	ListenHost string `json:"listenHost"`
 	ListenPort int    `json:"listenPort"`
@@ -42,7 +49,7 @@ type PortForwardRequest struct {
 
 type PortForward struct {
 	ID         string `json:"id"`
-	ProfileID  string `json:"profileID"`
+	SourceID   string `json:"sourceID"`
 	Direction  string `json:"direction"`
 	ListenHost string `json:"listenHost"`
 	ListenPort int    `json:"listenPort"`
@@ -73,6 +80,68 @@ func NewPortService(config *ConfigService) *PortService {
 	return &PortService{config: config, tunnels: make(map[string]*portTunnel)}
 }
 func (s *PortService) ServiceName() string { return "PortService" }
+
+func normalizePortSources(sources []PortSource, profileNames map[string]string) []PortSource {
+	result := defaultPortSources()
+	seen := map[string]bool{"local": true}
+	for _, source := range sources {
+		id := strings.TrimSpace(source.ID)
+		kind := strings.ToLower(strings.TrimSpace(source.Kind))
+		profileID := strings.TrimSpace(source.SSHProfileID)
+		if id == "" || id == "local" || seen[id] || kind != "ssh" || profileID == "" {
+			continue
+		}
+		name := strings.TrimSpace(source.Name)
+		if name == "" || name == profileID {
+			name = profileNames[profileID]
+		}
+		if name == "" {
+			continue
+		}
+		seen[id] = true
+		result = append(result, PortSource{ID: id, Name: name, Kind: "ssh", SSHProfileID: profileID})
+	}
+	return result
+}
+
+func (s *PortService) GetPortSources() []PortSource {
+	if s == nil || s.config == nil {
+		return defaultPortSources()
+	}
+	return append([]PortSource(nil), s.config.Get().PortSources...)
+}
+
+func (s *PortService) SavePortSources(sources []PortSource) error {
+	if s == nil || s.config == nil {
+		return userError("errors.common.configNotInitialized")
+	}
+	return s.config.updateConfigAllowDanglingRefs(func(cfg *Config) error {
+		profiles := make(map[string]string, len(cfg.SSHProfiles))
+		for _, profile := range cfg.SSHProfiles {
+			profiles[profile.ID] = profile.Name
+		}
+		normalized := defaultPortSources()
+		seen := map[string]bool{"local": true}
+		for index, source := range sources {
+			if source.ID == "local" || source.Kind == "local" {
+				continue
+			}
+			id := strings.TrimSpace(source.ID)
+			name := strings.TrimSpace(source.Name)
+			profileID := strings.TrimSpace(source.SSHProfileID)
+			if !validConfigValue(id, 128) || seen[id] || !validTextValue(name, 128) || !validConfigValue(profileID, 128) {
+				return userErrorParams("errors.port.invalidSource", map[string]any{"index": index + 1})
+			}
+			if _, ok := profiles[profileID]; !ok {
+				return userErrorParams("errors.port.sourceProfileNotFound", map[string]any{"index": index + 1})
+			}
+			seen[id] = true
+			normalized = append(normalized, PortSource{ID: id, Name: name, Kind: "ssh", SSHProfileID: profileID})
+		}
+		cfg.PortSources = normalized
+		return nil
+	})
+}
 
 // lsof 的字段模式保留进程与文件描述符边界，避免按空格拆解进程名或地址。
 func parseLsofPorts(output []byte) []PortEntry {
@@ -186,12 +255,22 @@ func enrichPorts(rows []PortEntry, output []byte) {
 	}
 }
 
-func (s *PortService) profile(id string) (SSHProfile, error) {
+func (s *PortService) sourceProfile(id string) (SSHProfile, error) {
 	if s == nil || s.config == nil {
 		return SSHProfile{}, userError("errors.port.configUnavailable")
 	}
+	var profileID string
+	for _, source := range s.config.Get().PortSources {
+		if source.ID == id && source.Kind == "ssh" {
+			profileID = source.SSHProfileID
+			break
+		}
+	}
+	if profileID == "" {
+		return SSHProfile{}, userError("errors.port.sourceNotFound")
+	}
 	for _, profile := range s.config.GetSSHProfiles() {
-		if profile.ID == id {
+		if profile.ID == profileID {
 			return profile, nil
 		}
 	}
@@ -236,7 +315,7 @@ func (s *PortService) ListPorts(profileID string) ([]PortEntry, error) {
 		}
 		ps, _ = exec.CommandContext(ctx, "ps", "-eo", "pid=,ppid=,user=,comm=").Output()
 	} else {
-		profile, err := s.profile(profileID)
+		profile, err := s.sourceProfile(profileID)
 		if err != nil {
 			return nil, err
 		}
@@ -326,7 +405,7 @@ func validForwardHost(host string) bool {
 	return !strings.ContainsAny(host, " \t\r\n/\\")
 }
 func normalizeForward(request PortForwardRequest) (PortForwardRequest, error) {
-	request.ProfileID = strings.TrimSpace(request.ProfileID)
+	request.SourceID = strings.TrimSpace(request.SourceID)
 	request.ListenHost = strings.TrimSpace(request.ListenHost)
 	request.TargetHost = strings.TrimSpace(request.TargetHost)
 	if request.ListenHost == "" {
@@ -335,7 +414,7 @@ func normalizeForward(request PortForwardRequest) (PortForwardRequest, error) {
 	if request.TargetHost == "" {
 		request.TargetHost = "127.0.0.1"
 	}
-	if request.ProfileID == "" || (request.Direction != "local" && request.Direction != "remote") || !validForwardHost(request.ListenHost) || !validForwardHost(request.TargetHost) || !validForwardPort(request.ListenPort) || !validForwardPort(request.TargetPort) {
+	if request.SourceID == "" || request.SourceID == "local" || (request.Direction != "local" && request.Direction != "remote") || !validForwardHost(request.ListenHost) || !validForwardHost(request.TargetHost) || !validForwardPort(request.ListenPort) || !validForwardPort(request.TargetPort) {
 		return request, userError("errors.port.invalidForward")
 	}
 	return request, nil
@@ -346,12 +425,12 @@ func (s *PortService) StartForward(request PortForwardRequest) (PortForward, err
 	if err != nil {
 		return PortForward{}, err
 	}
-	profile, err := s.profile(request.ProfileID)
+	profile, err := s.sourceProfile(request.SourceID)
 	if err != nil {
 		return PortForward{}, err
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	tunnel := &portTunnel{PortForward: PortForward{ID: fmt.Sprintf("port-forward-%d", s.counter.Add(1)), ProfileID: request.ProfileID, Direction: request.Direction, ListenHost: request.ListenHost, ListenPort: request.ListenPort, TargetHost: request.TargetHost, TargetPort: request.TargetPort, Status: "connecting"}, profile: profile, ctx: ctx, cancel: cancel}
+	tunnel := &portTunnel{PortForward: PortForward{ID: fmt.Sprintf("port-forward-%d", s.counter.Add(1)), SourceID: request.SourceID, Direction: request.Direction, ListenHost: request.ListenHost, ListenPort: request.ListenPort, TargetHost: request.TargetHost, TargetPort: request.TargetPort, Status: "connecting"}, profile: profile, ctx: ctx, cancel: cancel}
 	client, listener, err := s.openTunnel(ctx, tunnel)
 	if err != nil {
 		cancel()

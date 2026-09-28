@@ -2,31 +2,46 @@ import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } fro
 import { useVirtualizer } from '@tanstack/react-virtual';
 import {
   ArrowsClockwise,
-  ArrowsDownUp,
   CaretDown,
   CaretUp,
+  CaretUpDown,
+  GearSix,
+  MagnifyingGlass,
   Plus,
   Stop,
+  XCircle,
 } from '@phosphor-icons/react';
 import { useTranslation } from 'react-i18next';
 import {
   GetForwards,
+  GetPortSources,
   ListPorts,
+  SavePortSources,
   StartForward,
   StopForward,
 } from '../../bindings/changeme/portservice';
-import type { PortEntry, PortForward, PortForwardRequest } from '../../bindings/changeme/models';
+import type {
+  PortEntry,
+  PortForward,
+  PortForwardRequest,
+  PortSource,
+} from '../../bindings/changeme/models';
 import { formatBackendError } from '../lib/backend-error';
 import { useSSHProfiles } from './SSHProfileManagerDialog';
+import { SSHProfileSelect } from './SSHProfileSelect';
 import { ConfirmDialog } from './ConfirmDialog';
+import { TargetHostManagerDialog } from './TargetHostManagerDialog';
 import {
   ToolActionBar,
+  ToolHeaderField,
   ToolLayout,
   ToolLayoutContent,
   ToolLayoutFooter,
   ToolLayoutHeader,
   ToolLayoutToolbar,
+  WheelText,
 } from './shared';
+import { Badge } from './ui/badge';
 import { Button } from './ui/button';
 import {
   Dialog,
@@ -44,6 +59,7 @@ import {
   SelectContent,
   SelectGroup,
   SelectItem,
+  SelectSeparator,
   SelectTrigger,
   SelectValue,
 } from './ui/select';
@@ -51,13 +67,15 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '.
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
 
 const initialForward: PortForwardRequest = {
-  profileID: '',
+  sourceID: '',
   direction: 'local',
   listenHost: '127.0.0.1',
   listenPort: 8080,
   targetHost: '127.0.0.1',
   targetPort: 80,
 };
+
+const MANAGE_SOURCES_VALUE = '__manage-port-sources__';
 
 const PORT_COLUMNS = [
   'port',
@@ -70,9 +88,28 @@ const PORT_COLUMNS = [
   'parentPID',
   'parentPath',
 ] as const satisfies readonly (keyof PortEntry)[];
+const PORT_COLUMN_WIDTHS: Record<(typeof PORT_COLUMNS)[number], string> = {
+  port: 'w-[72px]',
+  address: 'w-[180px]',
+  protocol: 'w-[72px]',
+  pid: 'w-[72px]',
+  name: 'w-[160px]',
+  user: 'w-[120px]',
+  path: 'w-[260px]',
+  parentPID: 'w-[88px]',
+  parentPath: 'w-[260px]',
+};
 const FORWARD_COLUMNS = ['direction', 'source', 'listen', 'target', 'status', 'retries'] as const;
-type PortSortKey = (typeof PORT_COLUMNS)[number];
 type ForwardSortKey = (typeof FORWARD_COLUMNS)[number];
+const FORWARD_COLUMN_WIDTHS: Record<ForwardSortKey, string> = {
+  direction: 'w-[150px]',
+  source: 'w-[160px]',
+  listen: 'w-[200px]',
+  target: 'w-[200px]',
+  status: 'w-[200px]',
+  retries: 'w-[96px]',
+};
+type PortSortKey = (typeof PORT_COLUMNS)[number];
 type SortDirection = 'asc' | 'desc';
 type SortState<Key extends string> = { key: Key; direction: SortDirection };
 
@@ -81,15 +118,20 @@ function SortableHead({
   active,
   direction,
   onSort,
+  className = '',
 }: {
   label: string;
   active: boolean;
   direction: SortDirection;
   onSort: () => void;
+  className?: string;
 }) {
   const { t } = useTranslation();
   return (
-    <TableHead aria-sort={active ? (direction === 'asc' ? 'ascending' : 'descending') : 'none'}>
+    <TableHead
+      className={className}
+      aria-sort={active ? (direction === 'asc' ? 'ascending' : 'descending') : 'none'}
+    >
       <Button
         variant="ghost"
         size="sm"
@@ -105,12 +147,12 @@ function SortableHead({
         {label}
         {active ? (
           direction === 'asc' ? (
-            <CaretUp weight="duotone" aria-hidden="true" />
+            <CaretUp aria-hidden="true" />
           ) : (
-            <CaretDown weight="duotone" aria-hidden="true" />
+            <CaretDown aria-hidden="true" />
           )
         ) : (
-          <ArrowsDownUp weight="duotone" aria-hidden="true" />
+          <CaretUpDown aria-hidden="true" />
         )}
       </Button>
     </TableHead>
@@ -131,10 +173,9 @@ function FilterSelect({
   onChange: (value: string) => void;
 }) {
   return (
-    <div className="min-w-32">
-      <Label htmlFor={id}>{label}</Label>
+    <ToolHeaderField label={label} htmlFor={id} className="min-w-32">
       <Select items={options} value={value} onValueChange={(next) => onChange(next || 'all')}>
-        <SelectTrigger id={id} className="mt-1 w-full">
+        <SelectTrigger id={id} className="w-full">
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
@@ -147,17 +188,75 @@ function FilterSelect({
           </SelectGroup>
         </SelectContent>
       </Select>
-    </div>
+    </ToolHeaderField>
+  );
+}
+
+function SearchField({
+  id,
+  label,
+  placeholder,
+  draft,
+  onDraftChange,
+  onSearch,
+}: {
+  id: string;
+  label: string;
+  placeholder: string;
+  draft: string;
+  onDraftChange: (value: string) => void;
+  onSearch: (value: string) => void;
+}) {
+  const { t } = useTranslation();
+  return (
+    <ToolHeaderField label={label} htmlFor={id} className="min-w-48 flex-1">
+      <div className="relative min-w-0">
+        <MagnifyingGlass
+          size={14}
+          weight="duotone"
+          aria-hidden="true"
+          className="pointer-events-none absolute top-1/2 left-2.5 -translate-y-1/2 text-muted-foreground"
+        />
+        <Input
+          id={id}
+          value={draft}
+          onChange={(event) => onDraftChange(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter' && !event.nativeEvent.isComposing)
+              onSearch(event.currentTarget.value.trim());
+          }}
+          placeholder={placeholder}
+          className="pr-8 pl-8"
+        />
+        {draft ? (
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-xs"
+            className="absolute top-1/2 right-1.5 -translate-y-1/2"
+            aria-label={t('portTool.clearSearch')}
+            onClick={() => {
+              onDraftChange('');
+              onSearch('');
+            }}
+          >
+            <XCircle weight="duotone" aria-hidden="true" />
+          </Button>
+        ) : null}
+      </div>
+    </ToolHeaderField>
   );
 }
 
 export default function PortTool({ active }: { active: boolean }) {
   const { t, i18n } = useTranslation();
-  const { profiles, openManager } = useSSHProfiles();
+  const { profiles } = useSSHProfiles();
+  const [sources, setSources] = useState<PortSource[]>([]);
   const [source, setSource] = useState('local');
   const [tab, setTab] = useState('ports');
   const [ports, setPorts] = useState<PortEntry[]>([]);
   const [portViewport, setPortViewport] = useState<HTMLElement | null>(null);
+  const [forwardViewport, setForwardViewport] = useState<HTMLElement | null>(null);
   const [forwards, setForwards] = useState<PortForward[]>([]);
   const [portSearchDraft, setPortSearchDraft] = useState('');
   const [portSearch, setPortSearch] = useState('');
@@ -171,7 +270,7 @@ export default function PortTool({ active }: { active: boolean }) {
   const [forwardSearch, setForwardSearch] = useState('');
   const [directionFilter, setDirectionFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
-  const [profileFilter, setProfileFilter] = useState('all');
+  const [sourceFilter, setSourceFilter] = useState('all');
   const [forwardSort, setForwardSort] = useState<SortState<ForwardSortKey>>({
     key: 'listen',
     direction: 'asc',
@@ -186,6 +285,22 @@ export default function PortTool({ active }: { active: boolean }) {
   const [stop, setStop] = useState<PortForward | null>(null);
   const [stopping, setStopping] = useState(false);
   const [stopError, setStopError] = useState('');
+  const [manageOpen, setManageOpen] = useState(false);
+  const [savingSources, setSavingSources] = useState(false);
+
+  const refreshSources = useCallback(async () => {
+    try {
+      const next = (await GetPortSources()) ?? [];
+      setSources(next);
+      setSource((current) => (next.some((item) => item.id === current) ? current : 'local'));
+    } catch (cause) {
+      setError(formatBackendError(cause));
+    }
+  }, []);
+
+  useEffect(() => {
+    if (active) void refreshSources();
+  }, [active, refreshSources]);
 
   const refreshPorts = useCallback(async () => {
     const revision = ++scanRevision.current;
@@ -248,19 +363,21 @@ export default function PortTool({ active }: { active: boolean }) {
       setStopping(false);
     }
   };
-  const selectedProfile = profiles.find((profile) => profile.id === source);
-  const sourceOptions = [
-    { value: 'local', label: t('portTool.local') },
-    ...profiles.map((profile) => ({ value: profile.id, label: profile.name })),
-  ];
-  const profileOptions = profiles.map((profile) => ({ value: profile.id, label: profile.name }));
+  const selectedSource = sources.find((item) => item.id === source);
+  const sourceOptions = sources.map((item) => ({
+    value: item.id,
+    label: item.id === 'local' ? t('portTool.local') : item.name,
+  }));
+  const forwardSourceOptions = sources
+    .filter((item) => item.kind === 'ssh')
+    .map((item) => ({ value: item.id, label: item.name }));
   const collator = useMemo(
     () => new Intl.Collator(i18n.language, { numeric: true, sensitivity: 'base' }),
     [i18n.language],
   );
-  const profileNames = useMemo(
-    () => new Map(profiles.map((profile) => [profile.id, profile.name])),
-    [profiles],
+  const sourceNames = useMemo(
+    () => new Map(sources.map((item) => [item.id, item.name])),
+    [sources],
   );
   const users = useMemo(
     () =>
@@ -272,15 +389,15 @@ export default function PortTool({ active }: { active: boolean }) {
       ).sort(collator.compare),
     [ports, userFilter, collator],
   );
-  const profileIDs = useMemo(
+  const forwardSourceIDs = useMemo(
     () =>
       Array.from(
         new Set([
-          ...forwards.map((forward) => forward.profileID),
-          ...(profileFilter === 'all' ? [] : [profileFilter]),
+          ...forwards.map((forward) => forward.sourceID),
+          ...(sourceFilter === 'all' ? [] : [sourceFilter]),
         ]),
-      ).sort((a, b) => collator.compare(profileNames.get(a) ?? a, profileNames.get(b) ?? b)),
-    [forwards, profileFilter, profileNames, collator],
+      ).sort((a, b) => collator.compare(sourceNames.get(a) ?? a, sourceNames.get(b) ?? b)),
+    [forwards, sourceFilter, sourceNames, collator],
   );
   const visiblePortData = useMemo(() => {
     const query = portSearch.toLocaleLowerCase(i18n.language);
@@ -309,7 +426,7 @@ export default function PortTool({ active }: { active: boolean }) {
     (forward: PortForward, key: ForwardSortKey): string | number => {
       switch (key) {
         case 'source':
-          return profileNames.get(forward.profileID) ?? t('sshProfiles.missingProfile');
+          return sourceNames.get(forward.sourceID) ?? t('portTool.missingSource');
         case 'listen':
           return `${forward.listenHost}:${forward.listenPort}`;
         case 'target':
@@ -322,7 +439,7 @@ export default function PortTool({ active }: { active: boolean }) {
           return forward.retries;
       }
     },
-    [profileNames, t],
+    [sourceNames, t],
   );
   const visibleForwardData = useMemo(() => {
     const query = forwardSearch.toLocaleLowerCase(i18n.language);
@@ -330,7 +447,7 @@ export default function PortTool({ active }: { active: boolean }) {
       (forward) =>
         (directionFilter === 'all' || forward.direction === directionFilter) &&
         (statusFilter === 'all' || forward.status === statusFilter) &&
-        (profileFilter === 'all' || forward.profileID === profileFilter) &&
+        (sourceFilter === 'all' || forward.sourceID === sourceFilter) &&
         (!query ||
           [...FORWARD_COLUMNS.map((key) => forwardField(forward, key)), forward.error ?? ''].some(
             (value) => String(value).toLocaleLowerCase(i18n.language).includes(query),
@@ -352,7 +469,7 @@ export default function PortTool({ active }: { active: boolean }) {
     forwardSearch,
     directionFilter,
     statusFilter,
-    profileFilter,
+    sourceFilter,
     forwardSort,
     forwardField,
     collator,
@@ -371,6 +488,9 @@ export default function PortTool({ active }: { active: boolean }) {
   useEffect(() => {
     portViewport?.scrollTo({ top: 0 });
   }, [portViewport, portSearch, protocolFilter, userFilter, portSort]);
+  useEffect(() => {
+    forwardViewport?.scrollTo({ top: 0 });
+  }, [forwardViewport, forwardSearch, directionFilter, statusFilter, sourceFilter, forwardSort]);
   const portVirtualizer = useVirtualizer({
     count: visiblePortData.length,
     getScrollElement: () => portViewport,
@@ -382,41 +502,69 @@ export default function PortTool({ active }: { active: boolean }) {
   const paddingBottom = visiblePorts.length
     ? portVirtualizer.getTotalSize() - visiblePorts[visiblePorts.length - 1].end
     : 0;
+  const forwardVirtualizer = useVirtualizer({
+    count: visibleForwardData.length,
+    getScrollElement: () => forwardViewport,
+    estimateSize: () => 40,
+    overscan: 12,
+  });
+  const visibleForwards = forwardVirtualizer.getVirtualItems();
+  const forwardPaddingTop = visibleForwards.length ? visibleForwards[0].start : 0;
+  const forwardPaddingBottom = visibleForwards.length
+    ? forwardVirtualizer.getTotalSize() - visibleForwards[visibleForwards.length - 1].end
+    : 0;
+
+  const openSourceManager = () => setManageOpen(true);
+  const saveSources = async (next: PortSource[]) => {
+    if (savingSources) return;
+    setSavingSources(true);
+    try {
+      await SavePortSources(next);
+      await refreshSources();
+    } finally {
+      setSavingSources(false);
+    }
+  };
 
   return (
     <ToolLayout>
       <ToolLayoutHeader title={t('portTool.title')} subtitle={t('portTool.subtitle')} />
       <ToolLayoutToolbar
         left={
-          <div className="flex min-w-0 items-end gap-2">
-            <div className="min-w-48">
-              <Label htmlFor="port-source">{t('portTool.source')}</Label>
-              <Select
-                items={sourceOptions}
-                value={source}
-                onValueChange={(value) => {
-                  setSource(value || 'local');
-                  setUserFilter('all');
-                }}
-              >
-                <SelectTrigger id="port-source" className="mt-1 min-w-48">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectGroup>
-                    {sourceOptions.map((option) => (
-                      <SelectItem key={option.value} value={option.value}>
-                        {option.label}
-                      </SelectItem>
-                    ))}
-                  </SelectGroup>
-                </SelectContent>
-              </Select>
-            </div>
-            <Button variant="outline" onClick={openManager}>
-              {t('portTool.manageSSH')}
-            </Button>
-          </div>
+          <ToolHeaderField label={t('portTool.source')} htmlFor="port-source" className="min-w-48">
+            <Select
+              items={sourceOptions}
+              value={source}
+              onValueChange={(value) => {
+                if (value === MANAGE_SOURCES_VALUE) {
+                  openSourceManager();
+                  return;
+                }
+                setSource(value || 'local');
+                setUserFilter('all');
+              }}
+            >
+              <SelectTrigger id="port-source" className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectGroup>
+                  {sourceOptions.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                  {sourceOptions.length > 0 ? <SelectSeparator /> : null}
+                  <SelectItem value={MANAGE_SOURCES_VALUE}>
+                    <span className="flex items-center gap-2">
+                      <GearSix size={14} weight="duotone" />
+                      {t('portTool.manageSources')}
+                    </span>
+                  </SelectItem>
+                </SelectGroup>
+              </SelectContent>
+            </Select>
+          </ToolHeaderField>
         }
         right={
           <Button
@@ -437,21 +585,14 @@ export default function PortTool({ active }: { active: boolean }) {
           </TabsList>
           <TabsContent value="ports" className="flex min-h-0 flex-col gap-2">
             <div className="flex min-w-0 flex-wrap items-end gap-2">
-              <div className="min-w-48 flex-1">
-                <Label htmlFor="port-search">{t('portTool.search')}</Label>
-                <Input
-                  id="port-search"
-                  type="search"
-                  className="mt-1"
-                  value={portSearchDraft}
-                  onChange={(event) => setPortSearchDraft(event.target.value)}
-                  onKeyDown={(event) => {
-                    if (event.key === 'Enter' && !event.nativeEvent.isComposing)
-                      setPortSearch(event.currentTarget.value.trim());
-                  }}
-                  placeholder={t('portTool.searchPortsPlaceholder')}
-                />
-              </div>
+              <SearchField
+                id="port-search"
+                label={t('portTool.search')}
+                placeholder={t('portTool.searchPortsPlaceholder')}
+                draft={portSearchDraft}
+                onDraftChange={setPortSearchDraft}
+                onSearch={setPortSearch}
+              />
               <FilterSelect
                 id="port-protocol"
                 label={t('portTool.protocol')}
@@ -476,21 +617,19 @@ export default function PortTool({ active }: { active: boolean }) {
                   })),
                 ]}
               />
-              <span className="pb-2 text-xs text-muted-foreground">
-                {t('portTool.results', { matched: visiblePortData.length, total: ports.length })}
-              </span>
             </div>
             <ScrollArea
               className="min-h-0 flex-1"
               options={{ overflow: { x: 'scroll' } }}
               onViewport={setPortViewport}
             >
-              <Table className="min-w-[1050px]" containerClassName="overflow-x-visible">
-                <TableHeader>
+              <Table className="min-w-[1284px] table-fixed" containerClassName="overflow-x-visible">
+                <TableHeader className="sticky top-0 z-10 bg-background">
                   <TableRow>
                     {PORT_COLUMNS.map((key) => (
                       <SortableHead
                         key={key}
+                        className={PORT_COLUMN_WIDTHS[key]}
                         label={t(`portTool.${key}`)}
                         active={portSort.key === key}
                         direction={portSort.direction}
@@ -502,7 +641,7 @@ export default function PortTool({ active }: { active: boolean }) {
                 <TableBody>
                   {paddingTop > 0 && (
                     <tr>
-                      <td colSpan={9} style={{ height: paddingTop }} />
+                      <td colSpan={9} style={{ height: paddingTop, padding: 0 }} />
                     </tr>
                   )}
                   {visiblePorts.map((row) => {
@@ -514,26 +653,30 @@ export default function PortTool({ active }: { active: boolean }) {
                         data-index={row.index}
                       >
                         <TableCell>{entry.port}</TableCell>
-                        <TableCell className="max-w-48 truncate" title={entry.address}>
-                          {entry.address}
+                        <TableCell>
+                          <WheelText>{entry.address}</WheelText>
                         </TableCell>
                         <TableCell>{entry.protocol}</TableCell>
                         <TableCell>{entry.pid}</TableCell>
-                        <TableCell>{entry.name}</TableCell>
-                        <TableCell>{entry.user}</TableCell>
-                        <TableCell className="max-w-64 truncate" title={entry.path}>
-                          {entry.path || '—'}
+                        <TableCell>
+                          <WheelText>{entry.name}</WheelText>
+                        </TableCell>
+                        <TableCell>
+                          <WheelText>{entry.user}</WheelText>
+                        </TableCell>
+                        <TableCell>
+                          <WheelText>{entry.path || '—'}</WheelText>
                         </TableCell>
                         <TableCell>{entry.parentPID || '—'}</TableCell>
-                        <TableCell className="max-w-64 truncate" title={entry.parentPath}>
-                          {entry.parentPath || '—'}
+                        <TableCell>
+                          <WheelText>{entry.parentPath || '—'}</WheelText>
                         </TableCell>
                       </TableRow>
                     );
                   })}
                   {paddingBottom > 0 && (
                     <tr>
-                      <td colSpan={9} style={{ height: paddingBottom }} />
+                      <td colSpan={9} style={{ height: paddingBottom, padding: 0 }} />
                     </tr>
                   )}
                 </TableBody>
@@ -550,21 +693,14 @@ export default function PortTool({ active }: { active: boolean }) {
           </TabsContent>
           <TabsContent value="forwards" className="flex min-h-0 flex-col gap-2">
             <div className="flex min-w-0 flex-wrap items-end gap-2">
-              <div className="min-w-48 flex-1">
-                <Label htmlFor="forward-search">{t('portTool.search')}</Label>
-                <Input
-                  id="forward-search"
-                  type="search"
-                  className="mt-1"
-                  value={forwardSearchDraft}
-                  onChange={(event) => setForwardSearchDraft(event.target.value)}
-                  onKeyDown={(event) => {
-                    if (event.key === 'Enter' && !event.nativeEvent.isComposing)
-                      setForwardSearch(event.currentTarget.value.trim());
-                  }}
-                  placeholder={t('portTool.searchForwardsPlaceholder')}
-                />
-              </div>
+              <SearchField
+                id="forward-search"
+                label={t('portTool.search')}
+                placeholder={t('portTool.searchForwardsPlaceholder')}
+                draft={forwardSearchDraft}
+                onDraftChange={setForwardSearchDraft}
+                onSearch={setForwardSearch}
+              />
               <FilterSelect
                 id="forward-direction-filter"
                 label={t('portTool.direction')}
@@ -589,82 +725,96 @@ export default function PortTool({ active }: { active: boolean }) {
                 ]}
               />
               <FilterSelect
-                id="forward-profile-filter"
+                id="forward-source-filter"
                 label={t('portTool.source')}
-                value={profileFilter}
-                onChange={setProfileFilter}
+                value={sourceFilter}
+                onChange={setSourceFilter}
                 options={[
-                  { value: 'all', label: t('portTool.allHosts') },
-                  ...profileIDs.map((id) => ({
+                  { value: 'all', label: t('portTool.allSources') },
+                  ...forwardSourceIDs.map((id) => ({
                     value: id,
-                    label: profileNames.get(id) ?? t('sshProfiles.missingProfile'),
+                    label: sourceNames.get(id) ?? t('portTool.missingSource'),
                   })),
                 ]}
               />
-              <span className="pb-2 text-xs text-muted-foreground">
-                {t('portTool.results', {
-                  matched: visibleForwardData.length,
-                  total: forwards.length,
-                })}
-              </span>
             </div>
-            <ScrollArea className="min-h-0 flex-1" options={{ overflow: { x: 'scroll' } }}>
-              <Table className="min-w-[750px]" containerClassName="overflow-x-visible">
-                <TableHeader>
+            <ScrollArea
+              className="min-h-0 flex-1"
+              options={{ overflow: { x: 'scroll' } }}
+              onViewport={setForwardViewport}
+            >
+              <Table className="min-w-[1126px] table-fixed" containerClassName="overflow-x-visible">
+                <TableHeader className="sticky top-0 z-10 bg-background">
                   <TableRow>
                     {FORWARD_COLUMNS.map((key) => (
                       <SortableHead
                         key={key}
+                        className={FORWARD_COLUMN_WIDTHS[key]}
                         label={t(`portTool.${key}`)}
                         active={forwardSort.key === key}
                         direction={forwardSort.direction}
                         onSort={() => changeForwardSort(key)}
                       />
                     ))}
-                    <TableHead>{t('portTool.action')}</TableHead>
+                    <TableHead className="w-[120px]">{t('portTool.action')}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {visibleForwardData.map((forward) => (
-                    <TableRow key={forward.id}>
-                      <TableCell>{t(`portTool.${forward.direction}Forward`)}</TableCell>
-                      <TableCell>
-                        {profiles.find((profile) => profile.id === forward.profileID)?.name ??
-                          t('sshProfiles.missingProfile')}
-                      </TableCell>
-                      <TableCell>
-                        {forward.listenHost}:{forward.listenPort}
-                      </TableCell>
-                      <TableCell>
-                        {forward.targetHost}:{forward.targetPort}
-                      </TableCell>
-                      <TableCell>
-                        {t(`portTool.${forward.status}`)}
-                        {forward.error && (
-                          <p
-                            className="max-w-64 truncate text-xs text-destructive"
-                            title={forward.error}
+                  {forwardPaddingTop > 0 && (
+                    <tr>
+                      <td colSpan={7} style={{ height: forwardPaddingTop, padding: 0 }} />
+                    </tr>
+                  )}
+                  {visibleForwards.map((row) => {
+                    const forward = visibleForwardData[row.index];
+                    return (
+                      <TableRow
+                        key={row.key}
+                        ref={forwardVirtualizer.measureElement}
+                        data-index={row.index}
+                      >
+                        <TableCell>{t(`portTool.${forward.direction}Forward`)}</TableCell>
+                        <TableCell>
+                          <WheelText>
+                            {sourceNames.get(forward.sourceID) ?? t('portTool.missingSource')}
+                          </WheelText>
+                        </TableCell>
+                        <TableCell>
+                          <WheelText>{`${forward.listenHost}:${forward.listenPort}`}</WheelText>
+                        </TableCell>
+                        <TableCell>
+                          <WheelText>{`${forward.targetHost}:${forward.targetPort}`}</WheelText>
+                        </TableCell>
+                        <TableCell>
+                          {t(`portTool.${forward.status}`)}
+                          {forward.error && (
+                            <WheelText className="text-xs text-destructive">
+                              {formatBackendError(forward.error)}
+                            </WheelText>
+                          )}
+                        </TableCell>
+                        <TableCell>{forward.retries}/5</TableCell>
+                        <TableCell>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => {
+                              setStopError('');
+                              setStop(forward);
+                            }}
                           >
-                            {formatBackendError(forward.error)}
-                          </p>
-                        )}
-                      </TableCell>
-                      <TableCell>{forward.retries}/5</TableCell>
-                      <TableCell>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => {
-                            setStopError('');
-                            setStop(forward);
-                          }}
-                        >
-                          <Stop weight="duotone" />
-                          {t('portTool.stop')}
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                  ))}
+                            <Stop weight="duotone" />
+                            {t('portTool.stop')}
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                  {forwardPaddingBottom > 0 && (
+                    <tr>
+                      <td colSpan={7} style={{ height: forwardPaddingBottom, padding: 0 }} />
+                    </tr>
+                  )}
                 </TableBody>
               </Table>
               {visibleForwardData.length === 0 && (
@@ -682,26 +832,39 @@ export default function PortTool({ active }: { active: boolean }) {
             {error}
           </p>
         )}
-        <ToolActionBar
-          label={t('portTool.actions')}
-          actions={[
-            {
-              key: 'add',
-              label: t('portTool.add'),
-              icon: Plus,
-              variant: 'primary',
-              disabled: profiles.length === 0,
-              onPress: () => {
-                setForm({
-                  ...initialForward,
-                  profileID: selectedProfile?.id ?? profiles[0]?.id ?? '',
-                });
-                setError('');
-                setDialog(true);
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <span className="pb-2 text-xs text-muted-foreground">
+            {tab === 'ports'
+              ? t('portTool.results', { matched: visiblePortData.length, total: ports.length })
+              : t('portTool.results', {
+                  matched: visibleForwardData.length,
+                  total: forwards.length,
+                })}
+          </span>
+          <ToolActionBar
+            label={t('portTool.actions')}
+            actions={[
+              {
+                key: 'add',
+                label: t('portTool.add'),
+                icon: Plus,
+                variant: 'primary',
+                disabled: forwardSourceOptions.length === 0,
+                onPress: () => {
+                  setForm({
+                    ...initialForward,
+                    sourceID:
+                      selectedSource?.kind === 'ssh'
+                        ? selectedSource.id
+                        : (forwardSourceOptions[0]?.value ?? ''),
+                  });
+                  setError('');
+                  setDialog(true);
+                },
               },
-            },
-          ]}
-        />
+            ]}
+          />
+        </div>
       </ToolLayoutFooter>
       <Dialog
         open={dialog}
@@ -720,22 +883,22 @@ export default function PortTool({ active }: { active: boolean }) {
             onSubmit={(event) => void startForward(event)}
           >
             <div>
-              <Label htmlFor="forward-profile">{t('portTool.source')}</Label>
+              <Label htmlFor="forward-source">{t('portTool.source')}</Label>
               <Select
-                items={profileOptions}
-                value={form.profileID || null}
+                items={forwardSourceOptions}
+                value={form.sourceID || null}
                 onValueChange={(value) =>
-                  setForm((current) => ({ ...current, profileID: value || '' }))
+                  setForm((current) => ({ ...current, sourceID: value || '' }))
                 }
               >
-                <SelectTrigger id="forward-profile" className="mt-1 w-full">
+                <SelectTrigger id="forward-source" className="mt-1 w-full">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectGroup>
-                    {profileOptions.map((profile) => (
-                      <SelectItem key={profile.value} value={profile.value}>
-                        {profile.label}
+                    {forwardSourceOptions.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {option.label}
                       </SelectItem>
                     ))}
                   </SelectGroup>
@@ -833,7 +996,7 @@ export default function PortTool({ active }: { active: boolean }) {
             <Button variant="outline" onClick={() => setDialog(false)}>
               {t('portTool.cancel')}
             </Button>
-            <Button type="submit" form="port-forward-form" disabled={saving || !form.profileID}>
+            <Button type="submit" form="port-forward-form" disabled={saving || !form.sourceID}>
               {t('portTool.add')}
             </Button>
           </DialogFooter>
@@ -852,6 +1015,81 @@ export default function PortTool({ active }: { active: boolean }) {
         busy={stopping}
         error={stopError}
         onConfirm={() => void stopForward()}
+      />
+      <TargetHostManagerDialog<PortSource, PortSource>
+        open={manageOpen}
+        onOpenChange={setManageOpen}
+        items={sources.filter((item) => item.kind === 'ssh')}
+        itemKey={(item) => item.id}
+        itemName={(item) => item.name}
+        createDraft={() => ({
+          id: '',
+          name: '',
+          kind: 'ssh',
+          sshProfileID: profiles[0]?.id ?? '',
+        })}
+        toDraft={(item) => ({ ...item })}
+        commitDraft={(draft, previous) => {
+          const profile = profiles.find((item) => item.id === draft.sshProfileID);
+          if (!profile) return t('portTool.sshProfileRequired');
+          const next: PortSource = {
+            id: draft.id || `port:${crypto.randomUUID()}`,
+            name: draft.name.trim() || profile.name,
+            kind: 'ssh',
+            sshProfileID: profile.id,
+          };
+          return [...previous.filter((item) => item.id !== draft.id && item.id !== next.id), next];
+        }}
+        saveItems={saveSources}
+        saving={savingSources}
+        renderMeta={(item) => (
+          <>
+            <span>{t('portTool.sourceKindSsh')}</span>
+            {!profiles.some((profile) => profile.id === item.sshProfileID) ? (
+              <Badge variant="destructive" className="h-4 text-[9px]">
+                {t('portTool.sshProfileMissing')}
+              </Badge>
+            ) : null}
+          </>
+        )}
+        renderForm={({ draft, setDraft }) => (
+          <>
+            <div className="grid gap-1.5">
+              <Label>{t('portTool.sourceName')}</Label>
+              <Input
+                value={draft.name}
+                onChange={(event) => setDraft({ ...draft, name: event.target.value })}
+              />
+            </div>
+            <div className="grid gap-1.5">
+              <Label>{t('portTool.sshProfile')}</Label>
+              <SSHProfileSelect
+                value={draft.sshProfileID ?? ''}
+                onValueChange={(sshProfileID) => setDraft({ ...draft, sshProfileID })}
+                placeholder={t('portTool.selectSSHProfile')}
+              />
+            </div>
+          </>
+        )}
+        strings={{
+          title: t('portTool.manageSourcesTitle'),
+          description: t('portTool.manageSourcesDesc'),
+          listTitle: t('portTool.sources'),
+          add: t('portTool.addSource'),
+          edit: t('portTool.editSource'),
+          remove: t('portTool.removeSource'),
+          empty: t('portTool.sourceHostsEmpty'),
+          emptyHint: t('portTool.sourceHostsEmptyHint'),
+          save: t('common.save'),
+          done: t('common.done'),
+          back: t('common.cancel'),
+          discardTitle: t('portTool.discardSourcesTitle'),
+          discardDescription: t('portTool.discardSourcesDescription'),
+          discardConfirm: t('portTool.discardSourcesConfirm'),
+          removeTitle: t('portTool.removeSourceConfirmTitle'),
+          removeDescription: (name) => t('portTool.removeSourceConfirmBody', { name }),
+          formTitle: (editing) => (editing ? t('portTool.editSource') : t('portTool.addSource')),
+        }}
       />
     </ToolLayout>
   );

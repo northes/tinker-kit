@@ -44,6 +44,7 @@ type Config struct {
 	SSHConnections []SSHConnection `json:"-"`
 	FileSources    []FileSource    `json:"fileSources"`
 	ServiceTargets []ServiceTarget `json:"serviceTargets"`
+	PortSources    []PortSource    `json:"portSources"`
 }
 
 type SidebarToolConfig struct {
@@ -132,6 +133,10 @@ func defaultServiceTargets() []ServiceTarget {
 	return []ServiceTarget{{ID: "local", Name: "本机", Kind: "local"}}
 }
 
+func defaultPortSources() []PortSource {
+	return []PortSource{{ID: "local", Name: "本机", Kind: "local"}}
+}
+
 func defaultSidebarTools() []SidebarToolConfig {
 	tools := make([]SidebarToolConfig, 0, len(defaultSidebarToolIDs))
 	for _, id := range defaultSidebarToolIDs {
@@ -172,7 +177,7 @@ type historyStored struct {
 }
 
 func defaultConfig() Config {
-	return Config{TrayMatchEnabled: true, TrayMatchTools: []string{"json", "time", "text", "base64", "diff", "jwt", "url"}, AutoOverwrite: true, AutoCheckUpdates: true, Language: "zh-CN", SidebarMode: "full", SidebarTools: defaultSidebarTools(), ThemeMode: "dark", LightTheme: "default-light", DarkTheme: "default-dark", DiffClipboardTargetMode: "alternate", CodeEditorFontSize: 16, TimeResultOrder: []string{"local", "dateTime", "dateOnly", "timeOnly", "zonedIso8601", "rfc3339", "utc", "compact", "underscore", "unixSeconds", "unixMilliseconds", "unixNanoseconds"}, TimeWeekStart: "monday", JsonAutoFormatOnFill: true, JsonAutoFormatOnFillMigrated: true, ImageSources: defaultImageSources(), SSHProfilesVersion: currentSSHProfilesVersion, SSHProfiles: []SSHProfile{}, SSHConnections: []SSHConnection{}, FileSources: []FileSource{}, ServiceTargets: defaultServiceTargets()}
+	return Config{TrayMatchEnabled: true, TrayMatchTools: []string{"json", "time", "text", "base64", "diff", "jwt", "url"}, AutoOverwrite: true, AutoCheckUpdates: true, Language: "zh-CN", SidebarMode: "full", SidebarTools: defaultSidebarTools(), ThemeMode: "dark", LightTheme: "default-light", DarkTheme: "default-dark", DiffClipboardTargetMode: "alternate", CodeEditorFontSize: 16, TimeResultOrder: []string{"local", "dateTime", "dateOnly", "timeOnly", "zonedIso8601", "rfc3339", "utc", "compact", "underscore", "unixSeconds", "unixMilliseconds", "unixNanoseconds"}, TimeWeekStart: "monday", JsonAutoFormatOnFill: true, JsonAutoFormatOnFillMigrated: true, ImageSources: defaultImageSources(), SSHProfilesVersion: currentSSHProfilesVersion, SSHProfiles: []SSHProfile{}, SSHConnections: []SSHConnection{}, FileSources: []FileSource{}, ServiceTargets: defaultServiceTargets(), PortSources: defaultPortSources()}
 }
 
 func normalizeThemeID(theme string, defaultID string, legacyID string) string {
@@ -222,6 +227,18 @@ func imageSourcesEqual(a []ImageSource, b []ImageSource) bool {
 }
 
 func serviceTargetsEqual(a []ServiceTarget, b []ServiceTarget) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
+func portSourcesEqual(a []PortSource, b []PortSource) bool {
 	if len(a) != len(b) {
 		return false
 	}
@@ -658,6 +675,7 @@ func normalizeConfig(cfg Config) Config {
 		}
 	}
 	cfg.ServiceTargets = normalizeServiceTargets(cfg.ServiceTargets, sshProfileNameMap(cfg.SSHProfiles))
+	cfg.PortSources = normalizePortSources(cfg.PortSources, sshProfileNameMap(cfg.SSHProfiles))
 	validSidebarTool := make(map[string]bool, len(defaultSidebarToolIDs))
 	for _, id := range defaultSidebarToolIDs {
 		validSidebarTool[id] = true
@@ -858,6 +876,7 @@ func NewConfigService() *ConfigService {
 			_, hasLegacyTheme := raw["theme"]
 			_, hasDockerCLIPath := raw["dockerCLIPath"]
 			_, hasImageSources := raw["imageSources"]
+			_, hasPortSources := raw["portSources"]
 			_, hasSSHProfilesVersion := raw["sshProfilesVersion"]
 			legacySSHReset := !hasSSHProfilesVersion || cfg.SSHProfilesVersion != currentSSHProfilesVersion
 			cfg = migrateLegacyTheme(cfg, legacy.Theme, hasThemeMode)
@@ -867,11 +886,12 @@ func NewConfigService() *ConfigService {
 				cfg.SSHProfiles = []SSHProfile{}
 				cfg.SSHConnections = []SSHConnection{}
 				cfg.FileSources = []FileSource{}
+				cfg.PortSources = defaultPortSources()
 				cfg.SSHProfilesVersion = currentSSHProfilesVersion
 			}
 
 			cfg = normalizeConfig(cfg)
-			if legacySSHReset || hasLegacyTheme || !hasDockerCLIPath || !hasImageSources || beforeNormalize.ThemeMode != cfg.ThemeMode || beforeNormalize.LightTheme != cfg.LightTheme || beforeNormalize.DarkTheme != cfg.DarkTheme || !stringSlicesEqual(beforeNormalize.TrayMatchTools, cfg.TrayMatchTools) || beforeNormalize.CodeEditorFontSize != cfg.CodeEditorFontSize || !sidebarToolsEqual(beforeNormalize.SidebarTools, cfg.SidebarTools) || !imageSourcesEqual(beforeNormalize.ImageSources, cfg.ImageSources) || !serviceTargetsEqual(beforeNormalize.ServiceTargets, cfg.ServiceTargets) || beforeNormalize.DockerCLIPath != cfg.DockerCLIPath {
+			if legacySSHReset || hasLegacyTheme || !hasDockerCLIPath || !hasImageSources || !hasPortSources || beforeNormalize.ThemeMode != cfg.ThemeMode || beforeNormalize.LightTheme != cfg.LightTheme || beforeNormalize.DarkTheme != cfg.DarkTheme || !stringSlicesEqual(beforeNormalize.TrayMatchTools, cfg.TrayMatchTools) || beforeNormalize.CodeEditorFontSize != cfg.CodeEditorFontSize || !sidebarToolsEqual(beforeNormalize.SidebarTools, cfg.SidebarTools) || !imageSourcesEqual(beforeNormalize.ImageSources, cfg.ImageSources) || !serviceTargetsEqual(beforeNormalize.ServiceTargets, cfg.ServiceTargets) || !portSourcesEqual(beforeNormalize.PortSources, cfg.PortSources) || beforeNormalize.DockerCLIPath != cfg.DockerCLIPath {
 				if normalized, marshalErr := json.Marshal(cfg); marshalErr == nil {
 					_ = writeConfigAtomically(path, normalized)
 				}
@@ -935,6 +955,7 @@ func (s *ConfigService) Save(cfg Config) error {
 	cfg.SSHConnections = append([]SSHConnection(nil), s.cfg.SSHConnections...)
 	cfg.FileSources = copyFileSources(s.cfg.FileSources)
 	cfg.ServiceTargets = copyServiceTargets(s.cfg.ServiceTargets)
+	cfg.PortSources = append([]PortSource(nil), s.cfg.PortSources...)
 	// 删除 SSH 配置后，工具引用可以暂时悬空；镜像/文件来源定向接口会在写入新引用前
 	// 校验配置，而设置页快照仍应能保存无关设置，交由界面修复悬空来源。
 	if err := validateConfigForSave(cfg, true); err != nil {

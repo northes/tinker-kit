@@ -344,6 +344,32 @@ export function ToolLayoutHeader({ title, subtitle }: { title: string; subtitle?
   );
 }
 
+export function ToolHeaderField({
+  label,
+  htmlFor,
+  children,
+  className = '',
+}: {
+  label: string;
+  htmlFor?: string;
+  children: ReactNode;
+  className?: string;
+}) {
+  const labelClassName = 'text-[10px] font-medium text-muted-foreground';
+  return (
+    <div className={`flex min-w-0 flex-col gap-1${className ? ` ${className}` : ''}`}>
+      {htmlFor ? (
+        <label className={labelClassName} htmlFor={htmlFor}>
+          {label}
+        </label>
+      ) : (
+        <span className={labelClassName}>{label}</span>
+      )}
+      {children}
+    </div>
+  );
+}
+
 export function ToolLayoutToolbar({
   left,
   right,
@@ -421,6 +447,37 @@ export function ToolLayoutScrollableContent({
 
 export function ToolLayoutFooter({ children }: { children?: ReactNode }) {
   return <footer className="row-start-4 min-h-0 min-w-0">{children}</footer>;
+}
+
+// 单元格内容超出宽度时，纵向滚轮转为横向滚动；未溢出时让事件冒泡给列表。
+export function WheelText({
+  children,
+  className = '',
+}: {
+  children: ReactNode;
+  className?: string;
+}) {
+  const ref = useRef<HTMLSpanElement>(null);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const onWheel = (event: WheelEvent) => {
+      const { deltaX, deltaY, deltaMode } = event;
+      if (event.ctrlKey || (deltaX === 0 && deltaY === 0)) return;
+      if (el.scrollWidth <= el.clientWidth) return;
+      const scale = deltaMode === 1 ? 16 : deltaMode === 2 ? el.clientWidth : 1;
+      const delta = Math.abs(deltaX) > Math.abs(deltaY) ? deltaX : deltaY;
+      el.scrollLeft += delta * scale;
+      event.preventDefault();
+    };
+    el.addEventListener('wheel', onWheel, { passive: false });
+    return () => el.removeEventListener('wheel', onWheel);
+  }, []);
+  return (
+    <span ref={ref} className={`no-scrollbar block overflow-x-auto whitespace-nowrap ${className}`}>
+      {children}
+    </span>
+  );
 }
 
 export function ToolLayout({

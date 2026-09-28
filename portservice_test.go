@@ -22,11 +22,11 @@ func TestParseSSPorts(t *testing.T) {
 }
 
 func TestNormalizeForward(t *testing.T) {
-	request, err := normalizeForward(PortForwardRequest{ProfileID: " profile ", Direction: "local", ListenPort: 8080, TargetPort: 80})
-	if err != nil || request.ProfileID != "profile" || request.ListenHost != "127.0.0.1" || request.TargetHost != "127.0.0.1" {
+	request, err := normalizeForward(PortForwardRequest{SourceID: " source ", Direction: "local", ListenPort: 8080, TargetPort: 80})
+	if err != nil || request.SourceID != "source" || request.ListenHost != "127.0.0.1" || request.TargetHost != "127.0.0.1" {
 		t.Fatalf("unexpected normalized request: %+v, %v", request, err)
 	}
-	_, err = normalizeForward(PortForwardRequest{ProfileID: "profile", Direction: "remote", ListenPort: 70000, TargetPort: 80})
+	_, err = normalizeForward(PortForwardRequest{SourceID: "source", Direction: "remote", ListenPort: 70000, TargetPort: 80})
 	if err == nil {
 		t.Fatal("expected invalid port rejection")
 	}

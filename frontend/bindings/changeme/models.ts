@@ -37,6 +37,7 @@ export interface Config {
     "sshProfiles": SSHProfile[] | null;
     "fileSources": FileSource[] | null;
     "serviceTargets": ServiceTarget[] | null;
+    "portSources": PortSource[] | null;
 }
 
 export interface DockerComposeGroup {
@@ -433,7 +434,7 @@ export interface PortEntry {
 
 export interface PortForward {
     "id": string;
-    "profileID": string;
+    "sourceID": string;
     "direction": string;
     "listenHost": string;
     "listenPort": number;
@@ -445,12 +446,19 @@ export interface PortForward {
 }
 
 export interface PortForwardRequest {
-    "profileID": string;
+    "sourceID": string;
     "direction": string;
     "listenHost": string;
     "listenPort": number;
     "targetHost": string;
     "targetPort": number;
+}
+
+export interface PortSource {
+    "id": string;
+    "name": string;
+    "kind": string;
+    "sshProfileID": string;
 }
 
 export interface QueryLogBufferRequest {

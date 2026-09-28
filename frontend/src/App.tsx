@@ -273,6 +273,7 @@ const defaultSettings: Settings = {
   sshProfiles: [],
   fileSources: [],
   serviceTargets: [{ id: 'local', name: '本机', kind: 'local', sshProfileID: '' }],
+  portSources: [{ id: 'local', name: '本机', kind: 'local', sshProfileID: '' }],
 };
 const JsonTool = lazy(() => import('./components/JsonTool'));
 const TimeTool = lazy(() => import('./components/TimeTool'));
