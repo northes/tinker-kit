@@ -122,6 +122,8 @@ type Selection = {
   resource: ServiceResourceRef;
   kind: 'container' | 'group' | 'pm2' | 'systemd' | 'host' | 'workspace';
 };
+// 工作台成员：用户显式加入的容器或服务，与自动采集的日志监控相互独立。
+type WorkspaceMember = { targetID: string; resource: ServiceResourceRef };
 const WORKSPACE_SELECTION: Selection = {
   targetID: '',
   resource: { runtime: 'workspace', id: 'workspace' },
@@ -161,6 +163,9 @@ function runtimeFiltered(statuses: Set<string>, runtime: Runtime) {
 function resourceKey(resource: ServiceResourceRef) {
   return `${resource.runtime}|${resource.scope ?? ''}|${resource.id}`;
 }
+function workspaceMemberKey(member: WorkspaceMember) {
+  return `${member.targetID}|${resourceKey(member.resource)}`;
+}
 function monitorResourceKey(monitor: LogMonitor) {
   return resourceKey(monitor.resource);
 }
@@ -184,6 +189,17 @@ function containerRefs(containers: DockerContainer[], groupName: string): Servic
     name: container.name,
     group: groupName,
   }));
+}
+// 把一个列表项（可能是 Compose 组）解析为具体的资源引用。
+function resourceRefsFor(
+  resource: ServiceResourceRef,
+  inventory: ServiceInventory | null,
+): ServiceResourceRef[] {
+  if (resource.runtime === 'docker-compose')
+    return containerRefs(composeGroupContainers(resource, inventory), resource.name ?? '');
+  if (resource.runtime === 'docker')
+    return [{ ...resource, group: dockerGroupName(resource, inventory) }];
+  return [resource];
 }
 // 后端因并发日志源达到上限而拒绝启动监控。
 function isLogLimitFailure(monitor: LogMonitor) {
@@ -245,6 +261,7 @@ export default function ServiceManagerTool({
   const [selection, setSelection] = useState<Selection | null>(null);
   const [busy, setBusy] = useState('');
   const [monitors, setMonitors] = useState<LogMonitor[]>([]);
+  const [workspaceMembers, setWorkspaceMembers] = useState<WorkspaceMember[]>([]);
   const [view, setView] = useState<'resource' | 'workspace'>('resource');
   const [detailTab, setDetailTab] = useState('info');
   const [panelOrientation, setPanelOrientation] = useState<'horizontal' | 'vertical'>(() =>
@@ -255,11 +272,10 @@ export default function ServiceManagerTool({
   >({});
   const [workspaceErrors, setWorkspaceErrors] = useState<Record<string, string>>({});
   const [pendingWorkspaceRemove, setPendingWorkspaceRemove] = useState<{
-    members: LogMonitor[];
+    members: WorkspaceMember[];
     name: string;
     all: boolean;
   } | null>(null);
-  const [workspaceRemoveError, setWorkspaceRemoveError] = useState('');
   const [workspaceRemoving, setWorkspaceRemoving] = useState(false);
   const [logDraft, setLogDraft] = useState('');
   const [logQuery, setLogQuery] = useState('');
@@ -345,11 +361,28 @@ export default function ServiceManagerTool({
     () => new Map(monitors.map((item) => [`${item.targetID}|${monitorResourceKey(item)}`, item])),
     [monitors],
   );
+  const workspaceMemberKeys = useMemo(
+    () => new Set(workspaceMembers.map(workspaceMemberKey)),
+    [workspaceMembers],
+  );
+  const workspaceTargetIDs = useMemo(
+    () => [...new Set(workspaceMembers.map((member) => member.targetID))],
+    [workspaceMembers],
+  );
+  // 仅工作台成员的日志监控；自动采集但未加入工作台的资源不在其中。
+  const memberMonitors = useMemo(
+    () =>
+      monitors.filter((item) =>
+        workspaceMemberKeys.has(`${item.targetID}|${resourceKey(item.resource)}`),
+      ),
+    [monitors, workspaceMemberKeys],
+  );
   // Compose 组选中时聚合其所有容器的监控；单资源沿用资源键匹配。
   const selectedMonitors = useMemo(() => {
     if (!selection) return [] as LogMonitor[];
-    if (view === 'workspace' && selection.kind === 'workspace') return monitors;
-    if (view === 'workspace' && selection.kind === 'host') return currentTargetMonitors;
+    if (view === 'workspace' && selection.kind === 'workspace') return memberMonitors;
+    if (view === 'workspace' && selection.kind === 'host')
+      return memberMonitors.filter((item) => item.targetID === selection.targetID);
     if (selection.kind === 'group') {
       const group = selectedInventory?.dockerGroups?.find(
         (item) => item.id === selection.resource.id,
@@ -363,7 +396,15 @@ export default function ServiceManagerTool({
       `${selection.targetID}|${resourceKey(selection.resource)}`,
     );
     return found ? [found] : [];
-  }, [view, selection, monitors, selectedInventory, currentTargetMonitors, monitoredByResource]);
+  }, [
+    view,
+    selection,
+    monitors,
+    selectedInventory,
+    currentTargetMonitors,
+    monitoredByResource,
+    memberMonitors,
+  ]);
   const activeMonitorIDs = useMemo(
     () => selectedMonitors.map((item) => item.id),
     [selectedMonitors],
@@ -394,7 +435,7 @@ export default function ServiceManagerTool({
   }, [active, targetID]);
   useEffect(() => {
     if (view !== 'workspace') return;
-    const hostIDs = [...new Set(monitors.map((item) => item.targetID))];
+    const hostIDs = workspaceTargetIDs;
     if (!hostIDs.length) return;
     let cancelled = false;
     const refresh = async () => {
@@ -427,7 +468,7 @@ export default function ServiceManagerTool({
       cancelled = true;
       window.clearInterval(timer);
     };
-  }, [view, active, monitors.map((item) => item.targetID).join('|')]);
+  }, [view, active, workspaceTargetIDs.join('|')]);
   useEffect(() => {
     const off = Events.On('service-manager:logs', (event) => {
       const data = event.data as LogEvent;
@@ -608,28 +649,6 @@ export default function ServiceManagerTool({
       return [];
     }
   };
-  const monitor = async (resource: ServiceResourceRef) => {
-    const target = selectedTargetID;
-    const containers =
-      resource.runtime === 'docker-compose'
-        ? composeGroupContainers(resource, selectedInventory)
-        : [];
-    // Compose 组有多个容器时先让用户选择要监控哪些，默认全选。
-    if (containers.length > 1) {
-      setMonitorSelection(new Set(containers.map((item) => item.id)));
-      setMonitorDialog({ resource, targetID: target, containers });
-      return;
-    }
-    const resources =
-      resource.runtime === 'docker-compose'
-        ? containerRefs(containers, resource.name ?? '')
-        : [
-            resource.runtime === 'docker'
-              ? { ...resource, group: dockerGroupName(resource, selectedInventory) }
-              : resource,
-          ];
-    await startMonitors(target, resources);
-  };
   const toggleMonitorContainer = (id: string, checked: boolean) =>
     setMonitorSelection((current) => {
       const next = new Set(current);
@@ -637,10 +656,18 @@ export default function ServiceManagerTool({
       else next.delete(id);
       return next;
     });
-  const confirmMonitorSelection = async () => {
+  // 加入工作台只更新成员集合；日志监控由成员同步 effect 启动，已存在的直接复用。
+  const addWorkspaceMembers = (members: WorkspaceMember[]) => {
+    setWorkspaceMembers((current) => {
+      const all = new Map(current.map((member) => [workspaceMemberKey(member), member]));
+      members.forEach((member) => all.set(workspaceMemberKey(member), member));
+      return [...all.values()];
+    });
+  };
+  const confirmMonitorSelection = () => {
     const dialog = monitorDialog;
     if (!dialog) return;
-    const resources = dialog.containers
+    const refs = dialog.containers
       .filter((item) => monitorSelection.has(item.id))
       .map(
         (item) =>
@@ -652,25 +679,33 @@ export default function ServiceManagerTool({
           }) as ServiceResourceRef,
       );
     setMonitorDialog(null);
-    await startMonitors(dialog.targetID, resources);
+    addWorkspaceMembers(refs.map((resource) => ({ targetID: dialog.targetID, resource })));
   };
   // 自动启动所选资源/Compose 组的日志监控并保留在后台；达到并发上限时淘汰最久未查看的一路后重试。
   const autoMonitorsRef = useRef(new Map<string, number>());
   const autoSequenceRef = useRef(0);
+  // 达到并发上限时，淘汰最久未查看、且不属于工作台的自动采集监控，为新的监控让位。
+  const evictAutoMonitor = async (exclude: Set<string>) => {
+    const tracked = autoMonitorsRef.current;
+    const oldest = [...tracked.keys()].find((id) => {
+      const item = monitors.find((candidate) => candidate.id === id);
+      if (!item) return false;
+      const key = `${item.targetID}|${resourceKey(item.resource)}`;
+      return (
+        !exclude.has(key) &&
+        !workspaceMemberKeys.has(key) &&
+        (item.state === 'monitoring' || item.state === 'stopping')
+      );
+    });
+    if (!oldest) return false;
+    tracked.delete(oldest);
+    await RemoveLogMonitor(oldest).catch(() => undefined);
+    return true;
+  };
   const ensureSelectionMonitors = async (sel: Selection) => {
     const sourceInventory =
       sel.targetID === targetID ? inventory : workspaceInventories[sel.targetID];
-    const resources =
-      sel.kind === 'group'
-        ? containerRefs(
-            composeGroupContainers(sel.resource, sourceInventory),
-            sel.resource.name ?? '',
-          )
-        : [
-            sel.resource.runtime === 'docker'
-              ? { ...sel.resource, group: dockerGroupName(sel.resource, sourceInventory) }
-              : sel.resource,
-          ];
+    const resources = resourceRefsFor(sel.resource, sourceInventory);
     if (!resources.length) return;
     const sequence = ++autoSequenceRef.current;
     const tracked = autoMonitorsRef.current;
@@ -678,8 +713,8 @@ export default function ServiceManagerTool({
       monitoredByResource.get(`${sel.targetID}|${resourceKey(resource)}`);
     resources.forEach((resource) => {
       const existing = monitorOf(resource);
-      // 仅刷新自动启动过的监控；工作台手动添加的监控不参与淘汰。
-      if (!existing || !tracked.has(existing.id)) return;
+      // 浏览过的资源记为自动采集，可在达到并发上限时淘汰；工作台成员另行保护。
+      if (!existing) return;
       tracked.delete(existing.id);
       tracked.set(existing.id, sequence);
     });
@@ -687,21 +722,11 @@ export default function ServiceManagerTool({
     if (!missing.length) return;
     let created = await startMonitors(sel.targetID, missing, false);
     if (created.some(isLogLimitFailure)) {
-      const currentKeys = new Set(resources.map((resource) => resourceKey(resource)));
-      const oldest = [...tracked.keys()].find((id) => {
-        const item = monitors.find((candidate) => candidate.id === id);
-        return (
-          item !== undefined &&
-          item.targetID === sel.targetID &&
-          !currentKeys.has(resourceKey(item.resource)) &&
-          (item.state === 'monitoring' || item.state === 'stopping')
-        );
-      });
-      if (oldest) {
-        tracked.delete(oldest);
-        await RemoveLogMonitor(oldest).catch(() => undefined);
+      const currentKeys = new Set(
+        resources.map((resource) => `${sel.targetID}|${resourceKey(resource)}`),
+      );
+      if (await evictAutoMonitor(currentKeys))
         created = await startMonitors(sel.targetID, missing, false);
-      }
     }
     created
       .filter((item) => item.state !== 'failed')
@@ -724,86 +749,106 @@ export default function ServiceManagerTool({
     void ensureSelectionMonitors(selection);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active, view, selection]);
+  // 工作台成员始终保留日志监控；与浏览自动采集复用同一路监控。
+  useEffect(() => {
+    if (!active) return;
+    const byTarget = new Map<string, ServiceResourceRef[]>();
+    workspaceMembers.forEach((member) => {
+      const list = byTarget.get(member.targetID) ?? [];
+      list.push(member.resource);
+      byTarget.set(member.targetID, list);
+    });
+    void (async () => {
+      for (const [target, resources] of byTarget) {
+        const memberKeys = new Set(
+          resources.map((resource) => `${target}|${resourceKey(resource)}`),
+        );
+        let created = await startMonitors(target, resources, false);
+        if (created.some(isLogLimitFailure) && (await evictAutoMonitor(memberKeys)))
+          created = await startMonitors(target, resources, false);
+        const failed = created.filter((item) => item.state === 'failed');
+        if (failed.length)
+          toast.add({
+            title: t('serviceManagerTool.monitorFailed'),
+            description: failed.map((item) => formatBackendError(item.error)).join('\n'),
+            type: 'error',
+          });
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [active, workspaceMembers]);
   const clear = async () => {
     await Promise.all(activeMonitorIDs.map((id) => ClearLogBuffer(id).catch(() => undefined)));
     setLines([]);
     setTruncated(false);
     await loadMonitors();
   };
-  const workspaceMembers = (target: string, resource: ServiceResourceRef) => {
-    if (resource.runtime === 'docker-compose') {
-      const group = (
-        target === targetID ? inventory : workspaceInventories[target]
-      )?.dockerGroups?.find((item) => item.id === resource.id);
-      const ids = new Set((group?.containers ?? []).map((item) => item.id));
-      return monitors.filter(
-        (item) =>
-          item.targetID === target &&
-          item.resource.runtime === 'docker' &&
-          ids.has(item.resource.id),
-      );
-    }
-    return monitors.filter(
-      (item) => item.targetID === target && resourceKey(item.resource) === resourceKey(resource),
-    );
-  };
   const changeWorkspace = (target: string, resource: ServiceResourceRef) => {
-    const members = workspaceMembers(target, resource);
-    if (members.length) {
-      setWorkspaceRemoveError('');
-      setPendingWorkspaceRemove({ members, name: resource.name || resource.id, all: false });
-    } else {
-      // 添加 Compose 组时继续复用现有容器选择流程。
-      setSelection({
-        targetID: target,
-        resource,
-        kind:
-          resource.runtime === 'docker-compose'
-            ? 'group'
-            : resource.runtime === 'docker'
-              ? 'container'
-              : resource.runtime === 'pm2'
-                ? 'pm2'
-                : 'systemd',
+    const sourceInventory = target === targetID ? inventory : workspaceInventories[target];
+    const refs = resourceRefsFor(resource, sourceInventory);
+    const keys = new Set(refs.map((ref) => `${target}|${resourceKey(ref)}`));
+    const existing = workspaceMembers.filter((member) => keys.has(workspaceMemberKey(member)));
+    if (existing.length) {
+      setPendingWorkspaceRemove({
+        members: existing,
+        name: resource.name || resource.id,
+        all: false,
       });
-      void monitor(resource);
+      return;
     }
+    // Compose 组多容器时先让用户选择要加入的容器，默认全选。
+    if (resource.runtime === 'docker-compose' && refs.length > 1) {
+      setMonitorSelection(new Set(refs.map((ref) => ref.id)));
+      setMonitorDialog({
+        resource,
+        targetID: target,
+        containers: composeGroupContainers(resource, sourceInventory),
+      });
+      return;
+    }
+    addWorkspaceMembers(refs.map((ref) => ({ targetID: target, resource: ref })));
   };
   const confirmWorkspaceRemove = async () => {
     if (!pendingWorkspaceRemove || workspaceRemoving) return;
     setWorkspaceRemoving(true);
+    const removed = pendingWorkspaceRemove.members;
+    const removedKeys = new Set(removed.map(workspaceMemberKey));
     try {
+      // 仅停止不再被自动采集复用的日志监控；浏览中的监控保留。
       const results = await Promise.allSettled(
-        pendingWorkspaceRemove.members.map((item) => RemoveLogMonitor(item.id)),
-      );
-      const removed = new Set(
-        pendingWorkspaceRemove.members
-          .filter((_, index) => results[index].status === 'fulfilled')
-          .map((item) => item.id),
+        removed.map(async (member) => {
+          const monitor = monitoredByResource.get(
+            `${member.targetID}|${resourceKey(member.resource)}`,
+          );
+          if (!monitor || autoMonitorsRef.current.has(monitor.id)) return;
+          await RemoveLogMonitor(monitor.id);
+        }),
       );
       ++monitorLoadVersion.current;
-      setMonitors((current) => current.filter((item) => !removed.has(item.id)));
+      setWorkspaceMembers((current) =>
+        current.filter((member) => !removedKeys.has(workspaceMemberKey(member))),
+      );
+      const failed = results.find((result) => result.status === 'rejected');
+      if (failed?.status === 'rejected')
+        toast.add({
+          title: t('serviceManagerTool.workspaceRemoveFailed'),
+          description: formatBackendError(failed.reason),
+          type: 'error',
+        });
       if (view === 'workspace') {
-        if (monitors.every((item) => removed.has(item.id))) showResources();
+        if (workspaceMembers.every((member) => removedKeys.has(workspaceMemberKey(member))))
+          showResources();
         else if (
           selection?.kind !== 'workspace' &&
           selectedMonitors.length > 0 &&
-          selectedMonitors.every((item) => removed.has(item.id))
+          selectedMonitors.every((monitor) =>
+            removedKeys.has(`${monitor.targetID}|${resourceKey(monitor.resource)}`),
+          )
         ) {
           setSelection(WORKSPACE_SELECTION);
         }
       }
-      const failed = pendingWorkspaceRemove.members.filter((item) => !removed.has(item.id));
-      if (failed.length) {
-        setPendingWorkspaceRemove({ ...pendingWorkspaceRemove, members: failed });
-        const error = results.find((result) => result.status === 'rejected');
-        setWorkspaceRemoveError(
-          error?.status === 'rejected' ? formatBackendError(error.reason) : '',
-        );
-      } else {
-        setPendingWorkspaceRemove(null);
-        setWorkspaceRemoveError('');
-      }
+      setPendingWorkspaceRemove(null);
     } finally {
       setWorkspaceRemoving(false);
     }
@@ -1124,7 +1169,7 @@ export default function ServiceManagerTool({
               >
                 <Queue weight="duotone" />
                 {t('serviceManagerTool.workspace')}
-                <Badge variant="secondary">{monitors.length}</Badge>
+                <Badge variant="secondary">{workspaceMembers.length}</Badge>
               </Button>
               <Button
                 variant="outline"
@@ -1132,7 +1177,7 @@ export default function ServiceManagerTool({
                 onClick={() =>
                   void (view === 'workspace'
                     ? Promise.allSettled(
-                        [...new Set(monitors.map((item) => item.targetID))].map(async (id) => {
+                        workspaceTargetIDs.map(async (id) => {
                           try {
                             const next = await GetServiceInventory(id);
                             setWorkspaceInventories((current) => ({ ...current, [id]: next }));
@@ -1181,18 +1226,19 @@ export default function ServiceManagerTool({
                     >
                       <span className="font-semibold">{t('serviceManagerTool.workspace')}</span>
                       <span className="truncate text-muted-foreground">
-                        {t('serviceManagerTool.workspaceMembers', { total: monitors.length })}
+                        {t('serviceManagerTool.workspaceMembers', {
+                          total: workspaceMembers.length,
+                        })}
                       </span>
                     </button>
-                    {monitors.length ? (
+                    {workspaceMembers.length ? (
                       <Button
                         variant="ghost"
                         size="sm"
                         className="-mr-3 h-11 rounded-none px-3"
                         onClick={() => {
-                          setWorkspaceRemoveError('');
                           setPendingWorkspaceRemove({
-                            members: [...monitors],
+                            members: [...workspaceMembers],
                             name: '',
                             all: true,
                           });
@@ -1204,8 +1250,8 @@ export default function ServiceManagerTool({
                     ) : null}
                   </div>
                   <ScrollArea className="min-h-0 flex-1">
-                    {monitors.length ? (
-                      [...new Set(monitors.map((item) => item.targetID))].map((hostID) => (
+                    {workspaceMembers.length ? (
+                      workspaceTargetIDs.map((hostID) => (
                         <div key={hostID}>
                           <button
                             type="button"
@@ -1248,14 +1294,14 @@ export default function ServiceManagerTool({
                                 ? null
                                 : (workspaceInventories[hostID] ?? null)
                             }
-                            workspaceResources={monitors
-                              .filter((item) => item.targetID === hostID)
-                              .map((item) => item.resource)}
+                            workspaceResources={workspaceMembers
+                              .filter((member) => member.targetID === hostID)
+                              .map((member) => member.resource)}
                             allowed={
                               new Set(
-                                monitors
-                                  .filter((item) => item.targetID === hostID)
-                                  .map((item) => resourceKey(item.resource)),
+                                workspaceMembers
+                                  .filter((member) => member.targetID === hostID)
+                                  .map((member) => resourceKey(member.resource)),
                               )
                             }
                             embedded
@@ -1265,7 +1311,7 @@ export default function ServiceManagerTool({
                             onSelect={(next) => {
                               setSelection(next);
                             }}
-                            monitored={monitoredByResource}
+                            workspaceKeys={workspaceMemberKeys}
                             onAction={act}
                             onWorkspaceChange={changeWorkspace}
                             busy={busy}
@@ -1290,7 +1336,7 @@ export default function ServiceManagerTool({
                   onSelect={(next) => {
                     setSelection(next);
                   }}
-                  monitored={monitoredByResource}
+                  workspaceKeys={workspaceMemberKeys}
                   onAction={act}
                   onWorkspaceChange={changeWorkspace}
                   busy={busy}
@@ -1489,7 +1535,6 @@ export default function ServiceManagerTool({
         )}
         destructive
         busy={workspaceRemoving}
-        error={workspaceRemoveError || undefined}
         onConfirm={() => void confirmWorkspaceRemove()}
       />
       <Dialog open={updateDialog !== null} onOpenChange={(open) => !open && setUpdateDialog(null)}>
@@ -1574,9 +1619,9 @@ export default function ServiceManagerTool({
             </Button>
             <Button
               disabled={monitorSelection.size === 0}
-              onClick={() => void confirmMonitorSelection()}
+              onClick={() => confirmMonitorSelection()}
             >
-              {t('serviceManagerTool.monitor')}
+              {t('serviceManagerTool.addToWorkspace')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1595,7 +1640,7 @@ function ResourceList({
   search,
   selection,
   onSelect,
-  monitored,
+  workspaceKeys,
   onAction,
   onWorkspaceChange,
   busy,
@@ -1610,7 +1655,7 @@ function ResourceList({
   search: string;
   selection: Selection | null;
   onSelect: (next: Selection) => void;
-  monitored: Map<string, LogMonitor>;
+  workspaceKeys: Set<string>;
   onAction: (targetID: string, resource: ServiceResourceRef, action: string) => void;
   onWorkspaceChange: (targetID: string, resource: ServiceResourceRef) => void;
   busy: string;
@@ -1647,7 +1692,7 @@ function ResourceList({
       selection &&
       selection.targetID === targetID &&
       resourceKey(selection.resource) === resourceKey(resource);
-    const monitor = monitored.get(`${targetID}|${resourceKey(resource)}`);
+    const member = workspaceKeys.has(`${targetID}|${resourceKey(resource)}`);
     const running = ['running', 'online', 'active'].includes(status.toLowerCase());
     const actions = [running ? 'stop' : 'start', 'restart'];
     if (resource.runtime === 'systemd') actions.push('disable', 'disable-now');
@@ -1699,9 +1744,9 @@ function ResourceList({
               disabled={busy.startsWith(`${targetID}|${resourceKey(resource)}:`)}
               onClick={() => onWorkspaceChange(targetID, resource)}
             >
-              {monitor ? <Trash size={14} weight="duotone" /> : <Plus size={14} weight="duotone" />}
+              {member ? <Trash size={14} weight="duotone" /> : <Plus size={14} weight="duotone" />}
               {t(
-                monitor
+                member
                   ? 'serviceManagerTool.removeFromWorkspace'
                   : 'serviceManagerTool.addToWorkspace',
               )}
@@ -1788,7 +1833,7 @@ function ResourceList({
               ))}
               <ContextMenuItem onClick={() => onWorkspaceChange(targetID, resource)}>
                 {visibleContainers.some((container) =>
-                  monitored.has(
+                  workspaceKeys.has(
                     `${targetID}|${resourceKey({ runtime: 'docker', id: container.id })}`,
                   ),
                 ) ? (
@@ -1798,7 +1843,7 @@ function ResourceList({
                 )}
                 {t(
                   visibleContainers.some((container) =>
-                    monitored.has(
+                    workspaceKeys.has(
                       `${targetID}|${resourceKey({ runtime: 'docker', id: container.id })}`,
                     ),
                   )
@@ -2044,7 +2089,7 @@ function ResourcePanel({
           <TabsList>
             <TabsTrigger value="info">{t('serviceManagerTool.detailTabs.info')}</TabsTrigger>
             <TabsTrigger value="performance">
-              {t('serviceManagerTool.detailTabs.performance')}
+              {t('serviceManagerTool.detailTabs.metrics')}
             </TabsTrigger>
             <TabsTrigger value="logs">{t('serviceManagerTool.detailTabs.logs')}</TabsTrigger>
           </TabsList>
