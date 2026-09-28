@@ -6,7 +6,7 @@ require (
 	github.com/google/go-containerregistry v0.22.1
 	github.com/leaanthony/dmg v0.0.0-20260731074841-5c28840cf819
 	github.com/pkg/sftp v1.13.11
-	github.com/wailsapp/wails/v3 v3.0.0-beta.23
+	github.com/wailsapp/wails/v3 v3.0.0-beta.26
 )
 
 require (
@@ -17,11 +17,11 @@ require (
 require (
 	github.com/adrg/xdg v0.5.3 // indirect
 	github.com/coder/websocket v1.8.15 // indirect
-	github.com/docker/cli v29.8.0+incompatible // indirect
+	github.com/docker/cli v29.8.1+incompatible // indirect
 	github.com/docker/docker-credential-helpers v0.9.9 // indirect
 	github.com/go-ole/go-ole v1.3.0 // indirect
 	github.com/godbus/dbus/v5 v5.2.2 // indirect
-	github.com/klauspost/compress v1.20.0 // indirect
+	github.com/klauspost/compress v1.20.1 // indirect
 	github.com/mattn/go-colorable v0.1.15 // indirect
 	github.com/mattn/go-isatty v0.0.24 // indirect
 	github.com/opencontainers/go-digest v1.0.0 // indirect

@@ -4,6 +4,8 @@ github.com/coder/websocket v1.8.15 h1:6B2JPeOGlpff2Uz6vOEH1Vzpi0iUz20A+lPVhPHtNU
 github.com/coder/websocket v1.8.15/go.mod h1:NX3SzP+inril6yawo5CQXx8+fk145lPDC6pumgx0mVg=
 github.com/docker/cli v29.8.0+incompatible h1:ih0c2jq/nN7QfES8zIfwSzIhRScjs4ehER+kZ60aeSk=
 github.com/docker/cli v29.8.0+incompatible/go.mod h1:JLrzqnKDaYBop7H2jaqPtU4hHvMKP+vjCwu2uszcLI8=
+github.com/docker/cli v29.8.1+incompatible h1:qYL1bCp6cRw2SB1xmLlIOPyV171dilw9W2Jew38vy9c=
+github.com/docker/cli v29.8.1+incompatible/go.mod h1:JLrzqnKDaYBop7H2jaqPtU4hHvMKP+vjCwu2uszcLI8=
 github.com/docker/docker-credential-helpers v0.9.9 h1:BkydjIgZ46JnDbqyM2p2fc63KMw6y+KHL3Em/2AGJ7w=
 github.com/docker/docker-credential-helpers v0.9.9/go.mod h1:v1S+hepowrQXITkEfw6o4+BMbGot02wiKpzWhGUZK6c=
 github.com/go-json-experiment/json v0.0.0-20251027170946-4849db3c2f7e h1:Lf/gRkoycfOBPa42vU2bbgPurFong6zXeFtPoxholzU=
@@ -19,6 +21,8 @@ github.com/google/go-containerregistry v0.22.1/go.mod h1:bJR35SK8XgisYmhg/FMQ/5R
 github.com/jessevdk/go-flags v1.4.0/go.mod h1:4FA24M0QyGHXBuZZK/XkWh8h0e1EYbRYJSGM75WSRxI=
 github.com/klauspost/compress v1.20.0 h1:a3C1ke2ohxFymNlb2HWAHjDeKCI90scRskErZkR0ezA=
 github.com/klauspost/compress v1.20.0/go.mod h1:LUdAzn7YLVvxLpc7y3V1m40wESHTgc1422pwwBSKYuI=
+github.com/klauspost/compress v1.20.1 h1:T7kKElXUMXrUJ2E9QhQhxFtcK5rPyLdsGZvdbLMPdiQ=
+github.com/klauspost/compress v1.20.1/go.mod h1:LUdAzn7YLVvxLpc7y3V1m40wESHTgc1422pwwBSKYuI=
 github.com/kr/fs v0.1.0 h1:Jskdu9ieNAYnjxsi0LbQp1ulIKZV1LAFgK1tWhpZgl8=
 github.com/kr/fs v0.1.0/go.mod h1:FFnZGqtBN9Gxj7eW1uZ42v5BccTP0vu6NEaFoC2HwRg=
 github.com/leaanthony/dmg v0.0.0-20260731074841-5c28840cf819 h1:XuDsI+4yv48FxBG5TetpcqLkIsvJP4G94BNbfQB8G0s=
@@ -41,6 +45,8 @@ github.com/stretchr/testify v1.12.1 h1:EuwCh5fleGS7H32xRwO3wRGT7DxrDhLAT6FF8MpWD
 github.com/stretchr/testify v1.12.1/go.mod h1:MDEgiDPPsNp5cuIrHPPCyornHKgEVbtFUmoNlxoYthg=
 github.com/wailsapp/wails/v3 v3.0.0-beta.23 h1:kr2HH5F39pyBFF8lWI1ZtueEuwJGXxWVUAFcIEDIL9E=
 github.com/wailsapp/wails/v3 v3.0.0-beta.23/go.mod h1:/6QR46/nhGCSADHbS++XtDb9dkTnenTHlGskTPRo9S0=
+github.com/wailsapp/wails/v3 v3.0.0-beta.26 h1:Cs7E3wSD6kouJGDzbbvqeFBIbNOzuUMjf0kto3/a7Oc=
+github.com/wailsapp/wails/v3 v3.0.0-beta.26/go.mod h1:5DR/EG5FHU8+BNV7tQYQ/rJMjoFsVlYpM+0gp1+gcTI=
 go.yaml.in/yaml/v3 v3.0.5 h1:N6y/pJk8buWs9NY5ERU2HSMfm+IuD/OtfdAnq6kESPw=
 go.yaml.in/yaml/v3 v3.0.5/go.mod h1:HVTZu1O7/Vkt2N+BFy8Zza+lnLsABggaTM2ZpNIGuKg=
 golang.org/x/crypto v0.57.0 h1:3ZVCjf8Ggz7zneR/EHRVx68Ctf+2pmIMP2UFhh9cC6M=
