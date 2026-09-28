@@ -7,6 +7,7 @@ import {
   Asterisk,
   CaretDown,
   CodeSimple,
+  Copy,
   Eraser,
   GearSix,
   ListBullets,
@@ -65,6 +66,7 @@ import {
   ContextMenuContent,
   ContextMenuGroup,
   ContextMenuItem,
+  ContextMenuSeparator,
   ContextMenuTrigger,
 } from './ui/context-menu';
 import { ScrollArea } from './ui/scroll-area';
@@ -1695,11 +1697,21 @@ function ResourceList({
       </div>
     );
   const match = (name: string) => !search || name.toLowerCase().includes(search);
+  const copyText = async (value: string) => {
+    try {
+      if (!navigator.clipboard) throw new Error('clipboard unavailable');
+      await navigator.clipboard.writeText(value);
+      toast.add({ title: t('serviceManagerTool.copiedToClipboard'), type: 'success' });
+    } catch {
+      toast.add({ title: t('serviceManagerTool.copyFailed'), type: 'error' });
+    }
+  };
   const row = (
     resource: ServiceResourceRef,
     kind: Selection['kind'],
     status: string,
     description = '',
+    image = '',
   ) => {
     if (allowed && !allowed.has(resourceKey(resource))) return null;
     if (!match(resource.name || resource.id)) return null;
@@ -1768,6 +1780,25 @@ function ResourceList({
               )}
             </ContextMenuItem>
           </ContextMenuGroup>
+          {resource.runtime === 'docker' ? (
+            <>
+              <ContextMenuSeparator />
+              <ContextMenuGroup>
+                <ContextMenuItem onClick={() => void copyText(resource.id)}>
+                  <Copy size={14} weight="duotone" />
+                  {t('serviceManagerTool.copyId')}
+                </ContextMenuItem>
+                <ContextMenuItem onClick={() => void copyText(resource.name || resource.id)}>
+                  <Copy size={14} weight="duotone" />
+                  {t('serviceManagerTool.copyName')}
+                </ContextMenuItem>
+                <ContextMenuItem disabled={!image} onClick={() => void copyText(image)}>
+                  <Copy size={14} weight="duotone" />
+                  {t('serviceManagerTool.copyImage')}
+                </ContextMenuItem>
+              </ContextMenuGroup>
+            </>
+          ) : null}
         </ContextMenuContent>
       </ContextMenu>
     );
@@ -1886,6 +1917,7 @@ function ResourceList({
                 'container',
                 container.status,
                 container.image,
+                container.image,
               ),
             )}
       </div>
@@ -1929,6 +1961,7 @@ function ResourceList({
                       { runtime: 'docker', id: container.id, name: container.name },
                       'container',
                       container.status,
+                      container.image,
                       container.image,
                     ),
                   )}
