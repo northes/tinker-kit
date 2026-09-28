@@ -93,6 +93,7 @@ func main() {
 	fileService := NewFileService(cfgService)
 	imageService := NewImageService(cfgService)
 	serviceManagerService := NewServiceManagerService(cfgService)
+	portService := NewPortService(cfgService)
 	jsonPipelineService := NewJSONPipelineService()
 	dockService := dock.New()
 	isQuitting := false
@@ -111,6 +112,7 @@ func main() {
 			application.NewService(fileService),
 			application.NewService(imageService),
 			application.NewService(serviceManagerService),
+			application.NewService(portService),
 			application.NewService(jsonPipelineService),
 			application.NewService(dockService),
 		},
@@ -153,6 +155,7 @@ func main() {
 	app.OnShutdown(updateService.stopScheduler)
 	app.OnShutdown(imageService.shutdown)
 	app.OnShutdown(serviceManagerService.shutdown)
+	app.OnShutdown(portService.shutdown)
 	app.OnShutdown(jsonPipelineService.shutdown)
 
 	window := app.Window.NewWithOptions(application.WebviewWindowOptions{

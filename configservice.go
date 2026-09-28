@@ -51,7 +51,7 @@ type SidebarToolConfig struct {
 	Enabled bool   `json:"enabled"`
 }
 
-var defaultSidebarToolIDs = []string{"json", "time", "text", "base64", "jwt", "url", "qrcode", "image", "diff", "text-generator", "image-manager", "ssh-files", "service-manager"}
+var defaultSidebarToolIDs = []string{"json", "time", "text", "base64", "jwt", "url", "qrcode", "image", "diff", "text-generator", "image-manager", "ssh-files", "service-manager", "ports"}
 
 type TextGeneratorSource struct {
 	ID      string `json:"id"`

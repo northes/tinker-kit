@@ -32,7 +32,8 @@ export type ToolId =
   | 'image'
   | 'image-manager'
   | 'service-manager'
-  | 'ssh-files';
+  | 'ssh-files'
+  | 'ports';
 export type PendingAction = {
   tool: ToolId;
   action: string;

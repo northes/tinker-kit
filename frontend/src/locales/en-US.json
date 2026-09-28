@@ -108,6 +108,10 @@
     "ssh-files": {
       "name": "SSH Files",
       "description": "Browse, upload, and download SSH files"
+    },
+    "ports": {
+      "name": "Ports",
+      "description": "Inspect local and remote ports and manage SSH forwarding"
     }
   },
   "commands": {
@@ -127,7 +131,8 @@
     "toggleSchema": "Toggle Schema",
     "togglePipeline": "Toggle pipeline",
     "toggleAutoFormatOnFill": "Toggle auto-format on fill",
-    "paste": "Paste"
+    "paste": "Paste",
+    "openPorts": "Open ports"
   },
   "jsonTool": {
     "title": "JSON Workspace",
@@ -1999,6 +2004,74 @@
       "imageSourceProfileMissing": "Image source (item {{index}}) references a non-existent SSH profile",
       "fileSourceProfileMissing": "File source (item {{index}}) references a non-existent SSH profile",
       "serviceTargetProfileMissing": "Service target (item {{index}}) references a non-existent SSH profile"
+    },
+    "port": {
+      "configUnavailable": "SSH configuration is unavailable",
+      "profileNotFound": "SSH profile not found",
+      "invalidForward": "Invalid port forward settings",
+      "forwardNotFound": "Port forward not found",
+      "scanFailed": "Port scan failed: {{detail}}"
     }
+  },
+  "portTool": {
+    "search": "Search",
+    "searchPortsPlaceholder": "Type and press Enter to search ports, processes, or paths",
+    "searchForwardsPlaceholder": "Type and press Enter to search forwards",
+    "allProtocols": "All protocols",
+    "allUsers": "All users",
+    "unknownUser": "Unknown user",
+    "allDirections": "All directions",
+    "allStatuses": "All statuses",
+    "allHosts": "All hosts",
+    "results": "{{matched}} / {{total}} items",
+    "noMatches": "No matching results",
+    "sortBy": "Sort by {{column}}: {{direction}}",
+    "sortAscending": "Ascending",
+    "sortDescending": "Descending",
+    "sortNotActive": "Not sorted",
+    "title": "Ports",
+    "subtitle": "Inspect port usage and manage SSH port forwarding",
+    "source": "Host",
+    "local": "Local",
+    "remote": "Remote",
+    "localForward": "Local to remote",
+    "remoteForward": "Remote to local",
+    "manageSSH": "Manage SSH",
+    "refresh": "Refresh",
+    "ports": "Port usage",
+    "forwards": "Port forwarding",
+    "port": "Port",
+    "address": "Address",
+    "protocol": "Protocol",
+    "pid": "PID",
+    "name": "Process",
+    "user": "User",
+    "path": "Process path",
+    "parentPID": "Parent PID",
+    "parentPath": "Parent path",
+    "emptyPorts": "No visible ports found",
+    "loading": "Scanning ports…",
+    "emptyForwards": "No port forwards yet",
+    "direction": "Direction",
+    "listen": "Listen address",
+    "target": "Target address",
+    "status": "Status",
+    "retries": "Reconnects",
+    "action": "Action",
+    "add": "Add forward",
+    "stop": "Stop",
+    "actions": "Port actions",
+    "forwardHint": "Local: listen here and reach the target remotely. Remote: listen remotely and reach the target here. Reconnects up to five times.",
+    "listenHost": "Listen host",
+    "listenPort": "Listen port",
+    "targetHost": "Target host",
+    "targetPort": "Target port",
+    "cancel": "Cancel",
+    "connected": "Connected",
+    "connecting": "Connecting",
+    "reconnecting": "Reconnecting",
+    "failed": "Reconnect failed",
+    "stopConfirmTitle": "Stop port forwarding?",
+    "stopConfirmDescription": "This closes the forward listening on {{listen}}."
   }
 }

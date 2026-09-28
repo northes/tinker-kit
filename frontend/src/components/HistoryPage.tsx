@@ -22,6 +22,7 @@ import {
   HashStraight,
   HardDrives,
   FolderSimple,
+  Plugs,
   Image as ImageIcon,
   Key,
   LinkSimple,
@@ -64,7 +65,8 @@ export function toHistoryItem(item: StoredHistoryItem): HistoryItem | null {
     item.tool === 'image' ||
     item.tool === 'image-manager' ||
     item.tool === 'service-manager' ||
-    item.tool === 'ssh-files'
+    item.tool === 'ssh-files' ||
+    item.tool === 'ports'
     ? { ...item, tool: item.tool, detail: normalizeHistoryDetail(item.detail) }
     : null;
 }
@@ -109,6 +111,8 @@ export function HistoryIcon({ tool }: { tool: ToolId }) {
     <Package weight="duotone" />
   ) : tool === 'service-manager' ? (
     <HardDrives weight="duotone" />
+  ) : tool === 'ports' ? (
+    <Plugs weight="duotone" />
   ) : tool === 'ssh-files' ? (
     <FolderSimple weight="duotone" />
   ) : (
@@ -171,6 +175,7 @@ const historyTools: Array<{ id: ToolId; nameKey: string }> = (
     'image-manager',
     'service-manager',
     'ssh-files',
+    'ports',
   ] as const
 ).map((id) => ({ id, nameKey: `tools.${id}.name` }));
 

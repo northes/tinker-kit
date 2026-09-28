@@ -403,6 +403,40 @@ export interface PipelineTablePage {
     "invalid": boolean;
 }
 
+export interface PortEntry {
+    "port": number;
+    "address": string;
+    "protocol": string;
+    "pid": number;
+    "name": string;
+    "user": string;
+    "path": string;
+    "parentPID": number;
+    "parentPath": string;
+}
+
+export interface PortForward {
+    "id": string;
+    "profileID": string;
+    "direction": string;
+    "listenHost": string;
+    "listenPort": number;
+    "targetHost": string;
+    "targetPort": number;
+    "status": string;
+    "retries": number;
+    "error"?: string;
+}
+
+export interface PortForwardRequest {
+    "profileID": string;
+    "direction": string;
+    "listenHost": string;
+    "listenPort": number;
+    "targetHost": string;
+    "targetPort": number;
+}
+
 export interface QueryLogBufferRequest {
     "monitorIDs": string[] | null;
     "filter": ServiceLogFilter;

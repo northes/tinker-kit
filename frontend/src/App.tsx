@@ -73,6 +73,7 @@ import {
   Package,
   QrCode,
   FolderSimple,
+  Plugs,
   SidebarSimple,
   TextAa,
   TextT,
@@ -230,6 +231,7 @@ const defaultSettings: Settings = {
     { id: 'image-manager', enabled: true },
     { id: 'ssh-files', enabled: true },
     { id: 'service-manager', enabled: true },
+    { id: 'ports', enabled: true },
   ],
   themeMode: 'dark',
   lightTheme: 'default-light',
@@ -286,6 +288,7 @@ const ImageManagerTool = lazy(() => import('./components/ImageManagerTool'));
 const ImageManagerDetailPage = lazy(() => import('./components/ImageManagerDetailPage'));
 const ServiceManagerTool = lazy(() => import('./components/ServiceManagerTool'));
 const SshFilesTool = lazy(() => import('./components/SshFilesTool'));
+const PortTool = lazy(() => import('./components/PortTool'));
 const SettingsPage = lazy(() => import('./components/SettingsPage'));
 const HistoryPage = lazy(() => import('./components/HistoryPage'));
 const tools: ToolDefinition[] = [
@@ -374,6 +377,13 @@ const tools: ToolDefinition[] = [
     descriptionKey: 'tools.service-manager.description',
     icon: HardDrives,
     keywords: 'docker compose container pm2 systemd service ssh 日志 容器 服务 管理',
+  },
+  {
+    id: 'ports' as const,
+    nameKey: 'tools.ports.name',
+    descriptionKey: 'tools.ports.description',
+    icon: Plugs,
+    keywords: 'port process pid ssh tunnel forward 端口 进程 转发',
   },
   {
     id: 'ssh-files' as const,
@@ -488,6 +498,14 @@ const paletteItems: PaletteItem[] = [
     icon: HardDrives,
     keywords: 'docker compose container pm2 systemd ssh 服务 容器 日志 打开工具',
     page: 'service-manager',
+  },
+  {
+    id: 'open:ports',
+    labelKey: 'commands.openPorts',
+    groupKey: 'groups.tools',
+    icon: Plugs,
+    keywords: 'port process ssh forward 端口 进程 转发 打开工具',
+    page: 'ports',
   },
   {
     id: 'open:ssh-files',
@@ -2089,6 +2107,13 @@ function AppShell() {
               {visited.has('service-manager') && (
                 <Suspense fallback={null}>
                   <ServiceManagerTool active={page === 'service-manager'} record={record} />
+                </Suspense>
+              )}
+            </div>
+            <div className={toolSlotClass(page === 'ports')}>
+              {visited.has('ports') && (
+                <Suspense fallback={null}>
+                  <PortTool active={page === 'ports'} />
                 </Suspense>
               )}
             </div>

@@ -108,6 +108,10 @@
     "ssh-files": {
       "name": "SSH 文件管理",
       "description": "浏览、上传和下载 SSH 文件"
+    },
+    "ports": {
+      "name": "端口工具",
+      "description": "检查本地与远程端口，管理 SSH 端口转发"
     }
   },
   "commands": {
@@ -127,7 +131,8 @@
     "toggleSchema": "切换 Schema",
     "togglePipeline": "切换流水线",
     "toggleAutoFormatOnFill": "切换填入后自动格式化",
-    "paste": "粘贴"
+    "paste": "粘贴",
+    "openPorts": "打开端口工具"
   },
   "jsonTool": {
     "title": "JSON 工作区",
@@ -1999,6 +2004,74 @@
       "imageSourceProfileMissing": "镜像来源（第 {{index}} 项）引用的 SSH 配置不存在",
       "fileSourceProfileMissing": "文件来源（第 {{index}} 项）引用的 SSH 配置不存在",
       "serviceTargetProfileMissing": "服务目标（第 {{index}} 项）引用的 SSH 配置不存在"
+    },
+    "port": {
+      "configUnavailable": "SSH 配置不可用",
+      "profileNotFound": "SSH 配置不存在",
+      "invalidForward": "端口转发参数无效",
+      "forwardNotFound": "端口转发不存在",
+      "scanFailed": "端口扫描失败：{{detail}}"
     }
+  },
+  "portTool": {
+    "search": "搜索",
+    "searchPortsPlaceholder": "输入后按回车搜索端口、进程或路径",
+    "searchForwardsPlaceholder": "输入后按回车搜索转发规则",
+    "allProtocols": "全部协议",
+    "allUsers": "全部用户",
+    "unknownUser": "未知用户",
+    "allDirections": "全部方向",
+    "allStatuses": "全部状态",
+    "allHosts": "全部主机",
+    "results": "{{matched}} / {{total}} 项",
+    "noMatches": "没有符合条件的结果",
+    "sortBy": "按{{column}}排序：{{direction}}",
+    "sortAscending": "升序",
+    "sortDescending": "降序",
+    "sortNotActive": "未排序",
+    "title": "端口工具",
+    "subtitle": "查看端口占用并维护 SSH 端口转发",
+    "source": "主机",
+    "local": "本地",
+    "remote": "远程",
+    "localForward": "本地转发到远程",
+    "remoteForward": "远程转发到本地",
+    "manageSSH": "管理 SSH",
+    "refresh": "刷新",
+    "ports": "端口占用",
+    "forwards": "端口转发",
+    "port": "端口",
+    "address": "地址",
+    "protocol": "协议",
+    "pid": "PID",
+    "name": "进程名称",
+    "user": "用户",
+    "path": "进程路径",
+    "parentPID": "父进程 PID",
+    "parentPath": "父进程路径",
+    "emptyPorts": "没有发现可见的端口",
+    "loading": "正在扫描端口…",
+    "emptyForwards": "尚无端口转发",
+    "direction": "方向",
+    "listen": "监听地址",
+    "target": "目标地址",
+    "status": "状态",
+    "retries": "重连次数",
+    "action": "操作",
+    "add": "新增转发",
+    "stop": "停止",
+    "actions": "端口操作",
+    "forwardHint": "本地转发：本机监听，远程访问目标。远程转发：远程监听，本机访问目标。连接断开后最多重连 5 次。",
+    "listenHost": "监听主机",
+    "listenPort": "监听端口",
+    "targetHost": "目标主机",
+    "targetPort": "目标端口",
+    "cancel": "取消",
+    "connected": "已连接",
+    "connecting": "连接中",
+    "reconnecting": "重连中",
+    "failed": "重连失败",
+    "stopConfirmTitle": "停止端口转发？",
+    "stopConfirmDescription": "将关闭 {{listen}} 上的转发连接。"
   }
 }
