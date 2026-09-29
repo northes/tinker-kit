@@ -62,8 +62,8 @@
       "description": "Format, minify and inspect paths"
     },
     "time": {
-      "name": "Time Converter",
-      "description": "Unix, UTC, RFC3339, ISO 8601 and date calculations"
+      "name": "Time Tools",
+      "description": "Convert times, calculate dates, and view real time"
     },
     "text": {
       "name": "Text Toolkit",
@@ -116,7 +116,7 @@
   },
   "commands": {
     "openJson": "Open JSON tool",
-    "openTime": "Open time converter",
+    "openTime": "Open time tools",
     "openText": "Open text tool",
     "openTextGenerator": "Open text generator",
     "openBase64": "Open Base64",
@@ -339,13 +339,39 @@
       "noKeyAt": "No key {{key}} at this position",
       "keyNotFound": "Key {{key}} not found",
       "pathNotFound": "Path not found"
-    }
+    },
+    "showInvisibleChars": "Show invisible characters"
   },
   "timeTool": {
-    "title": "Time Converter",
+    "title": "Time Tools",
+    "realTime": {
+      "sync": {
+        "syncing": "Syncing NTP time…",
+        "synced": "Real time synchronized",
+        "error": "NTP unavailable. Select sync to retry."
+      },
+      "addZone": "Add time zone",
+      "selectZone": "Select time zone",
+      "add": "Add",
+      "alreadyAdded": "Shown",
+      "syncNow": "Sync NTP time now",
+      "waiting": "Waiting for NTP synchronization",
+      "timeZone": "Time zone",
+      "dragZone": "Drag to reorder {{zone}}",
+      "sortHint": "Drag a time zone handle to reorder. Keyboard: focus a handle, press Space, then use the arrow keys. Scroll sideways for more.",
+      "remove": "Remove time",
+      "removeZone": "Remove {{zone}}",
+      "removeDescription": "The real-time clock for {{zone}} will be removed from this view.",
+      "locate": "Locate {{zone}} on the map",
+      "mapHint": "Time zone map (unmapped zones use offset)",
+      "mapDescription": "Flat world map. Drag or click to preview the time zone of the nearest representative city. Unmapped zones are marked at the equator using a fixed UTC offset and do not represent their actual location. Use the full time zone search above as a keyboard alternative.",
+      "mapSelectHint": "Click or drag the map to preview the nearest representative city time zone, then add it to the clock list.",
+      "mapCandidate": "Map candidate: {{zone}}"
+    },
     "modes": {
       "convert": "Convert",
-      "dateCalculator": "Date calculator"
+      "dateCalculator": "Date calculator",
+      "realTime": "Real time"
     },
     "input": "Input",
     "placeholder": "Timestamp or date",

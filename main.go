@@ -95,6 +95,7 @@ func main() {
 	serviceManagerService := NewServiceManagerService(cfgService)
 	portService := NewPortService(cfgService)
 	jsonPipelineService := NewJSONPipelineService()
+	realTimeService := NewRealTimeService()
 	dockService := dock.New()
 	isQuitting := false
 	app := application.New(application.Options{
@@ -114,6 +115,7 @@ func main() {
 			application.NewService(serviceManagerService),
 			application.NewService(portService),
 			application.NewService(jsonPipelineService),
+			application.NewService(realTimeService),
 			application.NewService(dockService),
 		},
 		Mac: application.MacOptions{

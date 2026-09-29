@@ -62,8 +62,8 @@
       "description": "格式化、压缩并检查路径"
     },
     "time": {
-      "name": "时间转换器",
-      "description": "Unix、UTC、RFC3339、ISO 8601 与日期计算"
+      "name": "时间工具",
+      "description": "转换时间、计算日期并查看真实时间"
     },
     "text": {
       "name": "文本工具集",
@@ -116,7 +116,7 @@
   },
   "commands": {
     "openJson": "打开 JSON 工具",
-    "openTime": "打开时间转换",
+    "openTime": "打开时间工具",
     "openText": "打开文本工具",
     "openTextGenerator": "打开文本生成",
     "openBase64": "打开 Base64 工具",
@@ -339,13 +339,39 @@
       "noKeyAt": "该位置没有键 {{key}}",
       "keyNotFound": "找不到键 {{key}}",
       "pathNotFound": "路径未找到"
-    }
+    },
+    "showInvisibleChars": "显示不可见字符"
   },
   "timeTool": {
-    "title": "时间转换器",
+    "title": "时间工具",
+    "realTime": {
+      "sync": {
+        "syncing": "正在同步 NTP 时间…",
+        "synced": "已同步真实时间",
+        "error": "NTP 暂不可用，点击同步重试"
+      },
+      "addZone": "添加时区",
+      "selectZone": "选择时区",
+      "add": "添加",
+      "alreadyAdded": "已显示",
+      "syncNow": "立即同步 NTP 时间",
+      "waiting": "等待 NTP 校时",
+      "timeZone": "时区",
+      "dragZone": "拖动排序 {{zone}}",
+      "sortHint": "拖动时区手柄排序；也可聚焦手柄后按空格键，再用方向键调整。横向滚动查看更多。",
+      "remove": "移除时间",
+      "removeZone": "移除 {{zone}}",
+      "removeDescription": "{{zone}} 的实时时钟将从当前视图中移除。",
+      "locate": "在地图上定位 {{zone}}",
+      "mapHint": "时区示意（未映射项按偏移放置）",
+      "mapDescription": "平面世界地图。拖动或点击地图预览附近代表城市的时区；未映射的时区按固定 UTC 偏移标记在赤道，不代表实际地理位置。可用上方完整时区搜索替代。",
+      "mapSelectHint": "点击或拖动地图预览最近代表城市的时区，再添加到时钟列表。",
+      "mapCandidate": "地图候选：{{zone}}"
+    },
     "modes": {
       "convert": "时间转换",
-      "dateCalculator": "日期计算"
+      "dateCalculator": "日期计算",
+      "realTime": "真实时间"
     },
     "input": "输入",
     "placeholder": "时间戳或日期",

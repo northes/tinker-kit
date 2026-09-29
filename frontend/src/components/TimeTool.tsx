@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useId, useMemo, useRef, useState } from 'react';
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { format } from 'date-fns';
 import { enUS, zhCN } from 'date-fns/locale';
@@ -26,7 +26,6 @@ import {
   Eye,
   EyeClosed,
   GpsFix,
-  Globe,
 } from '@phosphor-icons/react';
 import { Button } from './ui/button';
 import { ButtonGroup } from './ui/button-group';
@@ -45,16 +44,6 @@ import { Separator } from './ui/separator';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
 import {
-  Combobox,
-  ComboboxContent,
-  ComboboxEmpty,
-  ComboboxInput,
-  ComboboxItem,
-  ComboboxList,
-  ComboboxTrigger,
-  ComboboxValue,
-} from './ui/combobox';
-import {
   Reveal,
   ToolLayoutContent,
   ToolLayoutHeader,
@@ -67,6 +56,8 @@ import {
 } from './shared';
 import DateCalculator, { dateCalculatorModes } from './DateCalculator';
 import DateTimePickerPopover from './DateTimePickerPopover';
+import RealTimePanel from './RealTimePanel';
+import { TimezoneCombobox } from './TimezoneCombobox';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
 import {
   formatTimeInZone,
@@ -94,7 +85,7 @@ const resultIds = [
   'unixNanoseconds',
 ] as const;
 type TimeResultId = (typeof resultIds)[number];
-type TimeToolMode = 'convert' | 'dateCalculator';
+type TimeToolMode = 'convert' | 'dateCalculator' | 'realTime';
 const timePresetGroups: Array<{ primary: TimePreset; options: TimePreset[] }> = [
   { primary: 'now', options: ['yesterday', 'tomorrow'] },
   { primary: 'sevenDaysAgo', options: [] },
@@ -125,69 +116,6 @@ function normalizeOrder(order: string[]) {
     }
   for (const id of resultIds) if (!seen.has(id)) next.push(id);
   return next;
-}
-function TimezoneCombobox({
-  value,
-  onChange,
-  zones,
-  placeholder,
-  emptyLabel,
-  label,
-}: {
-  value: string;
-  onChange: (id: string) => void;
-  zones: Array<{ id: string; label: string }>;
-  placeholder: string;
-  emptyLabel: string;
-  label: string;
-}) {
-  const labelId = useId();
-  const current = zones.find((zone) => zone.id === value);
-  return (
-    <div className="flex min-w-0 flex-1 flex-col gap-2 pt-3.5 font-mono text-[10px] font-medium uppercase tracking-[.04em] text-muted-foreground">
-      <span id={labelId}>{label}</span>
-      <Combobox
-        items={zones}
-        value={current ?? null}
-        onValueChange={(zone) => {
-          if (zone) onChange(zone.id);
-        }}
-        itemToStringValue={(zone) => zone.label}
-      >
-        <ComboboxTrigger
-          render={
-            <Button
-              variant="ghost"
-              className="h-[46px] w-full justify-between rounded-lg border border-border bg-card px-3.5 text-[13px] font-normal"
-              aria-labelledby={labelId}
-            />
-          }
-        >
-          <span className="flex min-w-0 items-center gap-2.5">
-            <Globe data-icon="inline-start" size={18} weight="duotone" />
-            <span className="min-w-0 truncate">
-              <ComboboxValue placeholder={placeholder} />
-            </span>
-          </span>
-        </ComboboxTrigger>
-        <ComboboxContent className="min-w-(--anchor-width)">
-          <ComboboxInput
-            inputClassName="select-text"
-            showTrigger={false}
-            placeholder={placeholder}
-          />
-          <ComboboxEmpty>{emptyLabel}</ComboboxEmpty>
-          <ComboboxList>
-            {(zone) => (
-              <ComboboxItem key={zone.id} value={zone}>
-                {zone.label}
-              </ComboboxItem>
-            )}
-          </ComboboxList>
-        </ComboboxContent>
-      </Combobox>
-    </div>
-  );
 }
 function zonedParts(date: Date, timeZone: string) {
   const parts = new Intl.DateTimeFormat('en-CA', {
@@ -427,13 +355,15 @@ export default function TimeTool({
           <Tabs
             value={mode}
             onValueChange={(value) => {
-              if (value === 'convert' || value === 'dateCalculator') setMode(value);
+              if (value === 'convert' || value === 'dateCalculator' || value === 'realTime')
+                setMode(value);
             }}
             className="h-full min-h-0 gap-3"
           >
             <TabsList className="w-full">
               <TabsTrigger value="convert">{t('timeTool.modes.convert')}</TabsTrigger>
               <TabsTrigger value="dateCalculator">{t('timeTool.modes.dateCalculator')}</TabsTrigger>
+              <TabsTrigger value="realTime">{t('timeTool.modes.realTime')}</TabsTrigger>
             </TabsList>
             <TabsContent value="convert" keepMounted className="min-h-0 overflow-hidden">
               <div className="grid h-full min-h-0 grid-rows-[auto_auto_auto_auto_minmax(0,1fr)] px-1.5">
@@ -648,7 +578,10 @@ export default function TimeTool({
               </div>
             </TabsContent>
             <TabsContent value="dateCalculator" keepMounted className="min-h-0 min-w-0">
-              <ScrollArea className="h-full [padding-inline-end:var(--overlay-scrollbar-size)]" options={{ overflow: { x: 'hidden' } }}>
+              <ScrollArea
+                className="h-full [padding-inline-end:var(--overlay-scrollbar-size)]"
+                options={{ overflow: { x: 'hidden' } }}
+              >
                 <DateCalculator
                   record={record}
                   pending={pending}
@@ -656,6 +589,9 @@ export default function TimeTool({
                   onActivate={() => setMode('dateCalculator')}
                 />
               </ScrollArea>
+            </TabsContent>
+            <TabsContent value="realTime" keepMounted className="min-h-0 overflow-hidden">
+              <RealTimePanel />
             </TabsContent>
           </Tabs>
         </ToolLayoutContent>
