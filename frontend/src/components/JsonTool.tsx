@@ -38,7 +38,18 @@ import { json5 } from 'codemirror-json5';
 import { xml } from '@codemirror/lang-xml';
 import { yaml } from '@codemirror/lang-yaml';
 import { codeFolding, syntaxTree } from '@codemirror/language';
-import { EditorView, keymap } from '@codemirror/view';
+import {
+  Decoration,
+  EditorView,
+  keymap,
+  ViewPlugin,
+  highlightSpecialChars,
+  highlightWhitespace,
+  type DecorationSet,
+  type ViewUpdate,
+  WidgetType,
+} from '@codemirror/view';
+import { RangeSetBuilder } from '@codemirror/state';
 import { acceptCompletion } from '@codemirror/autocomplete';
 import { SaveText } from '../../bindings/changeme/fileservice';
 import { JSON_CONVERT_FORMATS, type JsonConvertFormat } from '../lib/json-converter';
@@ -318,6 +329,70 @@ function tryAutoFormat(src: string) {
 }
 const json5Language = json5();
 
+class NewlineMarker extends WidgetType {
+  toDOM() {
+    const marker = document.createElement('span');
+    marker.className = 'json-newline-marker';
+    marker.textContent = '↵';
+    marker.setAttribute('aria-hidden', 'true');
+    marker.style.color = 'var(--muted-foreground)';
+    marker.style.opacity = '0.65';
+    marker.style.userSelect = 'none';
+    marker.style.pointerEvents = 'none';
+    marker.style.paddingInline = '2px';
+    return marker;
+  }
+}
+
+const newlineMarker = new NewlineMarker();
+const invisibleCharTheme = EditorView.theme({
+  '.cm-highlightSpace': {
+    backgroundImage:
+      'radial-gradient(circle at 50% 55%, var(--muted-foreground) 1px, transparent 1.1px)',
+    opacity: '0.65',
+  },
+  '.cm-highlightTab': {
+    position: 'relative',
+    backgroundImage: 'none',
+    opacity: '0.65',
+    '&::after': {
+      content: '"→"',
+      position: 'absolute',
+      top: '0',
+      right: '0',
+      color: 'var(--muted-foreground)',
+      fontFamily: 'monospace',
+      fontSize: '1em',
+      lineHeight: 'inherit',
+      whiteSpace: 'pre',
+    },
+  },
+});
+const showNewlinesExtension = ViewPlugin.fromClass(
+  class {
+    decorations: DecorationSet;
+    constructor(view: EditorView) {
+      this.decorations = this.build(view);
+    }
+    update(update: ViewUpdate) {
+      if (update.docChanged || update.viewportChanged) this.decorations = this.build(update.view);
+    }
+    build(view: EditorView) {
+      const builder = new RangeSetBuilder<Decoration>();
+      for (const { from, to } of view.visibleRanges) {
+        let line = view.state.doc.lineAt(from);
+        while (line.to <= to && line.to < view.state.doc.length) {
+          builder.add(line.to, line.to, Decoration.widget({ widget: newlineMarker, side: -1 }));
+          if (line.number === view.state.doc.lines) break;
+          line = view.state.doc.line(line.number + 1);
+        }
+      }
+      return builder.finish();
+    }
+  },
+  { decorations: (plugin) => plugin.decorations },
+);
+
 function JsonEditorPane({
   label,
   value,
@@ -336,6 +411,7 @@ function JsonEditorPane({
   tablePreview,
   tableHint,
   schemaMode = false,
+  showInvisibleChars = false,
   onToggleSchema,
   schemaPreview,
   onOpenFile,
@@ -357,6 +433,7 @@ function JsonEditorPane({
   tablePreview?: ReactNode;
   tableHint?: string;
   schemaMode?: boolean;
+  showInvisibleChars?: boolean;
   onToggleSchema?: () => void;
   schemaPreview?: ReactNode;
   onOpenFile?: () => void;
@@ -418,23 +495,35 @@ function JsonEditorPane({
     [],
   );
   const extensions = useMemo(
-    () => [json5Language, foldExt, jsonFoldParseWarmup, pasteExt],
-    [foldExt, pasteExt],
+    () => [
+      json5Language,
+      foldExt,
+      jsonFoldParseWarmup,
+      pasteExt,
+      ...(showInvisibleChars
+        ? [
+            showNewlinesExtension,
+            invisibleCharTheme,
+            highlightWhitespace(),
+            highlightSpecialChars(),
+          ]
+        : []),
+    ],
+    [foldExt, pasteExt, showInvisibleChars],
   );
   return (
     <div className="json-pane flex min-h-0 min-w-0 flex-1 flex-col gap-2">
-      <span className="json-pane-label flex-none font-mono text-[10px] font-medium leading-none tracking-[.04em] text-muted-foreground uppercase">
-        {label}
-      </span>
-      <div ref={paneRef} className="json-pane-editor relative flex min-h-0 min-w-0 flex-1">
+      <div className="flex flex-none items-center justify-between gap-2">
+        <span className="json-pane-label font-mono text-[10px] font-medium leading-none tracking-[.04em] text-muted-foreground uppercase">
+          {label}
+        </span>
         {(onToggleTable || onToggleSchema) && (
-          <div className="absolute top-2 right-2 z-20 flex gap-1">
+          <div className="flex gap-1">
             {onToggleSchema && (
               <Button
                 type="button"
                 variant={schemaMode ? 'secondary' : 'ghost'}
                 size="icon-sm"
-                className="json-schema-preview-toggle"
                 aria-label={t('jsonTool.schemaPreview')}
                 title={t(schemaMode ? 'jsonTool.schemaPreviewOn' : 'jsonTool.schemaPreview')}
                 onClick={onToggleSchema}
@@ -447,7 +536,6 @@ function JsonEditorPane({
                 type="button"
                 variant={tableMode ? 'secondary' : 'ghost'}
                 size="icon-sm"
-                className="json-table-toggle"
                 disabled={tableDisabled}
                 aria-label={t('jsonTool.tablePreview')}
                 title={
@@ -462,6 +550,8 @@ function JsonEditorPane({
             )}
           </div>
         )}
+      </div>
+      <div ref={paneRef} className="json-pane-editor relative flex min-h-0 min-w-0 flex-1">
         <CodeMirror
           className={`json-cm${cmClassName ? ' ' + cmClassName : ''}`}
           height="100%"
@@ -555,6 +645,7 @@ export default function JsonTool({
   const convertMode = mode === 'convert';
   const [convertFormat, setConvertFormat] = useState<JsonConvertFormat>('yaml');
   const [input, setInput] = useState('');
+  const [showInvisibleChars, setShowInvisibleChars] = useState(false);
   const [path, setPath] = useState('$');
   const [result, setResult] = useState('');
   const [pathError, setPathError] = useState('');
@@ -1262,6 +1353,13 @@ export default function JsonTool({
                 />
                 <span>{t('jsonTool.autoFormatOnFill')}</span>
               </Label>
+              <Label className="flex h-8 flex-none items-center gap-2 border border-transparent bg-transparent py-0 pr-1.5 text-[11px] text-muted-foreground">
+                <Checkbox
+                  checked={showInvisibleChars}
+                  onCheckedChange={(checked) => setShowInvisibleChars(checked === true)}
+                />
+                <span>{t('jsonTool.showInvisibleChars')}</span>
+              </Label>
             </>
           }
           right={
@@ -1326,6 +1424,7 @@ export default function JsonTool({
                           foldExt={foldExt}
                           onCreate={(v) => views.current.set('input', v)}
                           theme={cmTheme}
+                          showInvisibleChars={showInvisibleChars}
                           emptyHint
                           cmClassName="json-input-cm"
                           formatOnPaste={autoFormatOnFill ? tryAutoFormat : undefined}

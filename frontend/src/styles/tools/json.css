@@ -20,14 +20,6 @@
   visibility: hidden;
   pointer-events: none;
 }
-.json-schema-preview-toggle,
-.json-table-toggle {
-  width: 28px;
-  min-width: 28px;
-  flex: none;
-  background: color-mix(in oklch, var(--card) 88%, transparent);
-  backdrop-filter: blur(6px);
-}
 .json-table-layer {
   position: absolute;
   inset: 0;
