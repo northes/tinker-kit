@@ -27,7 +27,11 @@ import {
 } from '../../bindings/changeme/tasknotificationservice';
 import { toast } from './ui/toast';
 import { showTaskNotificationPermissionDialog } from '../lib/task-notification-feedback';
-import { formatTaskBytes, formatTaskDuration } from '../lib/task-format';
+import {
+  estimateTaskRemainingSeconds,
+  formatTaskBytes,
+  formatTaskDuration,
+} from '../lib/task-format';
 import { formatBackendError } from '../lib/backend-error';
 import { Badge } from './ui/badge';
 import { Button } from './ui/button';
@@ -400,8 +404,8 @@ export function TaskCenter({
   const aggregateProgressPercent =
     activeTasks.length > 0 && !hasUnknown && total > 0 ? Math.min(100, totalProgress) : null;
   const remainingSeconds =
-    activeTasks.length > 0 && !hasUnknown && totalSpeed > 0
-      ? Math.ceil(Math.max(0, total - completed) / totalSpeed)
+    activeTasks.length > 0 && !hasUnknown
+      ? estimateTaskRemainingSeconds(Math.max(0, total - completed), totalSpeed)
       : null;
   const earliestTaskStart = activeTasks.reduce((earliest, task) => {
     const createdAt = Date.parse(task.createdAt);
@@ -632,8 +636,11 @@ export function TaskCenter({
                     ? `${formatTaskBytes(task.speed ?? 0)}/s`
                     : '—';
                 const remainingTaskSeconds =
-                  isActive && task.total > 0 && (task.speed ?? 0) > 0 && task.image?.type !== 'pull'
-                    ? Math.ceil(Math.max(0, task.total - task.completed) / (task.speed ?? 0))
+                  isActive && task.total > 0 && task.image?.type !== 'pull'
+                    ? estimateTaskRemainingSeconds(
+                        Math.max(0, task.total - task.completed),
+                        task.speed ?? 0,
+                      )
                     : null;
                 const percentText =
                   progress === null

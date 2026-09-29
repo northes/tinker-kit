@@ -1,4 +1,5 @@
 const byteUnits = ['B', 'KB', 'MB', 'GB', 'TB'];
+const minimumEstimableSpeed = 1;
 
 export function formatTaskBytes(bytes: number) {
   if (!Number.isFinite(bytes) || bytes <= 0) return '0 B';
@@ -22,4 +23,17 @@ export function formatTaskDuration(seconds: number) {
   return hours > 0
     ? `${hours}:${pad(minutes)}:${pad(remainingSeconds)}`
     : `${minutes}:${pad(remainingSeconds)}`;
+}
+
+export function estimateTaskRemainingSeconds(remainingBytes: number, speedBytesPerSecond: number) {
+  if (
+    !Number.isFinite(remainingBytes) ||
+    !Number.isFinite(speedBytesPerSecond) ||
+    remainingBytes < 0 ||
+    speedBytesPerSecond < minimumEstimableSpeed
+  ) {
+    return null;
+  }
+
+  return Math.ceil(remainingBytes / speedBytesPerSecond);
 }
