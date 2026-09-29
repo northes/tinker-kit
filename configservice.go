@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/url"
 	"os"
@@ -13,6 +14,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/wailsapp/wails/v3/pkg/application"
 )
 
 type Config struct {
@@ -935,6 +938,261 @@ func (s *ConfigService) ServiceName() string { return "ConfigService" }
 func (s *ConfigService) GetAppName() string  { return appName }
 func (s *ConfigService) Get() Config         { s.mu.Lock(); defer s.mu.Unlock(); return s.cfg }
 
+// ExportConfig 将当前规范化配置写入用户选择的 JSON 文件。
+func (s *ConfigService) ExportConfig() (string, error) {
+	app := application.Get()
+	if app == nil || app.Dialog == nil {
+		return "", userError("errors.common.notInitialized")
+	}
+	dialog := app.Dialog.SaveFile().SetFilename("tinkerkit-config.json").CanCreateDirectories(true).AddFilter("JSON", "*.json")
+	if window := app.Window.Current(); window != nil {
+		dialog.AttachToWindow(window)
+	}
+	path, err := dialog.PromptForSingleSelection()
+	if err != nil {
+		return "", userErrorCause("errors.config.exportFailed", err)
+	}
+	if path == "" {
+		return "", nil
+	}
+	data, err := s.exportConfigJSON()
+	if err != nil {
+		return "", userErrorCause("errors.config.exportFailed", err)
+	}
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		return "", userErrorCause("errors.config.exportFailed", err)
+	}
+	if err := os.Chmod(path, 0o600); err != nil {
+		return "", userErrorCause("errors.config.exportFailed", err)
+	}
+	return path, nil
+}
+
+func (s *ConfigService) exportConfigJSON() ([]byte, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return json.MarshalIndent(s.cfg, "", "  ")
+}
+
+// ImportConfig 选择、校验并整体替换应用配置；取消选择时返回当前配置且不产生写入。
+func (s *ConfigService) ImportConfig() (*Config, error) {
+	app := application.Get()
+	if app == nil || app.Dialog == nil {
+		return nil, userError("errors.common.notInitialized")
+	}
+	dialog := app.Dialog.OpenFile().CanChooseFiles(true).CanChooseDirectories(false).AddFilter("JSON", "*.json")
+	if window := app.Window.Current(); window != nil {
+		dialog.AttachToWindow(window)
+	}
+	path, err := dialog.PromptForSingleSelection()
+	if err != nil {
+		return nil, userErrorCause("errors.config.importFailed", err)
+	}
+	if path == "" {
+		return nil, nil
+	}
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, userErrorCause("errors.config.importFailed", err)
+	}
+	defer file.Close()
+	const maxConfigImportBytes = 10 << 20
+	data, err := io.ReadAll(io.LimitReader(file, maxConfigImportBytes+1))
+	if err != nil {
+		return nil, userErrorCause("errors.config.importFailed", err)
+	}
+	if len(data) > maxConfigImportBytes {
+		return nil, userError("errors.config.importTooLarge")
+	}
+	cfg, err := decodeImportedConfig(data)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.replaceConfig(cfg); err != nil {
+		return nil, err
+	}
+	current := s.Get()
+	return &current, nil
+}
+
+// ResetConfig 恢复所有配置项的默认值并立即通知配置消费者。
+func (s *ConfigService) ResetConfig() (Config, error) {
+	cfg := defaultConfig()
+	if err := s.replaceConfig(cfg); err != nil {
+		return Config{}, err
+	}
+	return s.Get(), nil
+}
+
+func decodeImportedConfig(data []byte) (Config, error) {
+	cfg := defaultConfig()
+	decoder := json.NewDecoder(strings.NewReader(string(data)))
+	if err := decoder.Decode(&cfg); err != nil {
+		return Config{}, userErrorCause("errors.config.invalidImport", err)
+	}
+	var trailing any
+	if err := decoder.Decode(&trailing); err != io.EOF {
+		if err == nil {
+			err = fmt.Errorf("multiple JSON values")
+		}
+		return Config{}, userErrorCause("errors.config.invalidImport", err)
+	}
+	if err := validateImportedConfig(cfg); err != nil {
+		return Config{}, userErrorCause("errors.config.invalidImport", err)
+	}
+	return normalizeConfig(cfg), nil
+}
+
+func validateImportedConfig(cfg Config) error {
+	if err := validateConfigForSave(cfg); err != nil {
+		return err
+	}
+	profiles := make(map[string]struct{}, len(cfg.SSHProfiles))
+	for _, profile := range cfg.SSHProfiles {
+		profiles[profile.ID] = struct{}{}
+	}
+	for _, source := range cfg.FileSources {
+		if !validConfigValue(strings.TrimSpace(source.ID), 128) || !validTextValue(strings.TrimSpace(source.Name), 256) || !validConfigValue(strings.TrimSpace(source.SSHProfileID), 128) {
+			return fmt.Errorf("invalid file source")
+		}
+		if source.DefaultPath != "" && !validPathValue(source.DefaultPath, 4096) {
+			return fmt.Errorf("invalid file source default path")
+		}
+		if _, ok := profiles[strings.TrimSpace(source.SSHProfileID)]; !ok {
+			return fmt.Errorf("file source references missing SSH profile")
+		}
+	}
+	for _, target := range cfg.ServiceTargets {
+		kind := strings.ToLower(strings.TrimSpace(target.Kind))
+		if kind == "" && strings.TrimSpace(target.ID) == "local" {
+			kind = "local"
+		}
+		if kind != "local" && kind != "ssh" {
+			return fmt.Errorf("invalid service target kind")
+		}
+		if kind == "ssh" {
+			profileID := strings.TrimSpace(target.SSHProfileID)
+			if profileID == "" && strings.HasPrefix(strings.TrimSpace(target.ID), "ssh:") {
+				profileID = strings.TrimPrefix(strings.TrimSpace(target.ID), "ssh:")
+			}
+			if _, ok := profiles[profileID]; !ok {
+				return fmt.Errorf("service target references missing SSH profile")
+			}
+		}
+	}
+	if err := validateUniqueConfigIDs("file source", idsOfFileSources(cfg.FileSources)); err != nil {
+		return err
+	}
+	if err := validateUniqueConfigIDs("service target", idsOfServiceTargets(cfg.ServiceTargets)); err != nil {
+		return err
+	}
+	if err := validateUniqueConfigIDs("port source", idsOfPortSources(cfg.PortSources)); err != nil {
+		return err
+	}
+	portSources := make(map[string]struct{}, len(cfg.PortSources))
+	for _, source := range cfg.PortSources {
+		if source.Kind == "local" || source.ID == "local" {
+			continue
+		}
+		portSources[strings.TrimSpace(source.ID)] = struct{}{}
+	}
+	forwardIDs := make([]string, len(cfg.PortForwards))
+	for index, forward := range cfg.PortForwards {
+		forwardIDs[index] = forward.ID
+		if _, err := normalizeForward(PortForwardRequest{
+			SourceID: forward.SourceID, Direction: forward.Direction,
+			ListenHost: forward.ListenHost, ListenPort: forward.ListenPort,
+			TargetHost: forward.TargetHost, TargetPort: forward.TargetPort,
+		}); err != nil {
+			return err
+		}
+		if _, ok := portSources[strings.TrimSpace(forward.SourceID)]; !ok {
+			return fmt.Errorf("port forward references missing port source")
+		}
+	}
+	if err := validateUniqueConfigIDs("port forward", forwardIDs); err != nil {
+		return err
+	}
+	for _, source := range cfg.PortSources {
+		kind := strings.ToLower(strings.TrimSpace(source.Kind))
+		if strings.TrimSpace(source.ID) == "local" || kind == "local" {
+			continue
+		}
+		if kind != "ssh" || !validConfigValue(strings.TrimSpace(source.ID), 128) || !validTextValue(strings.TrimSpace(source.Name), 128) {
+			return fmt.Errorf("invalid port source")
+		}
+		if kind == "ssh" {
+			if _, ok := profiles[strings.TrimSpace(source.SSHProfileID)]; !ok {
+				return fmt.Errorf("port source references missing SSH profile")
+			}
+		}
+	}
+	return nil
+}
+
+func validateUniqueConfigIDs(kind string, ids []string) error {
+	seen := make(map[string]struct{}, len(ids))
+	for _, id := range ids {
+		if id == "" {
+			continue
+		}
+		if _, ok := seen[id]; ok {
+			return fmt.Errorf("duplicate %s ID %q", kind, id)
+		}
+		seen[id] = struct{}{}
+	}
+	return nil
+}
+
+func idsOfFileSources(items []FileSource) []string {
+	ids := make([]string, len(items))
+	for i, item := range items {
+		ids[i] = item.ID
+	}
+	return ids
+}
+
+func idsOfServiceTargets(items []ServiceTarget) []string {
+	ids := make([]string, len(items))
+	for i, item := range items {
+		ids[i] = item.ID
+	}
+	return ids
+}
+
+func idsOfPortSources(items []PortSource) []string {
+	ids := make([]string, len(items))
+	for i, item := range items {
+		ids[i] = item.ID
+	}
+	return ids
+}
+
+func (s *ConfigService) replaceConfig(cfg Config) error {
+	cfg.SSHProfilesVersion = currentSSHProfilesVersion
+	cfg.SSHConnections = []SSHConnection{}
+	if err := validateImportedConfig(cfg); err != nil {
+		return userErrorCause("errors.config.invalidImport", err)
+	}
+	cfg = normalizeConfig(cfg)
+	b, err := marshalConfig(cfg)
+	if err != nil {
+		return userErrorCause("errors.config.saveFailed", err)
+	}
+	s.mu.Lock()
+	if err := writeConfigAtomically(s.path, b); err != nil {
+		s.mu.Unlock()
+		return userErrorCause("errors.config.saveFailed", err)
+	}
+	s.cfg = cfg
+	onChange := s.onChange
+	s.mu.Unlock()
+	if onChange != nil {
+		onChange(cfg)
+	}
+	return nil
+}
+
 // ResolveSSHHostKeyPrompt 响应前端显示的 SSH 主机指纹确认。
 func (s *ConfigService) ResolveSSHHostKeyPrompt(promptID string, accepted bool) error {
 	return resolveSSHHostKeyPrompt(promptID, accepted)
@@ -957,7 +1215,15 @@ func (s *ConfigService) DeleteSSHKnownHost(id string) error {
 
 func (s *ConfigService) setOnChange(callback func(Config)) {
 	s.mu.Lock()
-	s.onChange = callback
+	previous := s.onChange
+	if previous == nil {
+		s.onChange = callback
+	} else if callback != nil {
+		s.onChange = func(cfg Config) {
+			previous(cfg)
+			callback(cfg)
+		}
+	}
 	s.mu.Unlock()
 }
 

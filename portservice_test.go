@@ -1,6 +1,35 @@
 package main
 
-import "testing"
+import (
+	"context"
+	"path/filepath"
+	"testing"
+)
+
+func TestResetConfigStopsPortForwardsFromReplacedConfig(t *testing.T) {
+	cfg := defaultConfig()
+	cfg.SSHProfiles = []SSHProfile{{ID: "profile", Name: "Host", Origin: "manual", Host: "host", Username: "user", Password: "secret", Port: 22}}
+	cfg.PortSources = []PortSource{{ID: "remote", Name: "Host", Kind: "ssh", SSHProfileID: "profile"}}
+	cfg.PortForwards = []PortForwardConfig{{ID: "forward", SourceID: "remote", Direction: "local", ListenHost: "127.0.0.1", ListenPort: 8080, TargetHost: "127.0.0.1", TargetPort: 80}}
+	config := &ConfigService{path: filepath.Join(t.TempDir(), "config.json"), cfg: normalizeConfig(cfg)}
+	service := NewPortService(config)
+	ctx, cancel := context.WithCancel(context.Background())
+	service.tunnels["forward"] = &portTunnel{PortForward: PortForward{ID: "forward"}, ctx: ctx, cancel: cancel}
+
+	if _, err := config.ResetConfig(); err != nil {
+		t.Fatalf("ResetConfig() error = %v", err)
+	}
+	select {
+	case <-ctx.Done():
+	default:
+		t.Fatal("reset left the old port-forward tunnel running")
+	}
+	service.mu.Lock()
+	defer service.mu.Unlock()
+	if len(service.tunnels) != 0 {
+		t.Fatalf("reset retained stale tunnels: %+v", service.tunnels)
+	}
+}
 
 func TestParseLsofPortsAndProcessDetails(t *testing.T) {
 	output := []byte("p42\ncserver\nLalice\nR7\nf8\ntIPv4\nPTCP\nn127.0.0.1:8080->127.0.0.1:53000\nf9\ntIPv6\nPUDP\nn[::1]:5353\n")

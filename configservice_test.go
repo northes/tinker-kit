@@ -18,6 +18,152 @@ func TestDefaultConfigTheme(t *testing.T) {
 	}
 }
 
+func TestDecodeImportedConfigFillsDefaultsAndKeepsCredentials(t *testing.T) {
+	cfg, err := decodeImportedConfig([]byte(`{"language":"en-US","sshProfiles":[{"id":"profile-1","name":"prod","origin":"manual","host":"example.com","port":22,"username":"deploy","password":"secret"}]}`))
+	if err != nil {
+		t.Fatalf("decodeImportedConfig() error = %v", err)
+	}
+	if cfg.Language != "en-US" || cfg.ThemeMode != "dark" || cfg.ImageSources[0].ID != "local" {
+		t.Fatalf("legacy defaults were not filled: %#v", cfg)
+	}
+	if len(cfg.SSHProfiles) != 1 || cfg.SSHProfiles[0].Password != "secret" {
+		t.Fatalf("credentials were not preserved: %#v", cfg.SSHProfiles)
+	}
+}
+
+func TestExportConfigJSONContainsCurrentCredentials(t *testing.T) {
+	cfg := defaultConfig()
+	cfg.SSHProfiles = []SSHProfile{{ID: "profile-1", Name: "prod", Origin: "manual", Host: "example.com", Port: 22, Username: "deploy", Password: "secret"}}
+	service := &ConfigService{cfg: normalizeConfig(cfg)}
+	data, err := service.exportConfigJSON()
+	if err != nil {
+		t.Fatalf("exportConfigJSON() error = %v", err)
+	}
+	var exported Config
+	if err := json.Unmarshal(data, &exported); err != nil {
+		t.Fatalf("exported config is invalid JSON: %v", err)
+	}
+	if len(exported.SSHProfiles) != 1 || exported.SSHProfiles[0].Password != "secret" {
+		t.Fatalf("export did not preserve credentials: %#v", exported.SSHProfiles)
+	}
+}
+
+func TestDecodeImportedConfigRejectsMalformedDuplicateAndDanglingData(t *testing.T) {
+	tests := []struct {
+		name string
+		data string
+	}{
+		{name: "malformed JSON", data: `{"language":`},
+		{name: "duplicate image source", data: `{"imageSources":[{"id":"local","name":"Local","kind":"local"},{"id":"local","name":"Again","kind":"local"}]}`},
+		{name: "duplicate SSH profile", data: `{"sshProfiles":[{"id":"p","name":"one","host":"host","username":"user","password":"secret"},{"id":"p","name":"two","host":"host","username":"user","password":"secret"}]}`},
+		{name: "dangling image source profile", data: `{"imageSources":[{"id":"local","name":"Local","kind":"local"},{"id":"remote","name":"Remote","kind":"ssh","sshProfileID":"missing"}]}`},
+		{name: "trailing JSON", data: `{} {}`},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if _, err := decodeImportedConfig([]byte(test.data)); err == nil {
+				t.Fatal("expected invalid configuration to be rejected")
+			}
+		})
+	}
+}
+
+func TestReplaceConfigReplacesAllOwnedFieldsAndNotifiesSubscribers(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.json")
+	initial := defaultConfig()
+	initial.Language = "en-US"
+	initial.SSHProfiles = []SSHProfile{{ID: "old", Name: "old", Origin: "manual", Host: "old-host", Username: "user", Password: "old-secret", Port: 22}}
+	service := &ConfigService{path: path, cfg: normalizeConfig(initial)}
+	changes := 0
+	service.setOnChange(func(Config) { changes++ })
+	service.setOnChange(func(Config) { changes++ })
+
+	cfg := defaultConfig()
+	cfg.Language = "en-US"
+	cfg.AutoOverwrite = true
+	cfg.SSHProfiles = []SSHProfile{{ID: "new", Name: "new", Origin: "manual", Host: "new-host", Username: "user", Password: "new-secret", Port: 22}}
+	if err := service.replaceConfig(cfg); err != nil {
+		t.Fatalf("replaceConfig() error = %v", err)
+	}
+	got := service.Get()
+	if len(got.SSHProfiles) != 1 || got.SSHProfiles[0].ID != "new" || got.SSHProfiles[0].Password != "new-secret" || got.AutoOverwrite != true {
+		t.Fatalf("configuration was not replaced: %#v", got)
+	}
+	if changes != 2 {
+		t.Fatalf("subscriber calls = %d, want 2", changes)
+	}
+	var persisted Config
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(data, &persisted); err != nil {
+		t.Fatal(err)
+	}
+	if persisted.SSHProfiles[0].Password != "new-secret" {
+		t.Fatal("persisted config does not contain imported credential")
+	}
+}
+
+func TestReplaceConfigRejectsInvalidConfigWithoutChangingState(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.json")
+	service := &ConfigService{path: path, cfg: normalizeConfig(defaultConfig())}
+	if err := service.replaceConfig(defaultConfig()); err != nil {
+		t.Fatal(err)
+	}
+	before, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	invalid := defaultConfig()
+	invalid.FileSources = []FileSource{{ID: "remote", Name: "Remote", SSHProfileID: "missing"}}
+	if err := service.replaceConfig(invalid); err == nil {
+		t.Fatal("expected dangling reference to be rejected")
+	}
+	after, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(before) != string(after) || len(service.Get().FileSources) != 0 {
+		t.Fatal("invalid replacement changed persisted or in-memory configuration")
+	}
+}
+
+func TestReplaceConfigWriteFailureKeepsCurrentConfig(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.json")
+	if err := os.Mkdir(path, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	current := defaultConfig()
+	current.Language = "en-US"
+	service := &ConfigService{path: path, cfg: normalizeConfig(current)}
+	next := defaultConfig()
+	next.Language = "zh-CN"
+	if err := service.replaceConfig(next); err == nil {
+		t.Fatal("expected write failure")
+	}
+	if got := service.Get().Language; got != "en-US" {
+		t.Fatalf("in-memory config changed after write failure: language = %q", got)
+	}
+}
+
+func TestResetConfigRestoresDefaults(t *testing.T) {
+	service := &ConfigService{path: filepath.Join(t.TempDir(), "config.json"), cfg: normalizeConfig(defaultConfig())}
+	custom := defaultConfig()
+	custom.Language = "en-US"
+	custom.SSHProfiles = []SSHProfile{{ID: "custom", Name: "custom", Origin: "manual", Host: "host", Username: "user", Password: "secret", Port: 22}}
+	if err := service.replaceConfig(custom); err != nil {
+		t.Fatal(err)
+	}
+	got, err := service.ResetConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(got, normalizeConfig(defaultConfig())) {
+		t.Fatalf("ResetConfig() = %#v, want defaults", got)
+	}
+}
+
 func TestConfigIgnoresLegacyDiffHighlightMode(t *testing.T) {
 	cfg := defaultConfig()
 	if err := json.Unmarshal([]byte(`{"diffHighlightMode":"word","language":"en-US"}`), &cfg); err != nil {
@@ -696,5 +842,26 @@ func TestConfigServicePersistsTextGeneratorSources(t *testing.T) {
 	saved := service.Get()
 	if !reflect.DeepEqual(saved.TextGeneratorSources, cfg.TextGeneratorSources) {
 		t.Fatalf("文本生成源保存后不一致: got %#v want %#v", saved.TextGeneratorSources, cfg.TextGeneratorSources)
+	}
+}
+
+func TestNormalizeTaskCenterSettingsDefaultsAndBounds(t *testing.T) {
+	cfg := normalizeConfig(Config{})
+	if cfg.TaskConcurrency != 4 || cfg.TaskChunkConcurrency != 4 || cfg.TaskNotificationMode != "unfocused" {
+		t.Fatalf("task defaults = %d/%d/%q", cfg.TaskConcurrency, cfg.TaskChunkConcurrency, cfg.TaskNotificationMode)
+	}
+	cfg.TaskConcurrency = 17
+	cfg.TaskChunkConcurrency = 0
+	cfg.TaskNotificationMode = "invalid"
+	cfg = normalizeConfig(cfg)
+	if cfg.TaskConcurrency != 4 || cfg.TaskChunkConcurrency != 4 || cfg.TaskNotificationMode != "unfocused" {
+		t.Fatalf("invalid task settings not normalized: %d/%d/%q", cfg.TaskConcurrency, cfg.TaskChunkConcurrency, cfg.TaskNotificationMode)
+	}
+	cfg.TaskConcurrency = 1
+	cfg.TaskChunkConcurrency = 16
+	cfg.TaskNotificationMode = "always"
+	cfg = normalizeConfig(cfg)
+	if cfg.TaskConcurrency != 1 || cfg.TaskChunkConcurrency != 16 || cfg.TaskNotificationMode != "always" {
+		t.Fatalf("valid task settings changed: %d/%d/%q", cfg.TaskConcurrency, cfg.TaskChunkConcurrency, cfg.TaskNotificationMode)
 	}
 }

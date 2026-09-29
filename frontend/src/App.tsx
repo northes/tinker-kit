@@ -2133,6 +2133,11 @@ function AppShell() {
                     settings={settings}
                     setSettings={setSettings}
                     setThemeMode={setSettingsWithThemeTransition}
+                    onConfigReplaced={(config) => {
+                      setSettingsWithThemeTransition(config);
+                      void i18n.changeLanguage(config.language || 'zh-CN');
+                      void SetAutoCheckEnabled(config.autoCheckUpdates);
+                    }}
                     tools={tools}
                     clearHistory={clearHistory}
                     sidebarManaging={sidebarManaging}

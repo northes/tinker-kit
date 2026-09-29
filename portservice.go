@@ -8,6 +8,7 @@ import (
 	"io"
 	"net"
 	"os/exec"
+	"reflect"
 	"regexp"
 	"runtime"
 	"strconv"
@@ -88,7 +89,23 @@ type PortService struct {
 }
 
 func NewPortService(config *ConfigService) *PortService {
-	return &PortService{config: config, tunnels: make(map[string]*portTunnel)}
+	service := &PortService{config: config, tunnels: make(map[string]*portTunnel)}
+	if config != nil {
+		previous := config.Get()
+		var snapshotMu sync.Mutex
+		config.setOnChange(func(current Config) {
+			snapshotMu.Lock()
+			changed := !reflect.DeepEqual(previous.SSHProfiles, current.SSHProfiles) ||
+				!reflect.DeepEqual(previous.PortSources, current.PortSources) ||
+				!reflect.DeepEqual(previous.PortForwards, current.PortForwards)
+			previous = current
+			snapshotMu.Unlock()
+			if changed {
+				service.shutdown()
+			}
+		})
+	}
+	return service
 }
 func (s *PortService) ServiceName() string { return "PortService" }
 

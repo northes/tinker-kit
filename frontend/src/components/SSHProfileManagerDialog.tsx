@@ -164,6 +164,12 @@ export function SSHProfileProvider({ children }: { children: ReactNode }) {
     void reload().catch(() => setProfiles([]));
   }, [reload]);
 
+  useEffect(() => {
+    const refresh = () => void reload().catch(() => setProfiles([]));
+    window.addEventListener('tinkerkit:config-replaced', refresh);
+    return () => window.removeEventListener('tinkerkit:config-replaced', refresh);
+  }, [reload]);
+
   const openManager = useCallback(() => setManagerOpen(true), []);
 
   return (

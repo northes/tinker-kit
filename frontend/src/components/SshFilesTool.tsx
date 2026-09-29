@@ -1038,6 +1038,13 @@ export default function SshFilesTool({ active }: Props) {
 
   useEffect(() => {
     if (!active) return;
+    const refresh = () => void loadSources().catch((reason) => setError(errorMessage(reason)));
+    window.addEventListener('tinkerkit:config-replaced', refresh);
+    return () => window.removeEventListener('tinkerkit:config-replaced', refresh);
+  }, [active, loadSources]);
+
+  useEffect(() => {
+    if (!active) return;
     void GetFileTasks()
       .then(applyTaskSnapshot)
       .catch(() => undefined);

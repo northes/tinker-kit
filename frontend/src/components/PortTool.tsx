@@ -321,6 +321,13 @@ export default function PortTool({ active }: { active: boolean }) {
     if (active) void refreshSources();
   }, [active, refreshSources]);
 
+  useEffect(() => {
+    if (!active) return;
+    const refresh = () => void refreshSources();
+    window.addEventListener('tinkerkit:config-replaced', refresh);
+    return () => window.removeEventListener('tinkerkit:config-replaced', refresh);
+  }, [active, refreshSources]);
+
   const refreshPorts = useCallback(async () => {
     const revision = ++scanRevision.current;
     setLoading(true);

@@ -32,12 +32,15 @@ import {
 } from './ui/dialog';
 import {
   ArrowSquareOut,
+  ArrowCounterClockwise,
   ArrowsClockwise,
+  DownloadSimple,
   Key,
   PencilSimple,
   Power,
   SidebarSimple,
   Trash,
+  UploadSimple,
 } from '@phosphor-icons/react';
 import { Application, Browser } from '@wailsio/runtime';
 import { useTranslation } from 'react-i18next';
@@ -46,6 +49,9 @@ import type { Config as Settings, SSHKnownHost } from '../../bindings/changeme/m
 import {
   DeleteSSHKnownHost,
   GetSSHKnownHosts,
+  ExportConfig,
+  ImportConfig,
+  ResetConfig,
   UpdateSSHKnownHost,
 } from '../../bindings/changeme/configservice';
 import { CheckForUpdates, GetCurrentVersion } from '../../bindings/changeme/updateservice';
@@ -605,6 +611,7 @@ export default function SettingsPage({
   sidebarManaging,
   onToggleSidebarManage,
   flushSettingsSave,
+  onConfigReplaced,
 }: {
   settings: Settings;
   setSettings: React.Dispatch<React.SetStateAction<Settings>>;
@@ -614,11 +621,14 @@ export default function SettingsPage({
   sidebarManaging: boolean;
   onToggleSidebarManage: () => void;
   flushSettingsSave: () => Promise<void>;
+  onConfigReplaced: (config: Settings) => void;
 }) {
   const { t } = useTranslation();
   const { openManager } = useSSHProfiles();
   const [confirmClear, setConfirmClear] = useState(false);
   const [confirmQuit, setConfirmQuit] = useState(false);
+  const [configAction, setConfigAction] = useState<'export' | 'import' | 'reset' | null>(null);
+  const [configBusy, setConfigBusy] = useState(false);
   const [checking, setChecking] = useState(false);
   const [quitting, setQuitting] = useState(false);
   const [version, setVersion] = useState('');
@@ -694,6 +704,37 @@ export default function SettingsPage({
         type: 'error',
       });
       setQuitting(false);
+    }
+  };
+  const runConfigAction = async () => {
+    if (!configAction || configBusy) return;
+    const action = configAction;
+    setConfigBusy(true);
+    try {
+      if (action === 'export') {
+        const path = await ExportConfig();
+        if (path) toast.add({ title: t('settings.configExported'), type: 'success' });
+      } else {
+        const config = action === 'import' ? await ImportConfig() : await ResetConfig();
+        if (config) {
+          onConfigReplaced(config);
+          window.dispatchEvent(new Event('tinkerkit:config-replaced'));
+          toast.add({
+            title: t(action === 'import' ? 'settings.configImported' : 'settings.configReset'),
+            type: 'success',
+          });
+        }
+      }
+      setConfigAction(null);
+    } catch (error) {
+      toast.add({
+        title: t(`settings.config${action[0].toUpperCase()}${action.slice(1)}Failed`),
+        description: formatBackendError(error),
+        type: 'error',
+      });
+      setConfigAction(null);
+    } finally {
+      setConfigBusy(false);
     }
   };
   const trayTools = new Set(
@@ -910,6 +951,40 @@ export default function SettingsPage({
               </Button>
             </Setting>
           </SettingsGroup>
+          <SettingsGroup
+            title={t('settings.configManagement')}
+            subtitle={t('settings.configManagementSubtitle')}
+          >
+            <div className={settingStackClass}>
+              <Setting
+                label={t('settings.exportConfig')}
+                description={t('settings.exportConfigDesc')}
+              >
+                <Button variant="outline" onClick={() => setConfigAction('export')}>
+                  <DownloadSimple data-icon="inline-start" weight="duotone" />
+                  {t('settings.exportConfig')}
+                </Button>
+              </Setting>
+              <Setting
+                label={t('settings.importConfig')}
+                description={t('settings.importConfigDesc')}
+              >
+                <Button variant="outline" onClick={() => setConfigAction('import')}>
+                  <UploadSimple data-icon="inline-start" weight="duotone" />
+                  {t('settings.importConfig')}
+                </Button>
+              </Setting>
+              <Setting
+                label={t('settings.resetConfig')}
+                description={t('settings.resetConfigDesc')}
+              >
+                <Button variant="destructive" onClick={() => setConfigAction('reset')}>
+                  <ArrowCounterClockwise data-icon="inline-start" weight="duotone" />
+                  {t('settings.resetConfig')}
+                </Button>
+              </Setting>
+            </div>
+          </SettingsGroup>
           <SettingsGroup title={t('settings.about')} subtitle={t('settings.aboutSubtitle')}>
             <Setting label={t('settings.projectLink')} description={t('settings.projectLinkDesc')}>
               <Button variant="outline" onClick={() => void Browser.OpenURL(GITHUB_REPO_URL)}>
@@ -937,6 +1012,34 @@ export default function SettingsPage({
         onConfirm={clearHistory}
       />
       <SSHKnownHostsDialog open={sshKnownHostsOpen} onOpenChange={setSSHKnownHostsOpen} />
+      <ConfirmDialog
+        open={configAction !== null}
+        onOpenChange={(open) => !configBusy && !open && setConfigAction(null)}
+        title={t(
+          configAction === 'export'
+            ? 'settings.exportConfigTitle'
+            : configAction === 'import'
+              ? 'settings.importConfigTitle'
+              : 'settings.resetConfigTitle',
+        )}
+        description={t(
+          configAction === 'export'
+            ? 'settings.exportConfigWarning'
+            : configAction === 'import'
+              ? 'settings.importConfigWarning'
+              : 'settings.resetConfigWarning',
+        )}
+        confirmLabel={t(
+          configAction === 'export'
+            ? 'settings.exportConfig'
+            : configAction === 'import'
+              ? 'settings.importConfig'
+              : 'settings.resetConfig',
+        )}
+        destructive={configAction === 'reset'}
+        busy={configBusy}
+        onConfirm={() => void runConfigAction()}
+      />
       <AlertDialog
         open={confirmQuit}
         onOpenChange={(open) => {

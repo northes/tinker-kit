@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
@@ -299,6 +300,38 @@ func main() {
 		menu.Add("退出").OnClick(func(_ *application.Context) { quit() })
 	}
 	tray.SetMenu(menu)
+	trayLanguage := cfgService.Get().Language
+	var trayLanguageMu sync.Mutex
+	cfgService.setOnChange(func(cfg Config) {
+		trayLanguageMu.Lock()
+		if cfg.Language == trayLanguage {
+			trayLanguageMu.Unlock()
+			return
+		}
+		trayLanguage = cfg.Language
+		trayLanguageMu.Unlock()
+		languageMenu := app.Menu.New()
+		if cfg.Language == "en-US" {
+			tray.SetTooltip("TinkerKit — local dev tools")
+			languageMenu.Add("Open TinkerKit").OnClick(func(_ *application.Context) { showFromTray() })
+			languageMenu.Add("Settings").OnClick(func(_ *application.Context) {
+				showFromTray()
+				app.Event.Emit("navigate", "settings")
+			})
+			languageMenu.AddSeparator()
+			languageMenu.Add("Quit").OnClick(func(_ *application.Context) { quit() })
+		} else {
+			tray.SetTooltip("TinkerKit — 本地开发工具")
+			languageMenu.Add("打开 TinkerKit").OnClick(func(_ *application.Context) { showFromTray() })
+			languageMenu.Add("设置").OnClick(func(_ *application.Context) {
+				showFromTray()
+				app.Event.Emit("navigate", "settings")
+			})
+			languageMenu.AddSeparator()
+			languageMenu.Add("退出").OnClick(func(_ *application.Context) { quit() })
+		}
+		tray.SetMenu(languageMenu)
+	})
 	// 左键唤回窗口；右键在开启托盘识别时分析剪贴板，关闭识别时展开菜单。
 	tray.OnClick(func() { showFromTray() })
 	tray.OnRightClick(func() {
