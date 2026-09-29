@@ -24,21 +24,22 @@ import (
 )
 
 const (
-	fileTaskTypeUpload   = "upload"
-	fileTaskTypeDownload = "download"
-	fileTaskTypeSize     = "size"
-	fileTaskTypeCopy     = "copy"
-	fileTaskTypeMove     = "move"
-	fileTaskTypeExtract  = "extract"
-	fileTaskTypeCompress = "compress"
-	fileTaskQueued       = "queued"
-	fileTaskScanning     = "scanning"
-	fileTaskRunning      = "running"
-	fileTaskSuccess      = "success"
-	fileTaskFailed       = "failed"
-	fileTaskCanceled     = "canceled"
-	fileTaskConflict     = "conflict"
-	fileTasksEventName   = "ssh-files:tasks"
+	fileTaskTypeUpload        = "upload"
+	fileTaskTypeDownload      = "download"
+	fileTaskTypeSize          = "size"
+	fileTaskTypeCopy          = "copy"
+	fileTaskTypeMove          = "move"
+	fileTaskTypeExtract       = "extract"
+	fileTaskTypeCompress      = "compress"
+	fileTaskQueued            = "queued"
+	fileTaskScanning          = "scanning"
+	fileTaskRunning           = "running"
+	fileTaskSuccess           = "success"
+	fileTaskFailed            = "failed"
+	fileTaskCanceled          = "canceled"
+	fileTaskConflict          = "conflict"
+	fileTasksEventName        = "ssh-files:tasks"
+	directoryLoadingEventName = "ssh-files:directory-loading"
 )
 
 const (
@@ -81,6 +82,122 @@ type RemoteDirectoryListing struct {
 	Entries []RemoteFileEntry `json:"entries"`
 }
 
+// persistentSFTPSession 供目录浏览与异步元数据查询复用同一条 SSH/SFTP 连接。
+// refs 保护已经借出的会话，配置变化时旧会话会在最后一个调用结束后关闭。
+type persistentSFTPSession struct {
+	connection SSHConnection
+	ssh        *ssh.Client
+	sftp       *sftp.Client
+	refs       int
+	retired    bool
+}
+
+func closePersistentSFTPSession(session *persistentSFTPSession) {
+	if session == nil {
+		return
+	}
+	if session.sftp != nil {
+		_ = session.sftp.Close()
+	}
+	closeSSHClient(session.ssh)
+}
+
+func (s *FileService) acquirePersistentSFTP(
+	ctx context.Context,
+	sourceID string,
+	connection SSHConnection,
+) (*persistentSFTPSession, error) {
+	for {
+		s.sessionMu.Lock()
+		cached := s.sessions[sourceID]
+		if cached != nil && cached.connection == connection && !cached.retired {
+			cached.refs++
+			s.sessionMu.Unlock()
+			return cached, nil
+		}
+		s.sessionMu.Unlock()
+
+		sshClient, sftpClient, err := s.dialSFTP(ctx, connection)
+		if err != nil {
+			return nil, err
+		}
+		candidate := &persistentSFTPSession{
+			connection: connection,
+			ssh:        sshClient,
+			sftp:       sftpClient,
+			refs:       1,
+		}
+
+		var closeNow []*persistentSFTPSession
+		s.sessionMu.Lock()
+		cached = s.sessions[sourceID]
+		if cached != nil && cached.connection == connection && !cached.retired {
+			cached.refs++
+			s.sessionMu.Unlock()
+			closePersistentSFTPSession(candidate)
+			return cached, nil
+		}
+		if cached != nil {
+			cached.retired = true
+			if cached.refs == 0 {
+				closeNow = append(closeNow, cached)
+			}
+		}
+		if s.sessions == nil {
+			s.sessions = map[string]*persistentSFTPSession{}
+		}
+		s.sessions[sourceID] = candidate
+		s.sessionMu.Unlock()
+		for _, session := range closeNow {
+			closePersistentSFTPSession(session)
+		}
+		return candidate, nil
+	}
+}
+
+func (s *FileService) releasePersistentSFTP(session *persistentSFTPSession) {
+	if session == nil {
+		return
+	}
+	closeNow := false
+	s.sessionMu.Lock()
+	session.refs--
+	closeNow = session.retired && session.refs == 0
+	s.sessionMu.Unlock()
+	if closeNow {
+		closePersistentSFTPSession(session)
+	}
+}
+
+func (s *FileService) invalidatePersistentSFTP(sourceID string, session *persistentSFTPSession) {
+	s.sessionMu.Lock()
+	if s.sessions[sourceID] == session {
+		delete(s.sessions, sourceID)
+	}
+	session.retired = true
+	closeNow := session.refs == 0
+	s.sessionMu.Unlock()
+	if closeNow {
+		closePersistentSFTPSession(session)
+	}
+}
+
+func (s *FileService) shutdown() {
+	s.sessionMu.Lock()
+	sessions := make([]*persistentSFTPSession, 0, len(s.sessions))
+	for sourceID, session := range s.sessions {
+		delete(s.sessions, sourceID)
+		session.retired = true
+		if session.refs == 0 {
+			sessions = append(sessions, session)
+		}
+	}
+	s.sessionMu.Unlock()
+	for _, session := range sessions {
+		closePersistentSFTPSession(session)
+	}
+}
+
 type RemoteFileOperationResult struct {
 	Conflicts []string `json:"conflicts,omitempty"`
 }
@@ -94,6 +211,7 @@ type FileTask struct {
 	Current   string   `json:"current,omitempty"`
 	Target    string   `json:"target,omitempty"`
 	Paths     []string `json:"paths,omitempty"`
+	Batch     bool     `json:"batch,omitempty"`
 	Conflicts []string `json:"conflicts,omitempty"`
 	Completed int64    `json:"completed"`
 	Total     int64    `json:"total"`
@@ -238,6 +356,51 @@ func (s *FileService) CancelFileTask(id string) error {
 		s.emitTasks(snapshot)
 	}
 	return nil
+}
+
+// RetryFileTask 在失败或已取消的文件任务上复用原始参数，创建一个新的后台任务。
+func (s *FileService) RetryFileTask(id string) (FileTaskSnapshot, error) {
+	s.taskMu.Lock()
+	task := s.tasks[id]
+	if task == nil {
+		s.taskMu.Unlock()
+		return FileTaskSnapshot{}, userError("errors.sshFile.taskNotFound")
+	}
+	if task.Status != fileTaskFailed && task.Status != fileTaskCanceled {
+		s.taskMu.Unlock()
+		return FileTaskSnapshot{}, userError("errors.sshFile.taskNotRetryable")
+	}
+	previous := task.FileTask
+	previous.Paths = append([]string(nil), task.Paths...)
+	conflictPolicy := task.operationPolicy
+	s.taskMu.Unlock()
+
+	switch previous.Type {
+	case fileTaskTypeUpload:
+		if len(previous.Paths) != 1 {
+			return FileTaskSnapshot{}, userError("errors.sshFile.taskNotRetryable")
+		}
+		return s.StartFileUpload(previous.SourceID, previous.Paths, previous.Target)
+	case fileTaskTypeDownload:
+		if len(previous.Paths) != 1 {
+			return FileTaskSnapshot{}, userError("errors.sshFile.taskNotRetryable")
+		}
+		_, connection, err := s.sourceSnapshot(previous.SourceID)
+		if err != nil {
+			return FileTaskSnapshot{}, err
+		}
+		ctx, cancel := context.WithCancel(context.Background())
+		newID := s.createFileTask(FileTask{
+			Type: fileTaskTypeDownload, SourceID: previous.SourceID, Target: previous.Target,
+			Paths: previous.Paths, Files: 1, Batch: previous.Batch,
+		}, ctx, cancel)
+		go s.runFileDownload(ctx, newID, connection, previous.Paths, previous.Target, previous.Batch)
+		return s.GetFileTasks(), nil
+	case remoteFileOperationCopy, remoteFileOperationMove, remoteFileOperationExtract, remoteFileOperationCompress:
+		return s.StartRemoteFileOperation(previous.SourceID, previous.Type, previous.Paths, previous.Target, conflictPolicy)
+	default:
+		return FileTaskSnapshot{}, userError("errors.sshFile.taskNotRetryable")
+	}
 }
 
 func (s *FileService) configSnapshot() Config {
@@ -597,6 +760,14 @@ func remoteTransferCommand(operation, source, destination string) string {
 		command = "mv "
 	}
 	return command + shellQuote(source) + " " + shellQuote(destination)
+}
+
+func remoteDeleteCommand(remotePaths []string) string {
+	quotedPaths := make([]string, len(remotePaths))
+	for index, remotePath := range remotePaths {
+		quotedPaths[index] = shellQuote(remotePath)
+	}
+	return "rm -rf -- " + strings.Join(quotedPaths, " ")
 }
 
 const remoteArchiveProgressPollInterval = 500 * time.Millisecond
@@ -1129,6 +1300,12 @@ func (s *FileService) dialSFTPWithOptions(
 	conn SSHConnection,
 	options ...sftp.ClientOption,
 ) (*ssh.Client, *sftp.Client, error) {
+	releaseHandshake, err := fileSSHHandshakeGate.acquire(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer releaseHandshake()
+
 	if conn.Mode == "local" {
 		alias := strings.TrimSpace(conn.Alias)
 		if !validSSHHost(alias) {
@@ -1185,7 +1362,10 @@ func (s *FileService) dialSFTPWithOptions(
 		if errors.As(err, &hostKeyErr) {
 			return nil, nil, hostKeyErr
 		}
-		return nil, nil, userError("errors.sshFile.authFailed")
+		if isSSHAuthenticationFailure(err) {
+			return nil, nil, userError("errors.sshFile.authFailed")
+		}
+		return nil, nil, userErrorCause("errors.ssh.connectFailed", err)
 	}
 	sftpClient, err := sftp.NewClient(client, options...)
 	if err != nil {
@@ -1195,25 +1375,34 @@ func (s *FileService) dialSFTPWithOptions(
 	return client, sftpClient, nil
 }
 
-func (s *FileService) ListRemoteFiles(sourceID, currentPath string, showHidden bool) (RemoteDirectoryListing, error) {
+func (s *FileService) ListRemoteFiles(sourceID, currentPath string, showHidden bool, requestID string) (RemoteDirectoryListing, error) {
 	_, conn, err := s.sourceSnapshot(sourceID)
 	if err != nil {
 		return RemoteDirectoryListing{}, err
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	sshClient, client, err := s.dialSFTP(ctx, conn)
+	s.sessionMu.Lock()
+	cached := s.sessions[sourceID]
+	hasCachedSession := cached != nil && cached.connection == conn && !cached.retired
+	s.sessionMu.Unlock()
+	if !hasCachedSession {
+		s.emitDirectoryLoading(requestID, "connecting")
+	}
+	session, err := s.acquirePersistentSFTP(ctx, sourceID, conn)
 	if err != nil {
 		return RemoteDirectoryListing{}, err
 	}
-	defer closeSSHClient(sshClient)
-	defer client.Close()
-	remotePath, err := resolveRemoteDirectory(client, currentPath)
+	defer s.releasePersistentSFTP(session)
+	s.emitDirectoryLoading(requestID, "loadingDirectory")
+	remotePath, err := resolveRemoteDirectory(session.sftp, currentPath)
 	if err != nil {
+		s.invalidatePersistentSFTP(sourceID, session)
 		return RemoteDirectoryListing{}, err
 	}
-	entries, err := client.ReadDirContext(ctx, remotePath)
+	entries, err := session.sftp.ReadDirContext(ctx, remotePath)
 	if err != nil {
+		s.invalidatePersistentSFTP(sourceID, session)
 		return RemoteDirectoryListing{}, userErrorCause("errors.sshFile.readRemoteDirectoryFailed", err)
 	}
 	visibleEntries := make([]os.FileInfo, 0, len(entries))
@@ -1223,17 +1412,10 @@ func (s *FileService) ListRemoteFiles(sourceID, currentPath string, showHidden b
 		}
 		visibleEntries = append(visibleEntries, entry)
 	}
-	remotePaths := make([]string, len(visibleEntries))
-	for index, entry := range visibleEntries {
-		remotePaths[index] = remoteChild(remotePath, entry.Name())
-	}
-	createdAt, err := remoteCreationTimes(ctx, conn, sshClient, remotePaths)
-	if err != nil {
-		return RemoteDirectoryListing{}, err
-	}
 	result := make([]RemoteFileEntry, 0, len(visibleEntries))
-	for index, entry := range visibleEntries {
-		result = append(result, remoteFileEntryFromInfo(remotePaths[index], entry, createdAt[index]))
+	for _, entry := range visibleEntries {
+		entryPath := remoteChild(remotePath, entry.Name())
+		result = append(result, remoteFileEntryFromInfo(entryPath, entry, ""))
 	}
 	sort.SliceStable(result, func(i, j int) bool {
 		if result[i].IsDir != result[j].IsDir {
@@ -1242,6 +1424,44 @@ func (s *FileService) ListRemoteFiles(sourceID, currentPath string, showHidden b
 		return strings.ToLower(result[i].Name) < strings.ToLower(result[j].Name)
 	})
 	return RemoteDirectoryListing{Path: remotePath, Entries: result}, nil
+}
+
+func (s *FileService) emitDirectoryLoading(requestID, phase string) {
+	if requestID == "" || s.emitEvent == nil {
+		return
+	}
+	s.emitEvent(directoryLoadingEventName, map[string]string{
+		"requestID": requestID,
+		"phase":     phase,
+	})
+}
+
+// GetRemoteCreationTimes 在目录列表返回后补充可选的创建时间元数据。
+func (s *FileService) GetRemoteCreationTimes(sourceID string, remotePaths []string) (map[string]string, error) {
+	result := make(map[string]string, len(remotePaths))
+	if len(remotePaths) == 0 {
+		return result, nil
+	}
+	_, conn, err := s.sourceSnapshot(sourceID)
+	if err != nil {
+		return nil, err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	session, err := s.acquirePersistentSFTP(ctx, sourceID, conn)
+	if err != nil {
+		return nil, err
+	}
+	defer s.releasePersistentSFTP(session)
+	createdAt, err := remoteCreationTimes(ctx, conn, session.ssh, remotePaths)
+	if err != nil {
+		s.invalidatePersistentSFTP(sourceID, session)
+		return nil, err
+	}
+	for index, remotePath := range remotePaths {
+		result[remotePath] = createdAt[index]
+	}
+	return result, nil
 }
 
 func remoteFileEntryFromInfo(remotePath string, entry os.FileInfo, createdAt string) RemoteFileEntry {
@@ -1640,6 +1860,23 @@ func (s *FileService) operateRemoteFilesWithConnection(
 			return result, err
 		}
 	}
+	if operation == remoteFileOperationDelete {
+		if connection.Mode == "local" {
+			if err := runRemoteCommand(ctx, connection, nil, remoteDeleteCommand(paths)); err != nil {
+				return result, userErrorCause("errors.sshFile.deleteRemoteItemFailed", err)
+			}
+			return result, nil
+		}
+		session, err := s.acquirePersistentSFTP(ctx, sourceID, connection)
+		if err != nil {
+			return result, err
+		}
+		defer s.releasePersistentSFTP(session)
+		if err := runRemoteCommand(ctx, connection, session.ssh, remoteDeleteCommand(paths)); err != nil {
+			return result, userErrorCause("errors.sshFile.deleteRemoteItemFailed", err)
+		}
+		return result, nil
+	}
 	sshClient, client, err := s.dialSFTP(ctx, connection)
 	if err != nil {
 		return result, err
@@ -1724,12 +1961,6 @@ func (s *FileService) operateRemoteFilesWithConnection(
 		}
 		if err := client.Rename(remotePath, target); err != nil {
 			return result, userErrorCause("errors.sshFile.renameRemoteItemFailed", err)
-		}
-	case remoteFileOperationDelete:
-		for _, remotePath := range paths {
-			if err := client.RemoveAll(remotePath); err != nil {
-				return result, userErrorCause("errors.sshFile.deleteRemoteItemFailed", err)
-			}
 		}
 	case remoteFileOperationCompress:
 		if err := ensureRemotePathAbsent(client, target); err != nil {
@@ -2504,7 +2735,7 @@ func (s *FileService) StartFileDownload(sourceID string, remotePaths []string) (
 	for _, remotePath := range remotePaths {
 		ctx, cancel := context.WithCancel(context.Background())
 		id := s.createFileTask(
-			FileTask{Type: fileTaskTypeDownload, SourceID: sourceID, Target: target, Paths: []string{remotePath}, Files: 1},
+			FileTask{Type: fileTaskTypeDownload, SourceID: sourceID, Target: target, Paths: []string{remotePath}, Files: 1, Batch: len(remotePaths) > 1},
 			ctx,
 			cancel,
 		)
@@ -2571,7 +2802,7 @@ func (s *FileService) runFileUpload(ctx context.Context, taskID string, source F
 		defer s.taskScheduler.Release()
 	}
 	s.updateFileTask(taskID, func(task *fileTaskState) {
-		task.Status, task.Stage = fileTaskScanning, fileTaskScanning
+		task.Status, task.Stage = fileTaskScanning, "scanningLocalFiles"
 	})
 	total, files, err := localTree(ctx, localPaths)
 	if err != nil {
@@ -2582,6 +2813,7 @@ func (s *FileService) runFileUpload(ctx context.Context, taskID string, source F
 		task.Total, task.Files = total, files
 	})
 	config := s.configSnapshot()
+	s.updateFileTask(taskID, func(task *fileTaskState) { task.Stage = "connecting" })
 	sshClient, client, err := s.dialSFTPWithOptions(ctx, connection, remoteUploadSFTPOptions()...)
 	if err != nil {
 		s.finishFileTask(taskID, err)
@@ -2597,6 +2829,7 @@ func (s *FileService) runFileUpload(ctx context.Context, taskID string, source F
 	)
 	defer closeDownloadSFTPClients(sshClients, sftpClients)
 	tuning := remoteUploadTransferTuning(config.TaskConcurrency, config.TaskChunkConcurrency)
+	s.updateFileTask(taskID, func(task *fileTaskState) { task.Stage = "creatingRemoteDirectory" })
 	if err := client.MkdirAll(remoteRoot); err != nil {
 		s.finishFileTask(taskID, err)
 		return
@@ -2917,6 +3150,7 @@ func (s *FileService) runFileDownload(ctx context.Context, taskID string, connec
 	if s.taskScheduler != nil {
 		defer s.taskScheduler.Release()
 	}
+	s.updateFileTask(taskID, func(task *fileTaskState) { task.Status, task.Stage = fileTaskScanning, "connecting" })
 	sshClient, client, err := s.dialSFTPWithOptions(ctx, connection, remoteDownloadSFTPOptions()...)
 	if err != nil {
 		s.finishFileTask(taskID, err)
@@ -2925,7 +3159,7 @@ func (s *FileService) runFileDownload(ctx context.Context, taskID string, connec
 	sshClients := []*ssh.Client{sshClient}
 	sftpClients := []*sftp.Client{client}
 	defer func() { closeDownloadSFTPClients(sshClients, sftpClients) }()
-	s.updateFileTask(taskID, func(task *fileTaskState) { task.Status, task.Stage = fileTaskScanning, fileTaskScanning })
+	s.updateFileTask(taskID, func(task *fileTaskState) { task.Stage = "loadingRemoteDirectory" })
 	items := make([]remoteTreeItem, 0)
 	for _, remote := range remotePaths {
 		normalized := normalizedRemotePath(remote)

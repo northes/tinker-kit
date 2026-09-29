@@ -206,12 +206,59 @@ func TestNewSystemSFTPCommandUsesSSHSubsystem(t *testing.T) {
 	}
 }
 
+func TestSSHHandshakeGateLimitsConcurrentConnections(t *testing.T) {
+	const limit = 3
+	gate := newSSHHandshakeGate(limit)
+	var active atomic.Int32
+	var peak atomic.Int32
+	var workers sync.WaitGroup
+
+	for range 24 {
+		workers.Add(1)
+		go func() {
+			defer workers.Done()
+			release, err := gate.acquire(context.Background())
+			if err != nil {
+				t.Errorf("acquire handshake slot: %v", err)
+				return
+			}
+			current := active.Add(1)
+			for observed := peak.Load(); current > observed && !peak.CompareAndSwap(observed, current); observed = peak.Load() {
+			}
+			time.Sleep(time.Millisecond)
+			active.Add(-1)
+			release()
+		}()
+	}
+	workers.Wait()
+	if got := peak.Load(); got > limit {
+		t.Fatalf("peak concurrent handshakes = %d, want at most %d", got, limit)
+	}
+}
+
+func TestSSHAuthenticationFailureClassification(t *testing.T) {
+	if !isSSHAuthenticationFailure(errors.New("ssh: handshake failed: ssh: unable to authenticate")) {
+		t.Fatal("SSH credential rejection should be classified as an authentication failure")
+	}
+	if isSSHAuthenticationFailure(errors.New("ssh: handshake failed: EOF")) {
+		t.Fatal("a handshake disconnect should not be reported as an authentication failure")
+	}
+}
+
 func TestRemoteTransferCommandQuotesPaths(t *testing.T) {
 	if got, want := remoteTransferCommand(remoteFileOperationCopy, "/remote/O'Brien", "/target/O'Brien"), `cp -a '/remote/O'"'"'Brien' '/target/O'"'"'Brien'`; got != want {
 		t.Fatalf("远程复制命令 = %q, want %q", got, want)
 	}
 	if got, want := remoteTransferCommand(remoteFileOperationMove, "/source", "/target"), "mv '/source' '/target'"; got != want {
 		t.Fatalf("远程移动命令 = %q, want %q", got, want)
+	}
+}
+
+func TestRemoteDeleteCommandDeletesPathsInOneRemoteProcess(t *testing.T) {
+	got := remoteDeleteCommand([]string{"/remote/O'Brien", "/target/folder"})
+	want := `rm -rf -- '/remote/O'"'"'Brien' '/target/folder'`
+	if got != want {
+		t.Fatalf("远程删除命令 = %q, want %q", got, want)
 	}
 }
 

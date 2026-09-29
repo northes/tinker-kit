@@ -239,6 +239,7 @@ export interface FileTask {
     "current"?: string;
     "target"?: string;
     "paths"?: string[] | null;
+    "batch"?: boolean;
     "conflicts"?: string[] | null;
     "completed": number;
     "total": number;

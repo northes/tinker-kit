@@ -177,7 +177,7 @@ func (s *ImageService) GetImageTasks() ImageTaskSnapshot {
 	return s.taskSnapshotLocked()
 }
 
-// CancelImageTask cancels a queued or running export task.
+// CancelImageTask 取消排队中或运行中的用户发起镜像任务。
 func (s *ImageService) CancelImageTask(id string) error {
 	s.taskMu.Lock()
 	task := s.tasks[id]
@@ -185,7 +185,11 @@ func (s *ImageService) CancelImageTask(id string) error {
 		s.taskMu.Unlock()
 		return userError("errors.imageExport.taskNotFound")
 	}
-	if task.Type != imageTaskTypeExport || (task.Status != imageTaskQueued && task.Status != imageTaskRunning) {
+	if task.Status != imageTaskQueued && task.Status != imageTaskRunning {
+		s.taskMu.Unlock()
+		return nil
+	}
+	if task.Type != imageTaskTypeExport && task.Type != imageTaskTypePull && task.Type != imageTaskTypeLoad {
 		s.taskMu.Unlock()
 		return nil
 	}
@@ -204,7 +208,7 @@ func (s *ImageService) RetryImageExport(id string) (ImageExportResult, error) {
 		s.taskMu.Unlock()
 		return ImageExportResult{}, userError("errors.imageExport.taskNotFound")
 	}
-	if task.Type != imageTaskTypeExport || task.Status != imageTaskFailed {
+	if task.Type != imageTaskTypeExport || (task.Status != imageTaskFailed && task.Status != imageTaskCanceled) {
 		s.taskMu.Unlock()
 		return ImageExportResult{}, userError("errors.imageExport.taskNotRetryable")
 	}
@@ -226,7 +230,7 @@ func (s *ImageService) RetryImageExport(id string) (ImageExportResult, error) {
 		s.taskMu.Unlock()
 		return ImageExportResult{}, userError("errors.imageExport.taskNotFound")
 	}
-	if task.Type != imageTaskTypeExport || task.Status != imageTaskFailed {
+	if task.Type != imageTaskTypeExport || (task.Status != imageTaskFailed && task.Status != imageTaskCanceled) {
 		s.taskMu.Unlock()
 		return ImageExportResult{}, userError("errors.imageExport.taskNotRetryable")
 	}
@@ -255,6 +259,45 @@ func (s *ImageService) RetryImageExport(id string) (ImageExportResult, error) {
 		s.runImageExportWithSnapshot(ctx, id, sourceID, imageID, target, source, cliPath)
 	}()
 	return ImageExportResult{Started: 1, Snapshot: snapshot}, nil
+}
+
+// RetryImageTask 使用原始参数重新排入失败或已取消的镜像任务。
+func (s *ImageService) RetryImageTask(id string) (ImageExportResult, error) {
+	s.taskMu.Lock()
+	task := s.tasks[id]
+	if task == nil {
+		s.taskMu.Unlock()
+		return ImageExportResult{}, userError("errors.imageExport.taskNotFound")
+	}
+	if task.Status != imageTaskFailed && task.Status != imageTaskCanceled {
+		s.taskMu.Unlock()
+		return ImageExportResult{}, userError("errors.imageExport.taskNotRetryable")
+	}
+	taskType, sourceID, imageID, target := task.Type, task.SourceID, task.ImageID, task.Path
+	s.taskMu.Unlock()
+
+	if taskType == imageTaskTypeExport {
+		return s.RetryImageExport(id)
+	}
+	source, cliPath, _, err := s.sourceSnapshot(sourceID)
+	if err != nil {
+		return ImageExportResult{}, err
+	}
+	switch taskType {
+	case imageTaskTypePull:
+		if source.Kind == "registry" {
+			return ImageExportResult{}, userError("errors.imageExport.registryPullUnsupported")
+		}
+		s.enqueueImagePullWithSnapshot(sourceID, imageID, source, cliPath)
+	case imageTaskTypeLoad:
+		if target == "" {
+			return ImageExportResult{}, userError("errors.imageExport.exportTaskIncomplete")
+		}
+		s.enqueueImageImportWithSnapshot(sourceID, target, source, cliPath)
+	default:
+		return ImageExportResult{}, userError("errors.imageExport.taskNotRetryable")
+	}
+	return ImageExportResult{Started: 1, Snapshot: s.GetImageTasks()}, nil
 }
 
 // StartImageExport 打开原生保存对话框，并异步导出镜像 tar 包。estimatedSize 是镜像列表提供的估算字节数。

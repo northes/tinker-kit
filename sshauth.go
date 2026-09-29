@@ -4,10 +4,42 @@ import (
 	"context"
 	"errors"
 	"net"
+	"strings"
+	"sync"
 
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/knownhosts"
 )
+
+// 限制批量任务的新 SSH 握手峰值，避免触发服务端 MaxStartups；不限制已建立连接的传输并发。
+const maxConcurrentSSHHandshakes = 4
+
+type sshHandshakeGate struct {
+	slots chan struct{}
+}
+
+func newSSHHandshakeGate(limit int) *sshHandshakeGate {
+	return &sshHandshakeGate{slots: make(chan struct{}, limit)}
+}
+
+func (g *sshHandshakeGate) acquire(ctx context.Context) (func(), error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	select {
+	case g.slots <- struct{}{}:
+		var once sync.Once
+		return func() { once.Do(func() { <-g.slots }) }, nil
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+}
+
+var fileSSHHandshakeGate = newSSHHandshakeGate(maxConcurrentSSHHandshakes)
+
+func isSSHAuthenticationFailure(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "ssh: unable to authenticate")
+}
 
 func passwordAuthMethods(password string) []ssh.AuthMethod {
 	return []ssh.AuthMethod{

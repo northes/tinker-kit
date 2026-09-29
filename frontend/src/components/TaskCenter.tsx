@@ -11,11 +11,11 @@ import { Events, Window } from '@wailsio/runtime';
 import { useTranslation } from 'react-i18next';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import type { Config, FileTask, ImageTask } from '../../bindings/changeme/models';
-import { CancelFileTask, GetFileTasks } from '../../bindings/changeme/fileservice';
+import { CancelFileTask, GetFileTasks, RetryFileTask } from '../../bindings/changeme/fileservice';
 import {
   CancelImageTask,
   GetImageTasks,
-  RetryImageExport,
+  RetryImageTask,
 } from '../../bindings/changeme/imageservice';
 import { Get as GetConfig } from '../../bindings/changeme/configservice';
 import { GetFileSources } from '../../bindings/changeme/fileservice';
@@ -27,7 +27,8 @@ import {
 } from '../../bindings/changeme/tasknotificationservice';
 import { toast } from './ui/toast';
 import { showTaskNotificationPermissionDialog } from '../lib/task-notification-feedback';
-import { formatTaskBytes } from '../lib/task-format';
+import { formatTaskBytes, formatTaskDuration } from '../lib/task-format';
+import { formatBackendError } from '../lib/backend-error';
 import { Badge } from './ui/badge';
 import { Button } from './ui/button';
 import { Label } from './ui/label';
@@ -87,6 +88,8 @@ export function useTaskCenter() {
 
 const terminal = (status: string) => ['success', 'failed', 'canceled'].includes(status);
 const active = (status: string) => ['queued', 'running', 'scanning', 'conflict'].includes(status);
+const hasByteSpeed = (task: UnifiedTask) =>
+  Boolean(task.file || task.image?.type === 'export' || task.image?.type === 'load');
 const imageValue = (task: ImageTask) =>
   task.type === 'export' || task.type === 'load' ? task.bytes : task.completed;
 const fileValue = (task: FileTask) => task.completed;
@@ -153,8 +156,10 @@ export function TaskCenter({
   settings: TaskSettings;
   onSettingsChange: (patch: Partial<TaskSettings>) => void;
 }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [open, setOpen] = useState(false);
+  const [showElapsedTime, setShowElapsedTime] = useState(false);
+  const [cancelingAll, setCancelingAll] = useState(false);
   const [limitsOpen, setLimitsOpen] = useState(false);
   const [notificationPermissionOpen, setNotificationPermissionOpen] = useState(false);
   const [notificationSettingsOpenFailed, setNotificationSettingsOpenFailed] = useState(false);
@@ -210,7 +215,7 @@ export function TaskCenter({
           });
           toast.add({
             title,
-            description: task.error,
+            description: task.error ? formatBackendError(task.error) : undefined,
             type: task.status === 'failed' ? 'error' : undefined,
           });
           void (async () => {
@@ -382,11 +387,36 @@ export function TaskCenter({
   });
 
   const activeTasks = visibleTasks.filter((task) => active(task.status));
+  const hasCancelableTasks = allTasks.some((task) => active(task.status));
   const known = activeTasks.filter((task) => task.total > 0 && task.image?.type !== 'pull');
   const hasUnknown = activeTasks.some((task) => task.total <= 0 || task.image?.type === 'pull');
   const total = known.reduce((sum, task) => sum + task.total, 0);
   const completed = known.reduce((sum, task) => sum + Math.min(task.completed, task.total), 0);
   const totalProgress = total > 0 ? (completed / total) * 100 : 0;
+  const totalSpeed = activeTasks.reduce(
+    (sum, task) => sum + (hasByteSpeed(task) ? (task.speed ?? 0) : 0),
+    0,
+  );
+  const aggregateProgressPercent =
+    activeTasks.length > 0 && !hasUnknown && total > 0 ? Math.min(100, totalProgress) : null;
+  const remainingSeconds =
+    activeTasks.length > 0 && !hasUnknown && totalSpeed > 0
+      ? Math.ceil(Math.max(0, total - completed) / totalSpeed)
+      : null;
+  const earliestTaskStart = activeTasks.reduce((earliest, task) => {
+    const createdAt = Date.parse(task.createdAt);
+    return Number.isFinite(createdAt) ? Math.min(earliest, createdAt) : earliest;
+  }, Number.POSITIVE_INFINITY);
+  const elapsedSeconds = Number.isFinite(earliestTaskStart)
+    ? Math.floor(Math.max(0, now - earliestTaskStart) / 1000)
+    : null;
+  const footerTimeText = showElapsedTime
+    ? t('taskCenter.elapsedTime', {
+        duration: elapsedSeconds === null ? '—' : formatTaskDuration(elapsedSeconds),
+      })
+    : t('taskCenter.remainingTime', {
+        duration: remainingSeconds === null ? '—' : formatTaskDuration(remainingSeconds),
+      });
 
   const selectConcurrency = (key: 'taskConcurrency' | 'taskChunkConcurrency', next: number) => {
     const updated = { ...concurrencyDraft, [key]: next };
@@ -405,6 +435,31 @@ export function TaskCenter({
         taskNotificationMode: saved.taskNotificationMode,
       });
     })().catch(() => toast.add({ title: t('toast.settingsFailed'), type: 'error' }));
+  };
+
+  const cancelAllTasks = async () => {
+    if (cancelingAll) return;
+    setCancelingAll(true);
+    try {
+      const pending = allTasks.filter((task) => active(task.status));
+      const results = await Promise.allSettled(
+        pending.map((task) => (task.file ? CancelFileTask(task.id) : CancelImageTask(task.id))),
+      );
+      if (results.some((result) => result.status === 'rejected')) {
+        toast.add({ title: t('taskCenter.cancelSomeFailed'), type: 'error' });
+      }
+    } finally {
+      setCancelingAll(false);
+    }
+  };
+
+  const retryTask = async (task: UnifiedTask) => {
+    try {
+      if (task.file) await RetryFileTask(task.id);
+      else await RetryImageTask(task.id);
+    } catch {
+      toast.add({ title: t('taskCenter.retryFailed'), type: 'error' });
+    }
   };
 
   const statusLabel = (status: string) =>
@@ -427,7 +482,7 @@ export function TaskCenter({
         ? `${formatTaskBytes(task.completed)} / ${formatTaskBytes(task.total)}`
         : task.file?.files
           ? t('taskCenter.filesProgress', { done: task.file.doneFiles, total: task.file.files })
-          : task.stage;
+          : '—';
   const toolOptions = (['all', 'image-manager', 'ssh-files'] as ToolFilter[]).map((value) => ({
     value,
     label: t(`taskCenter.tools.${value}`),
@@ -446,12 +501,11 @@ export function TaskCenter({
   return (
     <TaskCenterContext.Provider value={openTaskCenter}>
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="max-w-2xl">
-          <DialogHeader>
+        <DialogContent className="flex min-h-0 max-h-[calc(100dvh-var(--app-titlebar-height)-4rem)] flex-col sm:max-w-lg">
+          <DialogHeader className="shrink-0">
             <DialogTitle>{t('taskCenter.title')}</DialogTitle>
-            <DialogDescription>{t('taskCenter.description')}</DialogDescription>
           </DialogHeader>
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid shrink-0 grid-cols-2 gap-2">
             <Select
               items={toolOptions}
               value={toolFilter}
@@ -489,20 +543,33 @@ export function TaskCenter({
               </SelectContent>
             </Select>
           </div>
-          <Button
-            variant="link"
-            size="sm"
-            aria-expanded={limitsOpen}
-            aria-controls="task-center-limits"
-            onClick={() => setLimitsOpen((current) => !current)}
-            className="w-fit px-0"
-          >
-            {t(limitsOpen ? 'taskCenter.hideLimits' : 'taskCenter.configureLimits')}
-          </Button>
+          <div className="flex shrink-0 items-center justify-between gap-3">
+            <Button
+              variant="link"
+              size="sm"
+              aria-expanded={limitsOpen}
+              aria-controls="task-center-limits"
+              onClick={() => setLimitsOpen((current) => !current)}
+              className="w-fit shrink-0 px-0"
+            >
+              {t(limitsOpen ? 'taskCenter.hideLimits' : 'taskCenter.configureLimits')}
+            </Button>
+            {hasCancelableTasks ? (
+              <Button
+                variant="destructive"
+                size="sm"
+                className="shrink-0"
+                disabled={cancelingAll}
+                onClick={() => void cancelAllTasks()}
+              >
+                {t('taskCenter.cancelAll')}
+              </Button>
+            ) : null}
+          </div>
           {limitsOpen ? (
             <div
               id="task-center-limits"
-              className="grid grid-cols-1 gap-x-6 gap-y-3 rounded-md border border-border px-3 py-2.5 sm:grid-cols-2"
+              className="grid shrink-0 grid-cols-1 gap-x-6 gap-y-3 rounded-md border border-border px-3 py-2.5 sm:grid-cols-2"
             >
               {(
                 [
@@ -550,7 +617,7 @@ export function TaskCenter({
             </div>
           ) : null}
           <ScrollArea
-            className="h-[min(52vh,480px)] overscroll-contain [padding-inline-end:var(--overlay-scrollbar-size)]"
+            className="max-h-[min(52vh,480px)] min-h-0 flex-1 overscroll-contain [padding-inline-end:var(--overlay-scrollbar-size)]"
             onViewport={setViewport}
             options={{ overflow: { x: 'hidden' } }}
           >
@@ -559,12 +626,25 @@ export function TaskCenter({
                 const task = visibleTasks[item.index];
                 const progress = progressPercent(task);
                 const isActive = active(task.status);
+                const measureText = progressText(task);
+                const speedText =
+                  isActive && (task.speed ?? 0) > 0 && hasByteSpeed(task)
+                    ? `${formatTaskBytes(task.speed ?? 0)}/s`
+                    : '—';
+                const remainingTaskSeconds =
+                  isActive && task.total > 0 && (task.speed ?? 0) > 0 && task.image?.type !== 'pull'
+                    ? Math.ceil(Math.max(0, task.total - task.completed) / (task.speed ?? 0))
+                    : null;
+                const percentText =
+                  progress === null
+                    ? '—'
+                    : `${progress.toLocaleString(i18n.resolvedLanguage, { maximumFractionDigits: 1 })}%`;
                 const toolName = t(
                   task.tool === 'image-manager'
                     ? 'tools.image-manager.name'
                     : 'tools.ssh-files.name',
                 );
-                const canRetry = task.image?.type === 'export' && task.status === 'failed';
+                const canRetry = task.status === 'failed' || task.status === 'canceled';
                 return (
                   <div
                     key={task.id}
@@ -581,10 +661,15 @@ export function TaskCenter({
                         >
                           {taskTitle(task, t)}
                         </div>
-                        <div className="mt-1 flex items-center gap-2 text-[10px] text-muted-foreground">
-                          <span>{toolName}</span>
+                        <div className="mt-1 flex min-w-0 items-center gap-2 text-[10px] text-muted-foreground">
+                          <span className="shrink-0">{toolName}</span>
                           <span aria-hidden="true">·</span>
-                          <span>
+                          <span
+                            className="min-w-0 truncate"
+                            title={
+                              sourceDisplayNames[task.sourceID] || t('taskCenter.unknownSource')
+                            }
+                          >
                             {sourceDisplayNames[task.sourceID] || t('taskCenter.unknownSource')}
                           </span>
                         </div>
@@ -622,40 +707,63 @@ export function TaskCenter({
                           </Button>
                         ) : null}
                         {canRetry ? (
-                          <Button
-                            variant="ghost"
-                            size="xs"
-                            onClick={() => void RetryImageExport(task.id)}
-                          >
+                          <Button variant="ghost" size="xs" onClick={() => void retryTask(task)}>
                             {t('taskCenter.retry')}
                           </Button>
                         ) : null}
                       </div>
                     </div>
-                    <div className="mt-2 flex items-center gap-2">
+                    <div
+                      className={`mt-2 h-1.5 w-full overflow-hidden rounded-full bg-muted ${progress === null && isActive ? 'animate-pulse motion-reduce:animate-none' : ''}`}
+                    >
                       <div
-                        className={`h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-muted ${progress === null && isActive ? 'animate-pulse motion-reduce:animate-none' : ''}`}
+                        className="h-full rounded-full bg-primary"
+                        style={{ width: `${progress ?? 0}%` }}
+                      />
+                    </div>
+                    <div className="mt-1 grid min-w-0 grid-cols-[minmax(0,1fr)_4rem] items-center gap-x-2 gap-y-1 font-mono text-[10px] tabular-nums text-muted-foreground sm:grid-cols-[10rem_3.5rem_5.5rem_5.5rem]">
+                      <span
+                        className="min-w-0 whitespace-normal sm:whitespace-nowrap"
+                        title={measureText}
+                        aria-label={t('taskCenter.itemProgress', { value: measureText })}
                       >
-                        <div
-                          className="h-full rounded-full bg-primary"
-                          style={{ width: `${progress ?? 0}%` }}
-                        />
-                      </div>
-                      <span className="shrink-0 font-mono text-[10px] text-muted-foreground">
-                        {progressText(task)}
+                        {measureText}
+                      </span>
+                      <span
+                        className="text-right"
+                        aria-label={t('taskCenter.itemPercent', { value: percentText })}
+                      >
+                        {percentText}
+                      </span>
+                      <span
+                        className="text-right"
+                        aria-label={t('taskCenter.itemSpeed', { value: speedText })}
+                      >
+                        {speedText}
+                      </span>
+                      <span
+                        className="text-right"
+                        aria-label={t('taskCenter.itemRemaining', {
+                          value:
+                            remainingTaskSeconds === null
+                              ? '—'
+                              : formatTaskDuration(remainingTaskSeconds),
+                        })}
+                      >
+                        {t('taskCenter.itemRemainingShort', {
+                          duration:
+                            remainingTaskSeconds === null
+                              ? '—'
+                              : formatTaskDuration(remainingTaskSeconds),
+                        })}
                       </span>
                     </div>
-                    {isActive &&
-                    task.speed &&
-                    task.speed > 0 &&
-                    (task.file || task.image?.type === 'export' || task.image?.type === 'load') ? (
-                      <div className="mt-1 text-[10px] text-muted-foreground">
-                        {formatTaskBytes(task.speed)}/s
-                      </div>
-                    ) : null}
                     {task.error ? (
-                      <div className="mt-1 break-all text-[10px] text-destructive">
-                        {task.error}
+                      <div
+                        className="mt-1 line-clamp-2 break-all text-[10px] text-destructive"
+                        title={formatBackendError(task.error)}
+                      >
+                        {formatBackendError(task.error)}
                       </div>
                     ) : null}
                   </div>
@@ -668,19 +776,48 @@ export function TaskCenter({
               ) : null}
             </div>
           </ScrollArea>
-          <DialogFooter className="gap-3 sm:items-center sm:justify-between">
-            <div className="flex min-w-0 flex-1 items-center gap-2">
+          <DialogFooter className="flex-col shrink-0 gap-3 sm:flex-row sm:items-end sm:justify-between">
+            <div className="flex min-w-0 flex-1 flex-col gap-2">
               <div
-                className={`h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-muted ${hasUnknown ? 'animate-pulse motion-reduce:animate-none' : ''}`}
+                role="progressbar"
+                aria-label={t('taskCenter.aggregateProgress')}
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-valuenow={aggregateProgressPercent ?? undefined}
+                className={`h-1.5 w-full overflow-hidden rounded-full bg-muted ${hasUnknown ? 'animate-pulse motion-reduce:animate-none' : ''}`}
               >
                 <div
                   className="h-full rounded-full bg-primary"
                   style={{ width: `${totalProgress}%` }}
                 />
               </div>
-              <span className="shrink-0 text-[10px] text-muted-foreground">
-                {t('taskCenter.activeCount', { total: activeTasks.length })}
-              </span>
+              <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_8rem] items-center gap-x-2 gap-y-1 text-[10px] tabular-nums text-muted-foreground sm:grid-cols-[7rem_4.5rem_5rem_5rem]">
+                <span className="min-w-0 truncate" title={formatTaskBytes(totalSpeed) + '/s'}>
+                  {t('taskCenter.totalSpeed', { speed: `${formatTaskBytes(totalSpeed)}/s` })}
+                </span>
+                <span className="text-right">
+                  {t('taskCenter.progressPercent', {
+                    percent:
+                      aggregateProgressPercent === null
+                        ? '—'
+                        : `${aggregateProgressPercent.toLocaleString(i18n.resolvedLanguage, { maximumFractionDigits: 1 })}%`,
+                  })}
+                </span>
+                <span className="text-right">
+                  {t('taskCenter.activeCount', { total: activeTasks.length })}
+                </span>
+                <Button
+                  variant="link"
+                  size="xs"
+                  className="w-20 justify-end truncate px-0 text-[10px] text-muted-foreground"
+                  aria-label={t('taskCenter.toggleTimeDisplay')}
+                  aria-pressed={showElapsedTime}
+                  title={footerTimeText}
+                  onClick={() => setShowElapsedTime((current) => !current)}
+                >
+                  {footerTimeText}
+                </Button>
+              </div>
             </div>
             <Button variant="outline" onClick={() => setOpen(false)}>
               {t('common.close')}

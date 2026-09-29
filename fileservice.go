@@ -18,6 +18,8 @@ import (
 type FileService struct {
 	config        *ConfigService
 	taskScheduler *taskScheduler
+	sessionMu     sync.Mutex
+	sessions      map[string]*persistentSFTPSession
 	taskMu        sync.Mutex
 	tasks         map[string]*fileTaskState
 	taskOrder     []string
@@ -53,7 +55,7 @@ var imageMIMETypes = map[string]string{
 }
 
 func NewFileService(config ...*ConfigService) *FileService {
-	service := &FileService{}
+	service := &FileService{sessions: map[string]*persistentSFTPSession{}}
 	if len(config) > 0 {
 		service.config = config[0]
 	}

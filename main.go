@@ -164,6 +164,7 @@ func main() {
 	}
 	updateService.start(app.Updater, cfgService.Get().AutoCheckUpdates)
 	app.OnShutdown(updateService.stopScheduler)
+	app.OnShutdown(fileService.shutdown)
 	app.OnShutdown(imageService.shutdown)
 	app.OnShutdown(serviceManagerService.shutdown)
 	app.OnShutdown(portService.shutdown)

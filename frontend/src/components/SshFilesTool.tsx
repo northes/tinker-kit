@@ -135,6 +135,7 @@ import {
   CreateRemoteDirectory,
   GetFileSources,
   GetFileTasks,
+  GetRemoteCreationTimes,
   ListRemoteFiles,
   OperateRemoteFiles,
   ResolveRemoteFileTask,
@@ -644,6 +645,7 @@ type RemoteSearchMode = 'name' | 'content';
 type RemoteSearchScope = 'current' | 'recursive';
 type MissingFavoritePath = { sourceID: string; path: string; previousPath: string };
 type LoadingKind = 'sources' | 'directory' | 'search';
+type DirectoryLoadingPhase = 'connecting' | 'loadingDirectory';
 type CancellableCall = {
   cancel: (cause?: unknown) => PromiseLike<void> | void;
 };
@@ -669,6 +671,8 @@ export default function SshFilesTool({ active }: Props) {
   const [showHidden, setShowHidden] = useState(false);
   const [selected, setSelected] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
+  const [directoryLoadingPhase, setDirectoryLoadingPhase] =
+    useState<DirectoryLoadingPhase>('connecting');
   const [loadingSources, setLoadingSources] = useState(false);
   const [loadingCanceled, setLoadingCanceled] = useState<LoadingKind | null>(null);
   const [error, setError] = useState('');
@@ -743,6 +747,11 @@ export default function SshFilesTool({ active }: Props) {
   const activeSourceProfile = profiles.find((item) => item.id === activeSourceProfileID);
   const sourceUsable = Boolean(source && activeSourceProfile);
   const sourceDefaultPath = source?.defaultPath ?? '';
+  const loadingDirectoryPath = currentPath.trim()
+    ? currentPath
+    : sourceDefaultPath.trim()
+      ? normalizeRemotePath(sourceDefaultPath)
+      : t('sshFilesTool.remoteHome');
   const profileListingKey = useMemo(
     () => sshProfileListingKey(activeSourceProfile),
     [activeSourceProfile],
@@ -815,6 +824,7 @@ export default function SshFilesTool({ active }: Props) {
     async (id: string, pathValue: string, hidden: boolean) => {
       const requestID = ++directoryRequestRef.current;
       loadingKindRef.current = 'directory';
+      setDirectoryLoadingPhase('connecting');
       setLoadingCanceled(null);
       const requested = pathValue.trim();
       const normalizedPath = requested ? normalizeRemotePath(requested) : '';
@@ -837,13 +847,33 @@ export default function SshFilesTool({ active }: Props) {
       setError('');
       setEntries([]);
       setSelected([]);
-      const request = ListRemoteFiles(id, normalizedPath, hidden);
+      const request = ListRemoteFiles(id, normalizedPath, hidden, String(requestID));
       loadingCallsRef.current.add(request);
       try {
         const result = await request;
         if (requestID !== directoryRequestRef.current) return;
         const resolved = result.path ? normalizeRemotePath(result.path) : normalizedPath;
-        setEntries(result.entries ?? []);
+        const nextEntries = result.entries ?? [];
+        setEntries(nextEntries);
+        if (nextEntries.length) {
+          const metadataRequest = GetRemoteCreationTimes(
+            id,
+            nextEntries.map((entry) => entry.path),
+          );
+          loadingCallsRef.current.add(metadataRequest);
+          void metadataRequest
+            .then((createdAt) => {
+              if (requestID !== directoryRequestRef.current || !createdAt) return;
+              setEntries((current) =>
+                current.map((entry) => ({
+                  ...entry,
+                  createdAt: createdAt[entry.path] ?? entry.createdAt,
+                })),
+              );
+            })
+            .catch(() => undefined)
+            .finally(() => loadingCallsRef.current.delete(metadataRequest));
+        }
         if (resolved) {
           directoryLoadKeyRef.current = [
             id,
@@ -1016,8 +1046,21 @@ export default function SshFilesTool({ active }: Props) {
     const offTasks = Events.On('ssh-files:tasks', (event) =>
       applyTaskSnapshot(event.data as FileTaskSnapshot),
     );
+    const offDirectoryLoading = Events.On('ssh-files:directory-loading', (event) => {
+      const payload = event.data as { requestID?: string; phase?: string };
+      if (
+        payload.requestID !== String(directoryRequestRef.current) ||
+        loadingKindRef.current !== 'directory'
+      ) {
+        return;
+      }
+      if (payload.phase === 'connecting' || payload.phase === 'loadingDirectory') {
+        setDirectoryLoadingPhase(payload.phase);
+      }
+    });
     return () => {
       offTasks();
+      offDirectoryLoading();
     };
   }, [active, applyTaskSnapshot]);
 
@@ -2024,10 +2067,12 @@ export default function SshFilesTool({ active }: Props) {
                 <div className="flex h-full flex-col items-center justify-center gap-2 p-6 text-center">
                   <Spinner />
                   <span className="text-sm text-muted-foreground">
-                    {searching ? t('sshFilesTool.searching') : t('sshFilesTool.loadingDirectory')}
+                    {searching
+                      ? t('sshFilesTool.searching')
+                      : t(`sshFilesTool.${directoryLoadingPhase}`)}
                   </span>
                   <span className="max-w-full truncate font-mono text-[11px] text-muted-foreground/70">
-                    {currentPath}
+                    {loadingDirectoryPath}
                   </span>
                   <Button
                     variant="ghost"

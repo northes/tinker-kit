@@ -11,3 +11,15 @@ export function formatTaskBytes(bytes: number) {
   const digits = unit === 0 ? 0 : 1;
   return `${(bytes / 1024 ** unit).toFixed(digits)} ${byteUnits[unit]}`;
 }
+
+export function formatTaskDuration(seconds: number) {
+  const duration = Math.max(0, Math.floor(seconds));
+  const hours = Math.floor(duration / 3600);
+  const minutes = Math.floor((duration % 3600) / 60);
+  const remainingSeconds = duration % 60;
+  const pad = (value: number) => String(value).padStart(2, '0');
+
+  return hours > 0
+    ? `${hours}:${pad(minutes)}:${pad(remainingSeconds)}`
+    : `${minutes}:${pad(remainingSeconds)}`;
+}
