@@ -439,6 +439,7 @@
       "startDate": "Start date",
       "endDate": "End date",
       "differenceResult": "Difference",
+      "weekEquivalent": "Converted from total days",
       "adjustmentTitle": "Add or subtract",
       "baseDate": "Base date",
       "operation": "Operation",
@@ -457,6 +458,7 @@
         "years": "years",
         "months": "months",
         "days": "days",
+        "weeks": "weeks",
         "hours": "hours",
         "minutes": "minutes",
         "seconds": "seconds"

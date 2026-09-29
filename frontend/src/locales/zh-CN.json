@@ -439,6 +439,7 @@
       "startDate": "开始日期",
       "endDate": "结束日期",
       "differenceResult": "差异",
+      "weekEquivalent": "按总天数换算",
       "adjustmentTitle": "日期加减",
       "baseDate": "基准日期",
       "operation": "运算",
@@ -457,6 +458,7 @@
         "years": "年",
         "months": "月",
         "days": "日",
+        "weeks": "周",
         "hours": "时",
         "minutes": "分",
         "seconds": "秒"

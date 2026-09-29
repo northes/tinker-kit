@@ -123,11 +123,13 @@ function DurationField({
 function ResultValue({
   label,
   value,
+  detail,
   onCopy,
   copyLabel,
 }: {
   label: string;
   value: string;
+  detail?: string;
   onCopy: () => void;
   copyLabel: string;
 }) {
@@ -138,6 +140,7 @@ function ResultValue({
           {label}
         </span>
         <code className="mt-1 block break-words text-sm font-medium text-foreground">{value}</code>
+        {detail ? <span className="mt-1 block text-xs text-muted-foreground">{detail}</span> : null}
       </div>
       <Button
         variant="ghost"
@@ -278,6 +281,13 @@ export default function DateCalculator({
         .map((unit) => `${difference.duration[unit]} ${t(`timeTool.dateCalculator.units.${unit}`)}`)
         .join(' ')
     : '';
+  const differenceWeeksText =
+    difference && difference.totalDays >= 7
+      ? `${t('timeTool.dateCalculator.weekEquivalent')}: ${Math.floor(difference.totalDays / 7)} ${t('timeTool.dateCalculator.units.weeks')}${difference.totalDays % 7 > 0 ? ` ${difference.totalDays % 7} ${t('timeTool.dateCalculator.units.days')}` : ''}`
+      : '';
+  const differenceCopyText = differenceWeeksText
+    ? `${differenceText}\n${differenceWeeksText}`
+    : differenceText;
   const parsedBaseDate = parseTimeInput(baseDate);
   const duration = parseDurationValues(durationValues);
   const calculatedDate =
@@ -334,9 +344,10 @@ export default function DateCalculator({
             <ResultValue
               label={t('timeTool.dateCalculator.differenceResult')}
               value={differenceText}
+              detail={differenceWeeksText}
               onCopy={() =>
                 copyResult(
-                  differenceText,
+                  differenceCopyText,
                   t('timeTool.dateCalculator.copyDifference'),
                   differenceInput,
                   dateCalculatorModes.difference,

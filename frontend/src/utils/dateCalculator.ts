@@ -15,6 +15,7 @@ export type DateOperation = 'add' | 'subtract';
 
 export type DateDifference = {
   duration: DateDuration;
+  totalDays: number;
 };
 
 function isValidDate(date: Date) {
@@ -98,8 +99,10 @@ export function calculateDateDifference(start: Date, end: Date): DateDifference 
   const endTime = end.getTime();
   const earlier = endTime < startTime ? end : start;
   const later = endTime < startTime ? start : end;
+  const duration = calendarDuration(earlier, later);
   return {
-    duration: calendarDuration(earlier, later),
+    duration,
+    totalDays: Math.max(0, differenceInCalendarDays(later, earlier)),
   };
 }
 
