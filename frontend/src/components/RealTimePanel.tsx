@@ -16,11 +16,16 @@ import {
   useSortable,
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { ArrowClockwise, Globe, Plus, X } from '@phosphor-icons/react';
+import { ArrowClockwise, GearSix, Globe, Plus, X } from '@phosphor-icons/react';
+import { geoContains } from 'd3-geo';
+import { feature } from 'topojson-client';
+import type { GeometryObject, Topology } from 'topojson-specification';
+import landTopology from 'world-atlas/land-110m.json';
 import { GetRealTime } from '../../bindings/changeme/realtimeservice';
 import { Button } from './ui/button';
 import { ScrollArea } from './ui/scroll-area';
 import { ConfirmDialog } from './ConfirmDialog';
+import { NtpServerDialog } from './NtpServerDialog';
 import { TimezoneCombobox } from './TimezoneCombobox';
 import { getSystemTimeZone, getTimeZoneOptions } from '../utils/time';
 
@@ -58,11 +63,20 @@ const cityZones: Array<{ longitude: number; latitude: number; zone: string }> = 
   { longitude: 174.8, latitude: -36.9, zone: 'Pacific/Auckland' },
   { longitude: -171.8, latitude: -13.8, zone: 'Pacific/Apia' },
 ];
+const worldTopology = landTopology as unknown as Topology;
+const worldLand = feature(worldTopology, worldTopology.objects.land as GeometryObject);
+const worldLandDots = Array.from({ length: 40 }, (_, row) => 84 - row * 3.6).flatMap((latitude) =>
+  Array.from({ length: 150 }, (_, column) => -178.8 + column * 2.4)
+    .filter((longitude) => geoContains(worldLand, [longitude, latitude]))
+    .map((longitude) => ({
+      x: ((longitude + 180) / 360) * 900,
+      y: ((90 - latitude) / 180) * 300,
+    })),
+);
 
 function SortableClock({
   entry,
   zones,
-  onZone,
   onRemove,
   onLocate,
   canRemove,
@@ -73,7 +87,6 @@ function SortableClock({
 }: {
   entry: ClockEntry;
   zones: Array<{ id: string; label: string }>;
-  onZone: (id: string) => void;
   onRemove: () => void;
   onLocate: () => void;
   canRemove: boolean;
@@ -116,6 +129,7 @@ function SortableClock({
   return (
     <div
       ref={setNodeRef}
+      data-clock-id={entry.id}
       style={{ transform: CSS.Transform.toString(transform), transition }}
       className={`w-[290px] flex-none border-e border-border px-4 py-4 ${isDragging ? 'opacity-50' : ''}`}
     >
@@ -169,21 +183,17 @@ function SortableClock({
           </>
         )}
       </div>
-      <div className="mt-3">
-        <TimezoneCombobox
-          value={entry.zone}
-          onChange={onZone}
-          zones={zones}
-          label={t('timeTool.realTime.timeZone')}
-          placeholder={t('timeTool.timezonePlaceholder')}
-          emptyLabel={t('timeTool.timezoneNoResults')}
-        />
-      </div>
     </div>
   );
 }
 
-export default function RealTimePanel() {
+export default function RealTimePanel({
+  ntpServers,
+  onNtpServersChange,
+}: {
+  ntpServers: string[];
+  onNtpServersChange: (ntpServers: string[]) => void;
+}) {
   const { t } = useTranslation();
   const zones = useMemo(() => getTimeZoneOptions(), []);
   const [clocks, setClocks] = useState<ClockEntry[]>(() => {
@@ -199,8 +209,20 @@ export default function RealTimePanel() {
   const [mapCandidate, setMapCandidate] = useState<string | null>(null);
   const [zoneToAdd, setZoneToAdd] = useState(getSystemTimeZone);
   const [removeId, setRemoveId] = useState<string | null>(null);
+  const [ntpOpen, setNtpOpen] = useState(false);
   const anchor = useRef({ epoch: 0, performance: performance.now(), synced: false });
+  const ntpServersRef = useRef(ntpServers);
+  ntpServersRef.current = ntpServers;
   const syncInFlight = useRef(false);
+  const clockViewport = useRef<HTMLElement | null>(null);
+  const setClockViewport = useCallback((viewport: HTMLElement | null) => {
+    clockViewport.current = viewport;
+  }, []);
+  const panelViewport = useRef<HTMLElement | null>(null);
+  const setPanelViewport = useCallback((viewport: HTMLElement | null) => {
+    panelViewport.current = viewport;
+  }, []);
+  const clockRow = useRef<HTMLDivElement | null>(null);
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
@@ -210,7 +232,7 @@ export default function RealTimePanel() {
     syncInFlight.current = true;
     setSyncState('syncing');
     try {
-      const epoch = await GetRealTime();
+      const epoch = await GetRealTime(ntpServersRef.current);
       anchor.current = { epoch, performance: performance.now(), synced: true };
       setNow(epoch);
       setSyncState('synced');
@@ -266,6 +288,26 @@ export default function RealTimePanel() {
     setMapCandidate(zone);
     setZoneToAdd(zone);
   };
+  const locateClock = (clock: ClockEntry) => {
+    setFocusedZone(clock.zone);
+    setMapCandidate(null);
+    const viewport = clockViewport.current;
+    if (!viewport) return;
+    const card = viewport.querySelector<HTMLElement>(`[data-clock-id="${clock.id}"]`);
+    if (!card) return;
+    const viewportRect = viewport.getBoundingClientRect();
+    const cardRect = card.getBoundingClientRect();
+    const delta = cardRect.left - viewportRect.left - (viewportRect.width - cardRect.width) / 2;
+    viewport.scrollBy({ left: delta, behavior: 'smooth' });
+    const row = clockRow.current;
+    const panel = panelViewport.current;
+    if (!row || !panel) return;
+    const panelRect = panel.getBoundingClientRect();
+    const rowRect = row.getBoundingClientRect();
+    if (rowRect.top < panelRect.top || rowRect.bottom > panelRect.bottom) {
+      panel.scrollBy({ top: rowRect.top - panelRect.top, behavior: 'smooth' });
+    }
+  };
   const mapPoint = (zone: string) => {
     const city = cityZones.find((item) => item.zone === zone);
     if (city) return city;
@@ -288,20 +330,35 @@ export default function RealTimePanel() {
   const removeZoneName = zones.find((zone) => zone.id === removeZone)?.label ?? removeZone ?? '';
   return (
     <div className="h-full min-h-0">
-      <ScrollArea className="h-full min-h-0" options={{ overflow: { x: 'hidden' } }}>
+      <ScrollArea
+        className="h-full min-h-0"
+        options={{ overflow: { x: 'hidden' } }}
+        onViewport={setPanelViewport}
+      >
         <div className="flex min-h-full flex-col">
           <div className="flex flex-none flex-col gap-2 border-b border-border px-1 pb-3">
             <div className="flex min-h-8 items-center gap-2 text-xs text-muted-foreground">
               <span
                 className={`size-1.5 flex-none rounded-full ${syncState === 'synced' ? 'bg-emerald-500' : syncState === 'error' ? 'bg-destructive' : 'bg-amber-500'}`}
               />
-              <span role="status" aria-live="polite">
+              <span className="min-w-0 flex-1 truncate" role="status" aria-live="polite">
                 {t(`timeTool.realTime.sync.${syncState}`)}
               </span>
               <Button
                 variant="ghost"
+                size="sm"
+                className="flex-none"
+                aria-label={t('timeTool.realTime.ntpConfigure')}
+                title={t('timeTool.realTime.ntpConfigure')}
+                onClick={() => setNtpOpen(true)}
+              >
+                <GearSix size={14} weight="duotone" />
+                {t('timeTool.realTime.ntpTitle')}
+              </Button>
+              <Button
+                variant="ghost"
                 size="icon-sm"
-                className="ms-auto flex-none"
+                className="flex-none"
                 aria-label={t('timeTool.realTime.syncNow')}
                 title={t('timeTool.realTime.syncNow')}
                 disabled={syncState === 'syncing'}
@@ -324,8 +381,7 @@ export default function RealTimePanel() {
               />
               <Button
                 variant="default"
-                size="default"
-                className="mb-0.5 flex-none"
+                className="h-[46px] flex-none"
                 disabled={selectedZoneExists}
                 onClick={() => {
                   addZone(zoneToAdd);
@@ -341,8 +397,9 @@ export default function RealTimePanel() {
             </span>
           </div>
           <ScrollArea
-            className="h-[220px] flex-none"
+            className="flex-none [padding-block-end:var(--overlay-scrollbar-size)]"
             options={{ overflow: { x: 'scroll', y: 'hidden' } }}
+            onViewport={setClockViewport}
           >
             <DndContext
               sensors={sensors}
@@ -362,7 +419,7 @@ export default function RealTimePanel() {
                 items={clocks.map((clock) => clock.id)}
                 strategy={horizontalListSortingStrategy}
               >
-                <div className="flex min-h-[220px] w-max border-y border-border">
+                <div ref={clockRow} className="flex w-max border-y border-border">
                   {clocks.map((entry, index) => (
                     <SortableClock
                       key={entry.id}
@@ -382,13 +439,6 @@ export default function RealTimePanel() {
                       onLocate={() => {
                         setFocusedZone(entry.zone);
                         setMapCandidate(null);
-                      }}
-                      onZone={(zone) => {
-                        setFocusedZone(zone);
-                        setMapCandidate(null);
-                        setClocks((items) =>
-                          items.map((item) => (item.id === entry.id ? { ...item, zone } : item)),
-                        );
                       }}
                       onRemove={() => setRemoveId(entry.id)}
                     />
@@ -416,18 +466,6 @@ export default function RealTimePanel() {
               }}
               className="min-h-[120px] w-full flex-1 touch-none cursor-crosshair select-none rounded-sm bg-muted/25"
             >
-              <g
-                fill="currentColor"
-                className="text-muted-foreground/20"
-                stroke="currentColor"
-                strokeWidth="1"
-              >
-                <path d="M65 83 103 55 154 44 196 61 226 76 213 101 184 111 171 137 142 150 132 181 104 168 96 140 74 126Z" />
-                <path d="m207 178 30 10 16 31-7 35-19 31-17-20-4-39-15-25Z" />
-                <path d="m411 76 31-22 67-8 34 17 47-2 42 17 49-8 54 22-6 27-49 7-29 23-43-8-25 24-33-7-16-30-32-4-15-27-43-5-10-20-27 4Z" />
-                <path d="m476 148 34 1 24 20-5 41-23 43-19 30-18-19-9-41-19-29 15-32Z" />
-                <path d="m700 189 29-13 44 9 33 23-10 24-37 9-38-15-22-19Z" />
-              </g>
               {Array.from({ length: 25 }, (_, index) => (
                 <line
                   key={index}
@@ -452,12 +490,30 @@ export default function RealTimePanel() {
                   strokeWidth=".7"
                 />
               ))}
+              <g fill="currentColor" className="text-muted-foreground/60">
+                {worldLandDots.map((point) => (
+                  <circle key={`${point.x}-${point.y}`} cx={point.x} cy={point.y} r="1.35" />
+                ))}
+              </g>
               {clocks.map((clock, index) => (
                 <g
                   key={clock.id}
                   transform={`translate(${mapX(clock.zone)},${mapY(clock.zone)})`}
-                  aria-label={zones.find((zone) => zone.id === clock.zone)?.label ?? clock.zone}
+                  aria-label={t('timeTool.realTime.locate', {
+                    zone: zones.find((zone) => zone.id === clock.zone)?.label ?? clock.zone,
+                  })}
+                  role="button"
+                  tabIndex={0}
+                  className="cursor-pointer"
+                  onPointerDown={(event) => event.stopPropagation()}
+                  onClick={() => locateClock(clock)}
+                  onKeyDown={(event) => {
+                    if (event.key !== 'Enter' && event.key !== ' ') return;
+                    event.preventDefault();
+                    locateClock(clock);
+                  }}
                 >
+                  <circle r="12" fill="transparent" />
                   <line
                     y1="-8"
                     y2="8"
@@ -477,15 +533,12 @@ export default function RealTimePanel() {
                 </g>
               ))}
               {mapCandidate && (
-                <line
-                  x1={mapX(mapCandidate)}
-                  x2={mapX(mapCandidate)}
-                  y1={mapY(mapCandidate) - 9}
-                  y2={mapY(mapCandidate) + 9}
-                  stroke="currentColor"
+                <circle
+                  cx={mapX(mapCandidate)}
+                  cy={mapY(mapCandidate)}
+                  r="4"
+                  fill="currentColor"
                   className="text-muted-foreground"
-                  strokeDasharray="4 4"
-                  strokeWidth="2"
                 />
               )}
               <text
@@ -550,6 +603,16 @@ export default function RealTimePanel() {
             items.length > 1 ? items.filter((item) => item.id !== removeId) : items,
           );
           setRemoveId(null);
+        }}
+      />
+      <NtpServerDialog
+        open={ntpOpen}
+        onOpenChange={setNtpOpen}
+        servers={ntpServers}
+        onSave={(nextServers) => {
+          ntpServersRef.current = nextServers;
+          onNtpServersChange(nextServers);
+          void sync();
         }}
       />
     </div>

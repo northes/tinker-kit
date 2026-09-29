@@ -356,7 +356,6 @@
       "alreadyAdded": "Shown",
       "syncNow": "Sync NTP time now",
       "waiting": "Waiting for NTP synchronization",
-      "timeZone": "Time zone",
       "dragZone": "Drag to reorder {{zone}}",
       "sortHint": "Drag a time zone handle to reorder. Keyboard: focus a handle, press Space, then use the arrow keys. Scroll sideways for more.",
       "remove": "Remove time",
@@ -366,7 +365,15 @@
       "mapHint": "Time zone map (unmapped zones use offset)",
       "mapDescription": "Flat world map. Drag or click to preview the time zone of the nearest representative city. Unmapped zones are marked at the equator using a fixed UTC offset and do not represent their actual location. Use the full time zone search above as a keyboard alternative.",
       "mapSelectHint": "Click or drag the map to preview the nearest representative city time zone, then add it to the clock list.",
-      "mapCandidate": "Map candidate: {{zone}}"
+      "mapCandidate": "Map candidate: {{zone}}",
+      "ntpTitle": "NTP servers",
+      "ntpConfigure": "Edit NTP servers",
+      "ntpDescription": "Queried in parallel; the first successful response is used. A hostname without a port defaults to 123.",
+      "ntpServerLabel": "NTP server {{index}}",
+      "ntpPlaceholder": "e.g. pool.ntp.org:123",
+      "ntpAdd": "Add server",
+      "ntpRemove": "Remove server {{index}}",
+      "ntpInvalid": "\"{{server}}\" is not a valid host or host:port"
     },
     "modes": {
       "convert": "Convert",

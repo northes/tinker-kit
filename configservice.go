@@ -38,6 +38,7 @@ type Config struct {
 	TimeResultOrder              []string              `json:"timeResultOrder"`
 	HiddenTimeResults            []string              `json:"hiddenTimeResults"`
 	TimeWeekStart                string                `json:"timeWeekStart"`
+	NtpServers                   []string              `json:"ntpServers"`
 	JsonAutoFormatOnFill         bool                  `json:"jsonAutoFormatOnFill"`
 	JsonAutoFormatOnFillMigrated bool                  `json:"jsonAutoFormatOnFillMigrated"`
 	TextAlwaysShowSearch         bool                  `json:"textAlwaysShowSearch"`
@@ -184,7 +185,7 @@ type historyStored struct {
 }
 
 func defaultConfig() Config {
-	return Config{TrayMatchEnabled: true, TrayMatchTools: []string{"json", "time", "text", "base64", "diff", "jwt", "url"}, AutoOverwrite: true, AutoCheckUpdates: true, TaskConcurrency: 4, TaskChunkConcurrency: 4, TaskNotificationMode: "unfocused", Language: "zh-CN", SidebarMode: "full", SidebarTools: defaultSidebarTools(), ThemeMode: "dark", LightTheme: "default-light", DarkTheme: "default-dark", DiffClipboardTargetMode: "alternate", CodeEditorFontSize: 16, TimeResultOrder: []string{"local", "dateTime", "dateOnly", "timeOnly", "zonedIso8601", "rfc3339", "utc", "compact", "underscore", "unixSeconds", "unixMilliseconds", "unixNanoseconds"}, TimeWeekStart: "monday", JsonAutoFormatOnFill: true, JsonAutoFormatOnFillMigrated: true, ImageSources: defaultImageSources(), SSHProfilesVersion: currentSSHProfilesVersion, SSHProfiles: []SSHProfile{}, SSHConnections: []SSHConnection{}, FileSources: []FileSource{}, ServiceTargets: defaultServiceTargets(), PortSources: defaultPortSources(), PortForwards: []PortForwardConfig{}}
+	return Config{TrayMatchEnabled: true, TrayMatchTools: []string{"json", "time", "text", "base64", "diff", "jwt", "url"}, AutoOverwrite: true, AutoCheckUpdates: true, TaskConcurrency: 4, TaskChunkConcurrency: 4, TaskNotificationMode: "unfocused", Language: "zh-CN", SidebarMode: "full", SidebarTools: defaultSidebarTools(), ThemeMode: "dark", LightTheme: "default-light", DarkTheme: "default-dark", DiffClipboardTargetMode: "alternate", CodeEditorFontSize: 16, TimeResultOrder: []string{"local", "dateTime", "dateOnly", "timeOnly", "zonedIso8601", "rfc3339", "utc", "compact", "underscore", "unixSeconds", "unixMilliseconds", "unixNanoseconds"}, TimeWeekStart: "monday", NtpServers: defaultNtpServers(), JsonAutoFormatOnFill: true, JsonAutoFormatOnFillMigrated: true, ImageSources: defaultImageSources(), SSHProfilesVersion: currentSSHProfilesVersion, SSHProfiles: []SSHProfile{}, SSHConnections: []SSHConnection{}, FileSources: []FileSource{}, ServiceTargets: defaultServiceTargets(), PortSources: defaultPortSources(), PortForwards: []PortForwardConfig{}}
 }
 
 func normalizeThemeID(theme string, defaultID string, legacyID string) string {
@@ -813,6 +814,7 @@ func normalizeConfig(cfg Config) Config {
 	default:
 		cfg.TimeWeekStart = "monday"
 	}
+	cfg.NtpServers = normalizeNtpServers(cfg.NtpServers)
 	if !cfg.JsonAutoFormatOnFillMigrated {
 		cfg.JsonAutoFormatOnFill = true
 		cfg.JsonAutoFormatOnFillMigrated = true
@@ -923,7 +925,7 @@ func NewConfigService() *ConfigService {
 			}
 
 			cfg = normalizeConfig(cfg)
-			if legacySSHReset || hasLegacyTheme || !hasDockerCLIPath || !hasImageSources || !hasPortSources || !hasPortForwards || beforeNormalize.ThemeMode != cfg.ThemeMode || beforeNormalize.LightTheme != cfg.LightTheme || beforeNormalize.DarkTheme != cfg.DarkTheme || !stringSlicesEqual(beforeNormalize.TrayMatchTools, cfg.TrayMatchTools) || beforeNormalize.CodeEditorFontSize != cfg.CodeEditorFontSize || !sidebarToolsEqual(beforeNormalize.SidebarTools, cfg.SidebarTools) || !imageSourcesEqual(beforeNormalize.ImageSources, cfg.ImageSources) || !serviceTargetsEqual(beforeNormalize.ServiceTargets, cfg.ServiceTargets) || !portSourcesEqual(beforeNormalize.PortSources, cfg.PortSources) || !portForwardsEqual(beforeNormalize.PortForwards, cfg.PortForwards) || beforeNormalize.DockerCLIPath != cfg.DockerCLIPath {
+			if legacySSHReset || hasLegacyTheme || !hasDockerCLIPath || !hasImageSources || !hasPortSources || !hasPortForwards || beforeNormalize.ThemeMode != cfg.ThemeMode || beforeNormalize.LightTheme != cfg.LightTheme || beforeNormalize.DarkTheme != cfg.DarkTheme || !stringSlicesEqual(beforeNormalize.TrayMatchTools, cfg.TrayMatchTools) || beforeNormalize.CodeEditorFontSize != cfg.CodeEditorFontSize || !stringSlicesEqual(beforeNormalize.NtpServers, cfg.NtpServers) || !sidebarToolsEqual(beforeNormalize.SidebarTools, cfg.SidebarTools) || !imageSourcesEqual(beforeNormalize.ImageSources, cfg.ImageSources) || !serviceTargetsEqual(beforeNormalize.ServiceTargets, cfg.ServiceTargets) || !portSourcesEqual(beforeNormalize.PortSources, cfg.PortSources) || !portForwardsEqual(beforeNormalize.PortForwards, cfg.PortForwards) || beforeNormalize.DockerCLIPath != cfg.DockerCLIPath {
 				if normalized, marshalErr := json.Marshal(cfg); marshalErr == nil {
 					_ = writeConfigAtomically(path, normalized)
 				}

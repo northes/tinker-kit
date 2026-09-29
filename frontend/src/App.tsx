@@ -257,6 +257,7 @@ const defaultSettings: Settings = {
   ],
   hiddenTimeResults: [],
   timeWeekStart: 'monday',
+  ntpServers: ['time.cloudflare.com:123', 'time.google.com:123', 'pool.ntp.org:123'],
   jsonAutoFormatOnFill: true,
   jsonAutoFormatOnFillMigrated: true,
   textAlwaysShowSearch: false,
@@ -1956,11 +1957,15 @@ function AppShell() {
                     resultOrder={settings.timeResultOrder ?? []}
                     hiddenResults={settings.hiddenTimeResults ?? []}
                     weekStart={settings.timeWeekStart === 'sunday' ? 'sunday' : 'monday'}
+                    ntpServers={settings.ntpServers ?? []}
                     onSaveResults={(timeResultOrder, hiddenTimeResults) =>
                       setSettings((current) => ({ ...current, timeResultOrder, hiddenTimeResults }))
                     }
                     onWeekStartChange={(timeWeekStart) =>
                       setSettings((current) => ({ ...current, timeWeekStart }))
+                    }
+                    onNtpServersChange={(ntpServers) =>
+                      setSettings((current) => ({ ...current, ntpServers }))
                     }
                     record={record}
                     pending={pending}

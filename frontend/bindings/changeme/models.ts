@@ -30,6 +30,7 @@ export interface Config {
     "timeResultOrder": string[] | null;
     "hiddenTimeResults": string[] | null;
     "timeWeekStart": string;
+    "ntpServers": string[] | null;
     "jsonAutoFormatOnFill": boolean;
     "jsonAutoFormatOnFillMigrated": boolean;
     "textAlwaysShowSearch": boolean;

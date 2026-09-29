@@ -220,8 +220,10 @@ export default function TimeTool({
   resultOrder,
   hiddenResults,
   weekStart,
+  ntpServers,
   onSaveResults,
   onWeekStartChange,
+  onNtpServersChange,
   record,
   pending,
   clearPending,
@@ -230,8 +232,10 @@ export default function TimeTool({
   resultOrder: string[];
   hiddenResults: string[];
   weekStart: TimeWeekStart;
+  ntpServers: string[];
   onSaveResults: (order: string[], hidden: string[]) => void;
   onWeekStartChange: (weekStart: TimeWeekStart) => void;
+  onNtpServersChange: (ntpServers: string[]) => void;
   record: (tool: ToolId, action: string, detail: string, input: string) => void;
   pending: PendingAction | null;
   clearPending: () => void;
@@ -591,7 +595,7 @@ export default function TimeTool({
               </ScrollArea>
             </TabsContent>
             <TabsContent value="realTime" keepMounted className="min-h-0 overflow-hidden">
-              <RealTimePanel />
+              <RealTimePanel ntpServers={ntpServers} onNtpServersChange={onNtpServersChange} />
             </TabsContent>
           </Tabs>
         </ToolLayoutContent>

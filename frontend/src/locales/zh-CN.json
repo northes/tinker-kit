@@ -356,7 +356,6 @@
       "alreadyAdded": "已显示",
       "syncNow": "立即同步 NTP 时间",
       "waiting": "等待 NTP 校时",
-      "timeZone": "时区",
       "dragZone": "拖动排序 {{zone}}",
       "sortHint": "拖动时区手柄排序；也可聚焦手柄后按空格键，再用方向键调整。横向滚动查看更多。",
       "remove": "移除时间",
@@ -366,7 +365,15 @@
       "mapHint": "时区示意（未映射项按偏移放置）",
       "mapDescription": "平面世界地图。拖动或点击地图预览附近代表城市的时区；未映射的时区按固定 UTC 偏移标记在赤道，不代表实际地理位置。可用上方完整时区搜索替代。",
       "mapSelectHint": "点击或拖动地图预览最近代表城市的时区，再添加到时钟列表。",
-      "mapCandidate": "地图候选：{{zone}}"
+      "mapCandidate": "地图候选：{{zone}}",
+      "ntpTitle": "NTP 服务器",
+      "ntpConfigure": "修改 NTP 服务器",
+      "ntpDescription": "并行查询下列服务器，任一成功即返回。只填主机名时默认端口为 123。",
+      "ntpServerLabel": "NTP 服务器 {{index}}",
+      "ntpPlaceholder": "例如 pool.ntp.org:123",
+      "ntpAdd": "添加服务器",
+      "ntpRemove": "移除服务器 {{index}}",
+      "ntpInvalid": "“{{server}}” 不是有效的主机或 host:port"
     },
     "modes": {
       "convert": "时间转换",
