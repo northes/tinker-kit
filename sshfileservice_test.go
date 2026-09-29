@@ -12,6 +12,7 @@ import (
 	"reflect"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -558,10 +559,19 @@ func TestRemoteDownloadSegmentsUseFixedRanges(t *testing.T) {
 	}
 }
 
-func withTestSFTPClients(t *testing.T, remoteRoot string, count int, fn func([]*sftp.Client)) {
+func withTestSFTPClients(
+	t *testing.T,
+	remoteRoot string,
+	count int,
+	fn func([]*sftp.Client),
+	clientOptions ...sftp.ClientOption,
+) {
 	t.Helper()
 	if count < 1 {
 		count = 1
+	}
+	if len(clientOptions) == 0 {
+		clientOptions = remoteDownloadSFTPOptions()
 	}
 	clients := make([]*sftp.Client, 0, count)
 	var closers []func()
@@ -578,7 +588,7 @@ func withTestSFTPClients(t *testing.T, remoteRoot string, count int, fn func([]*
 		}
 		serverDone := make(chan error, 1)
 		go func() { serverDone <- server.Serve() }()
-		client, err := sftp.NewClientPipe(clientConn, clientConn, remoteDownloadSFTPOptions()...)
+		client, err := sftp.NewClientPipe(clientConn, clientConn, clientOptions...)
 		if err != nil {
 			_ = clientConn.Close()
 			<-serverDone
@@ -621,6 +631,122 @@ func TestRemoteDownloadConnectionWanted(t *testing.T) {
 	}); got != remoteDownloadConnectionCount {
 		t.Fatalf("超大文件连接数 = %d, want %d", got, remoteDownloadConnectionCount)
 	}
+	if got := remoteDownloadConnectionWanted([]*remoteDownloadFile{{size: remoteDownloadSegmentSize * 10}}, 2); got != 2 {
+		t.Fatalf("设置分片并发后连接数 = %d, want 2", got)
+	}
+}
+
+func TestRemoteUploadTransferTuningBalancesWindowWithConcurrency(t *testing.T) {
+	if got := remoteUploadTransferTuning(4, 4); got.segmentSize != 4*1024*1024 || got.writeSize != got.segmentSize {
+		t.Fatalf("默认并发上传调优 = %+v, want 4 MiB 分片和写入窗口", got)
+	}
+	if got := remoteUploadTransferTuning(1, 1); got.segmentSize != remoteUploadMaxWindowSize {
+		t.Fatalf("单连接上传窗口 = %+v, want 最大窗口 %d", got, remoteUploadMaxWindowSize)
+	}
+	if got := remoteUploadTransferTuning(16, 16); got.segmentSize != remoteUploadMinWindowSize {
+		t.Fatalf("高并发上传窗口 = %+v, want 最小窗口 %d", got, remoteUploadMinWindowSize)
+	}
+}
+
+func TestUploadLocalFileUsesParallelSegmentsAndCommitsAtomically(t *testing.T) {
+	remoteRoot := t.TempDir()
+	localPath := filepath.Join(t.TempDir(), "upload.bin")
+	payload := make([]byte, int(remoteDownloadSegmentSize*2+123))
+	for index := range payload {
+		payload[index] = byte(index % 241)
+	}
+	if err := os.WriteFile(localPath, payload, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(remoteRoot, "upload.bin"), []byte("old content"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	withTestSFTPClients(t, remoteRoot, 4, func(clients []*sftp.Client) {
+		service := &FileService{}
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		taskID := service.createFileTask(FileTask{Type: fileTaskTypeUpload}, ctx, cancel)
+		var done atomic.Int64
+		var doneFiles atomic.Int32
+		if err := service.uploadLocalFile(ctx, clients, localPath, "upload.bin", taskID, &done, &doneFiles); err != nil {
+			t.Fatalf("并行上传失败: %v", err)
+		}
+		got, err := os.ReadFile(filepath.Join(remoteRoot, "upload.bin"))
+		if err != nil {
+			t.Fatalf("读取上传文件失败: %v", err)
+		}
+		if !bytes.Equal(got, payload) {
+			t.Fatalf("上传结果不一致: got %d bytes, want %d", len(got), len(payload))
+		}
+		task := service.GetFileTasks().Tasks[0]
+		if task.Completed != int64(len(payload)) || task.DoneFiles != 1 {
+			t.Fatalf("上传进度 = (%d, %d), want (%d, 1)", task.Completed, task.DoneFiles, len(payload))
+		}
+		entries, err := os.ReadDir(remoteRoot)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(entries) != 1 || entries[0].Name() != "upload.bin" {
+			t.Fatalf("上传后临时文件未清理: %#v", entries)
+		}
+	}, remoteUploadSFTPOptions()...)
+}
+
+func TestUploadDirectoryUsesConfiguredClientsAcrossFiles(t *testing.T) {
+	remoteRoot := t.TempDir()
+	localRoot := t.TempDir()
+	files := map[string][]byte{
+		"a.bin":        []byte("first payload"),
+		"nested/b.bin": []byte("second payload"),
+		"nested/c.bin": []byte("third payload"),
+	}
+	for name, payload := range files {
+		localPath := filepath.Join(localRoot, filepath.FromSlash(name))
+		if err := os.MkdirAll(filepath.Dir(localPath), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(localPath, payload, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	withTestSFTPClients(t, remoteRoot, 4, func(clients []*sftp.Client) {
+		service := &FileService{}
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		taskID := service.createFileTask(FileTask{Type: fileTaskTypeUpload}, ctx, cancel)
+		var done atomic.Int64
+		var doneFiles atomic.Int32
+		if err := service.uploadLocalPath(
+			ctx,
+			clients,
+			localRoot,
+			".",
+			taskID,
+			&done,
+			&doneFiles,
+			remoteUploadTransferTuning(4, 4),
+		); err != nil {
+			t.Fatalf("并行上传目录失败: %v", err)
+		}
+		for name, want := range files {
+			remotePath := filepath.Join(remoteRoot, filepath.Base(localRoot), filepath.FromSlash(name))
+			got, err := os.ReadFile(remotePath)
+			if err != nil {
+				t.Fatalf("读取上传文件 %s 失败: %v", name, err)
+			}
+			if !bytes.Equal(got, want) {
+				t.Errorf("上传文件 %s 内容不一致", name)
+			}
+		}
+		var expectedBytes int64
+		for _, payload := range files {
+			expectedBytes += int64(len(payload))
+		}
+		if done.Load() != expectedBytes || doneFiles.Load() != int32(len(files)) {
+			t.Fatalf("目录上传进度 = (%d, %d), want (%d, %d)", done.Load(), doneFiles.Load(), expectedBytes, len(files))
+		}
+	}, remoteUploadSFTPOptions()...)
 }
 
 func TestDownloadRemoteFilesAssemblesSFTPSegments(t *testing.T) {

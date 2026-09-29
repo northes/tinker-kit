@@ -16,6 +16,9 @@ export interface Config {
     "urlTrayMatchMigrated": boolean;
     "autoOverwrite": boolean;
     "autoCheckUpdates": boolean;
+    "taskConcurrency": number;
+    "taskChunkConcurrency": number;
+    "taskNotificationMode": string;
     "language": string;
     "sidebarMode": string;
     "sidebarTools": SidebarToolConfig[] | null;

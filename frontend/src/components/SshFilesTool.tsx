@@ -145,6 +145,7 @@ import {
   StartFileUpload,
 } from '../../bindings/changeme/fileservice';
 import { SSHProfileSelect } from './SSHProfileSelect';
+import { openTaskCenter } from './TaskCenter';
 import { ConfirmDialog } from './ConfirmDialog';
 import { useSSHProfiles } from './SSHProfileManagerDialog';
 import { TargetHostManagerDialog } from './TargetHostManagerDialog';
@@ -540,40 +541,6 @@ function taskUsesByteProgress(task: FileTask) {
   return task.type === 'download' || task.type === 'compress' || task.type === 'extract';
 }
 
-function taskTypeLabel(type: string, t: (key: string) => string) {
-  if (type === 'upload') return t('sshFilesTool.upload');
-  if (type === 'download') return t('sshFilesTool.download');
-  if (type === 'copy') return t('sshFilesTool.copy');
-  if (type === 'move') return t('sshFilesTool.move');
-  if (type === 'extract') return t('sshFilesTool.extract');
-  if (type === 'compress') return t('sshFilesTool.compress');
-  return t('sshFilesTool.calculate');
-}
-
-function taskStatusLabel(status: string, t: (key: string) => string) {
-  const keys: Record<string, string> = {
-    queued: 'sshFilesTool.taskQueued',
-    running: 'sshFilesTool.taskRunning',
-    scanning: 'sshFilesTool.taskScanning',
-    conflict: 'sshFilesTool.taskConflict',
-    success: 'sshFilesTool.taskSuccess',
-    failed: 'sshFilesTool.taskFailed',
-    canceled: 'sshFilesTool.taskCanceled',
-  };
-  return t(keys[status] ?? 'sshFilesTool.taskUnknown');
-}
-
-function taskStatusVariant(
-  status: string,
-): 'secondary' | 'blue' | 'success' | 'destructive' | 'outline' {
-  if (status === 'success') return 'success';
-  if (status === 'failed') return 'destructive';
-  if (status === 'canceled') return 'outline';
-  if (status === 'conflict') return 'outline';
-  if (status === 'queued' || status === 'running' || status === 'scanning') return 'blue';
-  return 'secondary';
-}
-
 function TaskProgressMeter({ task, compact = false }: { task: FileTask; compact?: boolean }) {
   const { t } = useTranslation();
   const completed = useDisplayedTaskCompleted(task);
@@ -706,7 +673,6 @@ export default function SshFilesTool({ active }: Props) {
   const [loadingCanceled, setLoadingCanceled] = useState<LoadingKind | null>(null);
   const [error, setError] = useState('');
   const [tasks, setTasks] = useState<FileTask[]>([]);
-  const [tasksOpen, setTasksOpen] = useState(false);
   const [manageOpen, setManageOpen] = useState(false);
   const [savingManage, setSavingManage] = useState(false);
   const [uploadPaths, setUploadPaths] = useState<string[]>([]);
@@ -728,7 +694,6 @@ export default function SshFilesTool({ active }: Props) {
   const [missingFavoritePath, setMissingFavoritePath] = useState<MissingFavoritePath | null>(null);
   const refreshedUploadTasks = useRef(new Set<string>());
   const refreshedOperationTasks = useRef(new Set<string>());
-  const notifiedTaskFailures = useRef(new Set<string>());
   const handledConflictTasks = useRef(new Set<string>());
   const taskRevisionRef = useRef(0);
   const sourcesRequestRef = useRef(0);
@@ -1125,21 +1090,6 @@ export default function SshFilesTool({ active }: Props) {
   ]);
 
   useEffect(() => {
-    if (!active) return;
-    for (const task of tasks) {
-      if (task.status !== 'failed' || notifiedTaskFailures.current.has(task.id)) continue;
-      notifiedTaskFailures.current.add(task.id);
-      toast.add({
-        title: t('sshFilesTool.taskFailedToast', {
-          operation: taskTypeLabel(task.type, t),
-        }),
-        description: task.error ? formatBackendError(task.error) : t('sshFilesTool.taskFailed'),
-        type: 'error',
-      });
-    }
-  }, [active, t, tasks]);
-
-  useEffect(() => {
     for (const task of tasks) {
       if (task.status !== 'conflict') {
         handledConflictTasks.current.delete(task.id);
@@ -1182,12 +1132,6 @@ export default function SshFilesTool({ active }: Props) {
       refreshedOperationTasks.current.add(task.id);
       resetSearchState();
       void loadDirectory(sourceID, currentPath, showHidden);
-      toast.add({
-        title: t('sshFilesTool.operationSucceeded', {
-          operation: t(`sshFilesTool.${task.type}`),
-        }),
-        type: 'success',
-      });
     }
   }, [
     active,
@@ -2510,7 +2454,7 @@ export default function SshFilesTool({ active }: Props) {
               <button
                 type="button"
                 className="inline-flex items-center gap-2 text-left text-muted-foreground hover:text-foreground"
-                onClick={() => setTasksOpen(true)}
+                onClick={() => openTaskCenter('ssh-files')}
                 aria-label={t('sshFilesTool.tasksTitle')}
               >
                 {activeTasks.length > 0 ? (
@@ -3099,89 +3043,6 @@ export default function SshFilesTool({ active }: Props) {
           </ol>
         </ScrollArea>
       </ConfirmDialog>
-      <Dialog open={tasksOpen} onOpenChange={setTasksOpen}>
-        <DialogContent className="max-w-lg">
-          <DialogHeader>
-            <DialogTitle>{t('sshFilesTool.tasksTitle')}</DialogTitle>
-            <DialogDescription>{t('sshFilesTool.tasksDesc')}</DialogDescription>
-          </DialogHeader>
-          <div className="min-h-0 max-h-[55vh] overflow-hidden">
-            <ScrollArea
-              className="min-h-0 max-h-[55vh] overscroll-contain [padding-inline-end:var(--overlay-scrollbar-size)]"
-              options={{ overflow: { x: 'hidden' } }}
-            >
-              {tasks.length ? (
-                <div>
-                  {tasks
-                    .slice()
-                    .reverse()
-                    .map((task) => {
-                      const running = ['queued', 'running', 'scanning'].includes(task.status);
-                      return (
-                        <div
-                          key={task.id}
-                          className="border-b border-border py-3 first:pt-0 last:border-b-0 last:pb-0"
-                        >
-                          <div className="min-w-0">
-                            <div className="flex items-start justify-between gap-3">
-                              <div className="min-w-0 flex-1 truncate font-medium text-foreground">
-                                {taskTypeLabel(task.type, t)}
-                              </div>
-                              <div className="flex flex-none items-center gap-1.5">
-                                <Badge
-                                  variant={taskStatusVariant(task.status)}
-                                  className="h-5 text-[10px]"
-                                >
-                                  {taskStatusLabel(task.status, t)}
-                                </Badge>
-                                {running ? (
-                                  <Button
-                                    variant="ghost"
-                                    size="xs"
-                                    className="h-6 px-2 text-[11px]"
-                                    onClick={() => void CancelFileTask(task.id)}
-                                  >
-                                    {t('sshFilesTool.cancelTask')}
-                                  </Button>
-                                ) : null}
-                              </div>
-                            </div>
-                            <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-2 text-[10px] text-muted-foreground">
-                              <span
-                                className="min-w-0 break-all"
-                                title={task.current || task.target || undefined}
-                              >
-                                {task.current || task.target || '—'}
-                              </span>
-                            </div>
-                            <TaskProgressMeter task={task} />
-                            {task.error ? (
-                              <div
-                                className="mt-1 break-all text-[10px] text-destructive"
-                                role="alert"
-                              >
-                                {formatBackendError(task.error)}
-                              </div>
-                            ) : null}
-                          </div>
-                        </div>
-                      );
-                    })}
-                </div>
-              ) : (
-                <div className="py-8 text-center text-xs text-muted-foreground">
-                  {t('sshFilesTool.noTasks')}
-                </div>
-              )}
-            </ScrollArea>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setTasksOpen(false)}>
-              {t('common.close')}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </ToolLayout>
   );
 }

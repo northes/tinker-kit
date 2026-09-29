@@ -497,22 +497,11 @@ func (s *ImageService) runImageExport(ctx context.Context, taskID, sourceID, ima
 }
 
 func (s *ImageService) runImageExportWithSnapshot(ctx context.Context, taskID, sourceID, imageID, target string, source ImageSource, cliPath string) {
-	s.taskMu.Lock()
-	if s.exportSem == nil {
-		s.exportSem = make(chan struct{}, 2)
-	}
-	exportSem := s.exportSem
-	s.taskMu.Unlock()
-	select {
-	case exportSem <- struct{}{}:
-		defer func() { <-exportSem }()
-	case <-ctx.Done():
-		s.updateTask(taskID, func(task *imageTaskState) {
-			task.Status = imageTaskCanceled
-			task.Stage = "canceled"
-			task.cancel = nil
-		})
+	if !s.acquireTaskSlot(ctx, taskID) {
 		return
+	}
+	if s.taskScheduler != nil {
+		defer s.taskScheduler.Release()
 	}
 	s.updateTask(taskID, func(task *imageTaskState) { task.Status = imageTaskRunning; task.Stage = "preparing" })
 	var err error
@@ -1024,6 +1013,12 @@ func (s *ImageService) enqueueImagePullWithSnapshot(sourceID, imageRef string, s
 }
 
 func (s *ImageService) runImagePull(ctx context.Context, taskID, imageRef string, source ImageSource, cliPath string) {
+	if !s.acquireTaskSlot(ctx, taskID) {
+		return
+	}
+	if s.taskScheduler != nil {
+		defer s.taskScheduler.Release()
+	}
 	s.updateTask(taskID, func(task *imageTaskState) {
 		task.Status = imageTaskRunning
 		task.Stage = "pulling"
@@ -1155,6 +1150,12 @@ func (s *ImageService) enqueueImageImportWithSnapshot(sourceID, path string, sou
 }
 
 func (s *ImageService) runImageImport(ctx context.Context, taskID, path string, source ImageSource, cliPath string) {
+	if !s.acquireTaskSlot(ctx, taskID) {
+		return
+	}
+	if s.taskScheduler != nil {
+		defer s.taskScheduler.Release()
+	}
 	s.updateTask(taskID, func(task *imageTaskState) {
 		task.Status = imageTaskRunning
 		task.Stage = "loading"

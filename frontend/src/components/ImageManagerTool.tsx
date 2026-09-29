@@ -22,11 +22,9 @@ import {
 } from '@phosphor-icons/react';
 import {
   DeleteDockerImages,
-  CancelImageTask,
   GetImageTasks,
   PushDockerImages,
   RefreshDockerImages,
-  RetryImageExport,
   StartImageExport,
   StartImageExports,
   StartImageImports,
@@ -94,6 +92,7 @@ import {
 import { Spinner } from './ui/spinner';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
 import { toast } from './ui/toast';
+import { openTaskCenter } from './TaskCenter';
 import { SSHProfileSelect } from './SSHProfileSelect';
 import { useSSHProfiles } from './SSHProfileManagerDialog';
 import { ConfirmDialog } from './ConfirmDialog';
@@ -1058,7 +1057,6 @@ export default function ImageManagerTool({
   }, []);
   // 手动刷新标记：只有用户主动刷新触发的 update 任务完成才提示，
   // 每 2 分钟的定时轮询保持静默。
-  const manualRefreshPending = useRef(false);
   const applyTasks = useCallback(
     (snapshot: ImageTaskSnapshot) => {
       pendingTasksRef.current = applyImageTaskSnapshot(pendingTasksRef.current, snapshot);
@@ -1080,11 +1078,9 @@ export default function ImageManagerTool({
     flushImages();
     flushTasks();
   }, [active, flushImages, flushTasks]);
-  const [tasksOpen, setTasksOpen] = useState(false);
   const [batchExportStarting, setBatchExportStarting] = useState(false);
   const [pullStarting, setPullStarting] = useState(false);
   const [importStarting, setImportStarting] = useState(false);
-  const [retryingTaskID, setRetryingTaskID] = useState<string | null>(null);
   const [taskClock, setTaskClock] = useState(Date.now);
   const sourceConfigKey = JSON.stringify({
     source,
@@ -1112,7 +1108,6 @@ export default function ImageManagerTool({
     setReloadNonce((value) => value + 1);
   }, [source.id, sourceProfileMissing, t]);
   const refreshList = useCallback(() => {
-    manualRefreshPending.current = true;
     requestWatchReload();
   }, [requestWatchReload]);
   const restartWatch = useCallback(() => {
@@ -1123,61 +1118,10 @@ export default function ImageManagerTool({
 
   // 导出与拉取在 Go 侧异步执行，前端只能从任务快照得知结果。首次快照只登记状态，
   // 之后的终态变化才提示，避免工具重新挂载时对历史任务重复弹 toast。
-  const taskToastRevision = useRef(-1);
-  const taskToastSeeded = useRef(false);
-  const taskToastStatuses = useRef<Map<string, string>>(new Map());
-  const notifyTaskResults = useCallback(
-    (snapshot: ImageTaskSnapshot) => {
-      if (snapshot.revision <= taskToastRevision.current) return;
-      taskToastRevision.current = snapshot.revision;
-      const snapshotTasks = snapshot.tasks ?? [];
-      if (!taskToastSeeded.current) {
-        taskToastSeeded.current = true;
-        taskToastStatuses.current = new Map(
-          snapshotTasks.map((task) => [task.id, task.status] as const),
-        );
-        return;
-      }
-      const stageKeys: Record<string, string> = {
-        export: 'imageManagerTool.taskStageExport',
-        pull: 'imageManagerTool.taskStagePull',
-        load: 'imageManagerTool.taskStageLoad',
-        update: 'imageManagerTool.taskStageUpdate',
-      };
-      const isTerminal = (status: string) =>
-        status === 'success' || status === 'failed' || status === 'canceled';
-      const nextStatuses = new Map<string, string>();
-      for (const task of snapshotTasks) {
-        nextStatuses.set(task.id, task.status);
-        if (!(task.type in stageKeys)) continue;
-        if (!isTerminal(task.status)) continue;
-        if (isTerminal(taskToastStatuses.current.get(task.id) ?? '')) continue;
-        if (task.type === 'update') {
-          // 定时轮询也会产生 update 任务；只有用户主动刷新的那一轮才提示。
-          if (!manualRefreshPending.current) continue;
-          manualRefreshPending.current = false;
-        }
-        if (task.status === 'success') {
-          toast.add({
-            title: t('imageManagerTool.taskCompleted', { task: t(stageKeys[task.type]) }),
-          });
-        } else if (task.status === 'failed') {
-          toast.add({
-            title: t('imageManagerTool.taskFailed', { task: t(stageKeys[task.type]) }),
-            description: task.error ? formatBackendError(task.error) : undefined,
-            type: 'error',
-          });
-        }
-      }
-      taskToastStatuses.current = nextStatuses;
-    },
-    [t],
-  );
   useEffect(() => {
     let active = true;
     const apply = (snapshot: ImageTaskSnapshot) => {
       if (!active) return;
-      notifyTaskResults(snapshot);
       applyTasks(snapshot);
     };
     const off = Events.On('image-manager:tasks', (event) => apply(event.data as ImageTaskSnapshot));
@@ -1188,7 +1132,7 @@ export default function ImageManagerTool({
       active = false;
       off();
     };
-  }, [applyTasks, notifyTaskResults]);
+  }, [applyTasks]);
 
   useEffect(() => {
     const now = Date.now();
@@ -2174,58 +2118,6 @@ export default function ImageManagerTool({
   };
   const taskProgress =
     activeTasks.length === 1 && activeTasks[0].total > 0 ? taskPercent(activeTasks[0]) : null;
-  const taskTypeLabel = (task: ImageTask) => {
-    if (task.type === 'export') return t('imageManagerTool.taskStageExport');
-    if (task.type === 'pull') return t('imageManagerTool.taskStagePull');
-    if (task.type === 'load') return t('imageManagerTool.taskStageLoad');
-    if (task.type === 'detail') return t('imageManagerTool.taskStageDetail');
-    return t('imageManagerTool.taskStageUpdate');
-  };
-  const taskSourceLabel = (task: ImageTask) => {
-    const taskSource = sources.find((item) => item.id === task.sourceID);
-    return taskSource ? sourceDisplayName(taskSource, t, profiles) : task.sourceID;
-  };
-  const taskStatus = (task: ImageTask) =>
-    t(`imageManagerTool.taskStatus${task.status.charAt(0).toUpperCase()}${task.status.slice(1)}`);
-  const taskStatusVariant = (
-    task: ImageTask,
-  ): 'secondary' | 'blue' | 'success' | 'destructive' | 'outline' =>
-    task.status === 'success'
-      ? 'success'
-      : task.status === 'failed'
-        ? 'destructive'
-        : task.status === 'canceled'
-          ? 'outline'
-          : task.status === 'queued' || task.status === 'running'
-            ? 'blue'
-            : 'secondary';
-  const taskProgressLabel = (task: ImageTask) => {
-    if (taskUsesBytes(task)) {
-      const completed = formatBytes(task.bytes, i18n.language) || formatBytes(0, i18n.language);
-      if (task.totalEstimated && task.total > 0) {
-        if (task.bytes > task.total) {
-          return t('imageManagerTool.taskExportProgress', {
-            completed,
-            total: completed,
-          });
-        }
-        return t('imageManagerTool.taskExportProgressEstimated', {
-          completed,
-          total: formatBytes(task.total, i18n.language),
-        });
-      }
-      return task.total > 0 || task.status === 'success'
-        ? t('imageManagerTool.taskExportProgress', {
-            completed,
-            total: formatBytes(task.total || task.bytes, i18n.language),
-          })
-        : t('imageManagerTool.taskExportProgressUnknown', { completed });
-    }
-    return t('imageManagerTool.taskProgressCount', {
-      completed: task.completed,
-      total: task.total,
-    });
-  };
   const runBatchExport = async (requestedRows: ImageRow[] = selectedRows) => {
     const imageIDs = requestedRows.map(
       (row) => row.reference || imageExportReference(row.image, unnamed),
@@ -2237,7 +2129,7 @@ export default function ImageManagerTool({
       const result = await StartImageExports(source.id, imageIDs, estimatedSizes);
       if (result.started > 0) {
         applyTasks(result.snapshot);
-        setTasksOpen(true);
+        openTaskCenter('image-manager');
         record(
           'image-manager',
           t('imageManagerTool.batchExport'),
@@ -2264,7 +2156,7 @@ export default function ImageManagerTool({
       );
       if (result.started > 0) {
         applyTasks(result.snapshot);
-        setTasksOpen(true);
+        openTaskCenter('image-manager');
         record(
           'image-manager',
           t('imageManagerTool.exportTar'),
@@ -2278,23 +2170,6 @@ export default function ImageManagerTool({
         description: errorMessage(error) || undefined,
         type: 'error',
       });
-    }
-  };
-  const retryExport = async (task: ImageTask) => {
-    if (retryingTaskID) return;
-    setRetryingTaskID(task.id);
-    try {
-      const result = await RetryImageExport(task.id);
-      applyTasks(result.snapshot);
-      setTasksOpen(true);
-    } catch (error) {
-      toast.add({
-        title: t('imageManagerTool.exportFailed'),
-        description: errorMessage(error) || undefined,
-        type: 'error',
-      });
-    } finally {
-      setRetryingTaskID(null);
     }
   };
   const runPullRefs = async (requestedRefs: string[]) => {
@@ -2785,7 +2660,7 @@ export default function ImageManagerTool({
                 <button
                   type="button"
                   className="inline-flex items-center gap-2 text-left text-muted-foreground hover:text-foreground"
-                  onClick={() => setTasksOpen(true)}
+                  onClick={() => openTaskCenter('image-manager')}
                   aria-label={t('imageManagerTool.backgroundTasks')}
                 >
                   {activeTasks.length > 0 ? (
@@ -2997,114 +2872,6 @@ export default function ImageManagerTool({
               <Button type="submit" form={operationFormID} disabled={busy !== null}>
                 {busy ? <Spinner data-icon="inline-start" /> : null}
                 {t('imageManagerTool.confirm')}
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-        <Dialog open={tasksOpen} onOpenChange={setTasksOpen}>
-          <DialogContent className="max-w-lg">
-            <DialogHeader>
-              <DialogTitle>{t('imageManagerTool.backgroundTasks')}</DialogTitle>
-              <DialogDescription>{t('imageManagerTool.backgroundTasksDesc')}</DialogDescription>
-            </DialogHeader>
-            <div className="min-h-0 max-h-[55vh] overflow-hidden">
-              <ScrollArea
-                className="min-h-0 max-h-[55vh] overscroll-contain [padding-inline-end:var(--overlay-scrollbar-size)]"
-                options={{ overflow: { x: 'hidden' } }}
-              >
-                {visibleTasks.length === 0 ? (
-                  <div className="py-8 text-center text-xs text-muted-foreground">
-                    {t('imageManagerTool.backgroundTasksEmpty')}
-                  </div>
-                ) : (
-                  visibleTasks
-                    .slice()
-                    .reverse()
-                    .map((task) => {
-                      const running = task.status === 'queued' || task.status === 'running';
-                      const percent = taskPercent(task);
-                      return (
-                        <div
-                          key={task.id}
-                          className="border-b border-border py-3 first:pt-0 last:border-b-0 last:pb-0"
-                        >
-                          <div className="min-w-0">
-                            <div className="flex items-start justify-between gap-3">
-                              <div className="min-w-0 flex-1 truncate font-medium text-foreground">
-                                {taskTypeLabel(task)}
-                              </div>
-                              <div className="flex flex-none items-center gap-1.5">
-                                <Badge
-                                  variant={taskStatusVariant(task)}
-                                  className="h-5 text-[10px]"
-                                >
-                                  {taskStatus(task)}
-                                </Badge>
-                                {running ? (
-                                  <Button
-                                    variant="ghost"
-                                    size="xs"
-                                    className="h-6 px-2 text-[11px]"
-                                    onClick={() =>
-                                      void CancelImageTask(task.id).catch(() => undefined)
-                                    }
-                                  >
-                                    {t('imageManagerTool.cancelTask')}
-                                  </Button>
-                                ) : null}
-                                {task.type === 'export' && task.status === 'failed' ? (
-                                  <Button
-                                    variant="ghost"
-                                    size="xs"
-                                    className="h-6 px-2 text-[11px]"
-                                    disabled={retryingTaskID !== null}
-                                    onClick={() => void retryExport(task)}
-                                  >
-                                    {retryingTaskID === task.id ? (
-                                      <Spinner data-icon="inline-start" />
-                                    ) : null}
-                                    {t('imageManagerTool.retryExport')}
-                                  </Button>
-                                ) : null}
-                              </div>
-                            </div>
-                            <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-2 text-[10px] text-muted-foreground">
-                              <span className="truncate">{taskSourceLabel(task)}</span>
-                              {task.imageID ? (
-                                <>
-                                  <span aria-hidden="true">·</span>
-                                  <span className="min-w-0 break-all">{task.imageID}</span>
-                                </>
-                              ) : null}
-                            </div>
-                            <div className="mt-2 flex items-center gap-2">
-                              <div
-                                className={`h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-muted ${percent === null && running ? 'animate-pulse motion-reduce:animate-none' : ''}`}
-                              >
-                                <div
-                                  className="h-full rounded-full bg-primary"
-                                  style={{ width: `${percent ?? 0}%` }}
-                                />
-                              </div>
-                              <span className="flex-none font-mono text-[10px] text-muted-foreground">
-                                {taskProgressLabel(task)}
-                              </span>
-                            </div>
-                            {task.error || task.path ? (
-                              <div className="mt-1 break-all text-[10px] text-muted-foreground">
-                                {task.error ? formatBackendError(task.error) : task.path}
-                              </div>
-                            ) : null}
-                          </div>
-                        </div>
-                      );
-                    })
-                )}
-              </ScrollArea>
-            </div>
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setTasksOpen(false)}>
-                {t('imageManagerTool.cancel')}
               </Button>
             </DialogFooter>
           </DialogContent>

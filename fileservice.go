@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/base64"
 	"io"
 	"mime"
@@ -15,12 +16,30 @@ import (
 
 // FileService 提供需要原生文件对话框的文件操作。
 type FileService struct {
-	config       *ConfigService
-	taskMu       sync.Mutex
-	tasks        map[string]*fileTaskState
-	taskOrder    []string
-	taskRevision uint64
-	emitEvent    func(string, any)
+	config        *ConfigService
+	taskScheduler *taskScheduler
+	taskMu        sync.Mutex
+	tasks         map[string]*fileTaskState
+	taskOrder     []string
+	taskRevision  uint64
+	emitEvent     func(string, any)
+}
+
+func (s *FileService) setTaskScheduler(scheduler *taskScheduler) {
+	if s != nil {
+		s.taskScheduler = scheduler
+	}
+}
+
+func (s *FileService) acquireTaskSlot(ctx context.Context, taskID string) bool {
+	if s.taskScheduler == nil {
+		return true
+	}
+	if err := s.taskScheduler.Acquire(ctx); err != nil {
+		s.finishFileTask(taskID, err)
+		return false
+	}
+	return true
 }
 
 const maxImageFileSize = 10 * 1024 * 1024

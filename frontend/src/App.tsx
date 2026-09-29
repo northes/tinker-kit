@@ -93,6 +93,7 @@ import { parseSupportedUrl } from './utils/url';
 import { toast, Toaster } from './components/ui/toast';
 import { ScrollArea } from './components/ui/scroll-area';
 import UpdatePill from './components/UpdatePill';
+import { TaskCenter } from './components/TaskCenter';
 import {
   AppendHistory,
   ClearHistory,
@@ -215,6 +216,9 @@ const defaultSettings: Settings = {
   urlTrayMatchMigrated: true,
   autoOverwrite: false,
   autoCheckUpdates: true,
+  taskConcurrency: 4,
+  taskChunkConcurrency: 4,
+  taskNotificationMode: 'unfocused',
   language: 'zh-CN',
   sidebarMode: 'full',
   sidebarTools: [
@@ -1866,6 +1870,7 @@ function AppShell() {
   return (
     <>
       <Toaster />
+      <TaskCenter settings={settings} onSettingsChange={(patch) => setSettings((current) => ({ ...current, ...patch }))} />
       <div className="app-shell relative grid h-dvh grid-rows-[var(--app-titlebar-height)_minmax(0,1fr)] bg-background">
         <div className="ambient pointer-events-none absolute inset-0 z-0" />
         <header

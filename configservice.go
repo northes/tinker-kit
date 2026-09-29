@@ -24,6 +24,9 @@ type Config struct {
 	URLTrayMatchMigrated         bool                  `json:"urlTrayMatchMigrated"`
 	AutoOverwrite                bool                  `json:"autoOverwrite"`
 	AutoCheckUpdates             bool                  `json:"autoCheckUpdates"`
+	TaskConcurrency              int                   `json:"taskConcurrency"`
+	TaskChunkConcurrency         int                   `json:"taskChunkConcurrency"`
+	TaskNotificationMode         string                `json:"taskNotificationMode"`
 	Language                     string                `json:"language"`
 	SidebarMode                  string                `json:"sidebarMode"`
 	SidebarTools                 []SidebarToolConfig   `json:"sidebarTools"`
@@ -181,7 +184,7 @@ type historyStored struct {
 }
 
 func defaultConfig() Config {
-	return Config{TrayMatchEnabled: true, TrayMatchTools: []string{"json", "time", "text", "base64", "diff", "jwt", "url"}, AutoOverwrite: true, AutoCheckUpdates: true, Language: "zh-CN", SidebarMode: "full", SidebarTools: defaultSidebarTools(), ThemeMode: "dark", LightTheme: "default-light", DarkTheme: "default-dark", DiffClipboardTargetMode: "alternate", CodeEditorFontSize: 16, TimeResultOrder: []string{"local", "dateTime", "dateOnly", "timeOnly", "zonedIso8601", "rfc3339", "utc", "compact", "underscore", "unixSeconds", "unixMilliseconds", "unixNanoseconds"}, TimeWeekStart: "monday", JsonAutoFormatOnFill: true, JsonAutoFormatOnFillMigrated: true, ImageSources: defaultImageSources(), SSHProfilesVersion: currentSSHProfilesVersion, SSHProfiles: []SSHProfile{}, SSHConnections: []SSHConnection{}, FileSources: []FileSource{}, ServiceTargets: defaultServiceTargets(), PortSources: defaultPortSources(), PortForwards: []PortForwardConfig{}}
+	return Config{TrayMatchEnabled: true, TrayMatchTools: []string{"json", "time", "text", "base64", "diff", "jwt", "url"}, AutoOverwrite: true, AutoCheckUpdates: true, TaskConcurrency: 4, TaskChunkConcurrency: 4, TaskNotificationMode: "unfocused", Language: "zh-CN", SidebarMode: "full", SidebarTools: defaultSidebarTools(), ThemeMode: "dark", LightTheme: "default-light", DarkTheme: "default-dark", DiffClipboardTargetMode: "alternate", CodeEditorFontSize: 16, TimeResultOrder: []string{"local", "dateTime", "dateOnly", "timeOnly", "zonedIso8601", "rfc3339", "utc", "compact", "underscore", "unixSeconds", "unixMilliseconds", "unixNanoseconds"}, TimeWeekStart: "monday", JsonAutoFormatOnFill: true, JsonAutoFormatOnFillMigrated: true, ImageSources: defaultImageSources(), SSHProfilesVersion: currentSSHProfilesVersion, SSHProfiles: []SSHProfile{}, SSHConnections: []SSHConnection{}, FileSources: []FileSource{}, ServiceTargets: defaultServiceTargets(), PortSources: defaultPortSources(), PortForwards: []PortForwardConfig{}}
 }
 
 func normalizeThemeID(theme string, defaultID string, legacyID string) string {
@@ -669,6 +672,17 @@ func normalizeFavoritePaths(paths []string) []string {
 }
 
 func normalizeConfig(cfg Config) Config {
+	if cfg.TaskConcurrency < 1 || cfg.TaskConcurrency > 16 {
+		cfg.TaskConcurrency = 4
+	}
+	if cfg.TaskChunkConcurrency < 1 || cfg.TaskChunkConcurrency > 16 {
+		cfg.TaskChunkConcurrency = 4
+	}
+	switch cfg.TaskNotificationMode {
+	case "off", "always", "unfocused":
+	default:
+		cfg.TaskNotificationMode = "unfocused"
+	}
 	cfg.TextGeneratorSources = normalizeTextGeneratorSources(cfg.TextGeneratorSources)
 	cfg.DockerCLIPath = normalizeDockerCLIPath(cfg.DockerCLIPath)
 	if cfg.SSHProfilesVersion == 0 {
@@ -1191,6 +1205,31 @@ func (s *ConfigService) replaceConfig(cfg Config) error {
 		onChange(cfg)
 	}
 	return nil
+}
+
+// SetTaskSettings 更新后台任务调度与通知设置，并返回规范化后的应用配置。
+func (s *ConfigService) SetTaskSettings(taskConcurrency, chunkConcurrency int, notificationMode string) (Config, error) {
+	s.mu.Lock()
+	cfg := s.cfg
+	cfg.TaskConcurrency = taskConcurrency
+	cfg.TaskChunkConcurrency = chunkConcurrency
+	cfg.TaskNotificationMode = notificationMode
+	cfg = normalizeConfig(cfg)
+	b, err := marshalConfig(cfg)
+	if err == nil {
+		err = writeConfigAtomically(s.path, b)
+	}
+	if err != nil {
+		s.mu.Unlock()
+		return Config{}, err
+	}
+	s.cfg = cfg
+	onChange := s.onChange
+	s.mu.Unlock()
+	if onChange != nil {
+		onChange(cfg)
+	}
+	return cfg, nil
 }
 
 // ResolveSSHHostKeyPrompt 响应前端显示的 SSH 主机指纹确认。

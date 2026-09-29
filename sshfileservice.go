@@ -487,10 +487,23 @@ func remoteDownloadSFTPOptions() []sftp.ClientOption {
 	return []sftp.ClientOption{
 		sftp.MaxPacketUnchecked(int(remoteDownloadPacketSize)),
 		sftp.MaxConcurrentRequestsPerFile(remoteDownloadSFTPRequestCount),
+		sftp.UseConcurrentWrites(true),
 	}
 }
 
-func remoteDownloadConnectionWanted(files []*remoteDownloadFile) int {
+func remoteUploadSFTPOptions() []sftp.ClientOption {
+	return []sftp.ClientOption{
+		sftp.MaxPacketUnchecked(int(remoteDownloadPacketSize)),
+		sftp.MaxConcurrentRequestsPerFile(remoteUploadSFTPRequestCount),
+		sftp.UseConcurrentWrites(true),
+	}
+}
+
+func remoteDownloadConnectionWanted(files []*remoteDownloadFile, configured ...int) int {
+	connectionLimit := remoteDownloadConnectionCount
+	if len(configured) > 0 && configured[0] > 0 {
+		connectionLimit = clampTaskLimit(configured[0])
+	}
 	segments := 0
 	for _, file := range files {
 		if file == nil || file.size <= 0 {
@@ -505,8 +518,8 @@ func remoteDownloadConnectionWanted(files []*remoteDownloadFile) int {
 	if segments <= 1 {
 		return 1
 	}
-	if segments > remoteDownloadConnectionCount {
-		return remoteDownloadConnectionCount
+	if segments > connectionLimit {
+		return connectionLimit
 	}
 	return segments
 }
@@ -522,12 +535,13 @@ func closeDownloadSFTPClients(sshClients []*ssh.Client, sftpClients []*sftp.Clie
 	}
 }
 
-func (s *FileService) expandDownloadSFTPClients(
+func (s *FileService) expandSFTPClients(
 	ctx context.Context,
 	conn SSHConnection,
 	sshClients []*ssh.Client,
 	sftpClients []*sftp.Client,
 	wanted int,
+	clientOptions ...sftp.ClientOption,
 ) ([]*ssh.Client, []*sftp.Client) {
 	extra := wanted - len(sftpClients)
 	if extra <= 0 || ctx.Err() != nil {
@@ -539,7 +553,10 @@ func (s *FileService) expandDownloadSFTPClients(
 	}
 	results := make(chan dialed, extra)
 	var wait sync.WaitGroup
-	options := remoteDownloadSFTPOptions()
+	options := clientOptions
+	if len(options) == 0 {
+		options = remoteDownloadSFTPOptions()
+	}
 	for range extra {
 		wait.Add(1)
 		go func() {
@@ -588,13 +605,30 @@ const (
 	// 大文件用多条 SSH/SFTP 连接分片，各自占用独立 TCP 窗口和加解密循环。
 	remoteDownloadConnectionCount       = 4
 	remoteDownloadSegmentSize     int64 = 8 * 1024 * 1024
+	// 上传按活动连接数自适应分片与请求窗口，降低高 RTT 链路的尾部等待。
+	remoteUploadMinWindowSize int64 = 1 * 1024 * 1024
+	remoteUploadMaxWindowSize int64 = 8 * 1024 * 1024
+	remoteUploadWindowBudget  int64 = 64 * 1024 * 1024
 	// 与几乎所有 SFTP 服务器都支持的 32KiB 包对齐，避免大包被短读后整段失败。
 	remoteDownloadPacketSize int64 = 32 * 1024
 	// 任务事件与 SFTP 包解耦，合并进度推送，避免每个包都发全量快照。
 	remoteDownloadProgressEmitInterval = 80 * time.Millisecond
 	// 单条连接上的在途读请求数，用来填满该连接的带宽时延积。
 	remoteDownloadSFTPRequestCount = 32
+	remoteUploadSFTPRequestCount   = int(remoteUploadMaxWindowSize / remoteDownloadPacketSize)
 )
+
+type uploadTransferTuning struct {
+	segmentSize int64
+	writeSize   int64
+}
+
+func remoteUploadTransferTuning(taskConcurrency, chunkConcurrency int) uploadTransferTuning {
+	lanes := int64(clampTaskLimit(taskConcurrency) * clampTaskLimit(chunkConcurrency))
+	window := remoteUploadWindowBudget / lanes
+	window = max(remoteUploadMinWindowSize, min(remoteUploadMaxWindowSize, window))
+	return uploadTransferTuning{segmentSize: window, writeSize: window}
+}
 
 const remoteTarArchiveProbeAwk = `awk '
 $1 ~ /^-/ {
@@ -1236,7 +1270,7 @@ func (s *FileService) TestSSHFileConnection(connection SSHConnection, defaultPat
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
-	sshClient, client, err := s.dialSFTP(ctx, connection)
+	sshClient, client, err := s.dialSFTPWithOptions(ctx, connection, remoteDownloadSFTPOptions()...)
 	if err != nil {
 		return err
 	}
@@ -1895,6 +1929,12 @@ func (s *FileService) remoteFileTaskInput(
 }
 
 func (s *FileService) runRemoteFileOperationTask(ctx context.Context, taskID string) {
+	if !s.acquireTaskSlot(ctx, taskID) {
+		return
+	}
+	if s.taskScheduler != nil {
+		defer s.taskScheduler.Release()
+	}
 	sourceID, operation, paths, target, conflictPolicy, ok := s.remoteFileTaskInput(taskID)
 	if !ok {
 		return
@@ -2395,13 +2435,15 @@ func (s *FileService) StartFileUpload(sourceID string, localPaths []string, remo
 		return FileTaskSnapshot{}, err
 	}
 	remotePath = normalizedRemotePath(remotePath)
-	ctx, cancel := context.WithCancel(context.Background())
-	id := s.createFileTask(
-		FileTask{Type: fileTaskTypeUpload, SourceID: sourceID, Target: remotePath},
-		ctx,
-		cancel,
-	)
-	go s.runFileUpload(ctx, id, src, connection, localPaths, remotePath)
+	for _, localPath := range localPaths {
+		ctx, cancel := context.WithCancel(context.Background())
+		id := s.createFileTask(
+			FileTask{Type: fileTaskTypeUpload, SourceID: sourceID, Target: remotePath, Paths: []string{localPath}, Files: 1},
+			ctx,
+			cancel,
+		)
+		go s.runFileUpload(ctx, id, src, connection, []string{localPath}, remotePath)
+	}
 	return s.GetFileTasks(), nil
 }
 
@@ -2459,13 +2501,15 @@ func (s *FileService) StartFileDownload(sourceID string, remotePaths []string) (
 	if target == "" {
 		return s.GetFileTasks(), nil
 	}
-	ctx, cancel := context.WithCancel(context.Background())
-	id := s.createFileTask(
-		FileTask{Type: fileTaskTypeDownload, SourceID: sourceID, Target: target, Files: len(remotePaths)},
-		ctx,
-		cancel,
-	)
-	go s.runFileDownload(ctx, id, conn, remotePaths, target)
+	for _, remotePath := range remotePaths {
+		ctx, cancel := context.WithCancel(context.Background())
+		id := s.createFileTask(
+			FileTask{Type: fileTaskTypeDownload, SourceID: sourceID, Target: target, Paths: []string{remotePath}, Files: 1},
+			ctx,
+			cancel,
+		)
+		go s.runFileDownload(ctx, id, conn, []string{remotePath}, target, len(remotePaths) > 1)
+	}
 	return s.GetFileTasks(), nil
 }
 
@@ -2520,6 +2564,12 @@ func collectRemoteTree(
 }
 
 func (s *FileService) runFileUpload(ctx context.Context, taskID string, source FileSource, connection SSHConnection, localPaths []string, remoteRoot string) {
+	if !s.acquireTaskSlot(ctx, taskID) {
+		return
+	}
+	if s.taskScheduler != nil {
+		defer s.taskScheduler.Release()
+	}
 	s.updateFileTask(taskID, func(task *fileTaskState) {
 		task.Status, task.Stage = fileTaskScanning, fileTaskScanning
 	})
@@ -2531,40 +2581,53 @@ func (s *FileService) runFileUpload(ctx context.Context, taskID string, source F
 	s.updateFileTask(taskID, func(task *fileTaskState) {
 		task.Total, task.Files = total, files
 	})
-	sshClient, client, err := s.dialSFTP(ctx, connection)
+	config := s.configSnapshot()
+	sshClient, client, err := s.dialSFTPWithOptions(ctx, connection, remoteUploadSFTPOptions()...)
 	if err != nil {
 		s.finishFileTask(taskID, err)
 		return
 	}
-	defer closeSSHClient(sshClient)
-	defer client.Close()
+	sshClients, sftpClients := s.expandSFTPClients(
+		ctx,
+		connection,
+		[]*ssh.Client{sshClient},
+		[]*sftp.Client{client},
+		config.TaskChunkConcurrency,
+		remoteUploadSFTPOptions()...,
+	)
+	defer closeDownloadSFTPClients(sshClients, sftpClients)
+	tuning := remoteUploadTransferTuning(config.TaskConcurrency, config.TaskChunkConcurrency)
 	if err := client.MkdirAll(remoteRoot); err != nil {
 		s.finishFileTask(taskID, err)
 		return
 	}
 	s.updateFileTask(taskID, func(task *fileTaskState) { task.Status, task.Stage = fileTaskRunning, "uploading" })
-	var done int64
-	doneFiles := 0
+	var done atomic.Int64
+	var doneFiles atomic.Int32
 	for _, localRoot := range localPaths {
-		if err = s.uploadLocalPath(ctx, client, localRoot, remoteRoot, taskID, &done, &doneFiles, nil); err != nil {
+		if err = s.uploadLocalPath(ctx, sftpClients, localRoot, remoteRoot, taskID, &done, &doneFiles, tuning); err != nil {
 			s.finishFileTask(taskID, err)
 			return
 		}
 	}
 	s.updateFileTask(taskID, func(task *fileTaskState) {
-		task.Status, task.Stage, task.Completed, task.DoneFiles = fileTaskSuccess, "done", done, doneFiles
+		task.Status, task.Stage, task.Completed, task.DoneFiles = fileTaskSuccess, "done", done.Load(), int(doneFiles.Load())
 		task.Current = ""
 	})
 }
 
 func (s *FileService) uploadLocalPath(
 	ctx context.Context,
-	client *sftp.Client,
+	clients []*sftp.Client,
 	localRoot, remoteRoot, taskID string,
-	done *int64,
-	doneFiles *int,
-	onProgress func(int64, int, string),
+	done *atomic.Int64,
+	doneFiles *atomic.Int32,
+	tuning uploadTransferTuning,
 ) error {
+	if len(clients) == 0 {
+		return userError("errors.sshFile.noAvailableSFTPConnection")
+	}
+	client := clients[0]
 	info, err := os.Lstat(localRoot)
 	if err != nil {
 		return err
@@ -2577,7 +2640,8 @@ func (s *FileService) uploadLocalPath(
 		if err := client.MkdirAll(base); err != nil {
 			return err
 		}
-		return filepath.Walk(localRoot, func(localPath string, item os.FileInfo, walkErr error) error {
+		files := make([]*localUploadFile, 0)
+		if err := filepath.Walk(localRoot, func(localPath string, item os.FileInfo, walkErr error) error {
 			if walkErr != nil {
 				return walkErr
 			}
@@ -2601,65 +2665,258 @@ func (s *FileService) uploadLocalPath(
 			if !item.Mode().IsRegular() {
 				return nil
 			}
-			return s.uploadLocalFile(ctx, client, localPath, remote, taskID, done, doneFiles, onProgress)
-		})
+			files = append(files, &localUploadFile{localPath: localPath, remotePath: remote, size: item.Size()})
+			return nil
+		}); err != nil {
+			return err
+		}
+		return s.uploadLocalFiles(ctx, clients, files, taskID, done, doneFiles, tuning)
 	}
-	return s.uploadLocalFile(ctx, client, localRoot, base, taskID, done, doneFiles, onProgress)
+	return s.uploadLocalFiles(ctx, clients, []*localUploadFile{{localPath: localRoot, remotePath: base, size: info.Size()}}, taskID, done, doneFiles, tuning)
+}
+
+type localUploadFile struct {
+	localPath       string
+	remotePath      string
+	remoteTemp      string
+	size            int64
+	segmentCount    int
+	completedChunks atomic.Int32
+}
+
+type localUploadSegment struct {
+	file   *localUploadFile
+	offset int64
+	length int64
 }
 
 func (s *FileService) uploadLocalFile(
 	ctx context.Context,
-	client *sftp.Client,
+	clients []*sftp.Client,
 	localPath, remotePath, taskID string,
-	done *int64,
-	doneFiles *int,
-	onProgress func(int64, int, string),
+	done *atomic.Int64,
+	doneFiles *atomic.Int32,
+) error {
+	info, err := os.Stat(localPath)
+	if err != nil {
+		return err
+	}
+	if !info.Mode().IsRegular() {
+		return nil
+	}
+	return s.uploadLocalFiles(
+		ctx,
+		clients,
+		[]*localUploadFile{{localPath: localPath, remotePath: remotePath, size: info.Size()}},
+		taskID,
+		done,
+		doneFiles,
+		remoteUploadTransferTuning(4, 4),
+	)
+}
+
+func (s *FileService) uploadLocalFiles(
+	ctx context.Context,
+	clients []*sftp.Client,
+	files []*localUploadFile,
+	taskID string,
+	done *atomic.Int64,
+	doneFiles *atomic.Int32,
+	tuning uploadTransferTuning,
+) error {
+	if len(clients) == 0 {
+		return userError("errors.sshFile.noAvailableSFTPConnection")
+	}
+	if len(files) == 0 {
+		return nil
+	}
+	cleanupTemps := func() {
+		for _, file := range files {
+			if file.remoteTemp != "" {
+				_ = clients[0].Remove(file.remoteTemp)
+			}
+		}
+	}
+	segments := make([]localUploadSegment, 0)
+	for _, file := range files {
+		if err := ctx.Err(); err != nil {
+			cleanupTemps()
+			return err
+		}
+		file.remoteTemp = file.remotePath + ".tinkerkit-" + taskID + ".partial"
+		initial, err := clients[0].OpenFile(file.remoteTemp, os.O_WRONLY|os.O_CREATE|os.O_TRUNC)
+		if err != nil {
+			cleanupTemps()
+			return err
+		}
+		if err := initial.Close(); err != nil {
+			cleanupTemps()
+			return err
+		}
+		for offset := int64(0); offset < file.size; offset += tuning.segmentSize {
+			length := min(tuning.segmentSize, file.size-offset)
+			segments = append(segments, localUploadSegment{file: file, offset: offset, length: length})
+			file.segmentCount++
+		}
+		if file.segmentCount == 0 {
+			segments = append(segments, localUploadSegment{file: file})
+			file.segmentCount = 1
+		}
+	}
+
+	workerCount := min(len(clients), len(segments))
+	workCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	work := make(chan localUploadSegment)
+	var firstErr error
+	var errMu sync.Mutex
+	setError := func(value error) {
+		if value == nil {
+			return
+		}
+		errMu.Lock()
+		if firstErr == nil {
+			firstErr = value
+			cancel()
+		}
+		errMu.Unlock()
+	}
+	var progressMu sync.Mutex
+	lastProgress := time.Time{}
+	report := func(current string) {
+		progressMu.Lock()
+		now := time.Now()
+		if !lastProgress.IsZero() && now.Sub(lastProgress) < remoteDownloadProgressEmitInterval {
+			progressMu.Unlock()
+			return
+		}
+		lastProgress = now
+		progressMu.Unlock()
+		s.updateFileTask(taskID, func(task *fileTaskState) {
+			task.Completed = done.Load()
+			task.DoneFiles = int(doneFiles.Load())
+			task.Current = current
+		})
+	}
+	var workers sync.WaitGroup
+	workers.Add(workerCount)
+	for _, transferClient := range clients[:workerCount] {
+		transferClient := transferClient
+		go func() {
+			defer workers.Done()
+			for segment := range work {
+				if err := uploadLocalSegment(workCtx, transferClient, segment, tuning.writeSize, done, report); err != nil {
+					setError(err)
+					return
+				}
+				if segment.file.completedChunks.Add(1) == int32(segment.file.segmentCount) {
+					if err := commitRemoteUpload(transferClient, segment.file.remoteTemp, segment.file.remotePath); err != nil {
+						setError(err)
+						return
+					}
+					doneFiles.Add(1)
+					report(segment.file.localPath)
+				}
+			}
+		}()
+	}
+	go func() {
+		defer close(work)
+		for _, segment := range segments {
+			select {
+			case <-workCtx.Done():
+				return
+			case work <- segment:
+			}
+		}
+	}()
+	workers.Wait()
+	errMu.Lock()
+	transferErr := firstErr
+	errMu.Unlock()
+	if transferErr != nil {
+		cleanupTemps()
+		return transferErr
+	}
+	if err := ctx.Err(); err != nil {
+		cleanupTemps()
+		return err
+	}
+	s.updateFileTask(taskID, func(task *fileTaskState) {
+		task.Completed = done.Load()
+		task.DoneFiles = int(doneFiles.Load())
+	})
+	return nil
+}
+
+func uploadLocalSegment(
+	ctx context.Context,
+	client *sftp.Client,
+	segment localUploadSegment,
+	writeSize int64,
+	done *atomic.Int64,
+	report func(string),
 ) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	input, err := os.Open(localPath)
+	input, err := os.Open(segment.file.localPath)
 	if err != nil {
 		return err
 	}
 	defer input.Close()
-	output, err := client.OpenFile(remotePath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC)
+	remote, err := client.OpenFile(segment.file.remoteTemp, os.O_WRONLY)
 	if err != nil {
 		return err
 	}
-	defer output.Close()
-	buf := make([]byte, 256*1024)
-	for {
+	defer remote.Close()
+	buffer := make([]byte, int(writeSize))
+	for offset := int64(0); offset < segment.length; {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		n, readErr := input.Read(buf)
-		if n > 0 {
-			if _, err = output.Write(buf[:n]); err != nil {
-				return err
+		length := min(int64(len(buffer)), segment.length-offset)
+		chunk := buffer[:int(length)]
+		read, readErr := input.ReadAt(chunk, segment.offset+offset)
+		if read != len(chunk) {
+			if readErr == nil || errors.Is(readErr, io.EOF) {
+				readErr = io.ErrUnexpectedEOF
 			}
-			*done += int64(n)
-			s.updateFileTask(taskID, func(task *fileTaskState) { task.Completed = *done; task.Current = localPath })
-			if onProgress != nil {
-				onProgress(*done, *doneFiles, remotePath)
-			}
-		}
-		if errors.Is(readErr, io.EOF) {
-			break
-		}
-		if readErr != nil {
 			return readErr
 		}
-	}
-	*doneFiles++
-	s.updateFileTask(taskID, func(task *fileTaskState) { task.DoneFiles = *doneFiles })
-	if onProgress != nil {
-		onProgress(*done, *doneFiles, remotePath)
+		written, writeErr := remote.WriteAt(chunk, segment.offset+offset)
+		if writeErr != nil {
+			return writeErr
+		}
+		if written != len(chunk) {
+			return io.ErrShortWrite
+		}
+		done.Add(int64(written))
+		offset += int64(written)
+		report(segment.file.localPath)
 	}
 	return nil
 }
 
-func (s *FileService) runFileDownload(ctx context.Context, taskID string, connection SSHConnection, remotePaths []string, target string) {
+func commitRemoteUpload(client *sftp.Client, remoteTemp, remotePath string) error {
+	if err := client.PosixRename(remoteTemp, remotePath); err == nil {
+		return nil
+	}
+	if _, statErr := client.Lstat(remotePath); statErr == nil {
+		if removeErr := client.Remove(remotePath); removeErr != nil {
+			return removeErr
+		}
+	}
+	return client.Rename(remoteTemp, remotePath)
+}
+
+func (s *FileService) runFileDownload(ctx context.Context, taskID string, connection SSHConnection, remotePaths []string, target string, batch bool) {
+	if !s.acquireTaskSlot(ctx, taskID) {
+		return
+	}
+	if s.taskScheduler != nil {
+		defer s.taskScheduler.Release()
+	}
 	sshClient, client, err := s.dialSFTPWithOptions(ctx, connection, remoteDownloadSFTPOptions()...)
 	if err != nil {
 		s.finishFileTask(taskID, err)
@@ -2678,7 +2935,7 @@ func (s *FileService) runFileDownload(ctx context.Context, taskID string, connec
 			return
 		}
 		destination := target
-		if len(remotePaths) > 1 || info.IsDir() {
+		if batch || info.IsDir() {
 			destination = filepath.Join(target, filepath.Base(normalized))
 		}
 		if err = collectRemoteTree(ctx, client, normalized, destination, info, &items); err != nil {
@@ -2705,12 +2962,12 @@ func (s *FileService) runFileDownload(ctx context.Context, taskID string, connec
 	}
 	defer cleanupRemoteDownloadFiles(filesToDownload)
 	defer closeRemoteDownloadFiles(filesToDownload)
-	sshClients, sftpClients = s.expandDownloadSFTPClients(
+	sshClients, sftpClients = s.expandSFTPClients(
 		ctx,
 		connection,
 		sshClients,
 		sftpClients,
-		remoteDownloadConnectionWanted(filesToDownload),
+		remoteDownloadConnectionWanted(filesToDownload, s.configSnapshot().TaskChunkConcurrency),
 	)
 	if err := s.downloadRemoteFiles(ctx, sftpClients, filesToDownload, taskID); err != nil {
 		s.finishFileTask(taskID, err)

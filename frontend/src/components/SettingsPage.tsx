@@ -34,6 +34,7 @@ import {
   ArrowSquareOut,
   ArrowCounterClockwise,
   ArrowsClockwise,
+  BellRinging,
   DownloadSimple,
   Key,
   PencilSimple,
@@ -74,6 +75,12 @@ import { Textarea } from './ui/textarea';
 import { useSSHProfiles } from './SSHProfileManagerDialog';
 import { ConfirmDialog } from './ConfirmDialog';
 import { formatBackendError } from '../lib/backend-error';
+import { showTaskNotificationPermissionDialog } from '../lib/task-notification-feedback';
+import {
+  IsAvailable as IsTaskNotificationAvailable,
+  RequestAuthorization as RequestTaskNotificationAuthorization,
+  Send as SendTaskNotification,
+} from '../../bindings/changeme/tasknotificationservice';
 
 const TRAY_MATCH_DEFAULT_TOOLS: readonly ToolId[] = [
   'json',
@@ -630,6 +637,7 @@ export default function SettingsPage({
   const [configAction, setConfigAction] = useState<'export' | 'import' | 'reset' | null>(null);
   const [configBusy, setConfigBusy] = useState(false);
   const [checking, setChecking] = useState(false);
+  const [testingTaskNotification, setTestingTaskNotification] = useState(false);
   const [quitting, setQuitting] = useState(false);
   const [version, setVersion] = useState('');
   const [sshKnownHostsOpen, setSSHKnownHostsOpen] = useState(false);
@@ -659,6 +667,29 @@ export default function SettingsPage({
       window.dispatchEvent(new CustomEvent('tinkerkit:update-check', { detail: 'finished' }));
     } finally {
       setChecking(false);
+    }
+  };
+  const sendTestTaskNotification = async () => {
+    setTestingTaskNotification(true);
+    try {
+      if (!(await IsTaskNotificationAvailable())) {
+        showTaskNotificationPermissionDialog();
+        return;
+      }
+      if (!(await RequestTaskNotificationAuthorization())) {
+        showTaskNotificationPermissionDialog();
+        return;
+      }
+      await SendTaskNotification(
+        `task-notification-test-${Date.now()}`,
+        t('settings.taskNotificationTestTitle'),
+        t('settings.taskNotificationTestBody'),
+      );
+      toast.add({ title: t('settings.taskNotificationTestSent'), type: 'success' });
+    } catch {
+      showTaskNotificationPermissionDialog();
+    } finally {
+      setTestingTaskNotification(false);
     }
   };
   const matchableTools = tools.filter((tool) => TRAY_MATCH_DEFAULT_TOOLS.includes(tool.id));
@@ -919,6 +950,41 @@ export default function SettingsPage({
                   {t(checking ? 'settings.checkingUpdates' : 'settings.checkUpdates')}
                 </Button>
               </Setting>
+            </div>
+          </SettingsGroup>
+          <SettingsGroup
+            title={t('settings.taskNotifications')}
+            subtitle={t('settings.taskNotificationsDesc')}
+          >
+            <div className="flex flex-col items-start gap-2">
+              <ChoiceGroup
+                label={t('settings.taskNotifications')}
+                value={settings.taskNotificationMode ?? 'unfocused'}
+                options={(['off', 'always', 'unfocused'] as const).map((id) => ({
+                  id,
+                  label: t(`settings.taskNotificationMode.${id}`),
+                }))}
+                onChange={(taskNotificationMode) =>
+                  setSettings((current) => ({ ...current, taskNotificationMode }))
+                }
+              />
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={testingTaskNotification}
+                onClick={() => void sendTestTaskNotification()}
+              >
+                {testingTaskNotification ? (
+                  <Spinner data-icon="inline-start" />
+                ) : (
+                  <BellRinging data-icon="inline-start" weight="duotone" />
+                )}
+                {t(
+                  testingTaskNotification
+                    ? 'settings.taskNotificationTesting'
+                    : 'settings.testTaskNotification',
+                )}
+              </Button>
             </div>
           </SettingsGroup>
           <SettingsGroup title={t('settings.ssh')} subtitle={t('settings.sshSubtitle')}>

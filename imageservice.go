@@ -244,6 +244,7 @@ type imageCommandRunner func(context.Context, string, ...string) ([]byte, error)
 // ImageService 通过本机 docker CLI 和系统 ssh 管理镜像。
 type ImageService struct {
 	config                *ConfigService
+	taskScheduler         *taskScheduler
 	runner                imageCommandRunner
 	ctx                   context.Context
 	cancel                context.CancelFunc
@@ -278,9 +279,27 @@ type ImageService struct {
 	tasks                 map[string]*imageTaskState
 	taskOrder             []string
 	taskRevision          uint64
-	exportSem             chan struct{}
 	exportWG              sync.WaitGroup
 	exportQueueMu         sync.Mutex
+}
+
+func (s *ImageService) setTaskScheduler(scheduler *taskScheduler) {
+	if s != nil {
+		s.taskScheduler = scheduler
+	}
+}
+
+func (s *ImageService) acquireTaskSlot(ctx context.Context, taskID string) bool {
+	if s.taskScheduler == nil {
+		return true
+	}
+	if err := s.taskScheduler.Acquire(ctx); err != nil {
+		s.updateTask(taskID, func(task *imageTaskState) {
+			task.Status, task.Stage, task.cancel = imageTaskCanceled, imageTaskCanceled, nil
+		})
+		return false
+	}
+	return true
 }
 
 type imageCacheCall struct {
@@ -309,7 +328,7 @@ type prewarmGeneration struct {
 
 func NewImageService(config *ConfigService) *ImageService {
 	ctx, cancel := context.WithCancel(context.Background())
-	service := &ImageService{config: config, ctx: ctx, cancel: cancel, cacheCalls: make(map[string]*imageCacheCall), inventory: make(map[string]imageInventory), prewarmGenerations: make(map[string]*prewarmGeneration), exportSem: make(chan struct{}, 2)}
+	service := &ImageService{config: config, ctx: ctx, cancel: cancel, cacheCalls: make(map[string]*imageCacheCall), inventory: make(map[string]imageInventory), prewarmGenerations: make(map[string]*prewarmGeneration)}
 	if config != nil {
 		config.setOnChange(func(Config) { service.cleanupImageCache() })
 	}

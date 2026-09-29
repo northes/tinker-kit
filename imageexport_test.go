@@ -206,10 +206,9 @@ func TestRetryImageExportStartsFromOriginalTarget(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	s := &ImageService{
-		config:    &ConfigService{cfg: normalizeConfig(Config{ImageSources: []ImageSource{{ID: "local", Kind: "local"}}})},
-		ctx:       ctx,
-		tasks:     make(map[string]*imageTaskState),
-		exportSem: make(chan struct{}, 2),
+		config: &ConfigService{cfg: normalizeConfig(Config{ImageSources: []ImageSource{{ID: "local", Kind: "local"}}})},
+		ctx:    ctx,
+		tasks:  make(map[string]*imageTaskState),
 	}
 	target := filepath.Join(t.TempDir(), "image.tar")
 	if err := os.WriteFile(target, []byte("old-archive"), 0o600); err != nil {
@@ -355,10 +354,12 @@ func TestImageTaskRetention(t *testing.T) {
 
 func TestBatchExportSnapshotWithoutEvents(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
-	s := &ImageService{ctx: ctx, exportSem: make(chan struct{}, 2)}
-	// 占满并发槽，使任务停在队列中，无需 Docker 或原生目录对话框。
-	s.exportSem <- struct{}{}
-	s.exportSem <- struct{}{}
+	scheduler := newTaskScheduler(1)
+	if err := scheduler.Acquire(ctx); err != nil {
+		t.Fatal(err)
+	}
+	s := &ImageService{ctx: ctx, taskScheduler: scheduler}
+	// 占满共享任务槽，使任务停在队列中，无需 Docker 或原生目录对话框。
 	defer func() {
 		cancel()
 		s.exportWG.Wait()

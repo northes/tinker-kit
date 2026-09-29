@@ -14,6 +14,7 @@ import (
 	"github.com/wailsapp/wails/v3/pkg/application"
 	"github.com/wailsapp/wails/v3/pkg/events"
 	"github.com/wailsapp/wails/v3/pkg/services/dock"
+	"github.com/wailsapp/wails/v3/pkg/services/notifications"
 	"github.com/wailsapp/wails/v3/pkg/updater"
 	githubprovider "github.com/wailsapp/wails/v3/pkg/updater/providers/github"
 )
@@ -93,6 +94,12 @@ func main() {
 	updateService := NewUpdateService(currentVersion)
 	fileService := NewFileService(cfgService)
 	imageService := NewImageService(cfgService)
+	taskScheduler := newTaskScheduler(cfgService.Get().TaskConcurrency)
+	fileService.setTaskScheduler(taskScheduler)
+	imageService.setTaskScheduler(taskScheduler)
+	cfgService.setOnChange(func(cfg Config) { taskScheduler.SetLimit(cfg.TaskConcurrency) })
+	notificationService := notifications.New()
+	taskNotificationService := &taskNotificationService{service: notificationService}
 	serviceManagerService := NewServiceManagerService(cfgService)
 	portService := NewPortService(cfgService)
 	jsonPipelineService := NewJSONPipelineService()
@@ -118,6 +125,7 @@ func main() {
 			application.NewService(jsonPipelineService),
 			application.NewService(realTimeService),
 			application.NewService(dockService),
+			application.NewService(taskNotificationService),
 		},
 		Mac: application.MacOptions{
 			ActivationPolicy: application.ActivationPolicyRegular,
