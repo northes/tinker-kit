@@ -179,6 +179,29 @@ func (s *ImageService) GetImageTasks() ImageTaskSnapshot {
 	return s.taskSnapshotLocked()
 }
 
+// ClearImageTasks 移除所有已结束（非排队、非运行中）的镜像任务并返回最新快照。
+func (s *ImageService) ClearImageTasks() ImageTaskSnapshot {
+	s.taskMu.Lock()
+	retained := s.taskOrder[:0]
+	for _, id := range s.taskOrder {
+		task := s.tasks[id]
+		if task == nil {
+			continue
+		}
+		if task.Status != imageTaskQueued && task.Status != imageTaskRunning {
+			delete(s.tasks, id)
+			s.taskRevision++
+			continue
+		}
+		retained = append(retained, id)
+	}
+	s.taskOrder = retained
+	snapshot := s.taskSnapshotLocked()
+	s.taskMu.Unlock()
+	s.emitEvent(imageTasksEventName, snapshot)
+	return snapshot
+}
+
 // CancelImageTask 取消排队中或运行中的用户发起镜像任务。
 func (s *ImageService) CancelImageTask(id string) error {
 	s.taskMu.Lock()
@@ -305,6 +328,23 @@ func (s *ImageService) RetryImageTask(id string) (ImageExportResult, error) {
 		return ImageExportResult{}, userError("errors.imageExport.taskNotRetryable")
 	}
 	return ImageExportResult{Started: 1, Snapshot: s.GetImageTasks()}, nil
+}
+
+// OpenImageTaskFolder 在系统文件管理器中打开导出任务的目标目录。
+func (s *ImageService) OpenImageTaskFolder(id string) error {
+	s.taskMu.Lock()
+	task := s.tasks[id]
+	if task == nil {
+		s.taskMu.Unlock()
+		return userError("errors.imageExport.taskNotFound")
+	}
+	path := task.Path
+	taskType := task.Type
+	s.taskMu.Unlock()
+	if taskType != imageTaskTypeExport || path == "" {
+		return userError("errors.imageExport.taskFolderUnavailable")
+	}
+	return openLocalFolder(filepath.Dir(path))
 }
 
 // StartImageExport 打开原生保存对话框，并异步导出镜像 tar 包。estimatedSize 是镜像列表提供的估算字节数。

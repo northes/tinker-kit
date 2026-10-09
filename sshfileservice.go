@@ -328,6 +328,29 @@ func (s *FileService) GetFileTasks() FileTaskSnapshot {
 	return s.taskSnapshotLocked()
 }
 
+// ClearFileTasks 移除所有已结束（非排队、扫描、运行或等待处理）的文件任务并返回最新快照。
+func (s *FileService) ClearFileTasks() FileTaskSnapshot {
+	s.taskMu.Lock()
+	retained := s.taskOrder[:0]
+	for _, id := range s.taskOrder {
+		task := s.tasks[id]
+		if task == nil {
+			continue
+		}
+		if task.Status != fileTaskQueued && task.Status != fileTaskScanning && task.Status != fileTaskRunning && task.Status != fileTaskConflict {
+			delete(s.tasks, id)
+			s.taskRevision++
+			continue
+		}
+		retained = append(retained, id)
+	}
+	s.taskOrder = retained
+	snapshot := s.taskSnapshotLocked()
+	s.taskMu.Unlock()
+	s.emitTasks(snapshot)
+	return snapshot
+}
+
 func (s *FileService) CancelFileTask(id string) error {
 	var snapshot FileTaskSnapshot
 	immediate := false
@@ -401,6 +424,23 @@ func (s *FileService) RetryFileTask(id string) (FileTaskSnapshot, error) {
 	default:
 		return FileTaskSnapshot{}, userError("errors.sshFile.taskNotRetryable")
 	}
+}
+
+// OpenFileTaskFolder 在系统文件管理器中打开下载任务的目标目录。
+func (s *FileService) OpenFileTaskFolder(id string) error {
+	s.taskMu.Lock()
+	task := s.tasks[id]
+	if task == nil {
+		s.taskMu.Unlock()
+		return userError("errors.sshFile.taskNotFound")
+	}
+	taskType := task.Type
+	target := task.Target
+	s.taskMu.Unlock()
+	if taskType != fileTaskTypeDownload || target == "" {
+		return userError("errors.sshFile.taskFolderUnavailable")
+	}
+	return openLocalFolder(target)
 }
 
 func (s *FileService) configSnapshot() Config {
