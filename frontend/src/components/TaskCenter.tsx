@@ -10,11 +10,28 @@ import {
 import { Events, Window } from '@wailsio/runtime';
 import { useTranslation } from 'react-i18next';
 import { useVirtualizer } from '@tanstack/react-virtual';
+import {
+  ArrowClockwise,
+  Funnel,
+  FunnelSimple,
+  FolderSimple,
+  GearSix,
+  ListDashes,
+  X,
+} from '@phosphor-icons/react';
 import type { Config, FileTask, ImageTask } from '../../bindings/changeme/models';
-import { CancelFileTask, GetFileTasks, RetryFileTask } from '../../bindings/changeme/fileservice';
+import {
+  CancelFileTask,
+  ClearFileTasks,
+  GetFileTasks,
+  OpenFileTaskFolder,
+  RetryFileTask,
+} from '../../bindings/changeme/fileservice';
 import {
   CancelImageTask,
+  ClearImageTasks,
   GetImageTasks,
+  OpenImageTaskFolder,
   RetryImageTask,
 } from '../../bindings/changeme/imageservice';
 import { Get as GetConfig } from '../../bindings/changeme/configservice';
@@ -45,6 +62,7 @@ import {
   DialogTitle,
 } from './ui/dialog';
 import { ScrollArea } from './ui/scroll-area';
+import { Spinner } from './ui/spinner';
 import {
   Select,
   SelectContent,
@@ -53,6 +71,18 @@ import {
   SelectTrigger,
   SelectValue,
 } from './ui/select';
+import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from './ui/dropdown-menu';
+import { Popover, PopoverContent, PopoverHeader, PopoverTitle, PopoverTrigger } from './ui/popover';
+import { Empty, EmptyHeader, EmptyMedia, EmptyTitle } from './ui/empty';
 type TaskSettings = Pick<
   Config,
   'taskConcurrency' | 'taskChunkConcurrency' | 'taskNotificationMode'
@@ -60,7 +90,7 @@ type TaskSettings = Pick<
 
 type ToolFilter = 'all' | 'image-manager' | 'ssh-files';
 type StatusFilter =
-  'all' | 'queued' | 'running' | 'scanning' | 'success' | 'failed' | 'canceled' | 'conflict';
+  'queued' | 'running' | 'scanning' | 'success' | 'failed' | 'canceled' | 'conflict';
 type UnifiedTask = {
   id: string;
   tool: Exclude<ToolFilter, 'all'>;
@@ -164,12 +194,13 @@ export function TaskCenter({
   const [open, setOpen] = useState(false);
   const [showElapsedTime, setShowElapsedTime] = useState(false);
   const [cancelingAll, setCancelingAll] = useState(false);
-  const [limitsOpen, setLimitsOpen] = useState(false);
+  const [clearingFinished, setClearingFinished] = useState(false);
+
   const [notificationPermissionOpen, setNotificationPermissionOpen] = useState(false);
   const [notificationSettingsOpenFailed, setNotificationSettingsOpenFailed] = useState(false);
   const [openingNotificationSettings, setOpeningNotificationSettings] = useState(false);
   const [toolFilter, setToolFilter] = useState<ToolFilter>('all');
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
+  const [statusFilter, setStatusFilter] = useState<StatusFilter[]>([]);
   const [images, setImages] = useState<ImageTask[]>([]);
   const [files, setFiles] = useState<FileTask[]>([]);
   const [sourceDisplayNames, setSourceDisplayNames] = useState<Record<string, string>>({});
@@ -185,14 +216,15 @@ export function TaskCenter({
   const statuses = useRef(new Map<string, string>());
   const samples = useRef(new Map<string, { bytes: number; at: number; speed: number }>());
   const notificationAuthorized = useRef<boolean | null>(null);
+  const pendingSnapshots = useRef<{ image?: ImageTask[]; file?: FileTask[] }>({});
 
   const processSnapshot = useCallback(
     (kind: 'image' | 'file', data: any, notify: boolean) => {
       const revision = kind === 'image' ? imageRevision : fileRevision;
       if (data.revision < revision.current) return;
       revision.current = data.revision;
-      if (kind === 'image') setImages(data.tasks ?? []);
-      else setFiles(data.tasks ?? []);
+      if (kind === 'image') pendingSnapshots.current.image = data.tasks ?? [];
+      else pendingSnapshots.current.file = data.tasks ?? [];
       const items: UnifiedTask[] =
         kind === 'image'
           ? unifiedTasks(data.tasks ?? [], []).filter((task) => task.tool === 'image-manager')
@@ -257,6 +289,18 @@ export function TaskCenter({
     [settings.taskNotificationMode, t],
   );
 
+  const commitSnapshots = useCallback(() => {
+    const pending = pendingSnapshots.current;
+    if (pending.image) {
+      setImages(pending.image);
+      pending.image = undefined;
+    }
+    if (pending.file) {
+      setFiles(pending.file);
+      pending.file = undefined;
+    }
+  }, []);
+
   useEffect(() => {
     let ready = false;
     const offImage = Events.On('image-manager:tasks', (event) => {
@@ -284,6 +328,7 @@ export function TaskCenter({
         const pending = buffered.current.splice(0);
         pending.sort((a, b) => a.data.revision - b.data.revision);
         for (const event of pending) processSnapshot(event.kind, event.data, true);
+        commitSnapshots();
       })
       .catch(() => {
         ready = true;
@@ -292,13 +337,13 @@ export function TaskCenter({
       offImage();
       offFile();
     };
-  }, [processSnapshot, t]);
+  }, [processSnapshot, commitSnapshots, t]);
 
   useEffect(() => {
     const openCenter = (event: Event) => {
       const tool = (event as CustomEvent<ToolFilter>).detail;
       setToolFilter(tool === 'image-manager' || tool === 'ssh-files' ? tool : 'all');
-      setStatusFilter('all');
+      setStatusFilter([]);
       setOpen(true);
     };
     window.addEventListener('tinkerkit:tasks-open', openCenter);
@@ -328,9 +373,12 @@ export function TaskCenter({
   };
 
   useEffect(() => {
-    const timer = window.setInterval(() => setNow(Date.now()), 900);
+    const timer = window.setInterval(() => {
+      setNow(Date.now());
+      commitSnapshots();
+    }, 1000);
     return () => window.clearInterval(timer);
-  }, []);
+  }, [commitSnapshots]);
 
   useEffect(() => {
     setConcurrencyDraft({
@@ -374,7 +422,7 @@ export function TaskCenter({
         .filter(
           (task) =>
             (toolFilter === 'all' || task.tool === toolFilter) &&
-            (statusFilter === 'all' || task.status === statusFilter),
+            (statusFilter.length === 0 || statusFilter.includes(task.status as StatusFilter)),
         )
         .sort(
           (a, b) =>
@@ -386,12 +434,13 @@ export function TaskCenter({
   const virtualizer = useVirtualizer({
     count: visibleTasks.length,
     getScrollElement: () => viewport,
-    estimateSize: () => 118,
+    estimateSize: () => 92,
     overscan: 5,
   });
 
   const activeTasks = visibleTasks.filter((task) => active(task.status));
   const hasCancelableTasks = allTasks.some((task) => active(task.status));
+  const hasFinishedTasks = allTasks.some((task) => !active(task.status));
   const known = activeTasks.filter((task) => task.total > 0 && task.image?.type !== 'pull');
   const hasUnknown = activeTasks.some((task) => task.total <= 0 || task.image?.type === 'pull');
   const total = known.reduce((sum, task) => sum + task.total, 0);
@@ -457,12 +506,33 @@ export function TaskCenter({
     }
   };
 
+  const clearFinishedTasks = async () => {
+    if (clearingFinished) return;
+    setClearingFinished(true);
+    try {
+      await Promise.all([ClearImageTasks(), ClearFileTasks()]);
+    } catch {
+      toast.add({ title: t('taskCenter.clearFinishedFailed'), type: 'error' });
+    } finally {
+      setClearingFinished(false);
+    }
+  };
+
   const retryTask = async (task: UnifiedTask) => {
     try {
       if (task.file) await RetryFileTask(task.id);
       else await RetryImageTask(task.id);
     } catch {
       toast.add({ title: t('taskCenter.retryFailed'), type: 'error' });
+    }
+  };
+
+  const openTaskFolder = async (task: UnifiedTask) => {
+    try {
+      if (task.file) await OpenFileTaskFolder(task.id);
+      else await OpenImageTaskFolder(task.id);
+    } catch {
+      toast.add({ title: t('taskCenter.openFolderFailed'), type: 'error' });
     }
   };
 
@@ -494,10 +564,10 @@ export function TaskCenter({
     label: t(`taskCenter.tools.${value}`),
   }));
   const statusOptions = (
-    ['all', 'queued', 'running', 'scanning', 'success', 'failed', 'canceled', 'conflict'] as const
+    ['queued', 'running', 'scanning', 'success', 'failed', 'canceled', 'conflict'] as const
   ).map((value) => ({
     value,
-    label: value === 'all' ? t('taskCenter.allStatuses') : statusLabel(value),
+    label: statusLabel(value),
   }));
   const concurrencyOptions = Array.from({ length: 16 }, (_, index) => ({
     value: String(index + 1),
@@ -507,284 +577,363 @@ export function TaskCenter({
   return (
     <TaskCenterContext.Provider value={openTaskCenter}>
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="flex min-h-0 max-h-[calc(100dvh-var(--app-titlebar-height)-4rem)] flex-col sm:max-w-lg">
+        <DialogContent className="flex h-[600px] max-h-[calc(100dvh-var(--app-titlebar-height)-4rem)] min-h-0 flex-col sm:max-w-lg">
           <DialogHeader className="shrink-0">
             <DialogTitle>{t('taskCenter.title')}</DialogTitle>
           </DialogHeader>
-          <div className="grid shrink-0 grid-cols-2 gap-2">
-            <Select
-              items={toolOptions}
-              value={toolFilter}
-              onValueChange={(value) => setToolFilter(value as ToolFilter)}
-            >
-              <SelectTrigger className="w-full">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectGroup>
-                  {(['all', 'image-manager', 'ssh-files'] as ToolFilter[]).map((value) => (
-                    <SelectItem key={value} value={value}>
-                      {t(`taskCenter.tools.${value}`)}
-                    </SelectItem>
-                  ))}
-                </SelectGroup>
-              </SelectContent>
-            </Select>
-            <Select
-              items={statusOptions}
-              value={statusFilter}
-              onValueChange={(value) => setStatusFilter(value as StatusFilter)}
-            >
-              <SelectTrigger className="w-full">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectGroup>
-                  {statusOptions.map(({ value, label }) => (
-                    <SelectItem key={value} value={value}>
-                      {label}
-                    </SelectItem>
-                  ))}
-                </SelectGroup>
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="flex shrink-0 items-center justify-between gap-3">
-            <Button
-              variant="link"
-              size="sm"
-              aria-expanded={limitsOpen}
-              aria-controls="task-center-limits"
-              onClick={() => setLimitsOpen((current) => !current)}
-              className="w-fit shrink-0 px-0"
-            >
-              {t(limitsOpen ? 'taskCenter.hideLimits' : 'taskCenter.configureLimits')}
-            </Button>
+          <div className="flex shrink-0 items-center justify-end gap-1.5">
             {hasCancelableTasks ? (
               <Button
                 variant="destructive"
                 size="sm"
-                className="shrink-0"
+                className="mr-auto shrink-0"
                 disabled={cancelingAll}
                 onClick={() => void cancelAllTasks()}
               >
                 {t('taskCenter.cancelAll')}
               </Button>
             ) : null}
-          </div>
-          {limitsOpen ? (
-            <div
-              id="task-center-limits"
-              className="grid shrink-0 grid-cols-1 gap-x-6 gap-y-3 rounded-md border border-border px-3 py-2.5 sm:grid-cols-2"
-            >
-              {(
-                [
-                  {
-                    key: 'taskConcurrency',
-                    label: t('taskCenter.concurrency'),
-                    description: t('taskCenter.concurrencyDesc'),
-                  },
-                  {
-                    key: 'taskChunkConcurrency',
-                    label: t('taskCenter.chunks'),
-                    description: t('taskCenter.chunksDesc'),
-                  },
-                ] as const
-              ).map(({ key, label, description }) => (
-                <div key={key} className="grid min-w-0 gap-1.5">
-                  <Label htmlFor={`task-center-${key}`} className="text-xs font-medium">
-                    {label}
-                  </Label>
-                  <p className="m-0 text-[10px] leading-tight text-muted-foreground">
-                    {description}
-                  </p>
-                  <Select
-                    items={concurrencyOptions}
-                    value={String(concurrencyDraft[key])}
-                    onValueChange={(value) => {
-                      if (value) selectConcurrency(key, Number(value));
-                    }}
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                render={
+                  <Button
+                    variant="outline"
+                    size="icon-sm"
+                    className="flex-none"
+                    aria-label={t('taskCenter.filterTool')}
+                    title={t('taskCenter.filterTool')}
+                  />
+                }
+              >
+                <Funnel weight="duotone" />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="min-w-40">
+                <DropdownMenuRadioGroup
+                  value={toolFilter}
+                  onValueChange={(value) => setToolFilter(value as ToolFilter)}
+                >
+                  {toolOptions.map(({ value, label }) => (
+                    <DropdownMenuRadioItem key={value} value={value}>
+                      {label}
+                    </DropdownMenuRadioItem>
+                  ))}
+                </DropdownMenuRadioGroup>
+              </DropdownMenuContent>
+            </DropdownMenu>
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                render={
+                  <Button
+                    variant="outline"
+                    size="icon-sm"
+                    className="flex-none"
+                    aria-label={t('taskCenter.filterStatus')}
+                    title={t('taskCenter.filterStatus')}
+                  />
+                }
+              >
+                <FunnelSimple weight="duotone" />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="min-w-40">
+                <DropdownMenuGroup>
+                  <DropdownMenuCheckboxItem
+                    checked={statusFilter.length === 0}
+                    onCheckedChange={() => setStatusFilter([])}
                   >
-                    <SelectTrigger id={`task-center-${key}`} className="w-full">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectGroup>
-                        {concurrencyOptions.map(({ value, label: optionLabel }) => (
-                          <SelectItem key={value} value={value}>
-                            {optionLabel}
-                          </SelectItem>
-                        ))}
-                      </SelectGroup>
-                    </SelectContent>
-                  </Select>
-                </div>
-              ))}
-            </div>
-          ) : null}
-          <ScrollArea
-            className="max-h-[min(52vh,480px)] min-h-0 flex-1 overscroll-contain [padding-inline-end:var(--overlay-scrollbar-size)]"
-            onViewport={setViewport}
-            options={{ overflow: { x: 'hidden' } }}
-          >
-            <div style={{ height: virtualizer.getTotalSize(), position: 'relative' }}>
-              {virtualizer.getVirtualItems().map((item) => {
-                const task = visibleTasks[item.index];
-                const progress = progressPercent(task);
-                const isActive = active(task.status);
-                const measureText = progressText(task);
-                const speedText =
-                  isActive && (task.speed ?? 0) > 0 && hasByteSpeed(task)
-                    ? `${formatTaskBytes(task.speed ?? 0)}/s`
-                    : '—';
-                const remainingTaskSeconds =
-                  isActive && task.total > 0 && task.image?.type !== 'pull'
-                    ? estimateTaskRemainingSeconds(
-                        Math.max(0, task.total - task.completed),
-                        task.speed ?? 0,
-                      )
-                    : null;
-                const percentText =
-                  progress === null
-                    ? '—'
-                    : `${progress.toLocaleString(i18n.resolvedLanguage, { maximumFractionDigits: 1 })}%`;
-                const toolName = t(
-                  task.tool === 'image-manager'
-                    ? 'tools.image-manager.name'
-                    : 'tools.ssh-files.name',
-                );
-                const canRetry = task.status === 'failed' || task.status === 'canceled';
-                return (
-                  <div
-                    key={task.id}
-                    data-index={item.index}
-                    ref={virtualizer.measureElement}
-                    className="absolute left-0 top-0 w-full border-b border-border py-3"
-                    style={{ transform: `translateY(${item.start}px)` }}
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0 flex-1">
-                        <div
-                          className="truncate text-sm font-medium text-foreground"
-                          title={taskTitle(task, t)}
-                        >
-                          {taskTitle(task, t)}
-                        </div>
-                        <div className="mt-1 flex min-w-0 items-center gap-2 text-[10px] text-muted-foreground">
-                          <span className="shrink-0">{toolName}</span>
-                          <span aria-hidden="true">·</span>
-                          <span
-                            className="min-w-0 truncate"
-                            title={
-                              sourceDisplayNames[task.sourceID] || t('taskCenter.unknownSource')
-                            }
-                          >
-                            {sourceDisplayNames[task.sourceID] || t('taskCenter.unknownSource')}
-                          </span>
-                        </div>
-                      </div>
-                      <div className="flex shrink-0 items-center gap-1.5">
-                        <Badge
-                          variant={
-                            task.status === 'success'
-                              ? 'success'
-                              : task.status === 'failed'
-                                ? 'destructive'
-                                : isActive
-                                  ? 'blue'
-                                  : 'outline'
-                          }
-                        >
-                          {statusLabel(task.status)}
-                        </Badge>
-                        {isActive && task.file ? (
-                          <Button
-                            variant="ghost"
-                            size="xs"
-                            onClick={() => void CancelFileTask(task.id)}
-                          >
-                            {t('taskCenter.cancel')}
-                          </Button>
-                        ) : null}
-                        {isActive && task.image?.type === 'export' ? (
-                          <Button
-                            variant="ghost"
-                            size="xs"
-                            onClick={() => void CancelImageTask(task.id)}
-                          >
-                            {t('taskCenter.cancel')}
-                          </Button>
-                        ) : null}
-                        {canRetry ? (
-                          <Button variant="ghost" size="xs" onClick={() => void retryTask(task)}>
-                            {t('taskCenter.retry')}
-                          </Button>
-                        ) : null}
-                      </div>
-                    </div>
-                    <div
-                      className={`mt-2 h-1.5 w-full overflow-hidden rounded-full bg-muted ${progress === null && isActive ? 'animate-pulse motion-reduce:animate-none' : ''}`}
+                    {t('taskCenter.allStatuses')}
+                  </DropdownMenuCheckboxItem>
+                </DropdownMenuGroup>
+                <DropdownMenuSeparator />
+                <DropdownMenuGroup>
+                  {statusOptions.map(({ value, label }) => (
+                    <DropdownMenuCheckboxItem
+                      key={value}
+                      checked={statusFilter.includes(value)}
+                      onCheckedChange={(checked) =>
+                        setStatusFilter((current) =>
+                          checked
+                            ? current.includes(value)
+                              ? current
+                              : [...current, value]
+                            : current.filter((item) => item !== value),
+                        )
+                      }
                     >
-                      <div
-                        className="h-full rounded-full bg-primary"
-                        style={{ width: `${progress ?? 0}%` }}
-                      />
+                      {label}
+                    </DropdownMenuCheckboxItem>
+                  ))}
+                </DropdownMenuGroup>
+              </DropdownMenuContent>
+            </DropdownMenu>
+            <Popover>
+              <PopoverTrigger
+                render={
+                  <Button
+                    variant="outline"
+                    size="icon-sm"
+                    className="flex-none"
+                    aria-label={t('taskCenter.configureLimits')}
+                    title={t('taskCenter.configureLimits')}
+                  />
+                }
+              >
+                <GearSix weight="duotone" />
+              </PopoverTrigger>
+              <PopoverContent align="end" className="w-72" disableAnchorTracking>
+                <PopoverHeader>
+                  <PopoverTitle>{t('taskCenter.configureLimits')}</PopoverTitle>
+                </PopoverHeader>
+                <div className="grid gap-3">
+                  {(
+                    [
+                      {
+                        key: 'taskConcurrency',
+                        label: t('taskCenter.concurrency'),
+                        description: t('taskCenter.concurrencyDesc'),
+                      },
+                      {
+                        key: 'taskChunkConcurrency',
+                        label: t('taskCenter.chunks'),
+                        description: t('taskCenter.chunksDesc'),
+                      },
+                    ] as const
+                  ).map(({ key, label, description }) => (
+                    <div key={key} className="grid min-w-0 gap-1.5">
+                      <Label htmlFor={`task-center-${key}`} className="text-xs font-medium">
+                        {label}
+                      </Label>
+                      <p className="m-0 text-[10px] leading-tight text-muted-foreground">
+                        {description}
+                      </p>
+                      <Select
+                        items={concurrencyOptions}
+                        value={String(concurrencyDraft[key])}
+                        onValueChange={(value) => {
+                          if (value) selectConcurrency(key, Number(value));
+                        }}
+                      >
+                        <SelectTrigger id={`task-center-${key}`} className="w-full">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent container={document.body}>
+                          <SelectGroup>
+                            {concurrencyOptions.map(({ value, label: optionLabel }) => (
+                              <SelectItem key={value} value={value}>
+                                {optionLabel}
+                              </SelectItem>
+                            ))}
+                          </SelectGroup>
+                        </SelectContent>
+                      </Select>
                     </div>
-                    <div className="mt-1 grid min-w-0 grid-cols-[minmax(0,1fr)_4rem] items-center gap-x-2 gap-y-1 font-mono text-[10px] tabular-nums text-muted-foreground sm:grid-cols-[10rem_3.5rem_5.5rem_5.5rem]">
-                      <span
-                        className="min-w-0 whitespace-normal sm:whitespace-nowrap"
-                        title={measureText}
-                        aria-label={t('taskCenter.itemProgress', { value: measureText })}
-                      >
-                        {measureText}
-                      </span>
-                      <span
-                        className="text-right"
-                        aria-label={t('taskCenter.itemPercent', { value: percentText })}
-                      >
-                        {percentText}
-                      </span>
-                      <span
-                        className="text-right"
-                        aria-label={t('taskCenter.itemSpeed', { value: speedText })}
-                      >
-                        {speedText}
-                      </span>
-                      <span
-                        className="text-right"
-                        aria-label={t('taskCenter.itemRemaining', {
-                          value:
-                            remainingTaskSeconds === null
-                              ? '—'
-                              : formatTaskDuration(remainingTaskSeconds),
-                        })}
-                      >
-                        {t('taskCenter.itemRemainingShort', {
-                          duration:
-                            remainingTaskSeconds === null
-                              ? '—'
-                              : formatTaskDuration(remainingTaskSeconds),
-                        })}
-                      </span>
-                    </div>
-                    {task.error ? (
-                      <div
-                        className="mt-1 line-clamp-2 break-all text-[10px] text-destructive"
-                        title={formatBackendError(task.error)}
-                      >
-                        {formatBackendError(task.error)}
-                      </div>
-                    ) : null}
-                  </div>
-                );
-              })}
-              {visibleTasks.length === 0 ? (
-                <div className="py-10 text-center text-xs text-muted-foreground">
-                  {t('taskCenter.empty')}
+                  ))}
                 </div>
-              ) : null}
-            </div>
-          </ScrollArea>
+                <Button
+                  variant="destructive"
+                  className="w-full"
+                  disabled={clearingFinished || !hasFinishedTasks}
+                  onClick={() => void clearFinishedTasks()}
+                >
+                  {clearingFinished ? <Spinner data-icon="inline-start" /> : null}
+                  {t('taskCenter.clearFinished')}
+                </Button>
+              </PopoverContent>
+            </Popover>
+          </div>
+          {visibleTasks.length === 0 ? (
+            <Empty className="min-h-0 flex-1">
+              <EmptyHeader>
+                <EmptyMedia variant="icon">
+                  <ListDashes weight="duotone" />
+                </EmptyMedia>
+                <EmptyTitle>{t('taskCenter.empty')}</EmptyTitle>
+              </EmptyHeader>
+            </Empty>
+          ) : (
+            <ScrollArea
+              className="min-h-0 flex-1 overscroll-contain [padding-inline-end:var(--overlay-scrollbar-size)]"
+              scrollFade="y"
+              onViewport={setViewport}
+              options={{ overflow: { x: 'hidden' } }}
+            >
+              <div style={{ height: virtualizer.getTotalSize(), position: 'relative' }}>
+                {virtualizer.getVirtualItems().map((item) => {
+                  const task = visibleTasks[item.index];
+                  const progress = progressPercent(task);
+                  const isActive = active(task.status);
+                  const measureText = progressText(task);
+                  const speedText =
+                    isActive && (task.speed ?? 0) > 0 && hasByteSpeed(task)
+                      ? `${formatTaskBytes(task.speed ?? 0)}/s`
+                      : '—';
+                  const remainingTaskSeconds =
+                    isActive && task.total > 0 && task.image?.type !== 'pull'
+                      ? estimateTaskRemainingSeconds(
+                          Math.max(0, task.total - task.completed),
+                          task.speed ?? 0,
+                        )
+                      : null;
+                  const percentText =
+                    progress === null
+                      ? '—'
+                      : `${progress.toLocaleString(i18n.resolvedLanguage, { maximumFractionDigits: 1 })}%`;
+                  const toolName = t(
+                    task.tool === 'image-manager'
+                      ? 'tools.image-manager.name'
+                      : 'tools.ssh-files.name',
+                  );
+                  const canRetry = task.status === 'failed' || task.status === 'canceled';
+                  const canCancel = isActive && (task.file || task.image?.type === 'export');
+                  const canOpenFolder =
+                    terminal(task.status) &&
+                    ((task.image?.type === 'export' && Boolean(task.image.path)) ||
+                      (task.file?.type === 'download' && Boolean(task.file.target)));
+                  const indeterminate = progress === null && isActive;
+                  const fillPercent = indeterminate ? 100 : (progress ?? 0);
+                  return (
+                    <div
+                      key={task.id}
+                      data-index={item.index}
+                      ref={virtualizer.measureElement}
+                      className="absolute left-0 top-0 w-full py-1.5"
+                      style={{ transform: `translateY(${item.start}px)` }}
+                    >
+                      <div className="relative overflow-hidden rounded-lg border border-border bg-card p-3">
+                        <div
+                          aria-hidden="true"
+                          className="absolute inset-y-0 left-0 bg-primary/10 transition-[width] duration-300 ease-out motion-reduce:transition-none"
+                          style={{ width: `${fillPercent}%` }}
+                        />
+                        <div className="relative">
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0 flex-1">
+                              <div
+                                className="truncate text-sm font-medium text-foreground"
+                                title={taskTitle(task, t)}
+                              >
+                                {taskTitle(task, t)}
+                              </div>
+                              <div className="mt-1 flex min-w-0 items-center gap-2 text-[10px] text-muted-foreground">
+                                <span className="shrink-0">{toolName}</span>
+                                <span aria-hidden="true">·</span>
+                                <span
+                                  className="min-w-0 truncate"
+                                  title={
+                                    sourceDisplayNames[task.sourceID] ||
+                                    t('taskCenter.unknownSource')
+                                  }
+                                >
+                                  {sourceDisplayNames[task.sourceID] ||
+                                    t('taskCenter.unknownSource')}
+                                </span>
+                              </div>
+                            </div>
+                            <div className="flex shrink-0 items-center gap-1.5">
+                              {canOpenFolder ? (
+                                <Button
+                                  variant="ghost"
+                                  size="icon-xs"
+                                  aria-label={t('taskCenter.openFolder')}
+                                  title={t('taskCenter.openFolder')}
+                                  onClick={() => void openTaskFolder(task)}
+                                >
+                                  <FolderSimple weight="duotone" />
+                                </Button>
+                              ) : null}
+                              <Badge
+                                variant={
+                                  task.status === 'success'
+                                    ? 'success'
+                                    : task.status === 'failed'
+                                      ? 'destructive'
+                                      : isActive
+                                        ? 'blue'
+                                        : 'outline'
+                                }
+                              >
+                                {statusLabel(task.status)}
+                              </Badge>
+                              {canCancel ? (
+                                <Button
+                                  variant="ghost"
+                                  size="icon-xs"
+                                  aria-label={t('taskCenter.cancel')}
+                                  title={t('taskCenter.cancel')}
+                                  onClick={() =>
+                                    task.file
+                                      ? void CancelFileTask(task.id)
+                                      : void CancelImageTask(task.id)
+                                  }
+                                >
+                                  <X weight="duotone" />
+                                </Button>
+                              ) : null}
+                              {canRetry ? (
+                                <Button
+                                  variant="ghost"
+                                  size="icon-xs"
+                                  aria-label={t('taskCenter.retry')}
+                                  title={t('taskCenter.retry')}
+                                  onClick={() => void retryTask(task)}
+                                >
+                                  <ArrowClockwise weight="duotone" />
+                                </Button>
+                              ) : null}
+                            </div>
+                          </div>
+                          <div className="mt-2 grid min-w-0 grid-cols-[minmax(0,1fr)_4rem] items-center gap-x-2 gap-y-1 font-mono text-[10px] tabular-nums text-muted-foreground sm:grid-cols-[10rem_3.5rem_5.5rem_5.5rem]">
+                            <span
+                              className="min-w-0 whitespace-normal sm:whitespace-nowrap"
+                              title={measureText}
+                              aria-label={t('taskCenter.itemProgress', { value: measureText })}
+                            >
+                              {measureText}
+                            </span>
+                            <span
+                              className="text-right"
+                              aria-label={t('taskCenter.itemPercent', { value: percentText })}
+                            >
+                              {percentText}
+                            </span>
+                            <span
+                              className="text-right"
+                              aria-label={t('taskCenter.itemSpeed', { value: speedText })}
+                            >
+                              {speedText}
+                            </span>
+                            <span
+                              className="text-right"
+                              aria-label={t('taskCenter.itemRemaining', {
+                                value:
+                                  remainingTaskSeconds === null
+                                    ? '—'
+                                    : formatTaskDuration(remainingTaskSeconds),
+                              })}
+                            >
+                              {t('taskCenter.itemRemainingShort', {
+                                duration:
+                                  remainingTaskSeconds === null
+                                    ? '—'
+                                    : formatTaskDuration(remainingTaskSeconds),
+                              })}
+                            </span>
+                          </div>
+                          {task.error ? (
+                            <div
+                              className="mt-1 line-clamp-2 break-all text-[10px] text-destructive"
+                              title={formatBackendError(task.error)}
+                            >
+                              {formatBackendError(task.error)}
+                            </div>
+                          ) : null}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </ScrollArea>
+          )}
           <DialogFooter className="flex-col shrink-0 gap-3 sm:flex-row sm:items-end sm:justify-between">
             <div className="flex min-w-0 flex-1 flex-col gap-2">
               <div
