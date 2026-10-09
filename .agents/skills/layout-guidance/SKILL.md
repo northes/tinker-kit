@@ -75,6 +75,7 @@ user-invocable: false
 ## 组件与交互细节
 
 - `DialogFooter` 自带 `border-t`；dialog 主体不要再加 `border-b`，否则相邻两条 1px 边框叠成 2px，分割线看起来比官方粗。
+- 焦点环（Base UI 控件默认的 `focus-visible:ring-*`）是画在边框盒外的 box-shadow，会被最近的 `overflow: auto/hidden/scroll` 容器裁掉。凡是承担滚动的容器（对话框内作为滚动层的 `<form>`、`ScrollArea` 视口等），都必须为边缘控件的焦点环预留空间：给滚动层加内边距，至少覆盖 `ring-3` 的 3px（默认取 4px）；要保持与相邻内容对齐时用等量负 margin 抵消，如 `-m-1 p-1`。不要用删除焦点环、叠加阴影/描边或给单个输入写局部覆盖来回避裁切。
 - Base UI `Select`：条目必须包在 `SelectGroup` 内；浮层内边距来自 `SelectGroup` 的 `p-1`，不要给 Popup 另加 padding 覆盖官方样式。
 - Base UI `Select`：受控值使用内部 key 时，根组件必须同时提供 `items={[{ value, label }]}` 映射（动态/本地化选项按当前文案构建），仅渲染带文字的 `SelectItem` 不足以保证关闭后的 trigger 显示 label。验收时要实际选择并关闭下拉框，确认 trigger 显示本地化 label 而不是内部 key。
 - 保持 `SelectContent` 的 `alignItemWithTrigger` 默认值（原生对齐：选中项与 trigger 对齐）；不要为了“展开在下方”而设为 `false`，也不要在各处混用两种定位。
@@ -127,7 +128,7 @@ user-invocable: false
 
 - **普通布局**：直接尺寸链、响应式切换和受影响页面。
 - **滚动容器**：按 [overlay-scrollbar.md](./overlay-scrollbar.md) 检查。
-- **浮层**：Portal 挂载位置、实际滚动层，以及 Dialog 内浮层的滚动与定位关系。
+- **浮层**：Portal 挂载位置、实际滚动层、Dialog 内浮层的滚动与定位关系，以及滚动层边缘控件的焦点环未被裁切。
 - **CodeMirror/常驻工具页**：隐藏页面不卸载、撤销历史和滚动位置保留、尺寸链，以及编辑器自身滚动责任。
 - **大文本或重计算工具**：确认计算位于 Go 后端而非 WebView/前端 Worker；前端具备请求取消、修订号或等价的过期结果保护，隐藏状态不继续产生无用计算，结果回传后不在主线程重复完整解析。
 - **可调整分栏**：模式专属 panel `id`、稳定 React `key`、隐藏面板 `0/0/0` 约束、可见面板最小尺寸、隐藏宿主不可见，以及各模式开关往返和极限拖拽。
