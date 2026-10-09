@@ -68,3 +68,46 @@ textarea,
   --os-handle-bg-hover: color-mix(in oklch, var(--muted-foreground) 68%, transparent);
   --os-handle-bg-active: color-mix(in oklch, var(--muted-foreground) 68%, transparent);
 }
+/* ScrollArea.scrollFade：按滚动偏移在可滚动方向边缘渐隐内容。 */
+.scroll-fade-x,
+.scroll-fade-y {
+  --scroll-fade-size: 24px;
+  --scroll-area-overflow-x-start: 0px;
+  --scroll-area-overflow-x-end: 0px;
+  --scroll-area-overflow-y-start: 0px;
+  --scroll-area-overflow-y-end: 0px;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+}
+.scroll-fade-x {
+  -webkit-mask-image: linear-gradient(
+    to right,
+    transparent 0,
+    #000 min(var(--scroll-fade-size), var(--scroll-area-overflow-x-start)),
+    #000 calc(100% - min(var(--scroll-fade-size), var(--scroll-area-overflow-x-end))),
+    transparent 100%
+  );
+  mask-image: linear-gradient(
+    to right,
+    transparent 0,
+    #000 min(var(--scroll-fade-size), var(--scroll-area-overflow-x-start)),
+    #000 calc(100% - min(var(--scroll-fade-size), var(--scroll-area-overflow-x-end))),
+    transparent 100%
+  );
+}
+.scroll-fade-y {
+  -webkit-mask-image: linear-gradient(
+    to bottom,
+    transparent 0,
+    #000 min(var(--scroll-fade-size), var(--scroll-area-overflow-y-start)),
+    #000 calc(100% - min(var(--scroll-fade-size), var(--scroll-area-overflow-y-end))),
+    transparent 100%
+  );
+  mask-image: linear-gradient(
+    to bottom,
+    transparent 0,
+    #000 min(var(--scroll-fade-size), var(--scroll-area-overflow-y-start)),
+    #000 calc(100% - min(var(--scroll-fade-size), var(--scroll-area-overflow-y-end))),
+    transparent 100%
+  );
+}

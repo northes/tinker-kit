@@ -299,8 +299,8 @@ export default function RealTimePanel({
   const scrollClocksByWheel = (event: React.WheelEvent<HTMLDivElement>) => {
     const { deltaX, deltaY, deltaMode } = event;
     if (event.ctrlKey || (deltaX === 0 && deltaY === 0)) return;
-    const viewport = event.currentTarget;
-    if (viewport.scrollWidth <= viewport.clientWidth) return;
+    const viewport = clockViewport.current;
+    if (!viewport || viewport.scrollWidth <= viewport.clientWidth) return;
     const scale = deltaMode === 1 ? 16 : deltaMode === 2 ? viewport.clientWidth : 1;
     viewport.scrollLeft += (Math.abs(deltaX) > Math.abs(deltaY) ? deltaX : deltaY) * scale;
     event.preventDefault();
@@ -373,10 +373,14 @@ export default function RealTimePanel({
             </div>
           </div>
           <div className="min-h-0 flex-none overflow-hidden rounded-lg border border-border bg-card">
-            <div
-              ref={setClockViewport}
+            <ScrollArea
+              options={{
+                overflow: { x: 'scroll', y: 'hidden' },
+                scrollbars: { visibility: 'hidden' },
+              }}
+              scrollFade="x"
+              onViewport={setClockViewport}
               onWheel={scrollClocksByWheel}
-              className="no-scrollbar overflow-x-auto overscroll-x-contain"
             >
               <DndContext
                 sensors={sensors}
@@ -428,7 +432,7 @@ export default function RealTimePanel({
                   </div>
                 </SortableContext>
               </DndContext>
-            </div>
+            </ScrollArea>
           </div>
           <div className="flex min-h-[190px] flex-1 flex-col overflow-hidden rounded-lg border border-border bg-card">
             <div className="flex min-h-0 flex-1 items-center justify-center overflow-hidden bg-muted/25">
