@@ -162,12 +162,35 @@ type ConfirmState =
   | { type: 'removeSource'; id: string; name: string }
   | null;
 
+type ImageRenameScope = 'tag' | 'name';
+type ImageRenameMode = 'prefix' | 'suffix' | 'replace' | 'custom';
+
+type ImageRenameForm = {
+  scope: ImageRenameScope;
+  mode: ImageRenameMode;
+  value: string;
+  find: string;
+  replacement: string;
+};
+
+type ImageRenamePreview = {
+  source: string;
+  target: string;
+  status: 'ok' | 'empty' | 'unchanged' | 'duplicate';
+};
+
 type ImageOperationDialogState =
   | {
-      type: 'push' | 'rename';
+      type: 'push';
       changes: Array<{ source: string; target: string }>;
       sourceConfigKey: string;
       value: string;
+    }
+  | {
+      type: 'rename';
+      rows: ImageRow[];
+      sourceConfigKey: string;
+      form: ImageRenameForm;
     }
   | {
       type: 'copy-tag';
@@ -403,6 +426,57 @@ function imageRepository(reference: string) {
 
 function imageWithTag(reference: string, tag: string) {
   return `${imageRepository(reference)}:${tag}`;
+}
+
+function imageTag(reference: string) {
+  const repository = imageRepository(reference);
+  return repository === reference ? '' : reference.slice(repository.length + 1);
+}
+
+function applyImageRenameTransform(base: string, form: ImageRenameForm) {
+  switch (form.mode) {
+    case 'prefix':
+      return `${form.value}${base}`;
+    case 'suffix':
+      return `${base}${form.value}`;
+    case 'replace':
+      return form.find ? base.split(form.find).join(form.replacement) : base;
+    case 'custom':
+      return form.value;
+  }
+}
+
+// 作用对象为 Tag 时只改最后一个冒号后的部分，其余情况作用于完整镜像名。
+function imageRenameTarget(reference: string, form: ImageRenameForm) {
+  if (form.scope === 'name') {
+    return applyImageRenameTransform(reference, form);
+  }
+  const repository = imageRepository(reference);
+  const nextTag = applyImageRenameTransform(imageTag(reference), form);
+  return nextTag ? `${repository}:${nextTag}` : reference;
+}
+
+function renameFormHasInput(form: ImageRenameForm) {
+  return form.mode === 'replace' ? form.find.length > 0 : form.value.length > 0;
+}
+
+// 预览同时标记空目标、未变化和跨行重复，提交前即可发现非法重命名。
+function buildRenamePreview(rows: ImageRow[], form: ImageRenameForm): ImageRenamePreview[] {
+  const targets = rows.map((row) => imageRenameTarget(row.reference, form).trim());
+  const counts = new Map<string, number>();
+  for (const target of targets) counts.set(target, (counts.get(target) ?? 0) + 1);
+  return rows.map((row, index) => {
+    const source = row.reference;
+    const target = targets[index];
+    const status: ImageRenamePreview['status'] = !target
+      ? 'empty'
+      : target === source
+        ? 'unchanged'
+        : (counts.get(target) ?? 0) > 1
+          ? 'duplicate'
+          : 'ok';
+    return { source, target, status };
+  });
 }
 
 function copyableImageName(source: ImageSource, name: string) {
@@ -1943,17 +2017,51 @@ export default function ImageManagerTool({
     });
   };
 
-  const openRenameDialog = (row: ImageRow) => {
-    if (actionBlocked || !sourceSupportsDockerMutations || !isNamedImageRow(row)) {
+  const openRenameDialog = (rows: ImageRow[]) => {
+    if (
+      actionBlocked ||
+      !sourceSupportsDockerMutations ||
+      rows.length === 0 ||
+      rows.some((row) => !isNamedImageRow(row))
+    ) {
       return;
     }
     setOperationError('');
+    // 单行沿用「直接输入完整名」的编辑体验，多行默认给出批量前缀；两者都可切换。
+    const single = rows.length === 1;
     setOperationDialog({
       type: 'rename',
-      changes: [{ source: row.reference, target: row.reference }],
+      rows,
       sourceConfigKey,
-      value: row.reference,
+      form: {
+        scope: single ? 'name' : 'tag',
+        mode: single ? 'custom' : 'prefix',
+        value: '',
+        find: '',
+        replacement: '',
+      },
     });
+  };
+
+  const updateRenameForm = (patch: Partial<ImageRenameForm>) => {
+    setOperationError('');
+    setOperationDialog((current) =>
+      current?.type === 'rename' ? { ...current, form: { ...current.form, ...patch } } : current,
+    );
+  };
+
+  // 直接输入只在单行或作用对象为 Tag 时可用；切到完整镜像名时回退到前缀，避免批量共用同一完整名。
+  const setRenameScope = (scope: ImageRenameScope) => {
+    if (
+      scope === 'name' &&
+      operationDialog?.type === 'rename' &&
+      operationDialog.rows.length > 1 &&
+      operationDialog.form.mode === 'custom'
+    ) {
+      updateRenameForm({ scope, mode: 'prefix', value: '' });
+      return;
+    }
+    updateRenameForm({ scope });
   };
 
   const openCopyTagDialog = (rows: ImageRow[]) => {
@@ -1978,11 +2086,38 @@ export default function ImageManagerTool({
   // 字段表单按操作类型唯一渲染，页脚确认按钮通过 form 关联，回车即可提交。
   const operationFormID = operationDialog ? `image-operation-${operationDialog.type}` : undefined;
 
+  const renamePreview = useMemo(
+    () =>
+      operationDialog?.type === 'rename' && renameFormHasInput(operationDialog.form)
+        ? buildRenamePreview(operationDialog.rows, operationDialog.form)
+        : [],
+    [operationDialog],
+  );
+  const renameReady =
+    renamePreview.length > 0 && renamePreview.every((item) => item.status === 'ok');
+
   const submitOperation = () => {
     if (!operationDialog || busy) return;
     if (operationDialog.sourceConfigKey !== sourceConfigKey) {
       toast.add({ title: t('imageManagerTool.sourceChangedRefresh'), type: 'warning' });
       setOperationDialog(null);
+      return;
+    }
+    if (operationDialog.type === 'rename') {
+      const { form, rows } = operationDialog;
+      if (!renameFormHasInput(form)) {
+        setOperationError(t('imageManagerTool.operationInputRequired'));
+        return;
+      }
+      const preview = buildRenamePreview(rows, form);
+      if (preview.some((item) => item.status !== 'ok')) {
+        setOperationError(t('imageManagerTool.renamePreviewInvalid'));
+        return;
+      }
+      void runTagChanges(
+        preview.map((item) => ({ source: item.source, target: item.target })),
+        true,
+      );
       return;
     }
     const value = operationDialog.value.trim();
@@ -2000,18 +2135,6 @@ export default function ImageManagerTool({
         return;
       }
       void runPushChanges(operationDialog.changes);
-      return;
-    }
-    if (operationDialog.type === 'rename') {
-      if (!value) {
-        setOperationError(t('imageManagerTool.operationInputRequired'));
-        return;
-      }
-      if (value === operationDialog.changes[0].source) {
-        setOperationError(t('imageManagerTool.operationTargetUnchanged'));
-        return;
-      }
-      void runTagChanges([{ source: operationDialog.changes[0].source, target: value }], true);
       return;
     }
     if (operationDialog.type === 'pull-image') {
@@ -2572,13 +2695,13 @@ export default function ImageManagerTool({
                                 : t('imageManagerTool.pushRemote')}
                             </ContextMenuItem>
                             <ContextMenuItem
-                              disabled={
-                                actionBlocked || !operationAllowed || operationRows.length !== 1
-                              }
-                              onClick={() => openRenameDialog(row)}
+                              disabled={actionBlocked || !operationAllowed}
+                              onClick={() => openRenameDialog(operationRows)}
                             >
                               <PencilSimple data-icon="inline-start" weight="duotone" />
-                              {t('imageManagerTool.rename')}
+                              {operationRows.length > 1
+                                ? t('imageManagerTool.batchRename')
+                                : t('imageManagerTool.rename')}
                             </ContextMenuItem>
                             <ContextMenuItem
                               disabled={actionBlocked || !operationAllowed}
@@ -2703,7 +2826,9 @@ export default function ImageManagerTool({
                     ? t('imageManagerTool.batchPushTitle')
                     : t('imageManagerTool.pushTitle')
                   : operationDialog?.type === 'rename'
-                    ? t('imageManagerTool.renameTitle')
+                    ? operationDialog.rows.length > 1
+                      ? t('imageManagerTool.batchRenameTitle')
+                      : t('imageManagerTool.renameTitle')
                     : operationDialog?.type === 'copy-tag'
                       ? t('imageManagerTool.copyTagTitle')
                       : t('imageManagerTool.pullImage')}
@@ -2717,7 +2842,7 @@ export default function ImageManagerTool({
                     : t('imageManagerTool.pushBody')
                   : operationDialog?.type === 'rename'
                     ? t('imageManagerTool.renameBody', {
-                        name: operationDialog.changes[0]?.source ?? '',
+                        total: operationDialog.rows.length,
                       })
                     : operationDialog?.type === 'copy-tag'
                       ? t('imageManagerTool.copyTagBody', {
@@ -2756,29 +2881,171 @@ export default function ImageManagerTool({
             ) : null}
             {operationDialog?.type === 'rename' ? (
               <form
-                className="grid gap-2"
+                className="grid gap-3"
                 id={operationFormID}
                 onSubmit={(event) => {
                   event.preventDefault();
                   submitOperation();
                 }}
               >
-                <Label htmlFor="image-operation-target">
-                  {t('imageManagerTool.targetImageName')}
-                </Label>
-                <Input
-                  id="image-operation-target"
-                  value={operationDialog.value}
-                  aria-invalid={Boolean(operationError)}
-                  onChange={(event) => {
-                    setOperationError('');
-                    setOperationDialog((current) =>
-                      current?.type === 'rename'
-                        ? { ...current, value: event.target.value }
-                        : current,
-                    );
-                  }}
-                />
+                <div className="grid gap-1.5">
+                  <Label>{t('imageManagerTool.renameScope')}</Label>
+                  <div className="flex w-fit gap-1">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant={operationDialog.form.scope === 'tag' ? 'secondary' : 'ghost'}
+                      onClick={() => setRenameScope('tag')}
+                    >
+                      {t('imageManagerTool.renameScopeTag')}
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant={operationDialog.form.scope === 'name' ? 'secondary' : 'ghost'}
+                      onClick={() => setRenameScope('name')}
+                    >
+                      {t('imageManagerTool.renameScopeName')}
+                    </Button>
+                  </div>
+                </div>
+                <div className="grid gap-1.5">
+                  <Label>{t('imageManagerTool.renameMode')}</Label>
+                  <div className="flex w-fit flex-wrap gap-1">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant={operationDialog.form.mode === 'prefix' ? 'secondary' : 'ghost'}
+                      onClick={() => updateRenameForm({ mode: 'prefix', value: '' })}
+                    >
+                      {t('imageManagerTool.renameModePrefix')}
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant={operationDialog.form.mode === 'suffix' ? 'secondary' : 'ghost'}
+                      onClick={() => updateRenameForm({ mode: 'suffix', value: '' })}
+                    >
+                      {t('imageManagerTool.renameModeSuffix')}
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant={operationDialog.form.mode === 'replace' ? 'secondary' : 'ghost'}
+                      onClick={() => updateRenameForm({ mode: 'replace', value: '' })}
+                    >
+                      {t('imageManagerTool.renameModeReplace')}
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant={operationDialog.form.mode === 'custom' ? 'secondary' : 'ghost'}
+                      disabled={
+                        operationDialog.rows.length > 1 && operationDialog.form.scope !== 'tag'
+                      }
+                      onClick={() => updateRenameForm({ mode: 'custom', value: '' })}
+                    >
+                      {t('imageManagerTool.renameModeCustom')}
+                    </Button>
+                  </div>
+                </div>
+                {operationDialog.form.mode === 'replace' ? (
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="grid gap-1.5">
+                      <Label htmlFor="image-operation-find">
+                        {t('imageManagerTool.renameFindLabel')}
+                      </Label>
+                      <Input
+                        id="image-operation-find"
+                        value={operationDialog.form.find}
+                        placeholder={t('imageManagerTool.renameFindPlaceholder')}
+                        aria-invalid={Boolean(operationError)}
+                        onChange={(event) => updateRenameForm({ find: event.target.value })}
+                      />
+                    </div>
+                    <div className="grid gap-1.5">
+                      <Label htmlFor="image-operation-replacement">
+                        {t('imageManagerTool.renameReplaceLabel')}
+                      </Label>
+                      <Input
+                        id="image-operation-replacement"
+                        value={operationDialog.form.replacement}
+                        placeholder={t('imageManagerTool.renameReplacePlaceholder')}
+                        aria-invalid={Boolean(operationError)}
+                        onChange={(event) => updateRenameForm({ replacement: event.target.value })}
+                      />
+                    </div>
+                  </div>
+                ) : (
+                  <div className="grid gap-1.5">
+                    <Label htmlFor="image-operation-target">
+                      {t(
+                        operationDialog.form.mode === 'prefix'
+                          ? 'imageManagerTool.renamePrefixLabel'
+                          : operationDialog.form.mode === 'suffix'
+                            ? 'imageManagerTool.renameSuffixLabel'
+                            : 'imageManagerTool.renameCustomLabel',
+                      )}
+                    </Label>
+                    <Input
+                      id="image-operation-target"
+                      value={operationDialog.form.value}
+                      placeholder={t(
+                        operationDialog.form.mode === 'prefix'
+                          ? 'imageManagerTool.renamePrefixPlaceholder'
+                          : operationDialog.form.mode === 'suffix'
+                            ? 'imageManagerTool.renameSuffixPlaceholder'
+                            : 'imageManagerTool.renameCustomPlaceholder',
+                      )}
+                      autoFocus
+                      aria-invalid={Boolean(operationError)}
+                      onChange={(event) => updateRenameForm({ value: event.target.value })}
+                    />
+                  </div>
+                )}
+                <div className="grid gap-1.5">
+                  <Label>{t('imageManagerTool.renamePreview')}</Label>
+                  {renamePreview.length === 0 ? (
+                    <p className="m-0 text-xs text-muted-foreground">
+                      {t('imageManagerTool.renamePreviewEmpty')}
+                    </p>
+                  ) : (
+                    <ScrollArea className="max-h-40 rounded-md border border-border bg-muted/40 px-3 py-2">
+                      <div className="grid gap-2">
+                        {renamePreview.map((item, index) => (
+                          <div key={`${item.source}-${index}`} className="grid gap-0.5">
+                            <code className="break-all font-mono text-xs leading-5 text-muted-foreground">
+                              {item.source}
+                            </code>
+                            <div className="flex items-baseline gap-1.5">
+                              <span aria-hidden="true" className="text-muted-foreground">
+                                →
+                              </span>
+                              <code
+                                className={`min-w-0 break-all font-mono text-xs leading-5 ${
+                                  item.status === 'ok' ? 'text-foreground' : 'text-destructive'
+                                }`}
+                              >
+                                {item.target || t('imageManagerTool.emptyValue')}
+                              </code>
+                            </div>
+                            {item.status !== 'ok' ? (
+                              <span className="text-[10px] text-destructive">
+                                {t(
+                                  item.status === 'empty'
+                                    ? 'imageManagerTool.renameInvalidEmpty'
+                                    : item.status === 'unchanged'
+                                      ? 'imageManagerTool.renameInvalidUnchanged'
+                                      : 'imageManagerTool.renameInvalidDuplicate',
+                                )}
+                              </span>
+                            ) : null}
+                          </div>
+                        ))}
+                      </div>
+                    </ScrollArea>
+                  )}
+                </div>
               </form>
             ) : null}
             {operationDialog?.type === 'copy-tag' ? (
@@ -2869,7 +3136,11 @@ export default function ImageManagerTool({
               >
                 {t('imageManagerTool.cancel')}
               </Button>
-              <Button type="submit" form={operationFormID} disabled={busy !== null}>
+              <Button
+                type="submit"
+                form={operationFormID}
+                disabled={busy !== null || (operationDialog?.type === 'rename' && !renameReady)}
+              >
                 {busy ? <Spinner data-icon="inline-start" /> : null}
                 {t('imageManagerTool.confirm')}
               </Button>
