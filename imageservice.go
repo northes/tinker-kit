@@ -1741,10 +1741,45 @@ func redactRegistryError(err error, source ImageSource) error {
 	message := err.Error()
 	for _, secret := range []string{source.RegistryPassword, source.RegistryUsername} {
 		if secret != "" {
-			message = strings.ReplaceAll(message, secret, "[redacted]")
+			message = redactCredential(message, secret)
 		}
 	}
 	return errors.New(message)
+}
+
+// redactCredential 只替换作为独立词出现的凭据。凭据（例如用户名 igc）常是主机名等
+// 更长标识的子串，直接 ReplaceAll 会把 zot.igcexpertcloud.com 误伤成
+// zot.[redacted]expertcloud.com。
+func redactCredential(message, secret string) string {
+	if secret == "" {
+		return message
+	}
+	var builder strings.Builder
+	for {
+		index := strings.Index(message, secret)
+		if index < 0 {
+			builder.WriteString(message)
+			return builder.String()
+		}
+		var left, right byte
+		if index > 0 {
+			left = message[index-1]
+		}
+		if end := index + len(secret); end < len(message) {
+			right = message[end]
+		}
+		builder.WriteString(message[:index])
+		if isCredentialBoundary(left) && isCredentialBoundary(right) {
+			builder.WriteString("[redacted]")
+		} else {
+			builder.WriteString(secret)
+		}
+		message = message[index+len(secret):]
+	}
+}
+
+func isCredentialBoundary(b byte) bool {
+	return !((b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z') || (b >= '0' && b <= '9'))
 }
 
 type imageCacheEntry struct {

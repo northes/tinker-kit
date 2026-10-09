@@ -534,6 +534,18 @@ func TestTagRegistryImagesRenameRepushesSurvivors(t *testing.T) {
 	}
 }
 
+func TestRedactRegistryErrorKeepsHostname(t *testing.T) {
+	source := ImageSource{Kind: "registry", RegistryURL: "https://zot.igcexpertcloud.com", RegistryUsername: "igc", RegistryPassword: "s3cr3t"}
+	message := redactRegistryError(errors.New(`Get "https://zot.igcexpertcloud.com/v2/": net/http: TLS handshake timeout`), source).Error()
+	if !strings.Contains(message, "zot.igcexpertcloud.com") || strings.Contains(message, "[redacted]expertcloud") {
+		t.Fatalf("主机名被脱敏误伤: %q", message)
+	}
+	standalone := redactRegistryError(errors.New("auth failed for user igc with password s3cr3t"), source).Error()
+	if strings.Contains(standalone, "igc") || strings.Contains(standalone, "s3cr3t") {
+		t.Fatalf("独立凭据未被脱敏: %q", standalone)
+	}
+}
+
 func TestDeleteDockerImagesDeduplicatesAndReturnsPartialResults(t *testing.T) {
 	config := &ConfigService{cfg: normalizeConfig(Config{ImageSources: []ImageSource{{ID: "local", Kind: "local"}}})}
 	var calls [][]string
