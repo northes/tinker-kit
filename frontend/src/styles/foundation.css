@@ -40,9 +40,10 @@ body {
 .app-shell {
   overflow: hidden;
 }
-/* 只偏移 Base UI 的内部遮罩；其他 inert 浮层（如 Dialog）保持原定位。 */
+/* Base UI Dialog 的内部 inert 遮罩也必须覆盖原生标题栏，避免在标题栏留下未模糊区域。 */
 [data-base-ui-inert][role='presentation'] {
-  top: var(--app-titlebar-height) !important;
+  top: 0 !important;
+  --wails-draggable: drag;
 }
 button,
 input,
