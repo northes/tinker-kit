@@ -344,6 +344,81 @@ export interface ImageTaskSnapshot {
     "tasks": ImageTask[] | null;
 }
 
+export interface JSONConvertError {
+    "code": string;
+    "params"?: { [_ in string]?: string } | null;
+}
+
+export interface JSONConvertRequest {
+    "source": string;
+    "format": string;
+}
+
+export interface JSONConvertResult {
+    "text": string;
+    "error"?: JSONConvertError | null;
+}
+
+/**
+ * JSONInspectionResult 是前端输入预览所需的轻量状态。大文本只在 Go 中解析，
+ * 前端仅在用户明确打开表格/Schema 预览时使用返回的标准 JSON 文本。
+ */
+export interface JSONInspectionResult {
+    "valid": boolean;
+    "isSchema": boolean;
+    "hasComment": boolean;
+    "text"?: string;
+}
+
+export interface JSONPathCompletionRequest {
+    "source": string;
+    "prefix": string;
+    "limit": number;
+}
+
+export interface JSONPathError {
+    "code": string;
+    "params"?: { [_ in string]?: string } | null;
+}
+
+export interface JSONPathResult {
+    "text": string;
+    "error"?: JSONPathError | null;
+}
+
+export interface JSONRepairResult {
+    "text": string;
+    "changed": boolean;
+    "lines": number;
+    "characters": number;
+    "bytes": number;
+    "error"?: string;
+}
+
+export interface JSONTransformRequest {
+    "source": string;
+
+    /**
+     * format, minify, autoFormat, validate
+     */
+    "operation": string;
+    "stripComments": boolean;
+}
+
+export interface JSONTransformResult {
+    "text": string;
+    "valid": boolean;
+    "changed": boolean;
+    "error"?: string;
+    "lines": number;
+    "characters": number;
+    "bytes": number;
+}
+
+export interface JSONValidationResult {
+    "valid": boolean;
+}
+
 /**
  * LocalFile 描述按路径读取到的本地文件内容。
  */

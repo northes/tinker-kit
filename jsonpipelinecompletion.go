@@ -107,60 +107,96 @@ func fuzzyCompletionMatch(value, query string) bool {
 
 // resolveCompletionNode 解析路径 tokens，返回用于取子节点的节点。
 func resolveCompletionNode(root *JSONValue, split completionPathSplit) *JSONValue {
-	node := root
-	for index := range split.tokens {
-		token := split.tokens[index]
-		switch token.Type {
-		case pathTokenAll:
-			if index == len(split.tokens)-1 {
-				switch {
-				case node.IsArray():
-					// 保持数组
-				case node.IsObject():
-					values := make([]*JSONValue, 0, len(node.Obj))
-					for member := range node.Obj {
-						values = append(values, node.Obj[member].Value)
-					}
-					node = newJSONArray(values)
-				default:
-					return nil
-				}
-				if !node.IsArray() {
-					return nil
-				}
-				if split.followedBySep && !split.inBracket && len(node.Arr) > 0 {
-					node = node.Arr[0]
-				}
-			} else {
-				return nil
-			}
-		case pathTokenIndex:
-			if !node.IsArray() {
-				return nil
-			}
-			position, err := strconv.Atoi(token.Value)
-			if err != nil {
-				return nil
-			}
-			if position < 0 || position >= len(node.Arr) {
-				return nil
-			}
-			node = node.Arr[position]
-		default:
-			if !node.IsObject() {
-				return nil
-			}
-			child, ok := node.member(token.Value)
-			if !ok {
-				return nil
-			}
-			node = child
-		}
-		if node == nil {
-			return nil
+	node := resolveCompletionTokens(root, split.tokens)
+	if node == nil || !split.followedBySep || len(split.tokens) == 0 {
+		return node
+	}
+	last := split.tokens[len(split.tokens)-1]
+	if last.Type != pathTokenAll || !node.IsArray() {
+		return node
+	}
+	// `$[*].` 已经进入数组元素对象，补全应返回对象字段，不能再次带上 `[*].`。
+	objects := make([]*JSONValue, 0, len(node.Arr))
+	for _, item := range node.Arr {
+		if item != nil && item.IsObject() {
+			objects = append(objects, item)
 		}
 	}
-	return node
+	return mergeCompletionNodes(objects)
+}
+
+func resolveCompletionTokens(node *JSONValue, tokens []pathToken) *JSONValue {
+	if node == nil {
+		return nil
+	}
+	if len(tokens) == 0 {
+		return node
+	}
+	token := tokens[0]
+	switch token.Type {
+	case pathTokenAll:
+		values := node.Arr
+		if node.IsObject() {
+			values = make([]*JSONValue, 0, len(node.Obj))
+			for _, member := range node.Obj {
+				values = append(values, member.Value)
+			}
+		}
+		if !node.IsArray() && !node.IsObject() {
+			return nil
+		}
+		if len(tokens) == 1 {
+			return newJSONArray(values)
+		}
+		resolved := make([]*JSONValue, 0, len(values))
+		for _, value := range values {
+			if next := resolveCompletionTokens(value, tokens[1:]); next != nil {
+				resolved = append(resolved, next)
+			}
+		}
+		return mergeCompletionNodes(resolved)
+	case pathTokenIndex:
+		if !node.IsArray() {
+			return nil
+		}
+		position, err := strconv.Atoi(token.Value)
+		if err != nil || position < 0 || position >= len(node.Arr) {
+			return nil
+		}
+		return resolveCompletionTokens(node.Arr[position], tokens[1:])
+	default:
+		if !node.IsObject() {
+			return nil
+		}
+		child, ok := node.member(token.Value)
+		if !ok {
+			return nil
+		}
+		return resolveCompletionTokens(child, tokens[1:])
+	}
+}
+
+func mergeCompletionNodes(nodes []*JSONValue) *JSONValue {
+	if len(nodes) == 0 {
+		return nil
+	}
+	if len(nodes) == 1 {
+		return nodes[0]
+	}
+	merged := make([]JSONMember, 0)
+	seen := map[string]bool{}
+	for _, node := range nodes {
+		if !node.IsObject() {
+			return nodes[0]
+		}
+		for _, member := range node.Obj {
+			if !seen[member.Key] {
+				seen[member.Key] = true
+				merged = append(merged, member)
+			}
+		}
+	}
+	return newJSONObject(merged)
 }
 
 func completionOptionsForNode(node *JSONValue, split completionPathSplit) []CompletionOption {

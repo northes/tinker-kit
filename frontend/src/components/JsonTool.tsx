@@ -29,6 +29,7 @@ import {
   SelectValue,
 } from './ui/select';
 import { Switch } from './ui/switch';
+import { Spinner } from './ui/spinner';
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from './ui/resizable';
 import { Trans, useTranslation } from 'react-i18next';
 import { Clipboard } from '@wailsio/runtime';
@@ -53,9 +54,10 @@ import { RangeSetBuilder } from '@codemirror/state';
 import { acceptCompletion } from '@codemirror/autocomplete';
 import { SaveText } from '../../bindings/changeme/fileservice';
 import { JSON_CONVERT_FORMATS, type JsonConvertFormat } from '../lib/json-converter';
-import { repairJson } from '../lib/json-repair';
 import { useDebouncedJsonConversion } from '../hooks/useDebouncedJsonConversion';
-import { jsonFoldParseWarmup, quietEditorTheme } from './codeMirrorTheme';
+import { useJsonInspection } from '../hooks/useJsonInspection';
+import { useJsonSchemaEvaluation } from '../hooks/useJsonSchemaEvaluation';
+import { jsonFoldParseActive, jsonFoldParseWarmup, quietEditorTheme } from './codeMirrorTheme';
 import {
   Copy,
   DownloadSimple,
@@ -66,10 +68,6 @@ import {
   Wrench,
 } from '@phosphor-icons/react';
 import {
-  formatJsonPreserve,
-  hasComments,
-  parseJsonLoose,
-  parseJsonWithComments,
   Reveal,
   ToolActionBar,
   ToolLayoutContent,
@@ -85,7 +83,7 @@ import {
 } from './shared';
 import { toast } from './ui/toast';
 import { JsonErrorPanel } from './JsonErrorPanel';
-import { isJsonSchema, JsonSchemaPreview } from './JsonSchemaPreview';
+import { JsonSchemaPreview } from './JsonSchemaPreview';
 import { JsonTablePreview } from './JsonTablePreview';
 import '../styles/tools/editor.css';
 import '../styles/tools/json.css';
@@ -98,203 +96,15 @@ import {
 } from './JsonPipeline';
 import type { PipelineItem } from './JsonPipelineEngine';
 import { useBackendPipelineEvaluation } from './useBackendPipelineEvaluation';
-import { GetPipelineResultText } from '../../bindings/changeme/jsonpipelineservice';
-import { pathCompletions as sharedPathCompletions } from './JsonPathCompletion';
+import {
+  GetPipelineResultText,
+  InspectJSON,
+  RepairJSON,
+  TransformJSON,
+  ValidateJSON,
+} from '../../bindings/changeme/jsonpipelineservice';
+import { backendJSONPathCompletions } from './JsonPathCompletion';
 import { dataUrlToText, readLocalFile, useFileDrop } from './fileDrop';
-
-type PathToken = { type: 'key' | 'index' | 'all'; value: string };
-type SourceNode = {
-  start: number;
-  end: number;
-  children?: Record<string, SourceNode> | SourceNode[];
-};
-type JsonPathErrorCode =
-  | 'unclosedComment'
-  | 'unclosedString'
-  | 'invalidObjectKey'
-  | 'missingColon'
-  | 'unclosedNode'
-  | 'pathMissingBracket'
-  | 'pathInvalidSegment'
-  | 'pathInvalidChar'
-  | 'notArray'
-  | 'indexOutOfRange'
-  | 'noKeyAt'
-  | 'keyNotFound'
-  | 'pathNotFound';
-class JsonPathError extends Error {
-  constructor(
-    readonly code: JsonPathErrorCode,
-    readonly params: Record<string, string> = {},
-  ) {
-    super(code);
-  }
-}
-const parseFail = (code: JsonPathErrorCode, params?: Record<string, string>): never => {
-  throw new JsonPathError(code, params);
-};
-function sourceNode(doc: string, start = 0): SourceNode {
-  const skip = (i: number) => {
-    while (i < doc.length) {
-      if (/\s/.test(doc[i])) {
-        i++;
-        continue;
-      }
-      if (doc[i] === '/' && doc[i + 1] === '/') {
-        i = doc.indexOf('\n', i + 2);
-        if (i < 0) return doc.length;
-        continue;
-      }
-      if (doc[i] === '/' && doc[i + 1] === '*') {
-        i = doc.indexOf('*/', i + 2);
-        if (i < 0) parseFail('unclosedComment');
-        i += 2;
-        continue;
-      }
-      break;
-    }
-    return i;
-  };
-  const stringEnd = (i: number) => {
-    const quote = doc[i++];
-    for (; i < doc.length; i++) {
-      if (doc[i] === '\\') i++;
-      else if (doc[i] === quote) return i + 1;
-    }
-    return parseFail('unclosedString');
-  };
-  const value = (i: number): SourceNode => {
-    i = skip(i);
-    const node: SourceNode = { start: i, end: i };
-    if (doc[i] === '{' || doc[i] === '[') {
-      const object = doc[i] === '{';
-      const children: Record<string, SourceNode> | SourceNode[] = object ? {} : [];
-      i++;
-      while (true) {
-        i = skip(i);
-        if (doc[i] === (object ? '}' : ']')) {
-          node.end = i + 1;
-          break;
-        }
-        if (object) {
-          if (doc[i] !== '"' && doc[i] !== "'") parseFail('invalidObjectKey');
-          const keyStart = i,
-            keyEnd = stringEnd(i),
-            key = JSON.parse(doc.slice(keyStart, keyEnd));
-          i = skip(keyEnd);
-          if (doc[i] !== ':') parseFail('missingColon');
-          const child = value(i + 1);
-          (children as Record<string, SourceNode>)[key] = child;
-          i = skip(child.end);
-        } else {
-          const child = value(i);
-          (children as SourceNode[]).push(child);
-          i = skip(child.end);
-        }
-        if (doc[i] === ',') {
-          i++;
-          continue;
-        }
-        if (doc[i] === (object ? '}' : ']')) {
-          node.end = i + 1;
-          break;
-        }
-        parseFail('unclosedNode');
-      }
-      node.children = children;
-      return node;
-    }
-    if (doc[i] === '"' || doc[i] === "'") node.end = stringEnd(i);
-    else {
-      while (i < doc.length && !/[\s,}\]]/.test(doc[i])) i++;
-      node.end = i;
-    }
-    return node;
-  };
-  return value(start);
-}
-function parsePath(p: string): PathToken[] {
-  const tokens: PathToken[] = [];
-  let s = p.trim();
-  if (s.startsWith('$')) s = s.slice(1);
-  let i = 0;
-  while (i < s.length) {
-    if (s[i] === '.' || s[i] === '/') {
-      i++;
-      continue;
-    }
-    if (s[i] === '[') {
-      const end = s.indexOf(']', i);
-      if (end < 0) parseFail('pathMissingBracket');
-      const inner = s.slice(i + 1, end).trim();
-      if (inner === '*') tokens.push({ type: 'all', value: '*' });
-      else if (/^-?\d+$/.test(inner)) tokens.push({ type: 'index', value: inner });
-      else if (
-        (inner.startsWith("'") && inner.endsWith("'")) ||
-        (inner.startsWith('"') && inner.endsWith('"'))
-      )
-        tokens.push({ type: 'key', value: inner.slice(1, -1) });
-      else parseFail('pathInvalidSegment', { value: inner });
-      i = end + 1;
-    } else if (/[A-Za-z0-9_$]/.test(s[i])) {
-      let j = i;
-      while (j < s.length && /[A-Za-z0-9_$-]/.test(s[j])) j++;
-      tokens.push({ type: 'key', value: s.slice(i, j) });
-      i = j;
-    } else parseFail('pathInvalidChar', { value: s[i] });
-  }
-  return tokens;
-}
-function matchPath(
-  doc: string,
-  path: string,
-): { ok: true; value: unknown; source?: string } | { ok: false; error: JsonPathError } {
-  try {
-    const root = parseJsonLoose(doc);
-    const tokens = parsePath(path);
-    const walk = (cur: any, i: number): any => {
-      if (i >= tokens.length) return cur;
-      const tok = tokens[i];
-      if (tok.type === 'all') {
-        const children = Array.isArray(cur)
-          ? cur
-          : cur && typeof cur === 'object'
-            ? Object.values(cur)
-            : [];
-        return children.map((c) => walk(c, i + 1));
-      }
-      if (tok.type === 'index') {
-        if (!Array.isArray(cur)) parseFail('notArray');
-        const next = cur[Number(tok.value)];
-        if (next === undefined) parseFail('indexOutOfRange');
-        return walk(next, i + 1);
-      }
-      if (cur == null || typeof cur !== 'object') parseFail('noKeyAt', { key: tok.value });
-      if (!(tok.value in cur)) parseFail('keyNotFound', { key: tok.value });
-      return walk(cur[tok.value], i + 1);
-    };
-    const value = walk(root, 0);
-    let node = sourceNode(doc);
-    for (const token of tokens) {
-      if (token.type === 'all') {
-        node = undefined as never;
-        break;
-      }
-      const children = node.children;
-      if (token.type === 'index') {
-        if (!Array.isArray(children)) parseFail('notArray');
-        else node = children[Number(token.value)];
-      } else {
-        if (!children || Array.isArray(children)) parseFail('noKeyAt', { key: token.value });
-        else node = children[token.value];
-      }
-      if (!node) parseFail('pathNotFound');
-    }
-    return { ok: true, value, source: node ? doc.slice(node.start, node.end) : undefined };
-  } catch (e) {
-    return { ok: false, error: e instanceof JsonPathError ? e : new JsonPathError('pathNotFound') };
-  }
-}
 
 const MAX_OPEN_BYTES = 10 * 1024 * 1024;
 
@@ -314,19 +124,6 @@ function modeHostHidden(visible: boolean) {
   return visible ? '' : ' is-hidden absolute inset-0 invisible pointer-events-none';
 }
 
-function tryAutoFormat(src: string) {
-  if (!src.trim()) return src;
-  try {
-    if (hasComments(src)) {
-      const next = formatJsonPreserve(src);
-      parseJsonWithComments(next);
-      return next;
-    }
-    return JSON.stringify(parseJsonWithComments(src), null, 2);
-  } catch {
-    return src;
-  }
-}
 const json5Language = json5();
 
 class NewlineMarker extends WidgetType {
@@ -425,7 +222,7 @@ function JsonEditorPane({
   readOnly?: boolean;
   emptyHint?: boolean;
   cmClassName?: string;
-  formatOnPaste?: (next: string) => string;
+  formatOnPaste?: (next: string) => Promise<string | null> | string | null;
   tableMode?: boolean;
   tableDisabled?: boolean;
   active?: boolean;
@@ -484,11 +281,13 @@ function JsonEditorPane({
           if (pasted == null) return false;
           event.preventDefault();
           const sel = view.state.selection.main;
-          onChangeRef.current?.(
-            format(
-              view.state.doc.sliceString(0, sel.from) + pasted + view.state.doc.sliceString(sel.to),
-            ),
-          );
+          const next =
+            view.state.doc.sliceString(0, sel.from) + pasted + view.state.doc.sliceString(sel.to);
+          onChangeRef.current?.(next);
+          void Promise.resolve(format(next)).then((formatted) => {
+            if (formatted !== null && formatted !== next && view.state.doc.toString() === next)
+              onChangeRef.current?.(formatted);
+          });
           return true;
         },
       }),
@@ -499,6 +298,7 @@ function JsonEditorPane({
       json5Language,
       foldExt,
       jsonFoldParseWarmup,
+      jsonFoldParseActive.of(active),
       pasteExt,
       ...(showInvisibleChars
         ? [
@@ -509,7 +309,7 @@ function JsonEditorPane({
           ]
         : []),
     ],
-    [foldExt, pasteExt, showInvisibleChars],
+    [active, foldExt, pasteExt, showInvisibleChars],
   );
   return (
     <div className="json-pane flex min-h-0 min-w-0 flex-1 flex-col gap-2">
@@ -637,8 +437,8 @@ export default function JsonTool({
   clearPending: () => void;
 }) {
   const { t } = useTranslation();
-  const fmtErr = (e: unknown) =>
-    e instanceof JsonPathError ? t(`jsonTool.errors.${e.code}`, e.params) : String(e);
+  const fmtPathError = (code: string, params?: Record<string, string | undefined>) =>
+    t(`jsonTool.errors.${code}`, params);
   const [mode, setMode] = useState<JsonPageMode>('plain');
   const schema = mode === 'schema';
   const pipelineMode = mode === 'pipeline';
@@ -659,10 +459,42 @@ export default function JsonTool({
     pane: 'input' | 'result';
   }>(null);
   const [repairPrompt, setRepairPrompt] = useState(false);
+  const [repairing, setRepairing] = useState(false);
   const consumed = useRef<PendingAction | null>(null);
   const views = useRef(new Map<string, EditorView>());
+  const inputRef = useRef(input);
+  inputRef.current = input;
+  const resultRef = useRef(result);
+  resultRef.current = result;
+  const repairRevisionRef = useRef(0);
+  const repairRequestRef = useRef<ReturnType<typeof RepairJSON> | null>(null);
+  const transformRevisionRef = useRef(0);
+  const transformRequestRef = useRef<ReturnType<typeof TransformJSON> | null>(null);
+  const commentInspectionRevisionRef = useRef(0);
+  const commentInspectionRequestRef = useRef<ReturnType<typeof InspectJSON> | null>(null);
+  const autoFormatRevisionRef = useRef(0);
+  const autoFormatRequestRef = useRef<ReturnType<typeof TransformJSON> | null>(null);
+  const validateRevisionRef = useRef(0);
+  const validateRequestRef = useRef<ReturnType<typeof ValidateJSON> | null>(null);
   const autoFormatRef = useRef(autoFormatOnFill);
   autoFormatRef.current = autoFormatOnFill;
+  const schemaEvaluation = useJsonSchemaEvaluation(schema && active, input, path);
+  const inputInspection = useJsonInspection(active && !pipelineMode, input);
+  useEffect(
+    () => () => {
+      repairRevisionRef.current++;
+      if (repairRequestRef.current) void repairRequestRef.current.cancel();
+      transformRevisionRef.current++;
+      if (transformRequestRef.current) void transformRequestRef.current.cancel();
+      commentInspectionRevisionRef.current++;
+      if (commentInspectionRequestRef.current) void commentInspectionRequestRef.current.cancel();
+      autoFormatRevisionRef.current++;
+      if (autoFormatRequestRef.current) void autoFormatRequestRef.current.cancel();
+      validateRevisionRef.current++;
+      if (validateRequestRef.current) void validateRequestRef.current.cancel();
+    },
+    [],
+  );
   useFocusOnActivate(active, () => views.current.get('input')?.focus());
   const splitMode = schema || pipelineMode || convertMode;
   const splitRootRef = useRef<HTMLDivElement>(null);
@@ -688,43 +520,50 @@ export default function JsonTool({
   }, []);
   const cmTheme = quietEditorTheme;
   const inputPreview = useMemo(() => {
-    // 流水线模式下不再在主线程解析输入；输入表格按需使用后端结果。
-    if (pipelineMode) return { valid: false as const, value: null };
-    try {
-      return { valid: true as const, value: parseJsonWithComments(input) };
-    } catch {
-      return { valid: false as const, value: null };
+    if (inputInspection.status !== 'ok' || (!inputTableMode && !inputSchemaPreviewMode)) {
+      return { valid: inputInspection.status === 'ok', value: null };
     }
-  }, [input, pipelineMode]);
-  const jsonValue = inputPreview.valid ? inputPreview.value : null;
-  const inputIsSchema = inputPreview.valid && isJsonSchema(inputPreview.value);
-  const resultPreview = useMemo(() => {
     try {
-      return { valid: true, value: parseJsonWithComments(result) };
+      return { valid: true, value: JSON.parse(inputInspection.text) as unknown };
     } catch {
       return { valid: false, value: null };
     }
-  }, [result]);
+  }, [inputInspection, inputSchemaPreviewMode, inputTableMode]);
+  const jsonValue = inputInspection.status === 'ok';
+  const inputIsSchema = inputInspection.status === 'ok' && inputInspection.isSchema;
+  const resultInspection = useJsonInspection(active && schema, result);
+  const resultPreview = useMemo(() => {
+    if (resultInspection.status !== 'ok') {
+      return { valid: resultInspection.status === 'pending', value: null };
+    }
+    try {
+      return { valid: true, value: JSON.parse(resultInspection.text) as unknown };
+    } catch {
+      return { valid: false, value: null };
+    }
+  }, [resultInspection]);
   // Auto-exit table mode when content becomes empty or invalid
   useEffect(() => {
-    if (inputTableMode && (!input.trim() || !inputPreview.valid)) {
+    if (inputTableMode && (inputInspection.status !== 'ok' || !inputPreview.valid)) {
       setInputTableMode(false);
     }
-  }, [input, inputPreview.valid, inputTableMode]);
+  }, [inputInspection.status, inputPreview.valid, inputTableMode]);
   useEffect(() => {
     if (inputSchemaPreviewMode && !inputIsSchema) setInputSchemaPreviewMode(false);
   }, [inputIsSchema, inputSchemaPreviewMode]);
   useEffect(() => {
-    if (resultTableMode && (!result.trim() || !resultPreview.valid)) {
+    if (
+      resultTableMode &&
+      (!result.trim() ||
+        (resultInspection.status !== 'pending' && resultInspection.status !== 'ok'))
+    ) {
       setResultTableMode(false);
     }
-  }, [result, resultPreview.valid, resultTableMode]);
-  const jsonValueRef = useRef<unknown>(jsonValue);
-  jsonValueRef.current = jsonValue;
+  }, [result, resultInspection.status, resultTableMode]);
   const pathExt = useMemo(
     () => [
       EditorView.lineWrapping,
-      sharedPathCompletions(() => jsonValueRef.current),
+      backendJSONPathCompletions(() => inputRef.current),
       keymap.of([
         {
           key: 'Tab',
@@ -778,57 +617,137 @@ export default function JsonTool({
       type: 'error',
     });
   };
+  const requestAutoFormat = useCallback((source: string): Promise<string | null> => {
+    if (!source.trim()) return Promise.resolve(source);
+    const revision = ++autoFormatRevisionRef.current;
+    if (autoFormatRequestRef.current) void autoFormatRequestRef.current.cancel();
+    const request = TransformJSON({
+      source,
+      operation: 'autoFormat',
+      stripComments: false,
+    });
+    autoFormatRequestRef.current = request;
+    return request
+      .then((response) => {
+        if (revision !== autoFormatRevisionRef.current) return null;
+        return response.error ? source : response.text;
+      })
+      .catch(() => (revision === autoFormatRevisionRef.current ? source : null))
+      .finally(() => {
+        if (autoFormatRequestRef.current === request) autoFormatRequestRef.current = null;
+      });
+  }, []);
   const runTransform = (pane: 'input' | 'result', minify: boolean, stripComments: boolean) => {
     const src = pane === 'input' ? input : result;
     const set = pane === 'input' ? setInput : setResult;
-    try {
-      let next;
-      if (!minify && !stripComments && hasComments(src)) {
-        next = formatJsonPreserve(src);
-        try {
-          parseJsonWithComments(next);
-        } catch {
+    const revision = ++transformRevisionRef.current;
+    if (transformRequestRef.current) void transformRequestRef.current.cancel();
+    const request = TransformJSON({
+      source: src,
+      operation: minify ? 'minify' : 'format',
+      stripComments,
+    });
+    transformRequestRef.current = request;
+    void request
+      .then((response) => {
+        if (
+          revision !== transformRevisionRef.current ||
+          (pane === 'input' ? inputRef.current : resultRef.current) !== src
+        )
+          return;
+        if (response.error) {
           reportTransformFailure(pane, minify);
           return;
         }
-      } else {
-        const v = stripComments ? parseJsonWithComments(src) : JSON.parse(src);
-        next = minify ? JSON.stringify(v) : JSON.stringify(v, null, 2);
-      }
-      set(next);
-      record(
-        'json',
-        minify ? t('jsonTool.minified') : t('jsonTool.formatted'),
-        summary(next),
-        next,
-      );
-    } catch {
-      reportTransformFailure(pane, minify);
-    }
+        set(response.text);
+        record(
+          'json',
+          minify ? t('jsonTool.minified') : t('jsonTool.formatted'),
+          summary(response.text),
+          response.text,
+        );
+      })
+      .catch(() => {
+        if (revision === transformRevisionRef.current) reportTransformFailure(pane, minify);
+      })
+      .finally(() => {
+        if (transformRequestRef.current === request) transformRequestRef.current = null;
+      });
   };
   const requestTransform = (pane: 'input' | 'result', minify: boolean) => {
-    if (hasComments(pane === 'input' ? input : result))
-      setCommentDialog({ mode: minify ? 'minify' : 'format', pane });
-    else runTransform(pane, minify, false);
+    const source = pane === 'input' ? input : result;
+    const revision = ++commentInspectionRevisionRef.current;
+    if (commentInspectionRequestRef.current) void commentInspectionRequestRef.current.cancel();
+    const request = InspectJSON(source);
+    commentInspectionRequestRef.current = request;
+    void request
+      .then((response) => {
+        if (
+          revision !== commentInspectionRevisionRef.current ||
+          (pane === 'input' ? inputRef.current : resultRef.current) !== source
+        )
+          return;
+        if (response.hasComment) {
+          setCommentDialog({ mode: minify ? 'minify' : 'format', pane });
+          return;
+        }
+        runTransform(pane, minify, false);
+      })
+      .catch(() => {
+        if (revision === commentInspectionRevisionRef.current) runTransform(pane, minify, false);
+      })
+      .finally(() => {
+        if (commentInspectionRequestRef.current === request)
+          commentInspectionRequestRef.current = null;
+      });
   };
   const repairInput = () => {
-    if (!input.trim()) return;
-    try {
-      const { text, changed } = repairJson(input);
-      if (!changed) {
-        toast.add({ title: t('jsonTool.repairNoChange') });
-        return;
-      }
-      setInput(text);
-      toast.add({ title: t('jsonTool.repaired') });
-      record('json', t('jsonTool.repaired'), summary(text), text);
-    } catch {
-      toast.add({
-        title: t('jsonTool.repairFailed'),
-        description: t('jsonTool.repairFailedDesc'),
-        type: 'error',
+    if (!input.trim() || repairing) return;
+    const source = input;
+    const revision = ++repairRevisionRef.current;
+    if (repairRequestRef.current) void repairRequestRef.current.cancel();
+    setRepairing(true);
+    const request = RepairJSON(source);
+    repairRequestRef.current = request;
+    void request
+      .then((response) => {
+        if (revision !== repairRevisionRef.current) return;
+        if (response.error) {
+          toast.add({
+            title: t('jsonTool.repairFailed'),
+            description: t('jsonTool.repairFailedDesc'),
+            type: 'error',
+          });
+          return;
+        }
+        if (!response.changed) {
+          toast.add({ title: t('jsonTool.repairNoChange') });
+          return;
+        }
+        setInput(response.text);
+        toast.add({ title: t('jsonTool.repaired') });
+        record(
+          'json',
+          t('jsonTool.repaired'),
+          `${response.lines} ${t('jsonTool.lines')} · ${response.characters} ${t('jsonTool.characters')}`,
+          response.text,
+          '',
+          { bytes: response.bytes },
+        );
+      })
+      .catch(() => {
+        if (revision !== repairRevisionRef.current) return;
+        toast.add({
+          title: t('jsonTool.repairFailed'),
+          description: t('jsonTool.repairFailedDesc'),
+          type: 'error',
+        });
+      })
+      .finally(() => {
+        if (repairRequestRef.current !== request) return;
+        repairRequestRef.current = null;
+        setRepairing(false);
       });
-    }
   };
   const changeInput = setInput;
   const loadPath = useCallback(
@@ -898,11 +817,14 @@ export default function JsonTool({
     if (displayedConvert.format === 'yaml') return [yaml(), EditorView.lineWrapping];
     return [EditorView.lineWrapping];
   }, [displayedConvert.format]);
-  const schemaResultExt = useMemo(() => [json5Language, foldExt, jsonFoldParseWarmup], [foldExt]);
+  const schemaResultExt = useMemo(
+    () => [json5Language, foldExt, jsonFoldParseWarmup, jsonFoldParseActive.of(active)],
+    [active, foldExt],
+  );
   const convertErrorMessage =
     conversion.status === 'error'
       ? t(
-          `jsonTool.convert.errors.${conversion.error.code === 'workerError' ? 'failed' : conversion.error.code}`,
+          `jsonTool.convert.errors.${conversion.error.code === 'backendError' ? 'failed' : conversion.error.code}`,
           conversion.error.params,
         )
       : '';
@@ -1090,7 +1012,7 @@ export default function JsonTool({
           label: t('jsonTool.repair'),
           icon: Wrench,
           variant: 'secondary',
-          disabled: !value,
+          disabled: !value || repairing,
           onPress: repairInput,
         },
         {
@@ -1274,47 +1196,81 @@ export default function JsonTool({
     }
     if (pending.action === 'validate') {
       changeInput(pending.input);
-      try {
-        JSON.parse(pending.input);
-        record('json', t('jsonTool.validated'), summary(pending.input), pending.input);
-      } catch {
-        record('json', t('jsonTool.invalid'), summary(pending.input), pending.input);
-      }
+      const revision = ++validateRevisionRef.current;
+      if (validateRequestRef.current) void validateRequestRef.current.cancel();
+      const request = ValidateJSON(pending.input);
+      validateRequestRef.current = request;
+      void request
+        .then((response) => {
+          if (revision !== validateRevisionRef.current) return;
+          record(
+            'json',
+            response.valid ? t('jsonTool.validated') : t('jsonTool.invalid'),
+            summary(pending.input),
+            pending.input,
+          );
+        })
+        .catch(() => {
+          if (revision === validateRevisionRef.current)
+            record('json', t('jsonTool.invalid'), summary(pending.input), pending.input);
+        })
+        .finally(() => {
+          if (validateRequestRef.current === request) validateRequestRef.current = null;
+        });
       return;
     }
-    const next = autoFormatRef.current ? tryAutoFormat(pending.input) : pending.input;
-    changeInput(next);
-    if (autoFormatRef.current && next !== pending.input)
-      record('json', t('jsonTool.formatted'), summary(next), next);
-  }, [pending, pipeline]);
+    if (!autoFormatRef.current) {
+      changeInput(pending.input);
+      return;
+    }
+    void requestAutoFormat(pending.input).then((next) => {
+      if (next === null || inputRef.current !== pending.input) return;
+      changeInput(next);
+      if (next !== pending.input) record('json', t('jsonTool.formatted'), summary(next), next);
+    });
+  }, [pending, pipeline, requestAutoFormat]);
   useEffect(() => {
     const onFill = () => {
       if (!autoFormatRef.current) return;
       const view = views.current.get('input');
       if (!view) return;
       const src = view.state.doc.toString();
-      const next = tryAutoFormat(src);
-      if (next !== src) setInput(next);
+      void requestAutoFormat(src).then((next) => {
+        if (
+          next !== null &&
+          next !== src &&
+          views.current.get('input')?.state.doc.toString() === src
+        )
+          setInput(next);
+      });
     };
     window.addEventListener('tinkerkit:json-after-fill', onFill);
     return () => window.removeEventListener('tinkerkit:json-after-fill', onFill);
-  }, []);
+  }, [requestAutoFormat]);
   useEffect(() => {
     if (!schema) return;
-    if (!input.trim()) {
+    if (schemaEvaluation.status === 'idle' || schemaEvaluation.status === 'pending') {
+      setPathError('');
+      return;
+    }
+    if (schemaEvaluation.status === 'empty') {
       setResult('');
       setPathError('');
       return;
     }
-    const m = matchPath(input, path);
-    if (m.ok) {
-      setResult(m.source ?? JSON.stringify(m.value, null, 2));
-      setPathError('');
-    } else {
+    if (schemaEvaluation.status === 'error') {
       setResult('');
-      setPathError(fmtErr(m.error));
+      setPathError(
+        fmtPathError(
+          schemaEvaluation.code === 'backendError' ? 'pathNotFound' : schemaEvaluation.code,
+          schemaEvaluation.params,
+        ),
+      );
+      return;
     }
-  }, [schema, input, path]);
+    setResult(schemaEvaluation.text);
+    setPathError('');
+  }, [schema, schemaEvaluation]);
   useEffect(() => {
     const frame = window.requestAnimationFrame(() => {
       const keys =
@@ -1427,17 +1383,23 @@ export default function JsonTool({
                           showInvisibleChars={showInvisibleChars}
                           emptyHint
                           cmClassName="json-input-cm"
-                          formatOnPaste={autoFormatOnFill ? tryAutoFormat : undefined}
+                          formatOnPaste={autoFormatOnFill ? requestAutoFormat : undefined}
                           tableMode={inputTableMode}
                           active={active}
-                          tableDisabled={!input.trim() || !inputPreview.valid}
+                          tableDisabled={!input.trim() || inputInspection.status !== 'ok'}
                           tableHint={t('jsonTool.tablePreviewInvalid')}
                           onToggleTable={toggleInputTable}
-                          tablePreview={<JsonTablePreview value={inputPreview.value} t={t} />}
+                          tablePreview={
+                            inputTableMode && active ? (
+                              <JsonTablePreview value={inputPreview.value} t={t} />
+                            ) : null
+                          }
                           schemaMode={inputSchemaPreviewMode}
                           onToggleSchema={inputIsSchema ? toggleInputSchemaPreview : undefined}
                           schemaPreview={
-                            inputIsSchema ? <JsonSchemaPreview value={inputPreview.value} /> : null
+                            inputSchemaPreviewMode && active && inputIsSchema ? (
+                              <JsonSchemaPreview value={inputPreview.value} />
+                            ) : null
                           }
                           onOpenFile={() => void fileDrop.pick()}
                         />
@@ -1619,6 +1581,11 @@ export default function JsonTool({
                               }}
                               extensions={schemaResultExt}
                             />
+                            {schemaEvaluation.status === 'pending' ? (
+                              <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center bg-card/70">
+                                <Spinner className="size-5" />
+                              </div>
+                            ) : null}
                             {pathError ? (
                               <div className="absolute inset-0 z-10 flex min-h-0">
                                 <JsonErrorPanel
@@ -1627,12 +1594,8 @@ export default function JsonTool({
                                 />
                               </div>
                             ) : null}
-                            {!pathError && (
-                              <div
-                                className={`json-table-layer${resultTableMode && active ? ' is-visible' : ''}`}
-                                aria-hidden={!resultTableMode || !active}
-                                {...(!resultTableMode || !active ? { inert: true } : {})}
-                              >
+                            {!pathError && resultTableMode && active && (
+                              <div className="json-table-layer is-visible">
                                 <JsonTablePreview value={resultPreview.value} t={t} />
                               </div>
                             )}
@@ -1782,6 +1745,7 @@ export default function JsonTool({
           <AlertDialogFooter>
             <AlertDialogCancel>{t('jsonTool.cancel')}</AlertDialogCancel>
             <AlertDialogAction
+              disabled={repairing}
               onClick={() => {
                 setRepairPrompt(false);
                 repairInput();

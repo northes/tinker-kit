@@ -168,6 +168,9 @@ function pointerGuideTarget(view: EditorView, event: MouseEvent) {
 const jsonFoldParseEnabled = Facet.define<boolean, boolean>({
   combine: (values) => values.some(Boolean),
 });
+export const jsonFoldParseActive = Facet.define<boolean, boolean>({
+  combine: (values) => values.every(Boolean),
+});
 const jsonFoldParseClickMs = 40;
 const jsonFoldParseTimeoutBudgetMs = 4;
 const jsonFoldParseTimerDelayMs = 16;
@@ -373,7 +376,7 @@ const indentGuideFold = ViewPlugin.fromClass(
         if (event.button !== 0) return false;
         const guide = pointerGuideTarget(view, event);
         if (!guide) return false;
-        if (view.state.facet(jsonFoldParseEnabled)) {
+        if (view.state.facet(jsonFoldParseEnabled) && view.state.facet(jsonFoldParseActive)) {
           const end = view.state.doc.length;
           if (!syntaxTreeAvailable(view.state, end)) {
             forceParsing(view, end, jsonFoldParseClickMs);
@@ -395,38 +398,40 @@ const indentGuideFold = ViewPlugin.fromClass(
 // CodeMirror 默认的 scrollIntoView 会向上遍历并滚动所有可滚动祖先，搜索选中
 // 命中项时会把外层工作区/弹窗内容一起滚动，表现为界面整体位移。这里把滚动
 // 限制在编辑器自身的滚动容器内。
-const editorScopedScroll = EditorView.scrollHandler.of((view, range, { x, y, xMargin, yMargin }) => {
-  const scroller = view.scrollDOM;
-  const block = view.lineBlockAt(range.head);
-  const maxTop = Math.max(0, scroller.scrollHeight - scroller.clientHeight);
-  const maxLeft = Math.max(0, scroller.scrollWidth - scroller.clientWidth);
-  const viewTop = scroller.scrollTop;
-  const viewBottom = viewTop + scroller.clientHeight;
-  let nextTop = viewTop;
-  if (y === 'center') nextTop = block.top - (scroller.clientHeight - block.height) / 2;
-  else if (y === 'start') nextTop = block.top - yMargin;
-  else if (y === 'end') nextTop = block.bottom - scroller.clientHeight + yMargin;
-  else if (block.top < viewTop + yMargin) nextTop = block.top - yMargin;
-  else if (block.bottom > viewBottom - yMargin)
-    nextTop = block.bottom - scroller.clientHeight + yMargin;
-  let nextLeft = scroller.scrollLeft;
-  const head = view.coordsAtPos(range.head);
-  if (head) {
-    const rect = scroller.getBoundingClientRect();
-    const left = scroller.scrollLeft + (head.left - rect.left);
-    const right = scroller.scrollLeft + (head.right - rect.left);
-    const viewLeft = scroller.scrollLeft;
-    const viewRight = viewLeft + scroller.clientWidth;
-    if (x === 'center') nextLeft = left - (scroller.clientWidth - (head.right - head.left)) / 2;
-    else if (x === 'start') nextLeft = left - xMargin;
-    else if (x === 'end') nextLeft = right - scroller.clientWidth + xMargin;
-    else if (left < viewLeft + xMargin) nextLeft = left - xMargin;
-    else if (right > viewRight - xMargin) nextLeft = right - scroller.clientWidth + xMargin;
-  }
-  scroller.scrollTop = Math.max(0, Math.min(nextTop, maxTop));
-  scroller.scrollLeft = Math.max(0, Math.min(nextLeft, maxLeft));
-  return true;
-});
+const editorScopedScroll = EditorView.scrollHandler.of(
+  (view, range, { x, y, xMargin, yMargin }) => {
+    const scroller = view.scrollDOM;
+    const block = view.lineBlockAt(range.head);
+    const maxTop = Math.max(0, scroller.scrollHeight - scroller.clientHeight);
+    const maxLeft = Math.max(0, scroller.scrollWidth - scroller.clientWidth);
+    const viewTop = scroller.scrollTop;
+    const viewBottom = viewTop + scroller.clientHeight;
+    let nextTop = viewTop;
+    if (y === 'center') nextTop = block.top - (scroller.clientHeight - block.height) / 2;
+    else if (y === 'start') nextTop = block.top - yMargin;
+    else if (y === 'end') nextTop = block.bottom - scroller.clientHeight + yMargin;
+    else if (block.top < viewTop + yMargin) nextTop = block.top - yMargin;
+    else if (block.bottom > viewBottom - yMargin)
+      nextTop = block.bottom - scroller.clientHeight + yMargin;
+    let nextLeft = scroller.scrollLeft;
+    const head = view.coordsAtPos(range.head);
+    if (head) {
+      const rect = scroller.getBoundingClientRect();
+      const left = scroller.scrollLeft + (head.left - rect.left);
+      const right = scroller.scrollLeft + (head.right - rect.left);
+      const viewLeft = scroller.scrollLeft;
+      const viewRight = viewLeft + scroller.clientWidth;
+      if (x === 'center') nextLeft = left - (scroller.clientWidth - (head.right - head.left)) / 2;
+      else if (x === 'start') nextLeft = left - xMargin;
+      else if (x === 'end') nextLeft = right - scroller.clientWidth + xMargin;
+      else if (left < viewLeft + xMargin) nextLeft = left - xMargin;
+      else if (right > viewRight - xMargin) nextLeft = right - scroller.clientWidth + xMargin;
+    }
+    scroller.scrollTop = Math.max(0, Math.min(nextTop, maxTop));
+    scroller.scrollLeft = Math.max(0, Math.min(nextLeft, maxLeft));
+    return true;
+  },
+);
 
 export const quietEditorTheme = [
   indentGuides,
@@ -467,9 +472,11 @@ const jsonFoldParseWarmupPlugin = ViewPlugin.fromClass(
     }
 
     update(update: ViewUpdate) {
-      if (!update.docChanged) return;
+      const active = update.state.facet(jsonFoldParseActive);
+      const wasActive = update.startState.facet(jsonFoldParseActive);
+      if (!update.docChanged && active === wasActive) return;
       this.stop();
-      this.queue();
+      if (active) this.queue();
     }
 
     destroy() {
@@ -485,6 +492,7 @@ const jsonFoldParseWarmupPlugin = ViewPlugin.fromClass(
 
     private queue() {
       if (!this.alive || this.cancelScheduled) return;
+      if (!this.view.state.facet(jsonFoldParseActive)) return;
       if (syntaxTreeAvailable(this.view.state, this.view.state.doc.length)) return;
       const generation = this.generation;
       this.cancelScheduled = scheduleIdle((deadline) => {

@@ -5,7 +5,10 @@ import {
   type CompletionResult,
 } from '@codemirror/autocomplete';
 import { EditorView, tooltips } from '@codemirror/view';
-import { QueryPipelineCompletion } from '../../bindings/changeme/jsonpipelineservice';
+import {
+  QueryJSONPathCompletion,
+  QueryPipelineCompletion,
+} from '../../bindings/changeme/jsonpipelineservice';
 import type { PipelineCompletionContext } from './useBackendPipelineEvaluation';
 
 type PathToken = { type: 'key' | 'index' | 'all'; value: string };
@@ -84,104 +87,44 @@ const normalizePathInput = EditorView.inputHandler.of((view, from, to, text) => 
   return true;
 });
 
-export function pathCompletions(root: unknown | (() => unknown), template = false) {
-  const source = (context: CompletionContext): CompletionResult | null => {
-    const before = context.state.doc.sliceString(0, context.pos);
-    const start = template ? before.lastIndexOf('{') : 0;
-    if (start < 0 || (template && before.lastIndexOf('}') > start)) return null;
-    const templatePrefix = before.slice(start + 1);
-    if (template && templatePrefix === '')
-      return {
-        from: context.pos,
-        to: context.pos,
-        options: [
-          {
-            label: '{$.}',
-            type: 'keyword',
-            apply: (view, _completion, from, to) => {
-              view.dispatch({
-                changes: { from, to, insert: '$.}' },
-                selection: { anchor: from + 2 },
-              });
-              startCompletion(view);
-            },
-          },
-        ],
-      };
-    if (template && !templatePrefix.startsWith('$.')) return null;
-    const prefix = before.slice(template ? start + 1 : 0).replace(/\s+$/, '');
-    if (!template && (prefix === '' || prefix === '$')) return null;
-    const { tokens, partial, inBracket, followedBySep } = splitPathSegments(prefix);
-    if (!template && tokens.length === 0 && !(prefix.startsWith('$.') || prefix.startsWith('$[')))
-      return null;
+// Schema 路径补全由 Go 后端解析完整输入，前端只负责光标范围、取消请求和渲染候选。
+export function backendJSONPathCompletions(getSource: () => string) {
+  const source = async (context: CompletionContext): Promise<CompletionResult | null> => {
+    const prefix = context.state.doc.sliceString(0, context.pos).replace(/\s+$/, '');
+    if (prefix === '' || prefix === '$') return null;
+    const { tokens, partial, inBracket } = splitPathSegments(prefix);
+    if (tokens.length === 0 && !(prefix.startsWith('$.') || prefix.startsWith('$['))) return null;
     const last = prefix.slice(-1);
     const afterSep = last === '.' || last === '[' || last === '/';
-    if (!template && !partial.length && !afterSep && !inBracket) return null;
-    let node: any = typeof root === 'function' ? (root as () => unknown)() : root;
-    for (let i = 0; i < tokens.length; i++) {
-      const tok = tokens[i];
-      if (tok.type === 'all') {
-        if (i === tokens.length - 1) {
-          node = Array.isArray(node)
-            ? node
-            : node && typeof node === 'object'
-              ? Object.values(node)
-              : undefined;
-          if (!Array.isArray(node)) return null;
-          if (followedBySep && !inBracket) node = node[0];
-        } else return null;
-      } else if (tok.type === 'index') {
-        if (!Array.isArray(node)) return null;
-        node = node[Number(tok.value)];
-      } else {
-        if (node == null || typeof node !== 'object') return null;
-        node = node[tok.value];
-      }
-      if (node === undefined) return null;
-    }
-    if (node == null || typeof node !== 'object') return null;
-    const filter = normalizeCompletionText(partial.trim());
-    const end =
-      context.pos + (context.state.doc.sliceString(context.pos, context.pos + 1) === ']' ? 1 : 0);
-    const from = inBracket
-      ? context.pos - partial.length - 1
-      : partial.length
-        ? context.pos - partial.length
-        : context.pos;
-    if (Array.isArray(node)) {
-      if (!inBracket) {
-        const sample = node.find(
-          (item) => item !== null && typeof item === 'object' && !Array.isArray(item),
-        );
-        if (!sample) return null;
-        const options = Object.keys(sample)
-          .map((key) => ({ label: `[*].${key}`, apply: `[*].${key}`, type: 'property' }))
-          .filter((o) => !filter || fuzzyCompletionMatch(o.label.slice(4), filter));
-        if (!options.length) return null;
-        const itemFrom =
-          partial.length && prefix.includes('.')
-            ? context.pos - partial.length - 1
-            : prefix.endsWith('.')
-              ? context.pos - 1
-              : context.pos;
-        return { from: itemFrom, to: end, options, filter: false };
-      }
-      const options = [
-        { label: '[*]', apply: '[*]', type: 'keyword' },
-        ...node.map((_, i) => ({ label: `[${i}]`, apply: `[${i}]`, type: 'keyword' })),
-      ].filter((o) => !filter || fuzzyCompletionMatch(o.label.slice(1, -1), filter));
+    if (!partial.length && !afterSep && !inBracket) return null;
+    const request = QueryJSONPathCompletion({ source: getSource(), prefix, limit: 100 });
+    context.addEventListener('abort', () => void request.cancel(), { onDocChange: true });
+    try {
+      const response = await request;
+      if (context.aborted || !response.items?.length) return null;
+      const options = response.items.map((option) => ({
+        label: option.label,
+        apply: option.apply,
+        type: option.type,
+      }));
+      const end =
+        context.pos + (context.state.doc.sliceString(context.pos, context.pos + 1) === ']' ? 1 : 0);
+      const isArraySample = options[0]?.label.startsWith('[*].') ?? false;
+      const from = isArraySample
+        ? partial.length && prefix.includes('.')
+          ? context.pos - partial.length - 1
+          : prefix.endsWith('.')
+            ? context.pos - 1
+            : context.pos
+        : inBracket
+          ? context.pos - partial.length - 1
+          : partial.length
+            ? context.pos - partial.length
+            : context.pos;
       return { from, to: end, options, filter: false };
+    } catch {
+      return null;
     }
-    const keys = Object.keys(node);
-    const options = inBracket
-      ? [
-          { label: '[*]', apply: '[*]', type: 'keyword' },
-          ...keys.map((k) => ({ label: `['${k}']`, apply: `['${k}']`, type: 'property' })),
-        ]
-      : keys.map((k) => ({ label: k, apply: k, type: 'property' }));
-    const filtered = options.filter((o) => !filter || fuzzyCompletionMatch(o.label, filter));
-    if (!filtered.length) return null;
-    return { from, to: end, options: filtered, filter: false };
   };
   return [
     autocompletion({
@@ -193,6 +136,7 @@ export function pathCompletions(root: unknown | (() => unknown), template = fals
     normalizePathInput,
   ];
 }
+
 export function valueCompletions(values: unknown[] | (() => unknown[])) {
   const source = (context: CompletionContext): CompletionResult | null => {
     const match = context.matchBefore(/[^\s,]*/);

@@ -7,6 +7,7 @@ require (
 	github.com/leaanthony/dmg v0.0.0-20260731074841-5c28840cf819
 	github.com/pkg/sftp v1.13.11
 	github.com/wailsapp/wails/v3 v3.0.0-beta.26
+	github.com/wokito/jsonrepair-go v0.1.0
 )
 
 require (

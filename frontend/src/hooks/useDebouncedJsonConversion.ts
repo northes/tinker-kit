@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
-import type { JsonConvertFormat } from '../lib/json-converter';
-import type {
-  JsonConvertWorkerError,
-  JsonConvertWorkerRequest,
-  JsonConvertWorkerResponse,
-} from '../utils/jsonConvert.worker';
+import { ConvertJSON } from '../../bindings/changeme/jsonpipelineservice';
+import type { JsonConvertErrorCode, JsonConvertFormat } from '../lib/json-converter';
+
+export type JsonConversionError = {
+  code: JsonConvertErrorCode | 'backendError';
+  params: Record<string, string>;
+};
 
 export type JsonConversionState =
   | { status: 'idle'; revision: number }
@@ -22,7 +23,7 @@ export type JsonConversionState =
       revision: number;
       input: string;
       format: JsonConvertFormat;
-      error: JsonConvertWorkerError;
+      error: JsonConversionError;
     };
 
 const DEBOUNCE_MS = 150;
@@ -47,23 +48,21 @@ export function useDebouncedJsonConversion(
   const [state, setState] = useState<JsonConversionState>(() => idleState(0));
   const revision = useRef(0);
   const timer = useRef<number | null>(null);
-  const worker = useRef<Worker | null>(null);
+  const request = useRef<ReturnType<typeof ConvertJSON> | null>(null);
 
   useEffect(() => {
     const currentRevision = ++revision.current;
-
     if (timer.current !== null) {
       window.clearTimeout(timer.current);
       timer.current = null;
     }
-    worker.current?.terminate();
-    worker.current = null;
+    if (request.current) void request.current.cancel();
+    request.current = null;
 
     if (!enabled) {
       setState(idleState(currentRevision));
       return;
     }
-
     if (!input.trim()) {
       setState({ status: 'empty', revision: currentRevision, input, format });
       return;
@@ -73,77 +72,49 @@ export function useDebouncedJsonConversion(
     timer.current = window.setTimeout(() => {
       timer.current = null;
       if (currentRevision !== revision.current) return;
-
-      let instance: Worker;
-      try {
-        instance = new Worker(new URL('../utils/jsonConvert.worker.ts', import.meta.url), {
-          type: 'module',
-        });
-        worker.current = instance;
-      } catch {
-        if (currentRevision === revision.current)
+      const currentRequest = ConvertJSON({ source: input, format });
+      request.current = currentRequest;
+      void currentRequest
+        .then((response) => {
+          if (currentRevision !== revision.current || request.current !== currentRequest) return;
+          if (!response.error) {
+            setState({
+              status: 'ok',
+              revision: currentRevision,
+              input,
+              format,
+              output: response.text,
+            });
+          } else {
+            setState({
+              status: 'error',
+              revision: currentRevision,
+              input,
+              format,
+              error: {
+                code: response.error.code as JsonConvertErrorCode,
+                params: Object.fromEntries(
+                  Object.entries(response.error.params ?? {}).filter(
+                    (entry): entry is [string, string] => entry[1] !== undefined,
+                  ),
+                ),
+              },
+            });
+          }
+        })
+        .catch(() => {
+          if (currentRevision !== revision.current || request.current !== currentRequest) return;
           setState({
             status: 'error',
             revision: currentRevision,
             input,
             format,
-            error: { code: 'workerError', params: {} },
+            error: { code: 'backendError', params: {} },
           });
-        return;
-      }
-
-      const finish = () => {
-        if (worker.current !== instance) return;
-        instance.terminate();
-        worker.current = null;
-      };
-      instance.onmessage = (event: MessageEvent<JsonConvertWorkerResponse>) => {
-        if (event.data.revision !== revision.current || event.data.revision !== currentRevision)
-          return;
-        finish();
-        if (event.data.status === 'ok')
-          setState({
-            status: 'ok',
-            revision: currentRevision,
-            input,
-            format,
-            output: event.data.output,
-          });
-        else
-          setState({
-            status: 'error',
-            revision: currentRevision,
-            input,
-            format,
-            error: event.data.error,
-          });
-      };
-      instance.onerror = () => {
-        if (currentRevision !== revision.current) return;
-        finish();
-        setState({
-          status: 'error',
-          revision: currentRevision,
-          input,
-          format,
-          error: { code: 'workerError', params: {} },
+        })
+        .finally(() => {
+          if (request.current === currentRequest) request.current = null;
         });
-      };
-
-      const request: JsonConvertWorkerRequest = { revision: currentRevision, input, format };
-      try {
-        instance.postMessage(request);
-      } catch {
-        if (currentRevision !== revision.current) return;
-        finish();
-        setState({
-          status: 'error',
-          revision: currentRevision,
-          input,
-          format,
-          error: { code: 'workerError', params: {} },
-        });
-      }
     }, DEBOUNCE_MS);
 
     return () => {
@@ -151,8 +122,8 @@ export function useDebouncedJsonConversion(
         window.clearTimeout(timer.current);
         timer.current = null;
       }
-      worker.current?.terminate();
-      worker.current = null;
+      if (request.current) void request.current.cancel();
+      request.current = null;
     };
   }, [enabled, input, format]);
 

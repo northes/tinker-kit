@@ -38,9 +38,9 @@ type JSONMember struct {
 }
 
 func newJSONNull() *JSONValue            { return &JSONValue{Kind: JSONNull} }
-func newJSONBool(v bool) *JSONValue       { return &JSONValue{Kind: JSONBool, Bool: v} }
-func newJSONNumber(v float64) *JSONValue  { return &JSONValue{Kind: JSONNumber, Num: v} }
-func newJSONString(v string) *JSONValue   { return &JSONValue{Kind: JSONString, Str: v} }
+func newJSONBool(v bool) *JSONValue      { return &JSONValue{Kind: JSONBool, Bool: v} }
+func newJSONNumber(v float64) *JSONValue { return &JSONValue{Kind: JSONNumber, Num: v} }
+func newJSONString(v string) *JSONValue  { return &JSONValue{Kind: JSONString, Str: v} }
 func newJSONArray(v []*JSONValue) *JSONValue {
 	if v == nil {
 		v = []*JSONValue{}
@@ -300,22 +300,43 @@ func StringifyJSON(value *JSONValue, indent string) string {
 // Loose JSON 解析 -------------------------------------------------------------
 
 type looseJSONParser struct {
-	source string
-	pos    int
+	source          string
+	pos             int
+	allowComments   bool
+	allowTrailing   bool
+	invalidComments bool
 }
 
 var errLooseJSON = errors.New("invalid json")
 
 // ParseJSONLoose 支持 // 与 /* */ 注释以及尾随逗号，与前端 parseJsonLoose 一致。
 func ParseJSONLoose(source string) (*JSONValue, error) {
-	parser := &looseJSONParser{source: source}
+	return parseJSON(source, true, true)
+}
+
+// ParseJSONComments 只允许 JSONC 注释，不允许尾逗号，用于格式化和可见预览。
+func ParseJSONComments(source string) (*JSONValue, error) {
+	return parseJSON(source, true, false)
+}
+
+// ParseJSONStrict 只接受标准 JSON。
+func ParseJSONStrict(source string) (*JSONValue, error) {
+	return parseJSON(source, false, false)
+}
+
+func parseJSON(source string, allowComments, allowTrailing bool) (*JSONValue, error) {
+	parser := &looseJSONParser{
+		source:        source,
+		allowComments: allowComments,
+		allowTrailing: allowTrailing,
+	}
 	parser.skipTrivia()
 	value, err := parser.parseValue()
 	if err != nil {
 		return nil, err
 	}
 	parser.skipTrivia()
-	if parser.pos != len(parser.source) {
+	if parser.invalidComments || parser.pos != len(parser.source) {
 		return nil, errLooseJSON
 	}
 	return value, nil
@@ -328,6 +349,10 @@ func (p *looseJSONParser) skipTrivia() {
 			p.pos++
 		case '/':
 			if p.pos+1 >= len(p.source) {
+				return
+			}
+			if !p.allowComments {
+				p.invalidComments = true
 				return
 			}
 			switch p.source[p.pos+1] {
@@ -430,6 +455,9 @@ func (p *looseJSONParser) parseObject() (*JSONValue, error) {
 			p.pos++
 			p.skipTrivia()
 			if p.pos < len(p.source) && p.source[p.pos] == '}' {
+				if !p.allowTrailing {
+					return nil, errLooseJSON
+				}
 				p.pos++
 				return newJSONObject(members), nil
 			}
@@ -467,6 +495,9 @@ func (p *looseJSONParser) parseArray() (*JSONValue, error) {
 			p.pos++
 			p.skipTrivia()
 			if p.pos < len(p.source) && p.source[p.pos] == ']' {
+				if !p.allowTrailing {
+					return nil, errLooseJSON
+				}
 				p.pos++
 				return newJSONArray(items), nil
 			}

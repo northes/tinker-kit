@@ -38,7 +38,7 @@ tasks:
   test:json-repair:
     summary: Checks JSON repair handling
     cmds:
-      - node --experimental-strip-types --test frontend/src/lib/json-repair.test.mjs
+      - go test {{.GO_TEST_FLAGS}} . -run TestRepairJSON
 
   gp:
     summary: push to all remote repos
