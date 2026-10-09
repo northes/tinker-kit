@@ -92,7 +92,7 @@ export function NtpServerDialog({
         </DialogHeader>
         <form
           id="ntp-servers-form"
-          className="grid min-h-0 gap-3 overflow-y-auto"
+          className="-m-1 grid min-h-0 gap-3 overflow-y-auto p-1"
           onSubmit={(event) => {
             event.preventDefault();
             save();
