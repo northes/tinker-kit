@@ -389,12 +389,12 @@ func TestPushDockerImagesBatchDeduplicatesAndReturnsPartialResults(t *testing.T)
 	}
 }
 
-func TestImageMutationRejectsRegistryAndInvalidReferences(t *testing.T) {
+func TestImageMutationRejectsRegistryPushAndInvalidReferences(t *testing.T) {
 	config := &ConfigService{cfg: normalizeConfig(Config{ImageSources: []ImageSource{{ID: "registry", Kind: "registry", RegistryURL: "https://registry.example"}}})}
 	service := &ImageService{config: config}
-	result := service.TagDockerImages("registry", []DockerImageReferenceChange{{Source: "repo:old", Target: "repo:new"}}, false)
+	result := service.PushDockerImages("registry", []DockerImageReferenceChange{{Source: "repo:old", Target: "repo:new"}})
 	if len(result.Failed) != 1 || localizedMessageKey(t, result.Failed[0].Error) != "errors.image.registryMutationUnsupported" {
-		t.Fatalf("Registry 来源未拒绝镜像变更: %#v", result)
+		t.Fatalf("Registry 来源未拒绝 Docker CLI 推送: %#v", result)
 	}
 	config = &ConfigService{cfg: normalizeConfig(Config{ImageSources: []ImageSource{{ID: "local", Kind: "local"}}})}
 	service = &ImageService{config: config, runner: func(_ context.Context, _ string, _ ...string) ([]byte, error) {
@@ -427,6 +427,113 @@ func TestImageMutationLimitsBatchOperations(t *testing.T) {
 	}
 }
 
+func registryTagTestManifest() ([]byte, string) {
+	configBlob := []byte(`{"architecture":"amd64","os":"linux","config":{}}`)
+	configHash := sha256.Sum256(configBlob)
+	configDigest := "sha256:" + hex.EncodeToString(configHash[:])
+	layerDigest := "sha256:" + strings.Repeat("d", 64)
+	manifest := []byte(fmt.Sprintf(`{"schemaVersion":2,"mediaType":"application/vnd.oci.image.manifest.v1+json","config":{"mediaType":"application/vnd.oci.image.config.v1+json","digest":%q,"size":%d},"layers":[{"mediaType":"application/vnd.oci.image.layer.v1.tar+gzip","digest":%q,"size":1}]}`, configDigest, len(configBlob), layerDigest))
+	hash := sha256.Sum256(manifest)
+	return manifest, "sha256:" + hex.EncodeToString(hash[:])
+}
+
+func TestTagRegistryImagesCopiesTagWithinRepository(t *testing.T) {
+	manifest, digest := registryTagTestManifest()
+	var puts []string
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method + " " + r.URL.Path {
+		case "GET /v2/":
+			w.WriteHeader(http.StatusOK)
+		case "GET /v2/repo/manifests/old":
+			w.Header().Set("Docker-Content-Digest", digest)
+			w.Header().Set("Content-Type", "application/vnd.oci.image.manifest.v1+json")
+			_, _ = w.Write(manifest)
+		case "PUT /v2/repo/manifests/new":
+			puts = append(puts, r.URL.Path)
+			w.Header().Set("Docker-Content-Digest", digest)
+			w.WriteHeader(http.StatusCreated)
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+	defer server.Client().CloseIdleConnections()
+	config := &ConfigService{cfg: normalizeConfig(Config{ImageSources: []ImageSource{{ID: "reg", Kind: "registry", RegistryURL: server.URL}}})}
+	service := NewImageService(config)
+	service.cacheDir = t.TempDir()
+	service.registryTransport = server.Client().Transport
+	defer service.shutdown()
+	result := service.TagDockerImages("reg", []DockerImageReferenceChange{{Source: "repo:old", Target: "repo:new"}}, false)
+	if !reflect.DeepEqual(result.Succeeded, []string{"repo:new"}) || len(result.Failed) != 0 {
+		t.Fatalf("Registry 复制 Tag 结果为 %#v", result)
+	}
+	if !reflect.DeepEqual(puts, []string{"/v2/repo/manifests/new"}) {
+		t.Fatalf("Registry 复制 Tag 请求为 %#v", puts)
+	}
+}
+
+func TestTagRegistryImagesRejectsCrossRepository(t *testing.T) {
+	config := &ConfigService{cfg: normalizeConfig(Config{ImageSources: []ImageSource{{ID: "reg", Kind: "registry", RegistryURL: "https://registry.example"}}})}
+	service := &ImageService{config: config}
+	result := service.TagDockerImages("reg", []DockerImageReferenceChange{{Source: "team/app:old", Target: "other/app:new"}}, false)
+	if len(result.Failed) != 1 || localizedMessageKey(t, result.Failed[0].Error) != "errors.image.registryCrossRepositoryUnsupported" {
+		t.Fatalf("Registry 跨仓库换 Tag 未拒绝: %#v", result)
+	}
+}
+
+func TestTagRegistryImagesRenameRepushesSurvivors(t *testing.T) {
+	manifest, digest := registryTagTestManifest()
+	var puts []string
+	var deleted []string
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method + " " + r.URL.Path {
+		case "GET /v2/":
+			w.WriteHeader(http.StatusOK)
+		case "GET /v2/repo/tags/list":
+			_ = json.NewEncoder(w).Encode(map[string]any{"name": "repo", "tags": []string{"old", "keep", "other"}})
+		case "HEAD /v2/repo/manifests/old", "HEAD /v2/repo/manifests/keep":
+			w.Header().Set("Docker-Content-Digest", digest)
+			w.Header().Set("Content-Type", "application/vnd.oci.image.manifest.v1+json")
+			w.Header().Set("Content-Length", strconv.Itoa(len(manifest)))
+		case "HEAD /v2/repo/manifests/other":
+			w.Header().Set("Docker-Content-Digest", "sha256:"+strings.Repeat("e", 64))
+			w.Header().Set("Content-Type", "application/vnd.oci.image.manifest.v1+json")
+			w.Header().Set("Content-Length", strconv.Itoa(len(manifest)))
+		case "GET /v2/repo/manifests/old":
+			w.Header().Set("Docker-Content-Digest", digest)
+			w.Header().Set("Content-Type", "application/vnd.oci.image.manifest.v1+json")
+			_, _ = w.Write(manifest)
+		case "PUT /v2/repo/manifests/new", "PUT /v2/repo/manifests/keep":
+			puts = append(puts, r.URL.Path)
+			w.Header().Set("Docker-Content-Digest", digest)
+			w.WriteHeader(http.StatusCreated)
+		case "DELETE /v2/repo/manifests/" + digest:
+			deleted = append(deleted, r.URL.Path)
+			w.WriteHeader(http.StatusAccepted)
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+	defer server.Client().CloseIdleConnections()
+	config := &ConfigService{cfg: normalizeConfig(Config{ImageSources: []ImageSource{{ID: "reg", Kind: "registry", RegistryURL: server.URL}}})}
+	service := NewImageService(config)
+	service.cacheDir = t.TempDir()
+	service.registryTransport = server.Client().Transport
+	defer service.shutdown()
+	result := service.TagDockerImages("reg", []DockerImageReferenceChange{{Source: "repo:old", Target: "repo:new"}}, true)
+	if !reflect.DeepEqual(result.Succeeded, []string{"repo:new"}) || len(result.Failed) != 0 {
+		t.Fatalf("Registry 重命名结果为 %#v", result)
+	}
+	wantPuts := []string{"/v2/repo/manifests/new", "/v2/repo/manifests/keep"}
+	if !reflect.DeepEqual(puts, wantPuts) {
+		t.Fatalf("Registry 重命名请求为 %#v，期望 %#v", puts, wantPuts)
+	}
+	if !reflect.DeepEqual(deleted, []string{"/v2/repo/manifests/" + digest}) {
+		t.Fatalf("Registry 重命名删除请求为 %#v", deleted)
+	}
+}
+
 func TestDeleteDockerImagesDeduplicatesAndReturnsPartialResults(t *testing.T) {
 	config := &ConfigService{cfg: normalizeConfig(Config{ImageSources: []ImageSource{{ID: "local", Kind: "local"}}})}
 	var calls [][]string
@@ -440,7 +547,7 @@ func TestDeleteDockerImagesDeduplicatesAndReturnsPartialResults(t *testing.T) {
 			return []byte("deleted"), nil
 		},
 	}
-	result := service.DeleteDockerImages("local", []DockerDeleteTarget{{ImageID: "one"}, {ImageID: "one"}, {ImageID: "bad"}, {ImageID: "two"}})
+	result := service.DeleteDockerImages("local", []DockerDeleteTarget{{ImageID: "one"}, {ImageID: "one"}, {ImageID: "bad"}, {ImageID: "two"}}, true)
 	if !reflect.DeepEqual(result.Deleted, []string{"one", "two"}) {
 		t.Fatalf("成功删除结果为 %#v", result.Deleted)
 	}
@@ -582,16 +689,64 @@ func TestRegistryListDetailAndDeleteUseDigest(t *testing.T) {
 		t.Fatalf("Registry runtime 配置为 %#v", detail.Runtime)
 	}
 	currentDigest = "sha256:" + strings.Repeat("c", 64)
-	changed := service.DeleteDockerImages("reg", []DockerDeleteTarget{{ImageID: images[0].ID, ExpectedDigest: digest}})
+	changed := service.DeleteDockerImages("reg", []DockerDeleteTarget{{ImageID: images[0].ID, ExpectedDigest: digest}}, true)
 	if len(changed.Deleted) != 0 || len(changed.Failed) != 1 || deletedPath != "" {
 		t.Fatalf("digest 变化后不应删除 Registry manifest: %#v，路径为 %q", changed, deletedPath)
 	}
 	currentDigest = digest
-	result := service.DeleteDockerImages("reg", []DockerDeleteTarget{{ImageID: images[0].ID, ExpectedDigest: digest}})
+	result := service.DeleteDockerImages("reg", []DockerDeleteTarget{{ImageID: images[0].ID, ExpectedDigest: digest}}, true)
 	if len(result.Deleted) != 1 || deletedPath != "/v2/repo/manifests/"+digest {
 		t.Fatalf("Registry 删除结果为 %#v，路径为 %q", result, deletedPath)
 	}
 	service.shutdown()
+}
+
+func TestDeleteRegistryTagOnlyRepushesSiblings(t *testing.T) {
+	manifest, digest := registryTagTestManifest()
+	var puts []string
+	var deleted []string
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method + " " + r.URL.Path {
+		case "GET /v2/":
+			w.WriteHeader(http.StatusOK)
+		case "GET /v2/repo/tags/list":
+			_ = json.NewEncoder(w).Encode(map[string]any{"name": "repo", "tags": []string{"latest", "stable"}})
+		case "HEAD /v2/repo/manifests/latest", "HEAD /v2/repo/manifests/stable":
+			w.Header().Set("Docker-Content-Digest", digest)
+			w.Header().Set("Content-Type", "application/vnd.oci.image.manifest.v1+json")
+			w.Header().Set("Content-Length", strconv.Itoa(len(manifest)))
+		case "GET /v2/repo/manifests/latest":
+			w.Header().Set("Docker-Content-Digest", digest)
+			w.Header().Set("Content-Type", "application/vnd.oci.image.manifest.v1+json")
+			_, _ = w.Write(manifest)
+		case "PUT /v2/repo/manifests/stable":
+			puts = append(puts, r.URL.Path)
+			w.Header().Set("Docker-Content-Digest", digest)
+			w.WriteHeader(http.StatusCreated)
+		case "DELETE /v2/repo/manifests/" + digest:
+			deleted = append(deleted, r.URL.Path)
+			w.WriteHeader(http.StatusAccepted)
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+	defer server.Client().CloseIdleConnections()
+	config := &ConfigService{cfg: normalizeConfig(Config{ImageSources: []ImageSource{{ID: "reg", Kind: "registry", RegistryURL: server.URL}}})}
+	service := NewImageService(config)
+	service.cacheDir = t.TempDir()
+	service.registryTransport = server.Client().Transport
+	defer service.shutdown()
+	result := service.DeleteDockerImages("reg", []DockerDeleteTarget{{ImageID: "repo:latest", ExpectedDigest: digest}}, false)
+	if !reflect.DeepEqual(result.Deleted, []string{"repo:latest"}) || len(result.Failed) != 0 {
+		t.Fatalf("按 Tag 删除结果为 %#v", result)
+	}
+	if !reflect.DeepEqual(puts, []string{"/v2/repo/manifests/stable"}) {
+		t.Fatalf("按 Tag 删除重推请求为 %#v", puts)
+	}
+	if !reflect.DeepEqual(deleted, []string{"/v2/repo/manifests/" + digest}) {
+		t.Fatalf("按 Tag 删除删除请求为 %#v", deleted)
+	}
 }
 
 func TestImageSourceConnectionTestsRegistryDraft(t *testing.T) {
@@ -677,7 +832,7 @@ func TestImageDetailCacheIsolatedAndInvalidated(t *testing.T) {
 	if calls != 2 {
 		t.Fatalf("来源切换后错误复用旧缓存，调用次数为 %d", calls)
 	}
-	deleted := service.DeleteDockerImages("local", []DockerDeleteTarget{{ImageID: imageID}})
+	deleted := service.DeleteDockerImages("local", []DockerDeleteTarget{{ImageID: imageID}}, true)
 	if len(deleted.Deleted) != 1 {
 		t.Fatalf("删除缓存镜像失败: %#v", deleted)
 	}

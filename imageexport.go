@@ -57,16 +57,18 @@ type ImageExportResult struct {
 }
 
 const (
-	imageTaskTypeExport = "export"
-	imageTaskTypePull   = "pull"
-	imageTaskTypeLoad   = "load"
-	imageTaskTypeUpdate = "update"
-	imageTaskTypeDetail = "detail"
-	imageTaskQueued     = "queued"
-	imageTaskRunning    = "running"
-	imageTaskSuccess    = "success"
-	imageTaskFailed     = "failed"
-	imageTaskCanceled   = "canceled"
+	imageTaskTypeExport    = "export"
+	imageTaskTypePull      = "pull"
+	imageTaskTypeLoad      = "load"
+	imageTaskTypeUpdate    = "update"
+	imageTaskTypeDetail    = "detail"
+	imageTaskTypeTagCopy   = "tagCopy"
+	imageTaskTypeTagRename = "tagRename"
+	imageTaskQueued        = "queued"
+	imageTaskRunning       = "running"
+	imageTaskSuccess       = "success"
+	imageTaskFailed        = "failed"
+	imageTaskCanceled      = "canceled"
 )
 
 type imageTaskState struct {
@@ -189,7 +191,7 @@ func (s *ImageService) CancelImageTask(id string) error {
 		s.taskMu.Unlock()
 		return nil
 	}
-	if task.Type != imageTaskTypeExport && task.Type != imageTaskTypePull && task.Type != imageTaskTypeLoad {
+	if task.Type != imageTaskTypeExport && task.Type != imageTaskTypePull && task.Type != imageTaskTypeLoad && task.Type != imageTaskTypeTagCopy && task.Type != imageTaskTypeTagRename {
 		s.taskMu.Unlock()
 		return nil
 	}
@@ -294,6 +296,11 @@ func (s *ImageService) RetryImageTask(id string) (ImageExportResult, error) {
 			return ImageExportResult{}, userError("errors.imageExport.exportTaskIncomplete")
 		}
 		s.enqueueImageImportWithSnapshot(sourceID, target, source, cliPath)
+	case imageTaskTypeTagCopy, imageTaskTypeTagRename:
+		if imageID == "" || target == "" {
+			return ImageExportResult{}, userError("errors.imageExport.exportTaskIncomplete")
+		}
+		s.enqueueImageTagChange(sourceID, DockerImageReferenceChange{Source: imageID, Target: target}, taskType == imageTaskTypeTagRename, source, cliPath)
 	default:
 		return ImageExportResult{}, userError("errors.imageExport.taskNotRetryable")
 	}
@@ -1106,6 +1113,104 @@ func (s *ImageService) runImagePull(ctx context.Context, taskID, imageRef string
 			task.cancel = nil
 		})
 		// 拉取成功后 tag 可能指向新的镜像 ID，必须重扫才能在前端看到变化。
+		s.requestSourceRefresh(source.ID)
+	}
+}
+
+// StartImageTagChanges 为每条换 Tag 变更创建独立后台任务；removeSource 为 true 表示重命名。
+// Registry 换 Tag 需要网络读写且可能重推关联 Tag，耗时较长，因此统一下沉到后台任务。
+func (s *ImageService) StartImageTagChanges(sourceID string, changes []DockerImageReferenceChange, removeSource bool) (ImageExportResult, error) {
+	changes = normalizeImageReferenceChanges(changes)
+	if len(changes) == 0 {
+		return ImageExportResult{}, userError("errors.imageExport.noImagesSelected")
+	}
+	for _, change := range changes {
+		if !validMutableImageReference(change.Source) || !validMutableImageReference(change.Target) {
+			return ImageExportResult{}, userError("errors.image.referenceInvalid")
+		}
+		if change.Source == change.Target {
+			return ImageExportResult{}, userError("errors.image.targetTagSameAsSource")
+		}
+	}
+	source, cliPath, _, err := s.sourceSnapshot(sourceID)
+	if err != nil {
+		return ImageExportResult{}, err
+	}
+	for _, change := range changes {
+		s.enqueueImageTagChange(sourceID, change, removeSource, source, cliPath)
+	}
+	return ImageExportResult{Started: len(changes), Snapshot: s.GetImageTasks()}, nil
+}
+
+func (s *ImageService) enqueueImageTagChange(sourceID string, change DockerImageReferenceChange, removeSource bool, source ImageSource, cliPath string) {
+	ctx, cancel := context.WithCancel(s.serviceContext())
+	taskType := imageTaskTypeTagCopy
+	if removeSource {
+		taskType = imageTaskTypeTagRename
+	}
+	taskID := s.createImageTask(imageTaskState{
+		ImageTask: ImageTask{Type: taskType, SourceID: sourceID, ImageID: change.Source, Path: change.Target, Total: 1},
+		cancel:    cancel,
+	})
+	s.exportWG.Add(1)
+	go func() {
+		defer s.exportWG.Done()
+		s.runImageTagChange(ctx, taskID, change, removeSource, source, cliPath)
+	}()
+}
+
+func (s *ImageService) runImageTagChange(ctx context.Context, taskID string, change DockerImageReferenceChange, removeSource bool, source ImageSource, cliPath string) {
+	if !s.acquireTaskSlot(ctx, taskID) {
+		return
+	}
+	if s.taskScheduler != nil {
+		defer s.taskScheduler.Release()
+	}
+	stage := "retagging"
+	if removeSource {
+		stage = "renaming"
+	}
+	s.updateTask(taskID, func(task *imageTaskState) {
+		task.Status = imageTaskRunning
+		task.Stage = stage
+		task.Total = 1
+	})
+	report := func(completed, total int64, nextStage string) {
+		if total <= 0 {
+			total = 1
+		}
+		s.updateTask(taskID, func(task *imageTaskState) {
+			task.Completed = completed
+			task.Total = total
+			task.Stage = nextStage
+		})
+	}
+	err := s.applyImageTagChange(ctx, source, cliPath, change, removeSource, report)
+	switch {
+	case errors.Is(err, context.Canceled):
+		s.updateTask(taskID, func(task *imageTaskState) {
+			task.Status = imageTaskCanceled
+			task.Stage = "canceled"
+			task.Error = ""
+			task.cancel = nil
+		})
+	case err != nil:
+		s.updateTask(taskID, func(task *imageTaskState) {
+			task.Status = imageTaskFailed
+			task.Stage = "failed"
+			task.Error = err.Error()
+			task.cancel = nil
+		})
+	default:
+		s.updateTask(taskID, func(task *imageTaskState) {
+			task.Status = imageTaskSuccess
+			task.Stage = "done"
+			if task.Total > 0 {
+				task.Completed = task.Total
+			}
+			task.cancel = nil
+		})
+		// 换 Tag 成功会改变镜像列表，重扫后前端才能看到结果。
 		s.requestSourceRefresh(source.ID)
 	}
 }

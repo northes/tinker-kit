@@ -476,8 +476,10 @@ export function TaskCenter({
         : task.total > 0
           ? Math.min(100, (task.completed / task.total) * 100)
           : null;
+  const countImageTask = (type?: string) =>
+    type === 'pull' || type === 'tagCopy' || type === 'tagRename';
   const progressText = (task: UnifiedTask) =>
-    task.image?.type === 'pull'
+    task.image && countImageTask(task.image.type)
       ? t('imageManagerTool.taskProgressCount', {
           completed: task.image.completed,
           total: task.image.total,

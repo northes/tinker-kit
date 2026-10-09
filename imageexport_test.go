@@ -14,6 +14,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"strconv"
 	"strings"
 	"sync"
@@ -565,6 +566,34 @@ func TestRunImageImportPipesTarAndSucceeds(t *testing.T) {
 	}
 	if task.Bytes != int64(len(payload)) || task.Completed != 0 {
 		t.Fatalf("导入进度未回填到 Bytes: %+v", task)
+	}
+}
+
+func TestRunImageTagChangeLocalRename(t *testing.T) {
+	s := &ImageService{tasks: make(map[string]*imageTaskState)}
+	var calls [][]string
+	s.runner = func(_ context.Context, name string, args ...string) ([]byte, error) {
+		calls = append(calls, append([]string{name}, args...))
+		return nil, nil
+	}
+	id := s.createImageTask(imageTaskState{ImageTask: ImageTask{
+		Type:     imageTaskTypeTagRename,
+		SourceID: "local",
+		ImageID:  "repo:old",
+		Path:     "repo:new",
+		Total:    1,
+	}})
+	s.runImageTagChange(context.Background(), id, DockerImageReferenceChange{Source: "repo:old", Target: "repo:new"}, true, ImageSource{Kind: "local"}, "docker")
+	task := s.GetImageTasks().Tasks[0]
+	if task.Status != imageTaskSuccess || task.Completed != 2 || task.Total != 2 {
+		t.Fatalf("换 Tag 任务未成功: %+v", task)
+	}
+	want := [][]string{
+		{"docker", "image", "tag", "repo:old", "repo:new"},
+		{"docker", "image", "rm", "repo:old"},
+	}
+	if !reflect.DeepEqual(calls, want) {
+		t.Fatalf("换 Tag 命令为 %#v，期望 %#v", calls, want)
 	}
 }
 

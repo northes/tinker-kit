@@ -29,7 +29,7 @@ import {
   StartImageExports,
   StartImageImports,
   StartImagePulls,
-  TagDockerImages,
+  StartImageTagChanges,
   TestImageSourceConnection,
   WatchDockerImages,
 } from '../../bindings/changeme/imageservice';
@@ -158,6 +158,7 @@ type ConfirmState =
       sourceId: string;
       sourceKind: string;
       sourceConfigKey: string;
+      deleteManifest: boolean;
     }
   | { type: 'removeSource'; id: string; name: string }
   | null;
@@ -176,7 +177,7 @@ type ImageRenameForm = {
 type ImageRenamePreview = {
   source: string;
   target: string;
-  status: 'ok' | 'empty' | 'unchanged' | 'duplicate';
+  status: 'ok' | 'empty' | 'unchanged' | 'duplicate' | 'crossRepository';
 };
 
 type ImageOperationDialogState =
@@ -460,8 +461,12 @@ function renameFormHasInput(form: ImageRenameForm) {
   return form.mode === 'replace' ? form.find.length > 0 : form.value.length > 0;
 }
 
-// 预览同时标记空目标、未变化和跨行重复，提交前即可发现非法重命名。
-function buildRenamePreview(rows: ImageRow[], form: ImageRenameForm): ImageRenamePreview[] {
+// 预览同时标记空目标、未变化、跨行重复和 Registry 跨仓库，提交前即可发现非法重命名。
+function buildRenamePreview(
+  rows: ImageRow[],
+  form: ImageRenameForm,
+  sameRepositoryRequired: boolean,
+): ImageRenamePreview[] {
   const targets = rows.map((row) => imageRenameTarget(row.reference, form).trim());
   const counts = new Map<string, number>();
   for (const target of targets) counts.set(target, (counts.get(target) ?? 0) + 1);
@@ -474,7 +479,9 @@ function buildRenamePreview(rows: ImageRow[], form: ImageRenameForm): ImageRenam
         ? 'unchanged'
         : (counts.get(target) ?? 0) > 1
           ? 'duplicate'
-          : 'ok';
+          : sameRepositoryRequired && imageRepository(target) !== imageRepository(source)
+            ? 'crossRepository'
+            : 'ok';
     return { source, target, status };
   });
 }
@@ -1491,6 +1498,7 @@ export default function ImageManagerTool({
     sourceProfileMissing || isConnecting || busy !== null || sourceViewState === 'unavailable';
   const interactionBlocked = busy !== null;
   const sourceSupportsDockerMutations = source.kind !== 'registry';
+  const isRegistrySource = source.kind === 'registry';
   const sourceCanDelete = (source as ManagedImageSource).capabilities?.canDelete ?? true;
   const registryConfirmDigests =
     confirm?.type === 'delete' && confirm.sourceKind === 'registry'
@@ -1972,19 +1980,19 @@ export default function ImageManagerTool({
   ) => {
     setBusy('tag');
     try {
-      const result = await TagDockerImages(source.id, changes, removeSource);
-      const { succeeded, failures } = reportBatchResult(
-        result,
-        removeSource ? 'imageManagerTool.renamed' : 'imageManagerTool.copiedToTag',
-      );
-      if (succeeded.length > 0 || failures.length > 0) requestWatchReload();
-      if (failures.length === 0) setSelected(new Set());
-      record(
-        'image-manager',
-        t(removeSource ? 'imageManagerTool.rename' : 'imageManagerTool.copyTagAction'),
-        changes.map((change) => `${change.source} → ${change.target}`).join('\n'),
-        source.id,
-      );
+      // Registry 换 Tag 需要网络读写且可能重推关联 Tag，统一作为后台任务执行并展示进度。
+      const result = await StartImageTagChanges(source.id, changes, removeSource);
+      if (result.started > 0) {
+        applyTasks(result.snapshot);
+        openTaskCenter('image-manager');
+        record(
+          'image-manager',
+          t(removeSource ? 'imageManagerTool.rename' : 'imageManagerTool.copyTagAction'),
+          changes.map((change) => `${change.source} → ${change.target}`).join('\n'),
+          source.id,
+        );
+        setSelected(new Set());
+      }
     } catch (error) {
       toast.add({
         title: t('imageManagerTool.actionFailed'),
@@ -2018,23 +2026,19 @@ export default function ImageManagerTool({
   };
 
   const openRenameDialog = (rows: ImageRow[]) => {
-    if (
-      actionBlocked ||
-      !sourceSupportsDockerMutations ||
-      rows.length === 0 ||
-      rows.some((row) => !isNamedImageRow(row))
-    ) {
+    if (actionBlocked || rows.length === 0 || rows.some((row) => !isNamedImageRow(row))) {
       return;
     }
     setOperationError('');
     // 单行沿用「直接输入完整名」的编辑体验，多行默认给出批量前缀；两者都可切换。
+    // Registry 只支持同仓库换 Tag，单行默认直接输入 Tag，避免误改仓库。
     const single = rows.length === 1;
     setOperationDialog({
       type: 'rename',
       rows,
       sourceConfigKey,
       form: {
-        scope: single ? 'name' : 'tag',
+        scope: single && !isRegistrySource ? 'name' : 'tag',
         mode: single ? 'custom' : 'prefix',
         value: '',
         find: '',
@@ -2065,12 +2069,7 @@ export default function ImageManagerTool({
   };
 
   const openCopyTagDialog = (rows: ImageRow[]) => {
-    if (
-      actionBlocked ||
-      !sourceSupportsDockerMutations ||
-      rows.length === 0 ||
-      rows.some((row) => !isNamedImageRow(row))
-    ) {
+    if (actionBlocked || rows.length === 0 || rows.some((row) => !isNamedImageRow(row))) {
       return;
     }
     setOperationError('');
@@ -2089,9 +2088,9 @@ export default function ImageManagerTool({
   const renamePreview = useMemo(
     () =>
       operationDialog?.type === 'rename' && renameFormHasInput(operationDialog.form)
-        ? buildRenamePreview(operationDialog.rows, operationDialog.form)
+        ? buildRenamePreview(operationDialog.rows, operationDialog.form, isRegistrySource)
         : [],
-    [operationDialog],
+    [isRegistrySource, operationDialog],
   );
   const renameReady =
     renamePreview.length > 0 && renamePreview.every((item) => item.status === 'ok');
@@ -2109,7 +2108,7 @@ export default function ImageManagerTool({
         setOperationError(t('imageManagerTool.operationInputRequired'));
         return;
       }
-      const preview = buildRenamePreview(rows, form);
+      const preview = buildRenamePreview(rows, form, isRegistrySource);
       if (preview.some((item) => item.status !== 'ok')) {
         setOperationError(t('imageManagerTool.renamePreviewInvalid'));
         return;
@@ -2164,10 +2163,11 @@ export default function ImageManagerTool({
     ids: string[],
     targets: DockerDeleteTarget[],
     name: string,
+    deleteManifest: boolean,
   ) => {
     setBusy('delete');
     try {
-      const result = await DeleteDockerImages(sourceID, targets);
+      const result = await DeleteDockerImages(sourceID, targets, deleteManifest);
       const deleted = result.deleted?.length ?? 0;
       const failures = result.failed ?? [];
       const failed = failures.length;
@@ -2212,7 +2212,14 @@ export default function ImageManagerTool({
     if (confirm.sourceConfigKey !== sourceConfigKey) {
       toast.add({ title: t('imageManagerTool.sourceChangedRefresh'), type: 'warning' });
       setConfirm(null);
-    } else void runDelete(confirm.sourceId, confirm.ids, confirm.targets, confirm.name);
+    } else
+      void runDelete(
+        confirm.sourceId,
+        confirm.ids,
+        confirm.targets,
+        confirm.name,
+        confirm.deleteManifest,
+      );
   };
 
   const taskCutoff = Date.now() - IMAGE_TASK_RETENTION_MS;
@@ -2567,10 +2574,11 @@ export default function ImageManagerTool({
                   {imageVirtualRows.map((virtualRow) => {
                     const row = filteredRows[virtualRow.index];
                     const operationRows = operationRowsFor(row);
-                    const operationAllowed =
-                      sourceSupportsDockerMutations &&
+                    const tagOperationAllowed =
                       operationRows.length > 0 &&
                       operationRows.every((item) => isNamedImageRow(item));
+                    const dockerOperationAllowed =
+                      sourceSupportsDockerMutations && tagOperationAllowed;
                     const rowLabel = imageRowLabel(row, unnamed);
                     return (
                       <ContextMenu key={row.key}>
@@ -2675,9 +2683,7 @@ export default function ImageManagerTool({
                                 : t('imageManagerTool.exportTar')}
                             </ContextMenuItem>
                             <ContextMenuItem
-                              disabled={
-                                actionBlocked || !operationAllowed || !sourceSupportsDockerMutations
-                              }
+                              disabled={actionBlocked || !dockerOperationAllowed}
                               onClick={() => void runPull(operationRows)}
                             >
                               <CloudArrowDown data-icon="inline-start" weight="duotone" />
@@ -2686,7 +2692,7 @@ export default function ImageManagerTool({
                                 : t('imageManagerTool.pullUpdate')}
                             </ContextMenuItem>
                             <ContextMenuItem
-                              disabled={actionBlocked || !operationAllowed}
+                              disabled={actionBlocked || !dockerOperationAllowed}
                               onClick={() => openPushDialog(operationRows)}
                             >
                               <UploadSimple data-icon="inline-start" weight="duotone" />
@@ -2695,7 +2701,7 @@ export default function ImageManagerTool({
                                 : t('imageManagerTool.pushRemote')}
                             </ContextMenuItem>
                             <ContextMenuItem
-                              disabled={actionBlocked || !operationAllowed}
+                              disabled={actionBlocked || !tagOperationAllowed}
                               onClick={() => openRenameDialog(operationRows)}
                             >
                               <PencilSimple data-icon="inline-start" weight="duotone" />
@@ -2704,7 +2710,7 @@ export default function ImageManagerTool({
                                 : t('imageManagerTool.rename')}
                             </ContextMenuItem>
                             <ContextMenuItem
-                              disabled={actionBlocked || !operationAllowed}
+                              disabled={actionBlocked || !tagOperationAllowed}
                               onClick={() => openCopyTagDialog(operationRows)}
                             >
                               <Copy data-icon="inline-start" weight="duotone" />
@@ -2731,6 +2737,7 @@ export default function ImageManagerTool({
                                 sourceId: source.id,
                                 sourceKind: source.kind,
                                 sourceConfigKey,
+                                deleteManifest: true,
                               })
                             }
                           >
@@ -3036,7 +3043,9 @@ export default function ImageManagerTool({
                                     ? 'imageManagerTool.renameInvalidEmpty'
                                     : item.status === 'unchanged'
                                       ? 'imageManagerTool.renameInvalidUnchanged'
-                                      : 'imageManagerTool.renameInvalidDuplicate',
+                                      : item.status === 'crossRepository'
+                                        ? 'imageManagerTool.renameInvalidCrossRepository'
+                                        : 'imageManagerTool.renameInvalidDuplicate',
                                 )}
                               </span>
                             ) : null}
@@ -3346,7 +3355,46 @@ export default function ImageManagerTool({
         ) : confirm?.type === 'delete' ? (
           confirm.sourceKind === 'registry' ? (
             <div className="flex min-w-0 flex-col gap-3">
-              <p className="m-0">{t('imageManagerTool.registryDeleteConfirmSummary')}</p>
+              <div className="grid gap-1.5">
+                <div className="text-[10px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
+                  {t('imageManagerTool.registryDeleteMode')}
+                </div>
+                <div className="flex w-fit flex-wrap gap-1">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={confirm.deleteManifest ? 'secondary' : 'ghost'}
+                    disabled={busy !== null}
+                    onClick={() =>
+                      setConfirm((current) =>
+                        current?.type === 'delete' ? { ...current, deleteManifest: true } : current,
+                      )
+                    }
+                  >
+                    {t('imageManagerTool.registryDeleteModeManifest')}
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={!confirm.deleteManifest ? 'secondary' : 'ghost'}
+                    disabled={busy !== null}
+                    onClick={() =>
+                      setConfirm((current) =>
+                        current?.type === 'delete'
+                          ? { ...current, deleteManifest: false }
+                          : current,
+                      )
+                    }
+                  >
+                    {t('imageManagerTool.registryDeleteModeTag')}
+                  </Button>
+                </div>
+              </div>
+              <p className="m-0">
+                {confirm.deleteManifest
+                  ? t('imageManagerTool.registryDeleteConfirmSummary')
+                  : t('imageManagerTool.registryDeleteTagSummary')}
+              </p>
               <div className="min-w-0 rounded-md border border-border bg-muted/40 px-3 py-2">
                 {registryConfirmDigests.length > 0 ? (
                   <div className="space-y-1.5">
@@ -3410,7 +3458,9 @@ export default function ImageManagerTool({
                 </div>
               ) : null}
               <p className="m-0 text-xs text-muted-foreground">
-                {t('imageManagerTool.registryDeleteGCHint')}
+                {confirm.deleteManifest
+                  ? t('imageManagerTool.registryDeleteGCHint')
+                  : t('imageManagerTool.registryDeleteTagRepushHint')}
               </p>
             </div>
           ) : (
