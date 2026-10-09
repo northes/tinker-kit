@@ -96,6 +96,7 @@ export function normalizeJsonSyntax(source: string): string {
   let out = '';
   let index = 0;
   const stack: string[] = [];
+  let completedRootContainer = false;
 
   while (index < source.length) {
     const char = source[index];
@@ -123,7 +124,9 @@ export function normalizeJsonSyntax(source: string): string {
     }
 
     if (char === '{' || char === '[') {
+      if (stack.length === 0 && completedRootContainer) out += '\n';
       stack.push(char === '{' ? '}' : ']');
+      completedRootContainer = false;
       out += char;
       index += 1;
       continue;
@@ -131,6 +134,7 @@ export function normalizeJsonSyntax(source: string): string {
     if (char === '}' || char === ']') {
       const expected = stack.pop();
       out += expected && expected !== char ? expected : char;
+      completedRootContainer = stack.length === 0;
       index += 1;
       continue;
     }

@@ -46,6 +46,7 @@ test('转义字符串中的直接换行', () => {
 
 test('把多个根对象合并为数组', () => {
   assert.deepEqual(parse(`{"name":"Tom"}\n{"name":"Jerry"}`), [{ name: 'Tom' }, { name: 'Jerry' }]);
+  assert.deepEqual(parse(`{}{}{}`), [{}, {}, {}]);
 });
 
 test('把等号当冒号处理', () => {
