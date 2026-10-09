@@ -192,7 +192,6 @@ export function TaskCenter({
 }) {
   const { t, i18n } = useTranslation();
   const [open, setOpen] = useState(false);
-  const [showElapsedTime, setShowElapsedTime] = useState(false);
   const [cancelingAll, setCancelingAll] = useState(false);
   const [clearingFinished, setClearingFinished] = useState(false);
 
@@ -456,20 +455,9 @@ export function TaskCenter({
     activeTasks.length > 0 && !hasUnknown
       ? estimateTaskRemainingSeconds(Math.max(0, total - completed), totalSpeed)
       : null;
-  const earliestTaskStart = activeTasks.reduce((earliest, task) => {
-    const createdAt = Date.parse(task.createdAt);
-    return Number.isFinite(createdAt) ? Math.min(earliest, createdAt) : earliest;
-  }, Number.POSITIVE_INFINITY);
-  const elapsedSeconds = Number.isFinite(earliestTaskStart)
-    ? Math.floor(Math.max(0, now - earliestTaskStart) / 1000)
-    : null;
-  const footerTimeText = showElapsedTime
-    ? t('taskCenter.elapsedTime', {
-        duration: elapsedSeconds === null ? '—' : formatTaskDuration(elapsedSeconds),
-      })
-    : t('taskCenter.remainingTime', {
-        duration: remainingSeconds === null ? '—' : formatTaskDuration(remainingSeconds),
-      });
+  const footerTimeText = t('taskCenter.remainingTime', {
+    duration: remainingSeconds === null ? '—' : formatTaskDuration(remainingSeconds),
+  });
 
   const selectConcurrency = (key: 'taskConcurrency' | 'taskChunkConcurrency', next: number) => {
     const updated = { ...concurrencyDraft, [key]: next };
@@ -934,21 +922,8 @@ export function TaskCenter({
               </div>
             </ScrollArea>
           )}
-          <DialogFooter className="flex-col shrink-0 gap-3 sm:flex-row sm:items-end sm:justify-between">
+          <DialogFooter className="flex-col shrink-0 gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex min-w-0 flex-1 flex-col gap-2">
-              <div
-                role="progressbar"
-                aria-label={t('taskCenter.aggregateProgress')}
-                aria-valuemin={0}
-                aria-valuemax={100}
-                aria-valuenow={aggregateProgressPercent ?? undefined}
-                className={`h-1.5 w-full overflow-hidden rounded-full bg-muted ${hasUnknown ? 'animate-pulse motion-reduce:animate-none' : ''}`}
-              >
-                <div
-                  className="h-full rounded-full bg-primary"
-                  style={{ width: `${totalProgress}%` }}
-                />
-              </div>
               <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_8rem] items-center gap-x-2 gap-y-1 text-[10px] tabular-nums text-muted-foreground sm:grid-cols-[7rem_4.5rem_5rem_5rem]">
                 <span className="min-w-0 truncate" title={formatTaskBytes(totalSpeed) + '/s'}>
                   {t('taskCenter.totalSpeed', { speed: `${formatTaskBytes(totalSpeed)}/s` })}
@@ -964,17 +939,9 @@ export function TaskCenter({
                 <span className="text-right">
                   {t('taskCenter.activeCount', { total: activeTasks.length })}
                 </span>
-                <Button
-                  variant="link"
-                  size="xs"
-                  className="w-20 justify-end truncate px-0 text-[10px] text-muted-foreground"
-                  aria-label={t('taskCenter.toggleTimeDisplay')}
-                  aria-pressed={showElapsedTime}
-                  title={footerTimeText}
-                  onClick={() => setShowElapsedTime((current) => !current)}
-                >
+                <span className="w-20 truncate text-right" title={footerTimeText}>
                   {footerTimeText}
-                </Button>
+                </span>
               </div>
             </div>
             <Button variant="outline" onClick={() => setOpen(false)}>
