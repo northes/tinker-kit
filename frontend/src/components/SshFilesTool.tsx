@@ -646,9 +646,27 @@ type RemoteSearchScope = 'current' | 'recursive';
 type MissingFavoritePath = { sourceID: string; path: string; previousPath: string };
 type LoadingKind = 'sources' | 'directory' | 'search';
 type DirectoryLoadingPhase = 'connecting' | 'loadingDirectory';
+type CachedDirectoryListing = {
+  cachedAt: number;
+  requestID: number;
+  path: string;
+  entries: RemoteFileEntry[];
+};
 type CancellableCall = {
   cancel: (cause?: unknown) => PromiseLike<void> | void;
 };
+
+const DIRECTORY_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+
+function directoryListingKey(
+  sourceID: string,
+  sshProfileID: string,
+  profileKey: string,
+  remotePath: string,
+  showHidden: boolean,
+) {
+  return [sourceID, sshProfileID, profileKey, remotePath, showHidden ? '1' : '0'].join('\0');
+}
 
 export default function SshFilesTool({ active }: Props) {
   const { t, i18n } = useTranslation();
@@ -708,6 +726,7 @@ export default function SshFilesTool({ active }: Props) {
   const pendingFavoritePathRef = useRef<MissingFavoritePath | null>(null);
   const currentPathRef = useRef(currentPath);
   const directoryLoadKeyRef = useRef('');
+  const directoryCacheRef = useRef(new Map<string, CachedDirectoryListing>());
   const sourcesLoadedRef = useRef(false);
 
   const cancelLoading = useCallback(() => {
@@ -757,13 +776,13 @@ export default function SshFilesTool({ active }: Props) {
     [activeSourceProfile],
   );
   const directoryLoadKey = sourceID
-    ? [
+    ? directoryListingKey(
         sourceID,
         activeSourceProfileID,
         profileListingKey,
         currentPath,
-        showHidden ? '1' : '0',
-      ].join('\0')
+        showHidden,
+      )
     : '';
   const breadcrumbs = useMemo(() => {
     const parts = currentPath.split('/').filter(Boolean);
@@ -821,7 +840,7 @@ export default function SshFilesTool({ active }: Props) {
   }, []);
 
   const loadDirectory = useCallback(
-    async (id: string, pathValue: string, hidden: boolean) => {
+    async (id: string, pathValue: string, hidden: boolean, forceReload = false) => {
       const requestID = ++directoryRequestRef.current;
       loadingKindRef.current = 'directory';
       setDirectoryLoadingPhase('connecting');
@@ -843,6 +862,47 @@ export default function SshFilesTool({ active }: Props) {
         setLoading(false);
         return;
       }
+      const cacheKey = directoryListingKey(
+        id,
+        activeSourceProfileID,
+        profileListingKey,
+        normalizedPath,
+        hidden,
+      );
+      const cacheScope = [id, activeSourceProfileID, profileListingKey].join('\0') + '\0';
+      if (forceReload) {
+        for (const [key, cached] of directoryCacheRef.current) {
+          if (key.startsWith(cacheScope) && (key === cacheKey || cached.path === normalizedPath)) {
+            directoryCacheRef.current.delete(key);
+          }
+        }
+      }
+      if (!forceReload) {
+        const cached = directoryCacheRef.current.get(cacheKey);
+        if (cached && Date.now() - cached.cachedAt < DIRECTORY_CACHE_TTL_MS) {
+          const resolvedKey = directoryListingKey(
+            id,
+            activeSourceProfileID,
+            profileListingKey,
+            cached.path,
+            hidden,
+          );
+          directoryLoadKeyRef.current = resolvedKey;
+          setEntries(cached.entries);
+          setSelected([]);
+          setError('');
+          setLoading(false);
+          setCurrentPath(cached.path);
+          setPathInput(cached.path);
+          if (loadingKindRef.current === 'directory') loadingKindRef.current = null;
+          return;
+        }
+        if (cached) {
+          for (const [key, candidate] of directoryCacheRef.current) {
+            if (candidate.requestID === cached.requestID) directoryCacheRef.current.delete(key);
+          }
+        }
+      }
       setLoading(true);
       setError('');
       setEntries([]);
@@ -854,6 +914,21 @@ export default function SshFilesTool({ active }: Props) {
         if (requestID !== directoryRequestRef.current) return;
         const resolved = result.path ? normalizeRemotePath(result.path) : normalizedPath;
         const nextEntries = result.entries ?? [];
+        const resolvedKey = directoryListingKey(
+          id,
+          activeSourceProfileID,
+          profileListingKey,
+          resolved,
+          hidden,
+        );
+        const cachedListing: CachedDirectoryListing = {
+          cachedAt: Date.now(),
+          requestID,
+          path: resolved,
+          entries: nextEntries,
+        };
+        directoryCacheRef.current.set(cacheKey, cachedListing);
+        directoryCacheRef.current.set(resolvedKey, cachedListing);
         setEntries(nextEntries);
         if (nextEntries.length) {
           const metadataRequest = GetRemoteCreationTimes(
@@ -863,25 +938,24 @@ export default function SshFilesTool({ active }: Props) {
           loadingCallsRef.current.add(metadataRequest);
           void metadataRequest
             .then((createdAt) => {
-              if (requestID !== directoryRequestRef.current || !createdAt) return;
-              setEntries((current) =>
-                current.map((entry) => ({
-                  ...entry,
-                  createdAt: createdAt[entry.path] ?? entry.createdAt,
-                })),
-              );
+              if (!createdAt) return;
+              const withCreationTimes = nextEntries.map((entry) => ({
+                ...entry,
+                createdAt: createdAt[entry.path] ?? entry.createdAt,
+              }));
+              for (const key of new Set([cacheKey, resolvedKey])) {
+                const cached = directoryCacheRef.current.get(key);
+                if (cached?.requestID === requestID) {
+                  directoryCacheRef.current.set(key, { ...cached, entries: withCreationTimes });
+                }
+              }
+              if (requestID === directoryRequestRef.current) setEntries(withCreationTimes);
             })
             .catch(() => undefined)
             .finally(() => loadingCallsRef.current.delete(metadataRequest));
         }
         if (resolved) {
-          directoryLoadKeyRef.current = [
-            id,
-            activeSourceProfileID,
-            profileListingKey,
-            resolved,
-            hidden ? '1' : '0',
-          ].join('\0');
+          directoryLoadKeyRef.current = resolvedKey;
           setCurrentPath(resolved);
           setPathInput(resolved);
         }
@@ -977,7 +1051,7 @@ export default function SshFilesTool({ active }: Props) {
     if (searchActive && searchQuery) {
       void executeSearch(searchQuery);
     } else if (sourceID) {
-      void loadDirectory(sourceID, currentPath, showHidden);
+      void loadDirectory(sourceID, currentPath, showHidden, true);
     }
   };
 
@@ -1119,7 +1193,7 @@ export default function SshFilesTool({ active }: Props) {
       }
       refreshedUploadTasks.current.add(task.id);
       resetSearchState();
-      void loadDirectory(sourceID, currentPath, showHidden);
+      void loadDirectory(sourceID, currentPath, showHidden, true);
     }
   }, [
     active,
@@ -1174,7 +1248,7 @@ export default function SshFilesTool({ active }: Props) {
       }
       refreshedOperationTasks.current.add(task.id);
       resetSearchState();
-      void loadDirectory(sourceID, currentPath, showHidden);
+      void loadDirectory(sourceID, currentPath, showHidden, true);
     }
   }, [
     active,
@@ -1335,7 +1409,7 @@ export default function SshFilesTool({ active }: Props) {
       setCreateFolderOpen(false);
       setCreateFolderName('');
       resetSearchState();
-      await loadDirectory(sourceID, currentPath, showHidden);
+      await loadDirectory(sourceID, currentPath, showHidden, true);
       toast.add({ title: t('sshFilesTool.folderCreated'), type: 'success' });
     } catch (reason) {
       setCreateFolderError(errorMessage(reason));
@@ -1400,7 +1474,7 @@ export default function SshFilesTool({ active }: Props) {
       }
       resetSearchState();
       setSelected([]);
-      await loadDirectory(sourceID, currentPath, showHidden);
+      await loadDirectory(sourceID, currentPath, showHidden, true);
       toast.add({
         title: t('sshFilesTool.operationSucceeded', {
           operation: t(`sshFilesTool.${operation}`),
