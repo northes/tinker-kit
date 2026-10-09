@@ -16,18 +16,14 @@ import {
   useSortable,
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { ArrowClockwise, GearSix, Globe, Plus, X } from '@phosphor-icons/react';
-import { geoContains } from 'd3-geo';
-import { feature } from 'topojson-client';
-import type { GeometryObject, Topology } from 'topojson-specification';
-import landTopology from 'world-atlas/land-110m.json';
+import { ArrowClockwise, DotsNine, GearSix, Globe, Plus, X } from '@phosphor-icons/react';
 import { GetRealTime } from '../../bindings/changeme/realtimeservice';
 import { Button } from './ui/button';
 import { ScrollArea } from './ui/scroll-area';
-import { ConfirmDialog } from './ConfirmDialog';
 import { NtpServerDialog } from './NtpServerDialog';
 import { TimezoneCombobox } from './TimezoneCombobox';
 import { getSystemTimeZone, getTimeZoneOptions } from '../utils/time';
+import { worldLandDots } from '../utils/worldLandDots';
 
 type ClockEntry = { id: string; zone: string };
 const mapReferenceTime = new Date(Date.UTC(2025, 0, 15, 12));
@@ -63,16 +59,6 @@ const cityZones: Array<{ longitude: number; latitude: number; zone: string }> = 
   { longitude: 174.8, latitude: -36.9, zone: 'Pacific/Auckland' },
   { longitude: -171.8, latitude: -13.8, zone: 'Pacific/Apia' },
 ];
-const worldTopology = landTopology as unknown as Topology;
-const worldLand = feature(worldTopology, worldTopology.objects.land as GeometryObject);
-const worldLandDots = Array.from({ length: 40 }, (_, row) => 84 - row * 3.6).flatMap((latitude) =>
-  Array.from({ length: 150 }, (_, column) => -178.8 + column * 2.4)
-    .filter((longitude) => geoContains(worldLand, [longitude, latitude]))
-    .map((longitude) => ({
-      x: ((longitude + 180) / 360) * 900,
-      y: ((90 - latitude) / 180) * 300,
-    })),
-);
 
 function SortableClock({
   entry,
@@ -84,6 +70,7 @@ function SortableClock({
   waitingLabel,
   removeLabel,
   index,
+  selected,
 }: {
   entry: ClockEntry;
   zones: Array<{ id: string; label: string }>;
@@ -94,6 +81,7 @@ function SortableClock({
   waitingLabel: string;
   removeLabel: string;
   index: number;
+  selected: boolean;
 }) {
   const { t } = useTranslation();
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
@@ -131,7 +119,7 @@ function SortableClock({
       ref={setNodeRef}
       data-clock-id={entry.id}
       style={{ transform: CSS.Transform.toString(transform), transition }}
-      className={`w-[290px] flex-none border-e border-border px-4 py-4 ${isDragging ? 'opacity-50' : ''}`}
+      className={`w-[290px] flex-none border-e border-border px-4 py-4 ${selected ? 'bg-accent' : ''} ${isDragging ? 'opacity-50' : ''}`}
     >
       <div className="mb-3 flex items-center gap-2">
         <Button
@@ -141,7 +129,7 @@ function SortableClock({
           {...attributes}
           {...listeners}
         >
-          <Globe size={17} weight="duotone" />
+          <DotsNine size={17} weight="duotone" />
           <span className="font-mono text-[10px] tabular-nums">{index}</span>
         </Button>
         <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">{zoneName}</span>
@@ -174,14 +162,7 @@ function SortableClock({
         )}
       </Button>
       <div className="mt-1 font-mono text-[11px] tabular-nums text-muted-foreground">
-        {now === null ? (
-          waitingLabel
-        ) : (
-          <>
-            {value('year')}-{value('month')}-{value('day')}{' '}
-            <span className="opacity-70">· ns {fraction}</span>
-          </>
-        )}
+        {now === null ? waitingLabel : `${value('year')}-${value('month')}-${value('day')}`}
       </div>
     </div>
   );
@@ -208,7 +189,6 @@ export default function RealTimePanel({
   const [focusedZone, setFocusedZone] = useState<string | null>(null);
   const [mapCandidate, setMapCandidate] = useState<string | null>(null);
   const [zoneToAdd, setZoneToAdd] = useState(getSystemTimeZone);
-  const [removeId, setRemoveId] = useState<string | null>(null);
   const [ntpOpen, setNtpOpen] = useState(false);
   const anchor = useRef({ epoch: 0, performance: performance.now(), synced: false });
   const ntpServersRef = useRef(ntpServers);
@@ -260,31 +240,29 @@ export default function RealTimePanel({
         ? items
         : [...items, { id: `clock-${crypto.randomUUID()}`, zone }],
     );
-  const zoneAtCoordinate = (longitude: number, latitude: number) =>
-    cityZones.reduce((best, item) => {
-      const longitudeDistance = Math.abs(item.longitude - longitude);
-      const xDistance =
-        Math.min(longitudeDistance, 360 - longitudeDistance) * Math.cos((latitude * Math.PI) / 180);
-      const yDistance = item.latitude - latitude;
-      const bestLongitudeDistance = Math.abs(best.longitude - longitude);
-      const bestXDistance =
-        Math.min(bestLongitudeDistance, 360 - bestLongitudeDistance) *
-        Math.cos((latitude * Math.PI) / 180);
-      const bestYDistance = best.latitude - latitude;
-      return xDistance ** 2 + yDistance ** 2 < bestXDistance ** 2 + bestYDistance ** 2
-        ? item
-        : best;
+  const nearestZoneAtPointer = (event: React.PointerEvent<SVGSVGElement>) => {
+    const rect = event.currentTarget.getBoundingClientRect(),
+      pointerX = event.clientX - rect.left,
+      pointerY = event.clientY - rect.top,
+      toPoint = (item: { longitude: number; latitude: number }) => ({
+        x: ((item.longitude + 180) / 360) * rect.width,
+        y: ((90 - item.latitude) / 180) * rect.height,
+      });
+    return cityZones.reduce((best, item) => {
+      const current = toPoint(item),
+        bestPoint = toPoint(best),
+        distance = (current.x - pointerX) ** 2 + (current.y - pointerY) ** 2,
+        bestDistance = (bestPoint.x - pointerX) ** 2 + (bestPoint.y - pointerY) ** 2;
+      return distance < bestDistance ? item : best;
     }).zone;
-  const coordinateAtPointer = (event: React.PointerEvent<SVGSVGElement>) => {
-    const rect = event.currentTarget.getBoundingClientRect();
-    return {
-      longitude: ((event.clientX - rect.left) / rect.width) * 360 - 180,
-      latitude: 90 - ((event.clientY - rect.top) / rect.height) * 180,
-    };
   };
-  const previewMapPoint = (event: React.PointerEvent<SVGSVGElement>) => {
-    const point = coordinateAtPointer(event);
-    const zone = zoneAtCoordinate(point.longitude, point.latitude);
+  const hoverMapPoint = (event: React.PointerEvent<SVGSVGElement>) => {
+    setMapCandidate(nearestZoneAtPointer(event));
+  };
+  const addMapPoint = (event: React.PointerEvent<SVGSVGElement>) => {
+    const zone = nearestZoneAtPointer(event);
+    addZone(zone);
+    setFocusedZone(zone);
     setMapCandidate(zone);
     setZoneToAdd(zone);
   };
@@ -325,9 +303,9 @@ export default function RealTimePanel({
   const mapX = (zone: string) => ((mapPoint(zone).longitude + 180) / 360) * 900;
   const mapY = (zone: string) => ((90 - mapPoint(zone).latitude) / 180) * 300;
   const mapCandidateName = zones.find((zone) => zone.id === mapCandidate)?.label ?? mapCandidate;
+  const mapCandidateColumn =
+    mapCandidate === null ? null : Math.min(23, Math.max(0, Math.floor(mapX(mapCandidate) / 37.5)));
   const selectedZoneExists = clocks.some((clock) => clock.zone === zoneToAdd);
-  const removeZone = clocks.find((clock) => clock.id === removeId)?.zone;
-  const removeZoneName = zones.find((zone) => zone.id === removeZone)?.label ?? removeZone ?? '';
   return (
     <div className="h-full min-h-0">
       <ScrollArea
@@ -436,11 +414,16 @@ export default function RealTimePanel({
                           : 'timeTool.realTime.waiting',
                       )}
                       canRemove={clocks.length > 1}
+                      selected={focusedZone === entry.zone}
                       onLocate={() => {
                         setFocusedZone(entry.zone);
                         setMapCandidate(null);
                       }}
-                      onRemove={() => setRemoveId(entry.id)}
+                      onRemove={() =>
+                        setClocks((items) =>
+                          items.length > 1 ? items.filter((item) => item.id !== entry.id) : items,
+                        )
+                      }
                     />
                   ))}
                 </div>
@@ -457,15 +440,20 @@ export default function RealTimePanel({
               preserveAspectRatio="none"
               role="img"
               aria-label={t('timeTool.realTime.mapDescription')}
-              onPointerDown={(event) => {
-                event.currentTarget.setPointerCapture(event.pointerId);
-                previewMapPoint(event);
-              }}
-              onPointerMove={(event) => {
-                if (event.buttons === 1) previewMapPoint(event);
-              }}
-              className="min-h-[120px] w-full flex-1 touch-none cursor-crosshair select-none rounded-sm bg-muted/25"
+              onPointerDown={(event) => addMapPoint(event)}
+              onPointerMove={(event) => hoverMapPoint(event)}
+              className="min-h-[120px] w-full flex-1 touch-none select-none rounded-sm bg-muted/25"
             >
+              {mapCandidateColumn !== null && (
+                <rect
+                  x={mapCandidateColumn * 37.5}
+                  y="0"
+                  width="37.5"
+                  height="300"
+                  fill="currentColor"
+                  className="text-primary/10"
+                />
+              )}
               {Array.from({ length: 25 }, (_, index) => (
                 <line
                   key={index}
@@ -491,8 +479,8 @@ export default function RealTimePanel({
                 />
               ))}
               <g fill="currentColor" className="text-muted-foreground/60">
-                {worldLandDots.map((point) => (
-                  <circle key={`${point.x}-${point.y}`} cx={point.x} cy={point.y} r="1.35" />
+                {worldLandDots.map(([x, y]) => (
+                  <circle key={`${x}-${y}`} cx={x} cy={y} r="1.35" />
                 ))}
               </g>
               {clocks.map((clock, index) => (
@@ -514,32 +502,51 @@ export default function RealTimePanel({
                   }}
                 >
                   <circle r="12" fill="transparent" />
-                  <line
-                    y1="-8"
-                    y2="8"
-                    stroke="currentColor"
-                    className={focusedZone === clock.zone ? 'text-primary' : 'text-primary/60'}
-                    strokeWidth={focusedZone === clock.zone ? 3 : 1.5}
-                  />
-                  <circle
-                    cy="0"
-                    r={focusedZone === clock.zone ? 7 : 5}
-                    fill="currentColor"
-                    className="text-primary"
-                  />
+                  {focusedZone === clock.zone && (
+                    <circle
+                      r="5"
+                      fill="none"
+                      stroke="currentColor"
+                      className="text-primary"
+                      strokeWidth="3"
+                    >
+                      <animate
+                        attributeName="r"
+                        values="5;26"
+                        dur="1.4s"
+                        repeatCount="indefinite"
+                      />
+                      <animate
+                        attributeName="stroke-width"
+                        values="3;0.5"
+                        dur="1.4s"
+                        repeatCount="indefinite"
+                      />
+                      <animate
+                        attributeName="opacity"
+                        values="0.9;0"
+                        dur="1.4s"
+                        repeatCount="indefinite"
+                      />
+                    </circle>
+                  )}
+                  <circle cy="0" r="5" fill="currentColor" className="text-primary" />
                   <text x="8" y="-7" fill="currentColor" className="text-foreground" fontSize="10">
                     {index + 1}
                   </text>
                 </g>
               ))}
               {mapCandidate && (
-                <circle
-                  cx={mapX(mapCandidate)}
-                  cy={mapY(mapCandidate)}
-                  r="4"
-                  fill="currentColor"
-                  className="text-muted-foreground"
-                />
+                <g transform={`translate(${mapX(mapCandidate)},${mapY(mapCandidate)})`}>
+                  <circle
+                    r="9"
+                    fill="none"
+                    stroke="currentColor"
+                    className="text-primary/40"
+                    strokeWidth="1.5"
+                  />
+                  <circle r="4" fill="currentColor" className="text-primary/50" />
+                </g>
               )}
               <text
                 x="16"
@@ -589,22 +596,6 @@ export default function RealTimePanel({
           </div>
         </div>
       </ScrollArea>
-      <ConfirmDialog
-        open={removeId !== null}
-        onOpenChange={(open) => {
-          if (!open) setRemoveId(null);
-        }}
-        title={t('timeTool.realTime.removeZone', { zone: removeZoneName })}
-        description={t('timeTool.realTime.removeDescription', { zone: removeZoneName })}
-        confirmLabel={t('timeTool.realTime.remove')}
-        destructive
-        onConfirm={() => {
-          setClocks((items) =>
-            items.length > 1 ? items.filter((item) => item.id !== removeId) : items,
-          );
-          setRemoveId(null);
-        }}
-      />
       <NtpServerDialog
         open={ntpOpen}
         onOpenChange={setNtpOpen}
