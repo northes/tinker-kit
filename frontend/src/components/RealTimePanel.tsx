@@ -21,7 +21,7 @@ import { GetRealTime } from '../../bindings/changeme/realtimeservice';
 import { Button } from './ui/button';
 import { ScrollArea } from './ui/scroll-area';
 import { NtpServerDialog } from './NtpServerDialog';
-import { TimezoneCombobox } from './TimezoneCombobox';
+import { TimezonePickerDialog } from './TimezonePickerDialog';
 import { getSystemTimeZone, getTimeZoneOptions } from '../utils/time';
 import { worldLandDots } from '../utils/worldLandDots';
 
@@ -188,7 +188,7 @@ export default function RealTimePanel({
   const [syncState, setSyncState] = useState<'syncing' | 'synced' | 'error'>('syncing');
   const [focusedZone, setFocusedZone] = useState<string | null>(null);
   const [mapCandidate, setMapCandidate] = useState<string | null>(null);
-  const [zoneToAdd, setZoneToAdd] = useState(getSystemTimeZone);
+  const [pickerOpen, setPickerOpen] = useState(false);
   const [ntpOpen, setNtpOpen] = useState(false);
   const anchor = useRef({ epoch: 0, performance: performance.now(), synced: false });
   const ntpServersRef = useRef(ntpServers);
@@ -264,7 +264,6 @@ export default function RealTimePanel({
     addZone(zone);
     setFocusedZone(zone);
     setMapCandidate(zone);
-    setZoneToAdd(zone);
   };
   const locateClock = (clock: ClockEntry) => {
     setFocusedZone(clock.zone);
@@ -305,7 +304,6 @@ export default function RealTimePanel({
   const mapCandidateName = zones.find((zone) => zone.id === mapCandidate)?.label ?? mapCandidate;
   const mapCandidateColumn =
     mapCandidate === null ? null : Math.min(23, Math.max(0, Math.floor(mapX(mapCandidate) / 37.5)));
-  const selectedZoneExists = clocks.some((clock) => clock.zone === zoneToAdd);
   return (
     <div className="h-full min-h-0">
       <ScrollArea
@@ -345,29 +343,10 @@ export default function RealTimePanel({
                 <ArrowClockwise size={16} weight="duotone" />
               </Button>
             </div>
-            <div className="flex min-w-0 items-end gap-2">
-              <TimezoneCombobox
-                value={zoneToAdd}
-                onChange={(zone) => {
-                  setZoneToAdd(zone);
-                  setMapCandidate(null);
-                }}
-                zones={zones}
-                label={t('timeTool.realTime.selectZone')}
-                placeholder={t('timeTool.timezonePlaceholder')}
-                emptyLabel={t('timeTool.timezoneNoResults')}
-              />
-              <Button
-                variant="default"
-                className="h-[46px] flex-none"
-                disabled={selectedZoneExists}
-                onClick={() => {
-                  addZone(zoneToAdd);
-                  setFocusedZone(zoneToAdd);
-                }}
-              >
+            <div className="flex min-w-0 items-center gap-2">
+              <Button variant="default" className="flex-none" onClick={() => setPickerOpen(true)}>
                 <Plus size={14} />
-                {t(selectedZoneExists ? 'timeTool.realTime.alreadyAdded' : 'timeTool.realTime.add')}
+                {t('timeTool.realTime.add')}
               </Button>
             </div>
             <span className="text-[11px] text-muted-foreground">
@@ -442,6 +421,7 @@ export default function RealTimePanel({
               aria-label={t('timeTool.realTime.mapDescription')}
               onPointerDown={(event) => addMapPoint(event)}
               onPointerMove={(event) => hoverMapPoint(event)}
+              onPointerLeave={() => setMapCandidate(null)}
               className="min-h-[120px] w-full flex-1 touch-none select-none rounded-sm bg-muted/25"
             >
               {mapCandidateColumn !== null && (
@@ -581,7 +561,6 @@ export default function RealTimePanel({
                   onClick={() => {
                     addZone(mapCandidate);
                     setFocusedZone(mapCandidate);
-                    setZoneToAdd(mapCandidate);
                   }}
                 >
                   <Plus size={14} />
@@ -596,6 +575,16 @@ export default function RealTimePanel({
           </div>
         </div>
       </ScrollArea>
+      <TimezonePickerDialog
+        open={pickerOpen}
+        onOpenChange={setPickerOpen}
+        zones={zones}
+        selectedIds={clocks.map((clock) => clock.zone)}
+        onSelect={(zone) => {
+          addZone(zone);
+          setFocusedZone(zone);
+        }}
+      />
       <NtpServerDialog
         open={ntpOpen}
         onOpenChange={setNtpOpen}

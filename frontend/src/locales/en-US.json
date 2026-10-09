@@ -361,7 +361,7 @@
       "removeZone": "Remove {{zone}}",
       "locate": "Locate {{zone}} on the map",
       "mapHint": "Time zone map (unmapped zones use offset)",
-      "mapDescription": "Flat world map. Hover to preview the time zone of the nearest representative city and click to add it. Unmapped zones are marked at the equator using a fixed UTC offset and do not represent their actual location. Use the full time zone search above as a keyboard alternative.",
+      "mapDescription": "Flat world map. Hover to preview the time zone of the nearest representative city and click to add it. Unmapped zones are marked at the equator using a fixed UTC offset and do not represent their actual location. You can also use the Add button to search for any time zone.",
       "mapSelectHint": "Hover the map to preview the nearest representative city time zone, then click to add it to the clock list.",
       "mapCandidate": "Map candidate: {{zone}}",
       "ntpTitle": "NTP servers",
