@@ -39,6 +39,7 @@ user-invocable: false
 - 新增工具或改变 `ToolId`、注册、导航、常驻挂载、命令、历史或托盘识别：在前端验证之外，静态核对工具 ID 出现在侧栏、路由、常驻挂载、命令面板、历史记录和 locale；pending 不被其他常驻工具抢消费。
 - 改工具页高度链、CodeMirror 尺寸、浮层滚动或 `ScrollArea` 滚动容器：静态核对受影响页面的尺寸链和常驻挂载不卸载。若改 `ScrollArea` 或 `ToolLayoutScrollableContent`，确认宿主不残留 `overflow-*`、原 `overflow-x: hidden` 的容器传了 `overflow.x: 'hidden'`，且未在全局隐藏原生滚动条。
 - 改 Go 服务、配置、窗口、托盘或事件：运行 Go 测试和前端类型检查/构建；若导出类型改变，先确认已重新生成 bindings，再检查生成文件和调用方。
+- 把 WebView 主线程长任务迁移到 Go：除上述 Go/Wails 验证外，静态搜索并确认旧前端算法、Web Worker 和专用依赖已删除；测试覆盖原始大输入、连续请求的过期结果保护、取消后的状态稳定性，以及 Go 返回的文本和统计字段。不得以 Worker 测试或仅有类型检查替代 Go 行为测试。
 - 改 `build/config.yml` 的资源元数据：先运行 `wails3 task common:update:build-assets`，检查生成资源，再执行对应的构建验证。
 - 改 `main.go` 的嵌入资源、构建流程或分发配置：确认 `frontend/dist` 已生成，再运行 `wails3 task build` 或用户要求的目标任务。
 
