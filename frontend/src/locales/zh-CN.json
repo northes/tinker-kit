@@ -361,6 +361,7 @@
       "selectZone": "选择时区",
       "add": "添加",
       "alreadyAdded": "已显示",
+      "alreadyAddedSearchTerms": "已显示 Shown",
       "syncNow": "立即同步 NTP 时间",
       "waiting": "等待 NTP 校时",
       "dragZone": "拖动排序 {{zone}}",
@@ -377,6 +378,7 @@
       "ntpServerLabel": "NTP 服务器 {{index}}",
       "ntpPlaceholder": "例如 pool.ntp.org:123",
       "ntpAdd": "添加服务器",
+      "ntpReset": "重置为默认",
       "ntpRemove": "移除服务器 {{index}}",
       "ntpInvalid": "“{{server}}” 不是有效的主机或 host:port"
     },

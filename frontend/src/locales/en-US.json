@@ -361,6 +361,7 @@
       "selectZone": "Select time zone",
       "add": "Add",
       "alreadyAdded": "Shown",
+      "alreadyAddedSearchTerms": "Shown 已显示",
       "syncNow": "Sync NTP time now",
       "waiting": "Waiting for NTP synchronization",
       "dragZone": "Drag to reorder {{zone}}",
@@ -377,6 +378,7 @@
       "ntpServerLabel": "NTP server {{index}}",
       "ntpPlaceholder": "e.g. pool.ntp.org:123",
       "ntpAdd": "Add server",
+      "ntpReset": "Reset to defaults",
       "ntpRemove": "Remove server {{index}}",
       "ntpInvalid": "\"{{server}}\" is not a valid host or host:port"
     },

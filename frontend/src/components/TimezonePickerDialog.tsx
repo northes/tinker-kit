@@ -3,6 +3,7 @@ import {
   Command,
   CommandDialog,
   CommandEmpty,
+  CommandGroup,
   CommandInput,
   CommandItem,
   CommandList,
@@ -35,28 +36,31 @@ export function TimezonePickerDialog({
         <CommandInput placeholder={t('timeTool.timezonePlaceholder')} />
         <CommandList>
           <CommandEmpty>{t('timeTool.timezoneNoResults')}</CommandEmpty>
-          {zones.map((zone) => {
-            const added = selectedIds.includes(zone.id);
-            return (
-              <CommandItem
-                key={zone.id}
-                value={zone.id}
-                keywords={[zone.label]}
-                disabled={added}
-                onSelect={() => {
-                  onSelect(zone.id);
-                  onOpenChange(false);
-                }}
-              >
-                <span className="min-w-0 flex-1 truncate font-mono text-xs">{zone.label}</span>
-                {added ? (
-                  <span className="ms-auto flex-none text-xs text-muted-foreground">
-                    {t('timeTool.realTime.alreadyAdded')}
-                  </span>
-                ) : null}
-              </CommandItem>
-            );
-          })}
+          <CommandGroup>
+            {zones.map((zone) => {
+              const added = selectedIds.includes(zone.id);
+              return (
+                <CommandItem
+                  key={zone.id}
+                  value={zone.id}
+                  keywords={[
+                    zone.label,
+                    ...(added ? t('timeTool.realTime.alreadyAddedSearchTerms').split(/\s+/) : []),
+                  ]}
+                  onSelect={() => {
+                    onSelect(zone.id);
+                  }}
+                >
+                  <span className="min-w-0 flex-1 truncate font-mono text-xs">{zone.label}</span>
+                  {added ? (
+                    <span className="ms-auto flex-none text-xs text-muted-foreground">
+                      {t('timeTool.realTime.alreadyAdded')}
+                    </span>
+                  ) : null}
+                </CommandItem>
+              );
+            })}
+          </CommandGroup>
         </CommandList>
       </Command>
     </CommandDialog>

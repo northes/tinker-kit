@@ -13,6 +13,7 @@ import {
 import { Input } from './ui/input';
 
 const defaultNtpPort = 123;
+const defaultNtpServers = ['time.cloudflare.com:123', 'time.google.com:123', 'pool.ntp.org:123'];
 
 // normalizeNtpServer 与 Go 端 normalizeNtpServer 行为一致：补齐默认端口并校验主机/端口，
 // 非法输入返回 null。保存时以 Go 端规范化为准，这里只用于尽早反馈。
@@ -156,6 +157,13 @@ export function NtpServerDialog({
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             {t('common.cancel')}
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => setRows(rowsFromServers(defaultNtpServers))}
+          >
+            {t('timeTool.realTime.ntpReset')}
           </Button>
           <Button type="submit" form="ntp-servers-form" disabled={!canSave}>
             {t('common.save')}

@@ -590,8 +590,16 @@ export default function RealTimePanel({
         zones={zones}
         selectedIds={clocks.map((clock) => clock.zone)}
         onSelect={(zone) => {
-          addZone(zone);
-          setFocusedZone(zone);
+          const isAdded = clocks.some((clock) => clock.zone === zone);
+          if (isAdded) {
+            setClocks((current) =>
+              current.length > 1 ? current.filter((clock) => clock.zone !== zone) : current,
+            );
+            setFocusedZone((current) => (current === zone ? null : current));
+          } else {
+            addZone(zone);
+            setFocusedZone(zone);
+          }
         }}
       />
       <NtpServerDialog
