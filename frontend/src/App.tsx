@@ -56,7 +56,6 @@ import {
   BracketsCurly,
   CaretLeft as ArrowLeft,
   CaretRight as ArrowRight,
-  ClipboardText,
   Copy,
   Clock,
   ClockCounterClockwise,
@@ -640,14 +639,6 @@ const paletteItems: PaletteItem[] = [
     action: 'copy',
   },
   {
-    id: 'paste',
-    labelKey: 'commands.paste',
-    groupKey: 'groups.tools',
-    icon: ClipboardText,
-    keywords: 'paste clipboard insert zhantie niantie zt 粘贴 剪贴板 插入',
-    action: 'paste',
-  },
-  {
     id: 'json:format',
     labelKey: 'jsonTool.format',
     groupKey: 'tools.json.name',
@@ -1095,42 +1086,6 @@ const paletteItems: PaletteItem[] = [
     keywords: 'clear reset 清空 重置',
     tool: 'diff',
     action: 'clear',
-  },
-  {
-    id: 'diff:fillAlternate',
-    labelKey: 'diffTool.targets.alternate',
-    groupKey: 'tools.diff.name',
-    subgroupKey: 'diffTool.clipboardTarget',
-    icon: GitDiff,
-    keywords: 'clipboard fill alternate 剪贴板 填入 交替',
-    tool: 'diff',
-    action: 'fill',
-    target: 'alternate',
-    needsInput: true,
-  },
-  {
-    id: 'diff:fillBefore',
-    labelKey: 'diffTool.targets.before',
-    groupKey: 'tools.diff.name',
-    subgroupKey: 'diffTool.clipboardTarget',
-    icon: GitDiff,
-    keywords: 'clipboard fill before 剪贴板 填入 原始 内容',
-    tool: 'diff',
-    action: 'fill',
-    target: 'before',
-    needsInput: true,
-  },
-  {
-    id: 'diff:fillAfter',
-    labelKey: 'diffTool.targets.after',
-    groupKey: 'tools.diff.name',
-    subgroupKey: 'diffTool.clipboardTarget',
-    icon: GitDiff,
-    keywords: 'clipboard fill after 剪贴板 填入 修改 内容',
-    tool: 'diff',
-    action: 'fill',
-    target: 'after',
-    needsInput: true,
   },
 ];
 function loadValue<T>(key: string, fallback: T): T {
@@ -1835,32 +1790,6 @@ function AppShell() {
       if (el instanceof HTMLElement) el.focus();
     });
   };
-  const pasteIntoFocused = async () => {
-    setPaletteOpen(false);
-    const text = (await Clipboard.Text().catch(() => '')) || '';
-    if (!text.trim()) {
-      toast.add({
-        title: t('toast.clipboardEmpty'),
-        description: t('toast.clipboardEmptyDesc'),
-        type: 'warning',
-      });
-      return;
-    }
-    const target = lastFocusedRef.current;
-    if (
-      !(target instanceof HTMLElement) ||
-      (!target.isContentEditable && target.tagName !== 'INPUT' && target.tagName !== 'TEXTAREA')
-    ) {
-      toast.add({ title: t('toast.pasteTarget'), type: 'warning' });
-      return;
-    }
-    requestAnimationFrame(() => {
-      target.focus();
-      document.execCommand('insertText', false, text);
-      if (target.closest('.json-input-cm'))
-        window.dispatchEvent(new CustomEvent('tinkerkit:json-after-fill'));
-    });
-  };
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
@@ -1876,10 +1805,6 @@ function AppShell() {
   const run = (item: IndexedItem) => {
     const toolId = paletteToolId(item);
     if (toolId && !enabledToolSet.has(toolId)) return;
-    if (item.action === 'paste') {
-      void pasteIntoFocused();
-      return;
-    }
     if (!item.toggle) setPaletteOpen(false);
     if (item.settingsAction) {
       switch (item.settingsAction) {
@@ -2058,7 +1983,10 @@ function AppShell() {
   return (
     <>
       <Toaster />
-      <TaskCenter settings={settings} onSettingsChange={(patch) => setSettings((current) => ({ ...current, ...patch }))} />
+      <TaskCenter
+        settings={settings}
+        onSettingsChange={(patch) => setSettings((current) => ({ ...current, ...patch }))}
+      />
       <div className="app-shell relative grid h-dvh grid-rows-[var(--app-titlebar-height)_minmax(0,1fr)] bg-background">
         <div className="ambient pointer-events-none absolute inset-0 z-0" />
         <header
@@ -2492,28 +2420,9 @@ function CommandPalette({
 }) {
   const { t } = useTranslation();
   const [input, setInput] = useState('');
-  const [selectedCommand, setSelectedCommand] = useState<string | undefined>();
-  const listRef = useRef<HTMLDivElement>(null);
-  const lastPointerPositionRef = useRef<{ x: number; y: number } | null>(null);
   useEffect(() => {
     if (open) setInput('');
   }, [open]);
-  useLayoutEffect(() => {
-    if (open) listRef.current?.scrollTo({ top: 0, left: 0 });
-  }, [open]);
-  const handlePointerMoveCapture = (event: React.PointerEvent<HTMLDivElement>) => {
-    const previous = lastPointerPositionRef.current;
-    const hasMoved =
-      event.movementX !== 0 ||
-      event.movementY !== 0 ||
-      (previous !== null && (event.clientX !== previous.x || event.clientY !== previous.y));
-    lastPointerPositionRef.current = { x: event.clientX, y: event.clientY };
-    if (hasMoved && event.target instanceof Element) {
-      const item = event.target.closest<HTMLElement>('[cmdk-item][data-value]');
-      const value = item?.getAttribute('data-value');
-      if (value && item?.getAttribute('aria-disabled') !== 'true') setSelectedCommand(value);
-    }
-  };
   const matches = useMemo(() => {
     const q = input.trim().toLowerCase().replace(/\s+/g, '');
     if (!q) return null;
@@ -2570,23 +2479,6 @@ function CommandPalette({
       );
     return [...grouped.values()].sort((a, b) => groupRank(a.items) - groupRank(b.items));
   }, [list, page]);
-  const initialCommandId = groups[0]?.items[0]?.id;
-  useLayoutEffect(() => {
-    if (open) setSelectedCommand(initialCommandId);
-    else setSelectedCommand(undefined);
-  }, [open, page, input, initialCommandId]);
-  useEffect(() => {
-    if (!open) return;
-    const frame = requestAnimationFrame(() => {
-      const selected = listRef.current?.querySelector<HTMLElement>('[aria-selected="true"]');
-      if (!selected) return;
-      const heading = selected
-        .closest<HTMLElement>('[cmdk-group]')
-        ?.querySelector<HTMLElement>('[cmdk-group-heading]');
-      (heading ?? selected).scrollIntoView({ block: 'nearest' });
-    });
-    return () => cancelAnimationFrame(frame);
-  }, [input, list, open]);
   return (
     <CommandDialog
       open={open}
@@ -2596,15 +2488,7 @@ function CommandPalette({
       title={t('palette.title')}
       description={t('palette.description')}
     >
-      <Command
-        loop
-        value={selectedCommand}
-        onValueChange={setSelectedCommand}
-        disablePointerSelection
-        onPointerMoveCapture={handlePointerMoveCapture}
-        shouldFilter={false}
-        aria-label={t('palette.listLabel')}
-      >
+      <Command shouldFilter={false} aria-label={t('palette.listLabel')}>
         <CommandInput
           autoFocus
           aria-label={t('palette.searchLabel')}
@@ -2612,7 +2496,7 @@ function CommandPalette({
           value={input}
           onValueChange={(value) => setInput(value)}
         />
-        <CommandList listRef={listRef}>
+        <CommandList>
           <CommandEmpty>{t('palette.empty')}</CommandEmpty>
           {groups.map((group, index) => (
             <Fragment key={group.heading}>

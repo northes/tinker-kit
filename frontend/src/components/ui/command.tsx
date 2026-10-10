@@ -12,22 +12,110 @@ import {
 import { InputGroup, InputGroupAddon } from '@/components/ui/input-group';
 import { MagnifyingGlassIcon, CheckIcon } from '@phosphor-icons/react';
 
-function Command({ className, ...props }: React.ComponentProps<typeof CommandPrimitive>) {
+const CommandDialogOpenContext = React.createContext(true);
+const CommandResetSelectionContext = React.createContext<() => void>(() => {});
+
+function Command({
+  className,
+  onValueChange,
+  onPointerMoveCapture,
+  ...props
+}: React.ComponentProps<typeof CommandPrimitive>) {
+  const rootRef = React.useRef<HTMLDivElement>(null);
+  const itemSignature = React.useRef('');
+  const lastPointerPosition = React.useRef<{ x: number; y: number } | null>(null);
+  const [activeValue, setActiveValue] = React.useState<string | undefined>();
+  const dialogOpen = React.useContext(CommandDialogOpenContext);
+
+  React.useLayoutEffect(() => {
+    if (!dialogOpen) return;
+    const first = rootRef.current?.querySelector<HTMLElement>(
+      '[cmdk-item][data-value]:not([hidden]):not([aria-disabled="true"])',
+    );
+    setActiveValue(first?.dataset.value);
+  }, [dialogOpen]);
+
+  React.useLayoutEffect(() => {
+    const items = Array.from(
+      rootRef.current?.querySelectorAll<HTMLElement>('[cmdk-item][data-value]:not([hidden])') ?? [],
+    ).filter((item) => item.getAttribute('aria-disabled') !== 'true');
+    const values = items.map((item) => item.dataset.value ?? '');
+    const signature = values.join('\0');
+    if (signature !== itemSignature.current) {
+      itemSignature.current = signature;
+      setActiveValue(values[0] || undefined);
+      return;
+    }
+
+    if (activeValue && !values.includes(activeValue)) setActiveValue(values[0] || undefined);
+  });
+
+  React.useEffect(() => {
+    if (!activeValue) return;
+    const frame = requestAnimationFrame(() => {
+      const selected = rootRef.current?.querySelector<HTMLElement>('[aria-selected="true"]');
+      if (!selected) return;
+      const heading = selected
+        .closest<HTMLElement>('[cmdk-group]')
+        ?.querySelector<HTMLElement>('[cmdk-group-heading]');
+      (heading ?? selected).scrollIntoView({ block: 'nearest' });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [activeValue]);
+
+  const handlePointerMoveCapture = (event: React.PointerEvent<HTMLDivElement>) => {
+    onPointerMoveCapture?.(event);
+    const previous = lastPointerPosition.current;
+    const hasMoved =
+      event.movementX !== 0 ||
+      event.movementY !== 0 ||
+      (previous !== null && (event.clientX !== previous.x || event.clientY !== previous.y));
+    lastPointerPosition.current = { x: event.clientX, y: event.clientY };
+    if (!hasMoved) return;
+    const item =
+      event.target instanceof Element
+        ? event.target.closest<HTMLElement>('[cmdk-item][data-value]')
+        : null;
+    const value = item?.dataset.value;
+    if (value && item?.getAttribute('aria-disabled') !== 'true') setActiveValue(value);
+  };
+
   return (
-    <CommandPrimitive
-      data-slot="command"
-      className={cn(
-        'flex size-full flex-col overflow-hidden rounded-xl! bg-popover p-1 text-popover-foreground',
-        className,
-      )}
-      {...props}
-    />
+    <CommandResetSelectionContext.Provider
+      value={() => {
+        requestAnimationFrame(() => {
+          const first = rootRef.current?.querySelector<HTMLElement>(
+            '[cmdk-item][data-value]:not([hidden]):not([aria-disabled="true"])',
+          );
+          setActiveValue(first?.dataset.value);
+        });
+      }}
+    >
+      <CommandPrimitive
+        ref={rootRef}
+        data-slot="command"
+        className={cn(
+          'flex size-full flex-col overflow-hidden rounded-xl! bg-popover p-1 text-popover-foreground',
+          className,
+        )}
+        {...props}
+        loop
+        disablePointerSelection
+        value={activeValue}
+        onValueChange={(value) => {
+          setActiveValue(value);
+          onValueChange?.(value);
+        }}
+        onPointerMoveCapture={handlePointerMoveCapture}
+      />
+    </CommandResetSelectionContext.Provider>
   );
 }
 
 function CommandDialog({
   title = 'Command Palette',
   description = 'Search for a command to run...',
+  open,
   children,
   className,
   showCloseButton = false,
@@ -40,25 +128,29 @@ function CommandDialog({
   children: React.ReactNode;
 }) {
   return (
-    <Dialog {...props}>
-      <DialogHeader className="sr-only">
-        <DialogTitle>{title}</DialogTitle>
-        <DialogDescription>{description}</DialogDescription>
-      </DialogHeader>
-      <DialogContent
-        className={cn('top-[12vh] translate-y-0 overflow-hidden rounded-xl! p-0', className)}
-        showCloseButton={showCloseButton}
-      >
-        {children}
-      </DialogContent>
-    </Dialog>
+    <CommandDialogOpenContext.Provider value={open ?? true}>
+      <Dialog open={open} {...props}>
+        <DialogHeader className="sr-only">
+          <DialogTitle>{title}</DialogTitle>
+          <DialogDescription>{description}</DialogDescription>
+        </DialogHeader>
+        <DialogContent
+          className={cn('top-[12vh] translate-y-0 overflow-hidden rounded-xl! p-0', className)}
+          showCloseButton={showCloseButton}
+        >
+          {children}
+        </DialogContent>
+      </Dialog>
+    </CommandDialogOpenContext.Provider>
   );
 }
 
 function CommandInput({
   className,
+  onValueChange,
   ...props
 }: React.ComponentProps<typeof CommandPrimitive.Input>) {
+  const resetSelection = React.useContext(CommandResetSelectionContext);
   return (
     <div data-slot="command-input-wrapper" className="p-1 pb-0">
       <InputGroup className="h-8! rounded-lg! border-input/30 bg-input/30 shadow-none! *:data-[slot=input-group-addon]:pl-2!">
@@ -68,6 +160,10 @@ function CommandInput({
             'w-full select-text text-sm outline-hidden dark:bg-transparent disabled:cursor-not-allowed disabled:opacity-50',
             className,
           )}
+          onValueChange={(value) => {
+            onValueChange?.(value);
+            resetSelection();
+          }}
           {...props}
         />
         <InputGroupAddon>
