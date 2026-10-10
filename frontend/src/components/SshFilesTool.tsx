@@ -677,10 +677,26 @@ type Props = { active: boolean };
 type RemoteFileOperation = 'copy' | 'move' | 'rename' | 'delete' | 'extract' | 'compress';
 type InputRemoteFileOperation = Exclude<RemoteFileOperation, 'delete'>;
 type TransferOperation = Extract<RemoteFileOperation, 'copy' | 'move'>;
+function usesDirectoryTree(operation: InputRemoteFileOperation | undefined) {
+  return (
+    operation === 'copy' ||
+    operation === 'move' ||
+    operation === 'compress' ||
+    operation === 'extract'
+  );
+}
+type RenameMode = 'prefix' | 'suffix' | 'replace' | 'custom';
+type RenameForm = { mode: RenameMode; value: string; find: string; replacement: string };
+type RenamePreview = {
+  source: string;
+  target: string;
+  status: 'ok' | 'empty' | 'invalid' | 'unchanged' | 'duplicate' | 'occupied';
+};
 type OperationDialogState = {
   operation: InputRemoteFileOperation;
   paths: string[];
   value: string;
+  renameForm?: RenameForm;
 } | null;
 type OperationConflictState = {
   taskID: string;
@@ -713,6 +729,50 @@ type CancellableCall = {
 };
 
 const DIRECTORY_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+
+function renameTargetName(name: string, form: RenameForm, isDirectory: boolean) {
+  switch (form.mode) {
+    case 'prefix':
+      return `${form.value}${name}`;
+    case 'suffix': {
+      const dot = name.lastIndexOf('.');
+      return !isDirectory && dot > 0
+        ? `${name.slice(0, dot)}${form.value}${name.slice(dot)}`
+        : `${name}${form.value}`;
+    }
+    case 'replace':
+      return form.find ? name.split(form.find).join(form.replacement) : name;
+    case 'custom':
+      return form.value;
+  }
+}
+
+function buildRenamePreview(paths: string[], form: RenameForm, entries: RemoteFileEntry[]) {
+  const sources = new Set(paths);
+  const occupied = new Set(entries.map((entry) => entry.path));
+  const directories = new Set(entries.filter((entry) => entry.isDir).map((entry) => entry.path));
+  const targets = paths.map((source) => {
+    const name = renameTargetName(basename(source), form, directories.has(source)).trim();
+    return { name, path: normalizeRemotePath(`${remoteParent(source)}/${name}`) };
+  });
+  const counts = new Map<string, number>();
+  for (const target of targets) counts.set(target.path, (counts.get(target.path) ?? 0) + 1);
+  return paths.map((source, index): RenamePreview => {
+    const target = targets[index];
+    const status = !target.name
+      ? 'empty'
+      : target.name === '.' || target.name === '..' || /[\\/]/.test(target.name)
+        ? 'invalid'
+        : target.path === source
+          ? 'unchanged'
+          : (counts.get(target.path) ?? 0) > 1
+            ? 'duplicate'
+            : sources.has(target.path) || occupied.has(target.path)
+              ? 'occupied'
+              : 'ok';
+    return { source, target: target.path, status };
+  });
+}
 
 function directoryListingKey(
   sourceID: string,
@@ -771,11 +831,13 @@ export default function SshFilesTool({ active }: Props) {
   const treeRequestRef = useRef(0);
   const treeViewportRef = useRef<HTMLElement | null>(null);
   const treeCurrentDirectoryRef = useRef<HTMLDivElement | null>(null);
+  const treePositionPathRef = useRef('');
   const treeInitialFocusRef = useRef<HTMLButtonElement | null>(null);
   const treePositionPendingRef = useRef(false);
   const treeLoadingRef = useRef(treeLoading);
   treeLoadingRef.current = treeLoading;
   const [createFolderOpen, setCreateFolderOpen] = useState(false);
+  const [treeCreateFolderOpen, setTreeCreateFolderOpen] = useState(false);
   const [createFolderName, setCreateFolderName] = useState('');
   const [createFolderError, setCreateFolderError] = useState('');
   const [creatingFolder, setCreatingFolder] = useState(false);
@@ -1372,6 +1434,15 @@ export default function SshFilesTool({ active }: Props) {
 
   const operationPathsFor = (entryPath: string) =>
     selected.includes(entryPath) ? selected : [entryPath];
+  const renamePreview = useMemo(
+    () =>
+      operationDialog?.operation === 'rename' && operationDialog.renameForm
+        ? buildRenamePreview(operationDialog.paths, operationDialog.renameForm, entries)
+        : [],
+    [entries, operationDialog],
+  );
+  const renameReady =
+    renamePreview.length > 0 && renamePreview.every((item) => item.status === 'ok');
 
   const startCheckboxDrag = useCheckboxDragSelect(
     (path) => selected.includes(path),
@@ -1385,10 +1456,10 @@ export default function SshFilesTool({ active }: Props) {
       ),
   );
 
-  const copyPathToClipboard = async (pathValue: string) => {
+  const copyPathToClipboard = async (pathValues: string[]) => {
     try {
       if (!navigator.clipboard) throw new Error('clipboard unavailable');
-      await navigator.clipboard.writeText(pathValue);
+      await navigator.clipboard.writeText(pathValues.join('\n'));
       toast.add({ title: t('sshFilesTool.pathCopied'), type: 'success' });
     } catch {
       toast.add({ title: t('sshFilesTool.copyPathFailed'), type: 'error' });
@@ -1509,10 +1580,12 @@ export default function SshFilesTool({ active }: Props) {
 
   const requestFileOperation = (operation: RemoteFileOperation, paths: string[]) => {
     if (!sourceUsable) return;
+    setTreeCreateFolderOpen(false);
     const normalizedPaths = Array.from(new Set(paths.map(normalizeRemotePath)));
     if (!normalizedPaths.length) return;
-    if (operation === 'rename' && normalizedPaths.length !== 1) return;
-    setSelected(normalizedPaths);
+    if (operation === 'rename') {
+      normalizedPaths.sort((left, right) => right.split('/').length - left.split('/').length);
+    }
     setOperationError('');
     if (operation === 'delete') {
       setDeletePaths(normalizedPaths);
@@ -1532,9 +1605,23 @@ export default function SshFilesTool({ active }: Props) {
                 )
               : currentPath
             : currentPath;
-    setOperationDialog({ operation, paths: normalizedPaths, value });
-    if (operation === 'copy' || operation === 'move') {
+    setOperationDialog({
+      operation,
+      paths: normalizedPaths,
+      value,
+      renameForm:
+        operation === 'rename'
+          ? {
+              mode: normalizedPaths.length === 1 ? 'custom' : 'prefix',
+              value: normalizedPaths.length === 1 ? basename(normalizedPaths[0]) : '',
+              find: '',
+              replacement: '',
+            }
+          : undefined,
+    });
+    if (usesDirectoryTree(operation)) {
       const parent = remoteParent(normalizedPaths[0]);
+      treePositionPathRef.current = parent;
       const ancestors =
         parent === '/'
           ? ['/']
@@ -1570,6 +1657,15 @@ export default function SshFilesTool({ active }: Props) {
     return undefined;
   };
 
+  const isKnownTreeDirectory = (path: string) =>
+    path === '/' ||
+    (path === currentPath && !searchActive) ||
+    Array.from(directoryCacheRef.current.values()).some(
+      (listing) =>
+        Date.now() - listing.cachedAt < DIRECTORY_CACHE_TTL_MS &&
+        listing.entries.some((entry) => entry.path === path && entry.isDir),
+    );
+
   const positionTreeAtCurrentDirectory = useCallback(() => {
     if (!treePositionPendingRef.current) return false;
     const viewport = treeViewportRef.current;
@@ -1591,13 +1687,14 @@ export default function SshFilesTool({ active }: Props) {
   );
 
   useLayoutEffect(() => {
-    if (operationDialog?.operation !== 'copy' && operationDialog?.operation !== 'move') return;
+    if (!usesDirectoryTree(operationDialog?.operation)) return;
     if (positionTreeAtCurrentDirectory() && treeLoadingRef.current.length === 0) {
       treePositionPendingRef.current = false;
     }
   }, [
     operationDialog?.operation,
     operationDialog?.paths,
+    operationDialog?.value,
     treeLoading,
     positionTreeAtCurrentDirectory,
   ]);
@@ -1610,6 +1707,12 @@ export default function SshFilesTool({ active }: Props) {
     const currentParent = operationDialog?.paths.length
       ? remoteParent(operationDialog.paths[0])
       : '';
+    const targetDirectory =
+      operationDialog?.operation === 'compress'
+        ? remoteParent(operationDialog.value)
+        : operationDialog?.operation === 'extract' && !isKnownTreeDirectory(operationDialog.value)
+          ? remoteParent(operationDialog.value)
+          : operationDialog?.value;
     const nextAncestor = currentParent.startsWith(`${path === '/' ? '' : path}/`)
       ? `/${currentParent
           .split('/')
@@ -1626,7 +1729,11 @@ export default function SshFilesTool({ active }: Props) {
     return (
       <div key={path}>
         <div
-          ref={path === currentParent ? treeCurrentDirectoryRef : undefined}
+          ref={
+            treePositionPendingRef.current && path === treePositionPathRef.current
+              ? treeCurrentDirectoryRef
+              : undefined
+          }
           className="flex min-w-0 items-center gap-1"
           style={{ paddingLeft: depth * 16 }}
         >
@@ -1635,7 +1742,7 @@ export default function SshFilesTool({ active }: Props) {
             variant="ghost"
             size="icon"
             className="size-7 shrink-0"
-            disabled={operationRunning}
+            disabled={operationRunning || creatingFolder}
             aria-label={t(
               expanded ? 'sshFilesTool.collapseDirectory' : 'sshFilesTool.expandDirectory',
               { name: path },
@@ -1654,11 +1761,21 @@ export default function SshFilesTool({ active }: Props) {
           <Button
             ref={path === currentParent ? treeInitialFocusRef : undefined}
             type="button"
-            variant={operationDialog?.value === path ? 'secondary' : 'ghost'}
+            variant={targetDirectory === path ? 'secondary' : 'ghost'}
             className="h-7 min-w-0 flex-1 justify-start gap-2 px-2 text-xs"
-            disabled={operationRunning}
+            disabled={operationRunning || creatingFolder}
             onClick={() =>
-              setOperationDialog((current) => (current ? { ...current, value: path } : current))
+              setOperationDialog((current) =>
+                current
+                  ? {
+                      ...current,
+                      value:
+                        current.operation === 'compress'
+                          ? normalizeRemotePath(`${path}/${basename(current.value)}`)
+                          : path,
+                    }
+                  : current,
+              )
             }
           >
             <Folder size={14} className="shrink-0" />
@@ -1681,8 +1798,8 @@ export default function SshFilesTool({ active }: Props) {
     );
   };
 
-  const loadTreeDirectory = async (path: string) => {
-    if (treeListing(path)) return;
+  const loadTreeDirectory = async (path: string, force = false) => {
+    if (!force && treeListing(path)) return;
     const requestID = treeRequestRef.current;
     setTreeLoading((current) => [...current, path]);
     setTreeErrors((current) => ({ ...current, [path]: '' }));
@@ -1700,6 +1817,7 @@ export default function SshFilesTool({ active }: Props) {
         directoryListingKey(sourceID, activeSourceProfileID, profileListingKey, path, showHidden),
         listing,
       );
+      if (resolved === currentPath && !searchActive) setEntries(listing.entries);
       directoryCacheRef.current.set(
         directoryListingKey(
           sourceID,
@@ -1716,6 +1834,68 @@ export default function SshFilesTool({ active }: Props) {
     } finally {
       if (requestID === treeRequestRef.current)
         setTreeLoading((current) => current.filter((item) => item !== path));
+    }
+  };
+
+  const openTreeFolderCreator = () => {
+    setCreateFolderName('');
+    setCreateFolderError('');
+    setTreeCreateFolderOpen(true);
+  };
+
+  const executeTreeFolderCreate = async () => {
+    if (!operationDialog || !sourceUsable || creatingFolder) return;
+    const name = createFolderName.trim();
+    if (!name) {
+      setCreateFolderError(t('sshFilesTool.folderNameRequired'));
+      return;
+    }
+    if (name === '.' || name === '..' || /[\\/]/.test(name)) {
+      setCreateFolderError(t('sshFilesTool.folderNameInvalid'));
+      return;
+    }
+    const parent =
+      operationDialog.operation === 'compress'
+        ? remoteParent(operationDialog.value)
+        : operationDialog.operation === 'extract' && !isKnownTreeDirectory(operationDialog.value)
+          ? remoteParent(operationDialog.value)
+          : normalizeRemotePath(operationDialog.value);
+    const createdPath = normalizeRemotePath(`${parent}/${name}`);
+    setCreatingFolder(true);
+    setCreateFolderError('');
+    try {
+      await CreateRemoteDirectory(sourceID, createdPath);
+      await loadTreeDirectory(parent, true);
+      const ancestors =
+        parent === '/'
+          ? ['/']
+          : [
+              '/',
+              ...parent
+                .split('/')
+                .filter(Boolean)
+                .map((_, index, parts) => `/${parts.slice(0, index + 1).join('/')}`),
+            ];
+      treePositionPathRef.current = createdPath;
+      treePositionPendingRef.current = true;
+      setTreeExpanded((current) => Array.from(new Set([...current, ...ancestors])));
+      setOperationDialog((current) =>
+        current
+          ? {
+              ...current,
+              value:
+                current.operation === 'compress'
+                  ? normalizeRemotePath(`${createdPath}/${basename(current.value)}`)
+                  : createdPath,
+            }
+          : current,
+      );
+      setTreeCreateFolderOpen(false);
+      setCreateFolderName('');
+    } catch (reason) {
+      setCreateFolderError(errorMessage(reason));
+    } finally {
+      setCreatingFolder(false);
     }
   };
 
@@ -1777,19 +1957,51 @@ export default function SshFilesTool({ active }: Props) {
   const executeOperationDialog = async () => {
     if (!operationDialog || operationRunning) return;
     const current = operationDialog;
+    if (current.operation === 'rename') {
+      if (!current.renameForm || !renameReady || !sourceUsable) {
+        setOperationError(t('sshFilesTool.renamePreviewInvalid'));
+        return;
+      }
+      setOperationRunning(true);
+      setOperationError('');
+      let completed = 0;
+      try {
+        for (const item of renamePreview) {
+          await OperateRemoteFiles(sourceID, 'rename', [item.source], item.target, '');
+          completed++;
+        }
+        setOperationDialog(null);
+        setSelected([]);
+        toast.add({
+          title: t('sshFilesTool.operationSucceeded', { operation: t('sshFilesTool.rename') }),
+          type: 'success',
+        });
+      } catch (reason) {
+        setOperationDialog({ ...current, paths: current.paths.slice(completed) });
+        setSelected((paths) =>
+          paths.filter((path) => !current.paths.slice(0, completed).includes(path)),
+        );
+        setOperationError(
+          completed
+            ? t('sshFilesTool.renamePartialFailed', { completed, error: errorMessage(reason) })
+            : errorMessage(reason),
+        );
+      } finally {
+        if (completed) {
+          resetSearchState();
+          await loadDirectory(sourceID, currentPath, showHidden, true);
+        }
+        setOperationRunning(false);
+      }
+      return;
+    }
     const value = current.value.trim();
     if (!value) {
       setOperationError(t('sshFilesTool.operationTargetRequired'));
       return;
     }
     let target = normalizeRemotePath(value);
-    if (current.operation === 'rename') {
-      if (value === '.' || value === '..' || /[\\/]/.test(value)) {
-        setOperationError(t('sshFilesTool.renameNameInvalid'));
-        return;
-      }
-      target = normalizeRemotePath(`${remoteParent(current.paths[0])}/${value}`);
-    } else if (current.operation === 'compress' && !isArchivePath(target)) {
+    if (current.operation === 'compress' && !isArchivePath(target)) {
       setOperationError(t('sshFilesTool.archiveExtensionRequired'));
       return;
     }
@@ -2716,12 +2928,16 @@ export default function SshFilesTool({ active }: Props) {
                             <ContextMenuGroup>
                               <ContextMenuItem
                                 disabled={operationRunning}
-                                onClick={() => void copyPathToClipboard(entry.path)}
+                                onClick={() => void copyPathToClipboard(operationPaths)}
                               >
                                 <Copy size={14} weight="duotone" aria-hidden="true" />
-                                {t('sshFilesTool.copyPath')}
+                                {t(
+                                  operationPaths.length > 1
+                                    ? 'sshFilesTool.batchCopyPath'
+                                    : 'sshFilesTool.copyPath',
+                                )}
                               </ContextMenuItem>
-                              {entry.isDir ? (
+                              {entry.isDir && operationPaths.length === 1 ? (
                                 <ContextMenuItem
                                   disabled={favoritesSaving}
                                   onClick={() => void toggleFavorite(entry.path)}
@@ -2746,21 +2962,33 @@ export default function SshFilesTool({ active }: Props) {
                                 onClick={() => requestFileOperation('copy', operationPaths)}
                               >
                                 <Copy size={14} weight="duotone" aria-hidden="true" />
-                                {t('sshFilesTool.copy')}
+                                {t(
+                                  operationPaths.length > 1
+                                    ? 'sshFilesTool.batchCopy'
+                                    : 'sshFilesTool.copy',
+                                )}
                               </ContextMenuItem>
                               <ContextMenuItem
                                 disabled={operationRunning}
                                 onClick={() => requestFileOperation('move', operationPaths)}
                               >
                                 <ArrowsLeftRight size={14} weight="duotone" aria-hidden="true" />
-                                {t('sshFilesTool.move')}
+                                {t(
+                                  operationPaths.length > 1
+                                    ? 'sshFilesTool.batchMove'
+                                    : 'sshFilesTool.move',
+                                )}
                               </ContextMenuItem>
                               <ContextMenuItem
-                                disabled={operationRunning || operationPaths.length !== 1}
+                                disabled={operationRunning}
                                 onClick={() => requestFileOperation('rename', operationPaths)}
                               >
                                 <PencilSimple size={14} weight="duotone" aria-hidden="true" />
-                                {t('sshFilesTool.rename')}
+                                {t(
+                                  operationPaths.length > 1
+                                    ? 'sshFilesTool.batchRename'
+                                    : 'sshFilesTool.rename',
+                                )}
                               </ContextMenuItem>
                               <ContextMenuItem
                                 variant="destructive"
@@ -2768,7 +2996,11 @@ export default function SshFilesTool({ active }: Props) {
                                 onClick={() => requestFileOperation('delete', operationPaths)}
                               >
                                 <Trash size={14} weight="duotone" aria-hidden="true" />
-                                {t('sshFilesTool.delete')}
+                                {t(
+                                  operationPaths.length > 1
+                                    ? 'sshFilesTool.batchDelete'
+                                    : 'sshFilesTool.delete',
+                                )}
                               </ContextMenuItem>
                             </ContextMenuGroup>
                             <ContextMenuSeparator />
@@ -2778,21 +3010,33 @@ export default function SshFilesTool({ active }: Props) {
                                 onClick={() => requestFileOperation('extract', operationPaths)}
                               >
                                 <FileArchive size={14} weight="duotone" aria-hidden="true" />
-                                {t('sshFilesTool.extract')}
+                                {t(
+                                  operationPaths.length > 1
+                                    ? 'sshFilesTool.batchExtract'
+                                    : 'sshFilesTool.extract',
+                                )}
                               </ContextMenuItem>
                               <ContextMenuItem
                                 disabled={operationRunning}
                                 onClick={() => requestFileOperation('compress', operationPaths)}
                               >
                                 <Archive size={14} weight="duotone" aria-hidden="true" />
-                                {t('sshFilesTool.compress')}
+                                {t(
+                                  operationPaths.length > 1
+                                    ? 'sshFilesTool.batchCompress'
+                                    : 'sshFilesTool.compress',
+                                )}
                               </ContextMenuItem>
                               <ContextMenuItem
                                 disabled={operationRunning}
                                 onClick={() => void downloadSelected(operationPaths)}
                               >
                                 <DownloadSimple size={14} weight="duotone" aria-hidden="true" />
-                                {t('sshFilesTool.download')}
+                                {t(
+                                  operationPaths.length > 1
+                                    ? 'sshFilesTool.batchDownload'
+                                    : 'sshFilesTool.download',
+                                )}
                               </ContextMenuItem>
                             </ContextMenuGroup>
                           </ContextMenuContent>
@@ -2813,7 +3057,7 @@ export default function SshFilesTool({ active }: Props) {
             <ContextMenuGroup>
               <ContextMenuItem
                 disabled={!sourceUsable || isLoading}
-                onClick={() => void copyPathToClipboard(currentPath)}
+                onClick={() => void copyPathToClipboard([currentPath])}
               >
                 <Copy size={14} weight="duotone" aria-hidden="true" />
                 {t('sshFilesTool.copyPath')}
@@ -2882,72 +3126,6 @@ export default function SshFilesTool({ active }: Props) {
                 )}
               </button>
             ) : null}
-          </div>
-          <div className="flex min-h-[30px] flex-none flex-wrap items-center justify-end gap-2">
-            <DropdownMenu>
-              <DropdownMenuTrigger
-                render={
-                  <Button
-                    variant="outline"
-                    className={`h-[30px] flex-none px-[11px] text-[11px]${selected.length ? '' : ' invisible pointer-events-none'}`}
-                    disabled={operationRunning || selected.length === 0}
-                    aria-hidden={selected.length === 0}
-                    tabIndex={selected.length > 0 ? 0 : -1}
-                  />
-                }
-              >
-                <ListDashes data-icon="inline-start" size={14} />
-                {t('sshFilesTool.batchActions')}
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="min-w-44">
-                <DropdownMenuGroup>
-                  <DropdownMenuItem
-                    disabled={operationRunning}
-                    onClick={() => requestFileOperation('copy', selected)}
-                  >
-                    <Copy size={14} weight="duotone" aria-hidden="true" />
-                    {t('sshFilesTool.copy')}
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    disabled={operationRunning}
-                    onClick={() => requestFileOperation('move', selected)}
-                  >
-                    <ArrowsLeftRight size={14} weight="duotone" aria-hidden="true" />
-                    {t('sshFilesTool.move')}
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    disabled={operationRunning || !selected.every(isArchivePath)}
-                    onClick={() => requestFileOperation('extract', selected)}
-                  >
-                    <FileArchive size={14} weight="duotone" aria-hidden="true" />
-                    {t('sshFilesTool.extract')}
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    disabled={operationRunning}
-                    onClick={() => requestFileOperation('compress', selected)}
-                  >
-                    <Archive size={14} weight="duotone" aria-hidden="true" />
-                    {t('sshFilesTool.compress')}
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    disabled={operationRunning}
-                    onClick={() => void downloadSelected(selected)}
-                  >
-                    <DownloadSimple size={14} weight="duotone" aria-hidden="true" />
-                    {t('sshFilesTool.download')}
-                  </DropdownMenuItem>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem
-                    variant="destructive"
-                    disabled={operationRunning}
-                    onClick={() => requestFileOperation('delete', selected)}
-                  >
-                    <Trash size={14} weight="duotone" aria-hidden="true" />
-                    {t('sshFilesTool.delete')}
-                  </DropdownMenuItem>
-                </DropdownMenuGroup>
-              </DropdownMenuContent>
-            </DropdownMenu>
           </div>
         </div>
       </ToolLayoutFooter>
@@ -3284,23 +3462,26 @@ export default function SshFilesTool({ active }: Props) {
       <Dialog
         open={operationDialog !== null}
         onOpenChange={(open) => {
-          if (!open && !operationRunning) {
+          if (!open && !operationRunning && !creatingFolder) {
             setOperationDialog(null);
             setOperationError('');
+            setTreeCreateFolderOpen(false);
           }
         }}
       >
         <DialogContent
           initialFocus={
-            operationDialog?.operation === 'copy' || operationDialog?.operation === 'move'
-              ? treeInitialFocusRef
-              : undefined
+            usesDirectoryTree(operationDialog?.operation) ? treeInitialFocusRef : undefined
           }
           className="flex w-[min(560px,calc(100vw-32px))] max-w-none flex-col gap-5 sm:max-w-none"
         >
           <DialogHeader>
             <DialogTitle className="text-base">
-              {operationDialog ? t(`sshFilesTool.${operationDialog.operation}Title`) : ''}
+              {operationDialog?.operation === 'rename' && operationDialog.paths.length > 1
+                ? t('sshFilesTool.batchRenameTitle')
+                : operationDialog
+                  ? t(`sshFilesTool.${operationDialog.operation}Title`)
+                  : ''}
             </DialogTitle>
             <DialogDescription className="text-xs leading-5">
               {t('sshFilesTool.operationDesc', { count: operationDialog?.paths.length ?? 0 })}
@@ -3314,11 +3495,75 @@ export default function SshFilesTool({ active }: Props) {
               void executeOperationDialog();
             }}
           >
-            {operationDialog?.operation === 'copy' || operationDialog?.operation === 'move' ? (
+            {usesDirectoryTree(operationDialog?.operation) ? (
               <div className="grid gap-1.5">
-                <Label className="text-xs text-muted-foreground">
-                  {t('sshFilesTool.directoryTree')}
-                </Label>
+                <div className="flex items-center justify-between gap-2">
+                  <Label className="text-xs text-muted-foreground">
+                    {t('sshFilesTool.directoryTree')}
+                  </Label>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={operationRunning || creatingFolder}
+                    onClick={() =>
+                      treeCreateFolderOpen
+                        ? setTreeCreateFolderOpen(false)
+                        : openTreeFolderCreator()
+                    }
+                  >
+                    {t('sshFilesTool.createFolder')}
+                  </Button>
+                </div>
+                {treeCreateFolderOpen ? (
+                  <div className="grid gap-1.5">
+                    <Label htmlFor="ssh-tree-create-folder-name" className="sr-only">
+                      {t('sshFilesTool.folderName')}
+                    </Label>
+                    <div className="flex min-w-0 gap-2">
+                      <Input
+                        id="ssh-tree-create-folder-name"
+                        value={createFolderName}
+                        placeholder={t('sshFilesTool.folderName')}
+                        disabled={creatingFolder}
+                        autoFocus
+                        onChange={(event) => {
+                          setCreateFolderName(event.target.value);
+                          setCreateFolderError('');
+                        }}
+                        onKeyDown={(event) => {
+                          if (event.key === 'Enter') {
+                            event.preventDefault();
+                            void executeTreeFolderCreate();
+                          }
+                        }}
+                      />
+                      <Button
+                        type="button"
+                        size="sm"
+                        disabled={creatingFolder}
+                        onClick={() => void executeTreeFolderCreate()}
+                      >
+                        {creatingFolder ? <Spinner data-icon="inline-start" /> : null}
+                        {t('sshFilesTool.createFolderAction')}
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        disabled={creatingFolder}
+                        onClick={() => setTreeCreateFolderOpen(false)}
+                      >
+                        {t('common.cancel')}
+                      </Button>
+                    </div>
+                    {createFolderError ? (
+                      <p className="m-0 text-xs text-destructive" role="alert">
+                        {t('sshFilesTool.folderCreateFailed')}: {createFolderError}
+                      </p>
+                    ) : null}
+                  </div>
+                ) : null}
                 <ScrollArea
                   className="h-56 rounded-md border border-border p-2"
                   options={{ overflow: { x: 'hidden' } }}
@@ -3328,33 +3573,170 @@ export default function SshFilesTool({ active }: Props) {
                 </ScrollArea>
               </div>
             ) : null}
-            <div className="grid gap-1.5">
-              <Label htmlFor="ssh-file-operation-target" className="text-xs text-muted-foreground">
-                {operationDialog?.operation === 'rename'
-                  ? t('sshFilesTool.newName')
-                  : operationDialog?.operation === 'compress'
+            {operationDialog?.operation === 'rename' && operationDialog.renameForm ? (
+              <div className="grid gap-3">
+                <div className="grid gap-1.5">
+                  <Label>{t('sshFilesTool.renameMode')}</Label>
+                  <div className="flex flex-wrap gap-1">
+                    {(['prefix', 'suffix', 'replace', 'custom'] as const).map((mode) => (
+                      <Button
+                        key={mode}
+                        type="button"
+                        size="sm"
+                        variant={operationDialog.renameForm?.mode === mode ? 'secondary' : 'ghost'}
+                        disabled={operationRunning}
+                        onClick={() => {
+                          setOperationError('');
+                          setOperationDialog((current) =>
+                            current?.renameForm
+                              ? {
+                                  ...current,
+                                  renameForm: {
+                                    ...current.renameForm,
+                                    mode,
+                                    value: mode === 'custom' ? basename(current.paths[0]) : '',
+                                  },
+                                }
+                              : current,
+                          );
+                        }}
+                      >
+                        {t(`sshFilesTool.renameMode${mode[0].toUpperCase()}${mode.slice(1)}`)}
+                      </Button>
+                    ))}
+                  </div>
+                </div>
+                {operationDialog.renameForm.mode === 'replace' ? (
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="grid gap-1.5">
+                      <Label htmlFor="ssh-file-rename-find">{t('sshFilesTool.renameFind')}</Label>
+                      <Input
+                        id="ssh-file-rename-find"
+                        value={operationDialog.renameForm.find}
+                        disabled={operationRunning}
+                        onChange={(event) => {
+                          setOperationError('');
+                          setOperationDialog((current) =>
+                            current?.renameForm
+                              ? {
+                                  ...current,
+                                  renameForm: { ...current.renameForm, find: event.target.value },
+                                }
+                              : current,
+                          );
+                        }}
+                      />
+                    </div>
+                    <div className="grid gap-1.5">
+                      <Label htmlFor="ssh-file-rename-replacement">
+                        {t('sshFilesTool.renameReplacement')}
+                      </Label>
+                      <Input
+                        id="ssh-file-rename-replacement"
+                        value={operationDialog.renameForm.replacement}
+                        disabled={operationRunning}
+                        onChange={(event) => {
+                          setOperationError('');
+                          setOperationDialog((current) =>
+                            current?.renameForm
+                              ? {
+                                  ...current,
+                                  renameForm: {
+                                    ...current.renameForm,
+                                    replacement: event.target.value,
+                                  },
+                                }
+                              : current,
+                          );
+                        }}
+                      />
+                    </div>
+                  </div>
+                ) : (
+                  <div className="grid gap-1.5">
+                    <Label htmlFor="ssh-file-rename-value">
+                      {t(
+                        operationDialog.renameForm.mode === 'custom'
+                          ? 'sshFilesTool.newName'
+                          : operationDialog.renameForm.mode === 'prefix'
+                            ? 'sshFilesTool.renamePrefix'
+                            : 'sshFilesTool.renameSuffix',
+                      )}
+                    </Label>
+                    <Input
+                      id="ssh-file-rename-value"
+                      value={operationDialog.renameForm.value}
+                      disabled={operationRunning}
+                      onChange={(event) => {
+                        setOperationError('');
+                        setOperationDialog((current) =>
+                          current?.renameForm
+                            ? {
+                                ...current,
+                                renameForm: { ...current.renameForm, value: event.target.value },
+                              }
+                            : current,
+                        );
+                      }}
+                    />
+                  </div>
+                )}
+                <div className="grid gap-1.5">
+                  <Label>{t('sshFilesTool.renamePreview')}</Label>
+                  <ScrollArea
+                    className="max-h-40 rounded-md border border-border bg-muted/40 px-3 py-2"
+                    options={{ overflow: { x: 'hidden' } }}
+                  >
+                    <div className="grid gap-2">
+                      {renamePreview.map((item) => (
+                        <div key={item.source} className="grid gap-0.5 font-mono text-xs">
+                          <span className="break-all text-muted-foreground">{item.source}</span>
+                          <span
+                            className={`break-all ${item.status === 'ok' ? 'text-foreground' : 'text-destructive'}`}
+                          >
+                            → {item.target}
+                          </span>
+                          {item.status !== 'ok' ? (
+                            <span className="text-destructive">
+                              {t(
+                                `sshFilesTool.renameStatus${item.status[0].toUpperCase()}${item.status.slice(1)}`,
+                              )}
+                            </span>
+                          ) : null}
+                        </div>
+                      ))}
+                    </div>
+                  </ScrollArea>
+                </div>
+              </div>
+            ) : (
+              <div className="grid gap-1.5">
+                <Label
+                  htmlFor="ssh-file-operation-target"
+                  className="text-xs text-muted-foreground"
+                >
+                  {operationDialog?.operation === 'compress'
                     ? t('sshFilesTool.archivePath')
                     : t('sshFilesTool.targetDirectory')}
-              </Label>
-              <Input
-                id="ssh-file-operation-target"
-                value={operationDialog?.value ?? ''}
-                onChange={(event) =>
-                  setOperationDialog((current) =>
-                    current ? { ...current, value: event.target.value } : current,
-                  )
-                }
-                className="font-mono text-xs"
-                disabled={operationRunning}
-              />
-              <p className="m-0 text-[10px] leading-4 text-muted-foreground">
-                {operationDialog?.operation === 'compress'
-                  ? t('sshFilesTool.archivePathHint')
-                  : operationDialog?.operation === 'rename'
-                    ? t('sshFilesTool.renameNameHint')
+                </Label>
+                <Input
+                  id="ssh-file-operation-target"
+                  value={operationDialog?.value ?? ''}
+                  onChange={(event) =>
+                    setOperationDialog((current) =>
+                      current ? { ...current, value: event.target.value } : current,
+                    )
+                  }
+                  className="font-mono text-xs"
+                  disabled={operationRunning}
+                />
+                <p className="m-0 text-[10px] leading-4 text-muted-foreground">
+                  {operationDialog?.operation === 'compress'
+                    ? t('sshFilesTool.archivePathHint')
                     : t('sshFilesTool.targetDirectoryHint')}
-              </p>
-            </div>
+                </p>
+              </div>
+            )}
             {operationError ? (
               <div
                 className="flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive"
@@ -3370,7 +3752,7 @@ export default function SshFilesTool({ active }: Props) {
           <DialogFooter>
             <Button
               variant="outline"
-              disabled={operationRunning}
+              disabled={operationRunning || creatingFolder}
               onClick={() => setOperationDialog(null)}
             >
               {t('common.cancel')}
@@ -3378,7 +3760,12 @@ export default function SshFilesTool({ active }: Props) {
             <Button
               type="submit"
               form="ssh-file-operation-form"
-              disabled={operationRunning || operationDialog === null}
+              disabled={
+                operationRunning ||
+                creatingFolder ||
+                operationDialog === null ||
+                (operationDialog?.operation === 'rename' && !renameReady)
+              }
             >
               {operationRunning ? <Spinner data-icon="inline-start" /> : null}
               {t('sshFilesTool.applyOperation')}
