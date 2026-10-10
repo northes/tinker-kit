@@ -54,6 +54,7 @@ import {
   ToolLayoutFooter,
   ToolLayoutHeader,
   ToolLayoutToolbar,
+  ToolHeaderField,
   useCheckboxDragSelect,
   type PendingAction,
   type ToolId,
@@ -592,14 +593,12 @@ export function ImageManagerDetailView({
   error,
   loading,
   onBack,
-  sourceLabel,
 }: {
   active: boolean;
   detail: DockerImageDetail | null;
   error: string;
   loading: boolean;
   onBack: () => void;
-  sourceLabel: string;
 }) {
   const { t, i18n } = useTranslation();
   const unnamed = t('imageManagerTool.unnamed');
@@ -817,10 +816,7 @@ export function ImageManagerDetailView({
   return (
     <Reveal index={0} fill active={active}>
       <ToolLayout>
-        <ToolLayoutHeader
-          title={t('imageManagerTool.detailTitle')}
-          subtitle={sourceLabel || t('imageManagerTool.title')}
-        />
+        <ToolLayoutHeader title={t('imageManagerTool.detailTitle')} />
         <ToolLayoutToolbar
           left={
             <Button
@@ -2359,15 +2355,15 @@ export default function ImageManagerTool({
   return (
     <Reveal index={0} fill active={active}>
       <ToolLayout>
-        <ToolLayoutHeader
-          title={t('imageManagerTool.title')}
-          subtitle={t('imageManagerTool.subtitle')}
-        />
+        <ToolLayoutHeader title={t('imageManagerTool.title')} />
         <ToolLayoutToolbar
           left={
             <div className="flex min-w-0 flex-wrap items-end gap-4 max-[700px]:w-full">
-              <div className="flex min-w-0 flex-col gap-1 text-[10px] font-medium text-muted-foreground max-[700px]:w-full">
-                <span id={sourceLabelId}>{t('imageManagerTool.source')}</span>
+              <ToolHeaderField
+                label={t('imageManagerTool.source')}
+                labelId={sourceLabelId}
+                className="max-[700px]:w-full"
+              >
                 <Select
                   items={sources.map((item) => ({
                     value: item.id,
@@ -2385,8 +2381,8 @@ export default function ImageManagerTool({
                   }}
                 >
                   <SelectTrigger
-                    className="h-[30px] w-[220px] max-w-full text-[11px] max-[700px]:w-full"
                     aria-labelledby={sourceLabelId}
+                    className="w-[220px] max-w-full max-[700px]:w-full"
                   >
                     <SelectValue />
                   </SelectTrigger>
@@ -2412,7 +2408,7 @@ export default function ImageManagerTool({
                     {t('imageManagerTool.sshProfileMissing')}
                   </Badge>
                 ) : null}
-              </div>
+              </ToolHeaderField>
               <ImageSearchField
                 id="image-manager-search"
                 label={t('imageManagerTool.search')}

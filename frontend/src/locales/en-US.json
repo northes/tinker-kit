@@ -530,7 +530,6 @@
   },
   "textGeneratorTool": {
     "title": "Text Generator",
-    "subtitle": "Generate random text from official or custom sources",
     "source": "Source",
     "uuid": "UUID",
     "charset": "Letters & numbers",
@@ -671,7 +670,6 @@
   },
   "qrTool": {
     "title": "QR Code",
-    "subtitle": "Generate QR codes from text live; paste or drop images to decode",
     "actions": "QR code actions",
     "input": "Text input",
     "preview": "QR code preview",
@@ -781,7 +779,6 @@
   },
   "imageManagerTool": {
     "title": "Image Manager",
-    "subtitle": "Manage Docker images on local, SSH, and Registry target hosts",
     "source": "Target host",
     "refresh": "Refresh",
     "manageSources": "Manage",
@@ -1070,7 +1067,6 @@
   },
   "serviceManagerTool": {
     "title": "Containers & Services",
-    "subtitle": "Manage Docker, PM2, and Systemd services on local and SSH hosts",
     "target": "Target host",
     "localTarget": "Local machine",
     "manageTargets": "Manage",
@@ -1560,7 +1556,6 @@
   },
   "sshFilesTool": {
     "title": "SSH Files",
-    "subtitle": "Browse, upload, and download remote files in real time",
     "source": "Target host",
     "noSource": "No target host configured",
     "loadingSources": "Loading SSH file sources…",

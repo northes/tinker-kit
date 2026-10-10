@@ -1,6 +1,7 @@
 import {
   useCallback,
   useEffect,
+  useId,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -69,10 +70,11 @@ import {
   ToolLayoutContent,
   ToolLayoutHeader,
   ToolLayoutToolbar,
+  ToolHeaderField,
   WheelText,
 } from './shared';
 import { useSSHProfiles } from './SSHProfileManagerDialog';
-import { SSHProfileSelect } from './SSHProfileSelect';
+import { SSHProfileFormField } from './SSHProfileFormField';
 import { ConfirmDialog } from './ConfirmDialog';
 import { Badge } from './ui/badge';
 import {
@@ -263,6 +265,7 @@ export default function ServiceManagerTool({
   ) => void;
 }) {
   const { t } = useTranslation();
+  const targetLabelId = useId();
   const { profiles, reload } = useSSHProfiles();
   const [targets, setTargets] = useState<ServiceTarget[]>([]);
   const [targetID, setTargetID] = useState('local');
@@ -1038,17 +1041,15 @@ export default function ServiceManagerTool({
   return (
     <Reveal active={active} fill>
       <ToolLayout>
-        <ToolLayoutHeader
-          title={t('serviceManagerTool.title')}
-          subtitle={t('serviceManagerTool.subtitle')}
-        />
+        <ToolLayoutHeader title={t('serviceManagerTool.title')} />
         <ToolLayoutToolbar
           left={
             <>
-              <div className="flex min-w-0 flex-col gap-1 max-[700px]:w-full">
-                <span className="text-[10px] font-medium text-muted-foreground">
-                  {t('serviceManagerTool.target')}
-                </span>
+              <ToolHeaderField
+                label={t('serviceManagerTool.target')}
+                labelId={targetLabelId}
+                className="max-[700px]:w-full"
+              >
                 <Select
                   disabled={view === 'workspace'}
                   items={targets.map((item) => ({
@@ -1064,7 +1065,10 @@ export default function ServiceManagerTool({
                     selectTarget(value);
                   }}
                 >
-                  <SelectTrigger className="min-w-48">
+                  <SelectTrigger
+                    aria-labelledby={targetLabelId}
+                    className="w-[220px] max-w-full max-[700px]:w-full"
+                  >
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -1089,7 +1093,7 @@ export default function ServiceManagerTool({
                     {t('serviceManagerTool.sshProfileMissing')}
                   </Badge>
                 ) : null}
-              </div>
+              </ToolHeaderField>
               <div className="flex min-w-0 flex-col gap-1 max-[700px]:w-full">
                 <span className="text-[10px] font-medium text-muted-foreground">
                   {t('serviceManagerTool.status')}

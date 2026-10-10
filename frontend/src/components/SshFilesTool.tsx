@@ -119,6 +119,7 @@ import {
   ToolLayoutFooter,
   ToolLayoutHeader,
   ToolLayoutToolbar,
+  ToolHeaderField,
   useCheckboxDragSelect,
 } from './shared';
 import { useFileDrop } from './fileDrop';
@@ -1745,12 +1746,15 @@ export default function SshFilesTool({ active }: Props) {
 
   return (
     <ToolLayout>
-      <ToolLayoutHeader title={t('sshFilesTool.title')} subtitle={t('sshFilesTool.subtitle')} />
+      <ToolLayoutHeader title={t('sshFilesTool.title')} />
       <ToolLayoutToolbar
         left={
           <div className="flex min-w-0 flex-wrap items-end gap-3 max-[700px]:w-full">
-            <div className="flex min-w-[220px] flex-col gap-1 text-[10px] font-medium text-muted-foreground max-[700px]:w-full">
-              <span id="ssh-file-source-label">{t('sshFilesTool.source')}</span>
+            <ToolHeaderField
+              label={t('sshFilesTool.source')}
+              labelId="ssh-file-source-label"
+              className="min-w-[220px] max-[700px]:w-full"
+            >
               <Select
                 items={sources.map((item) => ({ value: item.id, label: item.name }))}
                 value={sourceID || null}
@@ -1773,8 +1777,8 @@ export default function SshFilesTool({ active }: Props) {
                 }}
               >
                 <SelectTrigger
-                  className="h-[30px] w-[220px] max-w-full text-[11px] max-[700px]:w-full"
                   aria-labelledby="ssh-file-source-label"
+                  className="w-[220px] max-w-full max-[700px]:w-full"
                 >
                   <SelectValue placeholder={t('sshFilesTool.noSource')} />
                 </SelectTrigger>
@@ -1785,7 +1789,7 @@ export default function SshFilesTool({ active }: Props) {
                   {t('sshFilesTool.sshProfileMissing')}
                 </Badge>
               ) : null}
-            </div>
+            </ToolHeaderField>
             <label className="flex items-center gap-2 pb-1.5 text-xs text-muted-foreground">
               <Switch
                 size="sm"

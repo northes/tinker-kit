@@ -530,7 +530,6 @@
   },
   "textGeneratorTool": {
     "title": "文本生成",
-    "subtitle": "从官方或自定义来源生成随机文本",
     "source": "来源",
     "uuid": "UUID",
     "charset": "英文数字",
@@ -671,7 +670,6 @@
   },
   "qrTool": {
     "title": "二维码",
-    "subtitle": "文本实时生成二维码；粘贴或拖入二维码图片自动解析",
     "actions": "二维码操作",
     "input": "文本输入",
     "preview": "二维码预览",
@@ -781,7 +779,6 @@
   },
   "imageManagerTool": {
     "title": "镜像管理",
-    "subtitle": "管理本机、SSH 与 Registry 目标主机上的 Docker 镜像",
     "source": "目标主机",
     "refresh": "刷新",
     "manageSources": "管理",
@@ -1070,7 +1067,6 @@
   },
   "serviceManagerTool": {
     "title": "容器与服务",
-    "subtitle": "管理本机与 SSH 主机上的 Docker、PM2 和 Systemd 服务",
     "target": "目标主机",
     "localTarget": "本机",
     "manageTargets": "管理",
@@ -1560,7 +1556,6 @@
   },
   "sshFilesTool": {
     "title": "SSH 文件管理",
-    "subtitle": "实时浏览、上传和下载远程文件",
     "source": "目标主机",
     "noSource": "未配置目标主机",
     "loadingSources": "正在读取 SSH 文件源…",

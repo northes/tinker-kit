@@ -2242,7 +2242,6 @@ function AppShell() {
                     imageId={imageDetailRoute.imageId}
                     onBack={() => routerNavigate(-1)}
                     record={record}
-                    settings={settings}
                     sourceId={imageDetailRoute.sourceId}
                   />
                 </Suspense>

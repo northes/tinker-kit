@@ -135,11 +135,13 @@ export function ToolLayoutHeader({ title, subtitle }: { title: string; subtitle?
 export function ToolHeaderField({
   label,
   htmlFor,
+  labelId,
   children,
   className = '',
 }: {
   label: string;
   htmlFor?: string;
+  labelId?: string;
   children: ReactNode;
   className?: string;
 }) {
@@ -147,11 +149,13 @@ export function ToolHeaderField({
   return (
     <div className={`flex min-w-0 flex-col gap-1${className ? ` ${className}` : ''}`}>
       {htmlFor ? (
-        <label className={labelClassName} htmlFor={htmlFor}>
+        <label id={labelId} className={labelClassName} htmlFor={htmlFor}>
           {label}
         </label>
       ) : (
-        <span className={labelClassName}>{label}</span>
+        <span id={labelId} className={labelClassName}>
+          {label}
+        </span>
       )}
       {children}
     </div>

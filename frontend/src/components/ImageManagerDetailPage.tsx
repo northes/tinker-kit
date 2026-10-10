@@ -1,32 +1,22 @@
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { InspectDockerImage } from '../../bindings/changeme/imageservice';
-import type { Config as Settings, DockerImageDetail } from '../../bindings/changeme/models';
+import type { DockerImageDetail } from '../../bindings/changeme/models';
 import { ImageManagerDetailView } from './ImageManagerTool';
 import type { ToolId } from './shared';
 import { formatBackendError as errorMessage } from '../lib/backend-error';
-
-function sourceLabel(settings: Settings, sourceId: string, localSourceLabel: string) {
-  const source = (settings.imageSources ?? []).find((item) => item.id === sourceId);
-  if (!source || source.id === 'local' || source.kind === 'local') {
-    return sourceId === 'local' ? localSourceLabel : sourceId;
-  }
-  return source.name || source.registryURL || source.sshProfileID || sourceId;
-}
 
 export default function ImageManagerDetailPage({
   active,
   imageId,
   onBack,
   record,
-  settings,
   sourceId,
 }: {
   active: boolean;
   imageId: string;
   onBack: () => void;
   record: (tool: ToolId, action: string, detail: string, input: string, output?: string) => void;
-  settings: Settings;
   sourceId: string;
 }) {
   const { t } = useTranslation();
@@ -35,8 +25,6 @@ export default function ImageManagerDetailPage({
   const [error, setError] = useState('');
   const recordRef = useRef(record);
   recordRef.current = record;
-
-  const label = sourceLabel(settings, sourceId, t('imageManagerTool.localSource'));
 
   useEffect(() => {
     let mounted = true;
@@ -73,7 +61,6 @@ export default function ImageManagerDetailPage({
       error={error}
       loading={loading}
       onBack={onBack}
-      sourceLabel={label}
     />
   );
 }

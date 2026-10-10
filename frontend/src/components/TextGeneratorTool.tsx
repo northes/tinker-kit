@@ -1,13 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import {
-  Copy,
-  GearSix,
-  HashStraight,
-  PencilSimple,
-  Plus,
-  Trash,
-} from '@phosphor-icons/react';
+import { Copy, GearSix, HashStraight, PencilSimple, Plus, Trash } from '@phosphor-icons/react';
 import type { TextGeneratorSource } from '../../bindings/changeme/models';
 import { Button } from './ui/button';
 import { ConfirmDialog } from './ConfirmDialog';
@@ -171,9 +164,11 @@ export default function TextGeneratorTool({
       setItems([]);
       setRestoredOutput(null);
     } else if (pending.action === 'copy' && output) {
-      void navigator.clipboard.writeText(output).then(() =>
-        toast.add({ title: t('toast.copied', { value: t('textGeneratorTool.output') }) }),
-      );
+      void navigator.clipboard
+        .writeText(output)
+        .then(() =>
+          toast.add({ title: t('toast.copied', { value: t('textGeneratorTool.output') }) }),
+        );
     } else if (pending.action === 'restore') {
       setItems([]);
       setRestoredOutput(pending.output ?? '');
@@ -206,10 +201,7 @@ export default function TextGeneratorTool({
   return (
     <Reveal index={0} fill active={active}>
       <ToolLayout>
-        <ToolLayoutHeader
-          title={t('textGeneratorTool.title')}
-          subtitle={t('textGeneratorTool.subtitle')}
-        />
+        <ToolLayoutHeader title={t('textGeneratorTool.title')} />
         <ToolLayoutToolbar
           left={
             <>

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useId, useMemo, useRef, useState, type FormEvent } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import {
   ArrowsClockwise,
@@ -268,6 +268,7 @@ function SearchField({
 
 export default function PortTool({ active }: { active: boolean }) {
   const { t, i18n } = useTranslation();
+  const sourceLabelId = useId();
   const { profiles } = useSSHProfiles();
   const [sources, setSources] = useState<PortSource[]>([]);
   const [source, setSource] = useState('local');
@@ -597,10 +598,14 @@ export default function PortTool({ active }: { active: boolean }) {
 
   return (
     <ToolLayout>
-      <ToolLayoutHeader title={t('portTool.title')} subtitle={t('portTool.subtitle')} />
+      <ToolLayoutHeader title={t('portTool.title')} />
       <ToolLayoutToolbar
         left={
-          <ToolHeaderField label={t('portTool.source')} htmlFor="port-source" className="min-w-48">
+          <ToolHeaderField
+            label={t('portTool.source')}
+            labelId={sourceLabelId}
+            className="max-[700px]:w-full"
+          >
             <Select
               items={sourceOptions}
               value={source}
@@ -613,7 +618,11 @@ export default function PortTool({ active }: { active: boolean }) {
                 setUserFilter('all');
               }}
             >
-              <SelectTrigger id="port-source" className="w-full">
+              <SelectTrigger
+                id="port-source"
+                aria-labelledby={sourceLabelId}
+                className="w-[220px] max-w-full max-[700px]:w-full"
+              >
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
