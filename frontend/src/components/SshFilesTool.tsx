@@ -1,4 +1,13 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  lazy,
+  Suspense,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { Events } from '@wailsio/runtime';
 import { useTranslation } from 'react-i18next';
 import { useVirtualizer } from '@tanstack/react-virtual';
@@ -709,6 +718,17 @@ export default function SshFilesTool({ active }: Props) {
   const [deletePaths, setDeletePaths] = useState<string[] | null>(null);
   const [operationError, setOperationError] = useState('');
   const [operationRunning, setOperationRunning] = useState(false);
+  const [editingFile, setEditingFile] = useState<RemoteFileEntry | null>(null);
+  const [treeExpanded, setTreeExpanded] = useState<string[]>([]);
+  const [treeLoading, setTreeLoading] = useState<string[]>([]);
+  const [treeErrors, setTreeErrors] = useState<Record<string, string>>({});
+  const treeRequestRef = useRef(0);
+  const treeViewportRef = useRef<HTMLElement | null>(null);
+  const treeCurrentDirectoryRef = useRef<HTMLDivElement | null>(null);
+  const treeInitialFocusRef = useRef<HTMLButtonElement | null>(null);
+  const treePositionPendingRef = useRef(false);
+  const treeLoadingRef = useRef(treeLoading);
+  treeLoadingRef.current = treeLoading;
   const [createFolderOpen, setCreateFolderOpen] = useState(false);
   const [createFolderName, setCreateFolderName] = useState('');
   const [createFolderError, setCreateFolderError] = useState('');
@@ -1445,6 +1465,201 @@ export default function SshFilesTool({ active }: Props) {
               : currentPath
             : currentPath;
     setOperationDialog({ operation, paths: normalizedPaths, value });
+    if (operation === 'copy' || operation === 'move') {
+      const parent = remoteParent(normalizedPaths[0]);
+      const ancestors =
+        parent === '/'
+          ? ['/']
+          : [
+              '/',
+              ...parent
+                .split('/')
+                .filter(Boolean)
+                .map((_, index, parts) => `/${parts.slice(0, index + 1).join('/')}`),
+            ];
+      setTreeExpanded(ancestors);
+      treePositionPendingRef.current = true;
+      setTreeLoading([]);
+      setTreeErrors({});
+      treeRequestRef.current++;
+      for (const ancestor of ancestors) {
+        if (ancestor !== currentPath) void loadTreeDirectory(ancestor);
+      }
+    }
+  };
+
+  const treeListing = (path: string) => {
+    const key = directoryListingKey(
+      sourceID,
+      activeSourceProfileID,
+      profileListingKey,
+      path,
+      showHidden,
+    );
+    const cached = directoryCacheRef.current.get(key);
+    if (cached && Date.now() - cached.cachedAt < DIRECTORY_CACHE_TTL_MS) return cached.entries;
+    if (path === currentPath && !loading && !searchActive) return entries;
+    return undefined;
+  };
+
+  const positionTreeAtCurrentDirectory = useCallback(() => {
+    if (!treePositionPendingRef.current) return false;
+    const viewport = treeViewportRef.current;
+    const row = treeCurrentDirectoryRef.current;
+    if (!viewport || !row || !viewport.isConnected || !row.isConnected || !viewport.clientHeight)
+      return false;
+    viewport.scrollTop += row.getBoundingClientRect().top - viewport.getBoundingClientRect().top;
+    return true;
+  }, []);
+
+  const receiveTreeViewport = useCallback(
+    (viewport: HTMLElement | null) => {
+      treeViewportRef.current = viewport;
+      if (positionTreeAtCurrentDirectory() && treeLoadingRef.current.length === 0) {
+        treePositionPendingRef.current = false;
+      }
+    },
+    [positionTreeAtCurrentDirectory],
+  );
+
+  useLayoutEffect(() => {
+    if (operationDialog?.operation !== 'copy' && operationDialog?.operation !== 'move') return;
+    if (positionTreeAtCurrentDirectory() && treeLoadingRef.current.length === 0) {
+      treePositionPendingRef.current = false;
+    }
+  }, [
+    operationDialog?.operation,
+    operationDialog?.paths,
+    treeLoading,
+    positionTreeAtCurrentDirectory,
+  ]);
+
+  const renderTreeDirectory = (path: string, depth: number): React.ReactNode => {
+    const expanded = treeExpanded.includes(path);
+    const listing = expanded ? treeListing(path) : undefined;
+    const directories =
+      listing?.filter((entry) => entry.isDir).sort((a, b) => a.name.localeCompare(b.name)) ?? [];
+    const currentParent = operationDialog?.paths.length
+      ? remoteParent(operationDialog.paths[0])
+      : '';
+    const nextAncestor = currentParent.startsWith(`${path === '/' ? '' : path}/`)
+      ? `/${currentParent
+          .split('/')
+          .filter(Boolean)
+          .slice(0, depth + 1)
+          .join('/')}`
+      : '';
+    const children =
+      nextAncestor &&
+      nextAncestor !== path &&
+      !directories.some((entry) => entry.path === nextAncestor)
+        ? [nextAncestor, ...directories.map((entry) => entry.path)]
+        : directories.map((entry) => entry.path);
+    return (
+      <div key={path}>
+        <div
+          ref={path === currentParent ? treeCurrentDirectoryRef : undefined}
+          className="flex min-w-0 items-center gap-1"
+          style={{ paddingLeft: depth * 16 }}
+        >
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="size-7 shrink-0"
+            disabled={operationRunning}
+            aria-label={t(
+              expanded ? 'sshFilesTool.collapseDirectory' : 'sshFilesTool.expandDirectory',
+              { name: path },
+            )}
+            aria-expanded={expanded}
+            onClick={() => void expandTreeDirectory(path)}
+          >
+            {treeLoading.includes(path) ? (
+              <Spinner />
+            ) : expanded ? (
+              <CaretDown size={14} />
+            ) : (
+              <CaretRight size={14} />
+            )}
+          </Button>
+          <Button
+            ref={path === currentParent ? treeInitialFocusRef : undefined}
+            type="button"
+            variant={operationDialog?.value === path ? 'secondary' : 'ghost'}
+            className="h-7 min-w-0 flex-1 justify-start gap-2 px-2 text-xs"
+            disabled={operationRunning}
+            onClick={() =>
+              setOperationDialog((current) => (current ? { ...current, value: path } : current))
+            }
+          >
+            <Folder size={14} className="shrink-0" />
+            <span className="truncate" title={path}>
+              {path === '/' ? '/' : basename(path)}
+            </span>
+          </Button>
+        </div>
+        {expanded ? (
+          <div>
+            {treeErrors[path] ? (
+              <p className="m-0 px-2 py-1 text-xs text-destructive" role="alert">
+                {treeErrors[path]}
+              </p>
+            ) : null}
+            {children.map((child) => renderTreeDirectory(child, depth + 1))}
+          </div>
+        ) : null}
+      </div>
+    );
+  };
+
+  const loadTreeDirectory = async (path: string) => {
+    if (treeListing(path)) return;
+    const requestID = treeRequestRef.current;
+    setTreeLoading((current) => [...current, path]);
+    setTreeErrors((current) => ({ ...current, [path]: '' }));
+    try {
+      const result = await ListRemoteFiles(sourceID, path, showHidden, `tree-${requestID}-${path}`);
+      if (requestID !== treeRequestRef.current) return;
+      const resolved = normalizeRemotePath(result.path || path);
+      const listing: CachedDirectoryListing = {
+        cachedAt: Date.now(),
+        requestID,
+        path: resolved,
+        entries: result.entries ?? [],
+      };
+      directoryCacheRef.current.set(
+        directoryListingKey(sourceID, activeSourceProfileID, profileListingKey, path, showHidden),
+        listing,
+      );
+      directoryCacheRef.current.set(
+        directoryListingKey(
+          sourceID,
+          activeSourceProfileID,
+          profileListingKey,
+          resolved,
+          showHidden,
+        ),
+        listing,
+      );
+    } catch (reason) {
+      if (requestID === treeRequestRef.current)
+        setTreeErrors((current) => ({ ...current, [path]: errorMessage(reason) }));
+    } finally {
+      if (requestID === treeRequestRef.current)
+        setTreeLoading((current) => current.filter((item) => item !== path));
+    }
+  };
+
+  const expandTreeDirectory = (path: string) => {
+    if (treeExpanded.includes(path)) {
+      setTreeExpanded((current) =>
+        current.filter((item) => item !== path && !item.startsWith(`${path}/`)),
+      );
+      return;
+    }
+    setTreeExpanded((current) => [...current, path]);
+    void loadTreeDirectory(path);
   };
 
   const runRemoteOperation = async (
@@ -3005,7 +3220,14 @@ export default function SshFilesTool({ active }: Props) {
           }
         }}
       >
-        <DialogContent className="flex w-[min(520px,calc(100vw-32px))] max-w-none flex-col gap-5 sm:max-w-none">
+        <DialogContent
+          initialFocus={
+            operationDialog?.operation === 'copy' || operationDialog?.operation === 'move'
+              ? treeInitialFocusRef
+              : undefined
+          }
+          className="flex w-[min(560px,calc(100vw-32px))] max-w-none flex-col gap-5 sm:max-w-none"
+        >
           <DialogHeader>
             <DialogTitle className="text-base">
               {operationDialog ? t(`sshFilesTool.${operationDialog.operation}Title`) : ''}
@@ -3022,6 +3244,20 @@ export default function SshFilesTool({ active }: Props) {
               void executeOperationDialog();
             }}
           >
+            {operationDialog?.operation === 'copy' || operationDialog?.operation === 'move' ? (
+              <div className="grid gap-1.5">
+                <Label className="text-xs text-muted-foreground">
+                  {t('sshFilesTool.directoryTree')}
+                </Label>
+                <ScrollArea
+                  className="h-56 rounded-md border border-border p-2"
+                  options={{ overflow: { x: 'hidden' } }}
+                  onViewport={receiveTreeViewport}
+                >
+                  {renderTreeDirectory('/', 0)}
+                </ScrollArea>
+              </div>
+            ) : null}
             <div className="grid gap-1.5">
               <Label htmlFor="ssh-file-operation-target" className="text-xs text-muted-foreground">
                 {operationDialog?.operation === 'rename'
@@ -3074,11 +3310,7 @@ export default function SshFilesTool({ active }: Props) {
               form="ssh-file-operation-form"
               disabled={operationRunning || operationDialog === null}
             >
-              {operationRunning ? (
-                <Spinner data-icon="inline-start" />
-              ) : (
-                <CheckCircle data-icon="inline-start" size={14} />
-              )}
+              {operationRunning ? <Spinner data-icon="inline-start" /> : null}
               {t('sshFilesTool.applyOperation')}
             </Button>
           </DialogFooter>
