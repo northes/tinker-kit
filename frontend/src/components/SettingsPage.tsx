@@ -11,7 +11,16 @@ import {
 } from 'react';
 import { Button } from './ui/button';
 import { ScrollArea } from './ui/scroll-area';
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from './ui/select';
 import { Switch } from './ui/switch';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -57,13 +66,7 @@ import {
 } from '../../bindings/changeme/configservice';
 import { CheckForUpdates, GetCurrentVersion } from '../../bindings/changeme/updateservice';
 import { ClearHistoryDialog } from './HistoryPage';
-import {
-  ToolLayout,
-  ToolLayoutHeader,
-  ToolLayoutScrollableContent,
-  type Icon,
-  type ToolId,
-} from './shared';
+import { ToolLayout, ToolLayoutHeader, ToolLayoutContent, type Icon, type ToolId } from './shared';
 import { toast } from './ui/toast';
 import { GITHUB_REPO_URL } from '../repositoryUrl';
 import { THEME_MODE_OPTIONS, type ThemeMode } from '../theme';
@@ -95,6 +98,7 @@ const EDITOR_FONT_SIZES = [12, 14, 16, 18] as const;
 const settingRowClass = 'flex min-h-8 items-center justify-between gap-5';
 const settingLabelClass = 'text-xs leading-[1.4] font-medium text-foreground';
 const settingHintClass = 'text-[10px] leading-[1.4] text-muted-foreground';
+const settingControlClass = 'flex justify-end max-[700px]:justify-start';
 const settingStackClass =
   'divide-y divide-border [&>:not(:first-child)]:pt-3 [&>:not(:last-child)]:pb-3';
 
@@ -107,6 +111,15 @@ export type ToolDefinition = {
 };
 type BooleanSettingKey = 'trayMatchEnabled' | 'autoOverwrite' | 'autoCheckUpdates';
 type ChoiceOption<T extends string | number> = { id: T; label: string };
+type SettingsCategory = 'preferences' | 'automation' | 'connections' | 'data' | 'about';
+
+const SETTINGS_CATEGORIES: SettingsCategory[] = [
+  'preferences',
+  'automation',
+  'connections',
+  'data',
+  'about',
+];
 
 function SettingSwitch({
   selected,
@@ -135,27 +148,24 @@ function SettingSwitch({
 
 function SettingsGroup({
   title,
-  subtitle,
   children,
   divider = true,
 }: {
   title: string;
-  subtitle: string;
   children: React.ReactNode;
   divider?: boolean;
 }) {
   return (
     <section
       className={cn(
-        'grid grid-cols-[minmax(0,1fr)_minmax(320px,520px)] gap-5 py-4 max-[700px]:grid-cols-1 max-[700px]:gap-2.5',
+        'grid grid-cols-[minmax(0,1fr)_minmax(320px,520px)] gap-5 py-3.5 max-[700px]:grid-cols-1 max-[700px]:gap-2',
         divider && 'border-t border-border',
       )}
     >
       <div>
-        <h2 className="mb-1 text-xs leading-[1.25] font-semibold tracking-[.01em] text-foreground">
+        <h2 className="m-0 text-xs leading-[1.25] font-semibold tracking-[.01em] text-foreground">
           {title}
         </h2>
-        <p className="m-0 text-[10px] leading-[1.5] text-muted-foreground">{subtitle}</p>
       </div>
       <div className="min-w-0">{children}</div>
     </section>
@@ -214,11 +224,15 @@ function ChoiceGroup<T extends string | number>({
   value,
   options,
   onChange,
+  hideLabel = false,
+  fill = false,
 }: {
   label: string;
   value: T;
   options: ChoiceOption<T>[];
   onChange: (value: T) => void;
+  hideLabel?: boolean;
+  fill?: boolean;
 }) {
   const labelId = useId();
   const radiosRef = useRef<Array<HTMLElement | null>>([]);
@@ -256,13 +270,21 @@ function ChoiceGroup<T extends string | number>({
     <div
       className={cn(
         settingRowClass,
+        fill && 'w-full',
         'max-[700px]:flex-col max-[700px]:items-start max-[700px]:gap-2',
       )}
     >
-      <strong id={labelId} className={settingLabelClass}>
-        {label}
-      </strong>
-      <div role="radiogroup" aria-labelledby={labelId} className="flex min-w-0 flex-none flex-wrap">
+      {!hideLabel ? (
+        <strong id={labelId} className={settingLabelClass}>
+          {label}
+        </strong>
+      ) : null}
+      <div
+        role="radiogroup"
+        aria-labelledby={hideLabel ? undefined : labelId}
+        aria-label={hideLabel ? label : undefined}
+        className="flex min-w-0 flex-none flex-wrap"
+      >
         {options.map((option, index) => {
           const checked = option.id === value;
           return (
@@ -792,6 +814,11 @@ export default function SettingsPage({
     id: language.code,
     label: t(language.labelKey),
   }));
+  const categoryOptions = SETTINGS_CATEGORIES.map((id) => ({
+    id,
+    label: t(`settings.categories.${id}.title`),
+  }));
+  const [category, setCategory] = useState<SettingsCategory>('preferences');
   const renderTrayToolSwitch = (tool: ToolDefinition) => {
     const selected = trayTools.has(tool.id);
     const restricted = selected && lastTrayToolLocked;
@@ -807,270 +834,345 @@ export default function SettingsPage({
     );
   };
 
+  const renderCategoryPanel = (activeCategory: SettingsCategory) => {
+    const categoryContent = (() => {
+      switch (activeCategory) {
+        case 'preferences':
+          return (
+            <>
+              <SettingsGroup divider={false} title={t('settings.themeMode')}>
+                <div className={settingControlClass}>
+                  <ChoiceGroup
+                    label={t('settings.themeMode')}
+                    hideLabel
+                    value={settings.themeMode as ThemeMode}
+                    options={themeModeOptions}
+                    onChange={setThemeMode}
+                  />
+                </div>
+              </SettingsGroup>
+              <SettingsGroup title={t('settings.language')}>
+                <div className={settingControlClass}>
+                  <ChoiceGroup
+                    label={t('settings.language')}
+                    hideLabel
+                    value={settings.language}
+                    options={languageOptions}
+                    onChange={setLanguage}
+                  />
+                </div>
+              </SettingsGroup>
+              <SettingsGroup title={t('settings.editorFontSize')}>
+                <div className={settingControlClass}>
+                  <ChoiceGroup
+                    label={t('settings.editorFontSize')}
+                    hideLabel
+                    value={settings.codeEditorFontSize || 16}
+                    options={fontSizeOptions}
+                    onChange={(size) =>
+                      setSettings((current) => ({
+                        ...current,
+                        codeEditorFontSize: size,
+                      }))
+                    }
+                  />
+                </div>
+              </SettingsGroup>
+              <SettingsGroup title={t('settings.adjustSidebar')}>
+                <div className={settingControlClass}>
+                  <Setting>
+                    <Button
+                      id="sidebar-manage-trigger"
+                      variant="outline"
+                      aria-expanded={sidebarManaging}
+                      aria-controls="app-sidebar"
+                      onClick={onToggleSidebarManage}
+                    >
+                      <SidebarSimple data-icon="inline-start" weight="duotone" />
+                      {t(sidebarManaging ? 'sidebar.done' : 'sidebar.manageAction')}
+                    </Button>
+                  </Setting>
+                </div>
+              </SettingsGroup>
+            </>
+          );
+        case 'automation':
+          return (
+            <>
+              <SettingsGroup divider={false} title={t('settings.clipboard')}>
+                <div className="flex flex-col gap-3">
+                  <div className={settingStackClass}>
+                    <Setting label={t('settings.trayMatch')}>
+                      <SettingSwitch
+                        selected={settings.trayMatchEnabled}
+                        onChange={(value) => update('trayMatchEnabled', value)}
+                      />
+                    </Setting>
+                    {settings.trayMatchEnabled ? (
+                      <Setting label={t('settings.autoOverwrite')}>
+                        <SettingSwitch
+                          selected={settings.autoOverwrite}
+                          onChange={(value) => update('autoOverwrite', value)}
+                        />
+                      </Setting>
+                    ) : null}
+                  </div>
+                  {settings.trayMatchEnabled ? (
+                    <div className="flex flex-col gap-3 border-t border-border pt-3">
+                      <strong className={settingLabelClass}>{t('settings.trayMatchTools')}</strong>
+                      <div>
+                        <strong className={cn(settingLabelClass, 'block pb-2')}>
+                          {t('settings.trayMatchToolsDefault')}
+                        </strong>
+                        <div className="grid grid-cols-2 gap-x-5 gap-y-2.5 max-[700px]:grid-cols-1">
+                          {defaultTrayTools.map(renderTrayToolSwitch)}
+                        </div>
+                      </div>
+                      {extraTrayTools.length > 0 ? (
+                        <div className="border-t border-border pt-3">
+                          <strong className={cn(settingLabelClass, 'block pb-2')}>
+                            {t('settings.trayMatchToolsExtra')}
+                          </strong>
+                          <div className="grid grid-cols-2 gap-x-5 gap-y-2.5 max-[700px]:grid-cols-1">
+                            {extraTrayTools.map(renderTrayToolSwitch)}
+                          </div>
+                        </div>
+                      ) : null}
+                      {lastTrayToolLocked ? (
+                        <p id={trayMatchMinHintId} className={cn('m-0', settingHintClass)}>
+                          {t('settings.trayMatchToolsMin')}
+                        </p>
+                      ) : null}
+                    </div>
+                  ) : (
+                    <p className={cn('m-0 border-t border-border pt-3', settingHintClass)}>
+                      {t('settings.trayMatchDisabledHint')}
+                    </p>
+                  )}
+                </div>
+              </SettingsGroup>
+              <SettingsGroup title={t('settings.taskNotifications')}>
+                <ChoiceGroup
+                  fill
+                  label={t('settings.notificationTiming')}
+                  value={settings.taskNotificationMode ?? 'unfocused'}
+                  options={(['off', 'always', 'unfocused'] as const).map((id) => ({
+                    id,
+                    label: t(`settings.taskNotificationMode.${id}`),
+                  }))}
+                  onChange={(taskNotificationMode) =>
+                    setSettings((current) => ({ ...current, taskNotificationMode }))
+                  }
+                />
+              </SettingsGroup>
+              <SettingsGroup title={t('settings.testNotifications')}>
+                <div className={settingControlClass}>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={testingTaskNotification}
+                    onClick={() => void sendTestTaskNotification()}
+                  >
+                    {testingTaskNotification ? (
+                      <Spinner data-icon="inline-start" />
+                    ) : (
+                      <BellRinging data-icon="inline-start" weight="duotone" />
+                    )}
+                    {t(
+                      testingTaskNotification
+                        ? 'settings.taskNotificationTesting'
+                        : 'settings.testTaskNotification',
+                    )}
+                  </Button>
+                </div>
+              </SettingsGroup>
+            </>
+          );
+        case 'connections':
+          return (
+            <SettingsGroup divider={false} title={t('settings.ssh')}>
+              <div className={settingStackClass}>
+                <Setting label={t('settings.sshProfiles')}>
+                  <Button variant="outline" onClick={() => openManager()}>
+                    <Key data-icon="inline-start" weight="duotone" />
+                    {t('settings.manageSSHProfiles')}
+                  </Button>
+                </Setting>
+                <Setting
+                  label={t('settings.sshKnownHosts')}
+                  description={t('settings.sshKnownHostsDesc')}
+                >
+                  <Button variant="outline" onClick={() => setSSHKnownHostsOpen(true)}>
+                    <Key data-icon="inline-start" weight="duotone" />
+                    {t('settings.manageSSHKnownHosts')}
+                  </Button>
+                </Setting>
+              </div>
+            </SettingsGroup>
+          );
+        case 'data':
+          return (
+            <>
+              <SettingsGroup divider={false} title={t('settings.history')}>
+                <div className={settingControlClass}>
+                  <Setting>
+                    <Button variant="destructive" onClick={() => setConfirmClear(true)}>
+                      <Trash data-icon="inline-start" weight="duotone" />
+                      {t('settings.clearHistory')}
+                    </Button>
+                  </Setting>
+                </div>
+              </SettingsGroup>
+              <SettingsGroup title={t('settings.configManagement')}>
+                <div className={settingStackClass}>
+                  <Setting label={t('settings.exportConfig')}>
+                    <Button variant="outline" onClick={() => setConfigAction('export')}>
+                      <DownloadSimple data-icon="inline-start" weight="duotone" />
+                      {t('settings.exportConfig')}
+                    </Button>
+                  </Setting>
+                  <Setting label={t('settings.importConfig')}>
+                    <Button variant="outline" onClick={() => setConfigAction('import')}>
+                      <UploadSimple data-icon="inline-start" weight="duotone" />
+                      {t('settings.importConfig')}
+                    </Button>
+                  </Setting>
+                  <Setting
+                    label={t('settings.resetConfig')}
+                    description={t('settings.resetConfigDesc')}
+                  >
+                    <Button variant="destructive" onClick={() => setConfigAction('reset')}>
+                      <ArrowCounterClockwise data-icon="inline-start" weight="duotone" />
+                      {t('settings.resetConfig')}
+                    </Button>
+                  </Setting>
+                </div>
+              </SettingsGroup>
+            </>
+          );
+        case 'about':
+          return (
+            <>
+              <SettingsGroup divider={false} title={t('settings.updates')}>
+                <div className={settingStackClass}>
+                  <Setting
+                    label={t('settings.autoCheckUpdates')}
+                    description={t('settings.autoCheckUpdatesDesc')}
+                  >
+                    <SettingSwitch
+                      selected={settings.autoCheckUpdates}
+                      onChange={(value) => update('autoCheckUpdates', value)}
+                    />
+                  </Setting>
+                  <Setting
+                    label={t('settings.currentVersion')}
+                    description={version ? `v${version}` : undefined}
+                  >
+                    <Button
+                      variant="outline"
+                      disabled={checking}
+                      onClick={() => void checkUpdates()}
+                    >
+                      <ArrowsClockwise data-icon="inline-start" weight="duotone" />
+                      {t(checking ? 'settings.checkingUpdates' : 'settings.checkUpdates')}
+                    </Button>
+                  </Setting>
+                </div>
+              </SettingsGroup>
+              <SettingsGroup divider title={t('settings.projectLink')}>
+                <div className={settingControlClass}>
+                  <Setting>
+                    <Button variant="outline" onClick={() => void Browser.OpenURL(GITHUB_REPO_URL)}>
+                      <ArrowSquareOut data-icon="inline-start" weight="duotone" />
+                      {t('settings.openProject')}
+                    </Button>
+                  </Setting>
+                </div>
+              </SettingsGroup>
+              <SettingsGroup title={t('settings.quit')}>
+                <div className={settingControlClass}>
+                  <Setting>
+                    <Button variant="outline" onClick={() => setConfirmQuit(true)}>
+                      <Power data-icon="inline-start" weight="duotone" />
+                      {t('settings.quitAction')}
+                    </Button>
+                  </Setting>
+                </div>
+              </SettingsGroup>
+            </>
+          );
+      }
+    })();
+    return (
+      <TabsContent value={activeCategory} className="h-full min-h-0 min-w-0">
+        <ScrollArea
+          className="h-full min-h-0 min-w-0 [padding-inline-end:var(--overlay-scrollbar-size)]"
+          options={{ overflow: { x: 'hidden' } }}
+        >
+          <div className="min-w-0 max-w-[820px] px-1 pb-4">
+            <div className="border-b border-border pb-3">
+              <h2 className="m-0 text-sm font-semibold text-foreground">
+                {t(`settings.categories.${activeCategory}.title`)}
+              </h2>
+            </div>
+            {categoryContent}
+          </div>
+        </ScrollArea>
+      </TabsContent>
+    );
+  };
+
   return (
     <div className="h-full min-h-0">
       <ToolLayout>
-        <ToolLayoutHeader title={t('settings.title')} subtitle={t('settings.subtitle')} />
-        <ToolLayoutScrollableContent>
-          <SettingsGroup
-            divider={false}
-            title={t('settings.appearance')}
-            subtitle={t('settings.appearanceSubtitle')}
+        <ToolLayoutHeader title={t('settings.title')} />
+        <ToolLayoutContent className="px-0">
+          <Tabs
+            orientation="vertical"
+            value={category}
+            onValueChange={(value) => setCategory(value as SettingsCategory)}
+            className="grid h-full min-h-0 min-w-0 grid-cols-[180px_minmax(0,1fr)] gap-6 max-[700px]:block"
           >
-            <ChoiceGroup
-              label={t('settings.themeMode')}
-              value={settings.themeMode as ThemeMode}
-              options={themeModeOptions}
-              onChange={setThemeMode}
-            />
-          </SettingsGroup>
-          <SettingsGroup title={t('settings.workspace')} subtitle={t('settings.workspaceSubtitle')}>
-            <Setting
-              label={t('settings.adjustSidebar')}
-              description={t('settings.adjustSidebarDesc')}
-            >
-              <Button
-                id="sidebar-manage-trigger"
-                variant="outline"
-                aria-expanded={sidebarManaging}
-                aria-controls="app-sidebar"
-                onClick={onToggleSidebarManage}
-              >
-                <SidebarSimple data-icon="inline-start" weight="duotone" />
-                {t(sidebarManaging ? 'sidebar.done' : 'settings.adjustSidebar')}
-              </Button>
-            </Setting>
-          </SettingsGroup>
-          <SettingsGroup title={t('settings.editor')} subtitle={t('settings.editorSubtitle')}>
-            <ChoiceGroup
-              label={t('settings.editorFontSize')}
-              value={settings.codeEditorFontSize || 16}
-              options={fontSizeOptions}
-              onChange={(size) =>
-                setSettings((current) => ({
-                  ...current,
-                  codeEditorFontSize: size,
-                }))
-              }
-            />
-          </SettingsGroup>
-          <SettingsGroup title={t('settings.language')} subtitle={t('settings.languageSubtitle')}>
-            <ChoiceGroup
-              label={t('settings.language')}
-              value={settings.language}
-              options={languageOptions}
-              onChange={setLanguage}
-            />
-          </SettingsGroup>
-          <SettingsGroup title={t('settings.clipboard')} subtitle={t('settings.clipboardSubtitle')}>
-            <div className="flex flex-col gap-3">
-              <div className={settingStackClass}>
-                <Setting label={t('settings.trayMatch')} description={t('settings.trayMatchDesc')}>
-                  <SettingSwitch
-                    selected={settings.trayMatchEnabled}
-                    onChange={(value) => update('trayMatchEnabled', value)}
-                  />
-                </Setting>
-                {settings.trayMatchEnabled ? (
-                  <Setting
-                    label={t('settings.autoOverwrite')}
-                    description={t('settings.autoOverwriteDesc')}
+            <TabsList className="hidden w-full min-[701px]:flex">
+              {categoryOptions.map((option) => (
+                <TabsTrigger
+                  key={option.id}
+                  value={option.id}
+                  className="h-8 justify-start px-2.5 text-xs"
+                >
+                  {option.label}
+                </TabsTrigger>
+              ))}
+            </TabsList>
+            <div className="flex h-full min-h-0 min-w-0 flex-col">
+              <div className="mb-3 min-[701px]:hidden">
+                <Select
+                  value={category}
+                  onValueChange={(value) => value && setCategory(value as SettingsCategory)}
+                  items={categoryOptions.map(({ id, label }) => ({ value: id, label }))}
+                >
+                  <SelectTrigger
+                    id="settings-category"
+                    className="w-full"
+                    aria-label={t('settings.categorySelector')}
                   >
-                    <SettingSwitch
-                      selected={settings.autoOverwrite}
-                      onChange={(value) => update('autoOverwrite', value)}
-                    />
-                  </Setting>
-                ) : null}
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectGroup>
+                      {categoryOptions.map((option) => (
+                        <SelectItem key={option.id} value={option.id}>
+                          {option.label}
+                        </SelectItem>
+                      ))}
+                    </SelectGroup>
+                  </SelectContent>
+                </Select>
               </div>
-              {settings.trayMatchEnabled ? (
-                <div className="flex flex-col gap-3 border-t border-border pt-3">
-                  <div className="flex flex-col gap-0.5">
-                    <strong className={settingLabelClass}>{t('settings.trayMatchTools')}</strong>
-                    <small className={settingHintClass}>{t('settings.trayMatchToolsDesc')}</small>
-                  </div>
-                  <div>
-                    <div className="flex flex-col gap-0.5 pb-2">
-                      <strong className={settingLabelClass}>
-                        {t('settings.trayMatchToolsDefault')}
-                      </strong>
-                      <small className={settingHintClass}>
-                        {t('settings.trayMatchToolsDefaultDesc')}
-                      </small>
-                    </div>
-                    <div className="grid grid-cols-2 gap-x-5 gap-y-2.5 max-[700px]:grid-cols-1">
-                      {defaultTrayTools.map(renderTrayToolSwitch)}
-                    </div>
-                  </div>
-                  {extraTrayTools.length > 0 ? (
-                    <div className="border-t border-border pt-3">
-                      <div className="flex flex-col gap-0.5 pb-2">
-                        <strong className={settingLabelClass}>
-                          {t('settings.trayMatchToolsExtra')}
-                        </strong>
-                        <small className={settingHintClass}>
-                          {t('settings.trayMatchToolsExtraDesc')}
-                        </small>
-                      </div>
-                      <div className="grid grid-cols-2 gap-x-5 gap-y-2.5 max-[700px]:grid-cols-1">
-                        {extraTrayTools.map(renderTrayToolSwitch)}
-                      </div>
-                    </div>
-                  ) : null}
-                  {lastTrayToolLocked ? (
-                    <p id={trayMatchMinHintId} className={cn('m-0', settingHintClass)}>
-                      {t('settings.trayMatchToolsMin')}
-                    </p>
-                  ) : null}
-                </div>
-              ) : (
-                <p className={cn('m-0 border-t border-border pt-3', settingHintClass)}>
-                  {t('settings.trayMatchDisabledHint')}
-                </p>
-              )}
+              <div className="min-h-0 min-w-0 flex-1">{renderCategoryPanel(category)}</div>
             </div>
-          </SettingsGroup>
-          <SettingsGroup title={t('settings.updates')} subtitle={t('settings.updatesSubtitle')}>
-            <div className={settingStackClass}>
-              <Setting
-                label={t('settings.autoCheckUpdates')}
-                description={t('settings.autoCheckUpdatesDesc')}
-              >
-                <SettingSwitch
-                  selected={settings.autoCheckUpdates}
-                  onChange={(value) => update('autoCheckUpdates', value)}
-                />
-              </Setting>
-              <Setting
-                label={t('settings.currentVersion')}
-                description={version ? `v${version}` : undefined}
-              >
-                <Button variant="outline" disabled={checking} onClick={() => void checkUpdates()}>
-                  <ArrowsClockwise data-icon="inline-start" weight="duotone" />
-                  {t(checking ? 'settings.checkingUpdates' : 'settings.checkUpdates')}
-                </Button>
-              </Setting>
-            </div>
-          </SettingsGroup>
-          <SettingsGroup
-            title={t('settings.taskNotifications')}
-            subtitle={t('settings.taskNotificationsDesc')}
-          >
-            <div className="flex flex-col items-start gap-2">
-              <ChoiceGroup
-                label={t('settings.taskNotifications')}
-                value={settings.taskNotificationMode ?? 'unfocused'}
-                options={(['off', 'always', 'unfocused'] as const).map((id) => ({
-                  id,
-                  label: t(`settings.taskNotificationMode.${id}`),
-                }))}
-                onChange={(taskNotificationMode) =>
-                  setSettings((current) => ({ ...current, taskNotificationMode }))
-                }
-              />
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={testingTaskNotification}
-                onClick={() => void sendTestTaskNotification()}
-              >
-                {testingTaskNotification ? (
-                  <Spinner data-icon="inline-start" />
-                ) : (
-                  <BellRinging data-icon="inline-start" weight="duotone" />
-                )}
-                {t(
-                  testingTaskNotification
-                    ? 'settings.taskNotificationTesting'
-                    : 'settings.testTaskNotification',
-                )}
-              </Button>
-            </div>
-          </SettingsGroup>
-          <SettingsGroup title={t('settings.ssh')} subtitle={t('settings.sshSubtitle')}>
-            <div className={settingStackClass}>
-              <Setting
-                label={t('settings.sshProfiles')}
-                description={t('settings.sshProfilesDesc')}
-              >
-                <Button variant="outline" onClick={() => openManager()}>
-                  <Key data-icon="inline-start" weight="duotone" />
-                  {t('settings.manageSSHProfiles')}
-                </Button>
-              </Setting>
-              <Setting
-                label={t('settings.sshKnownHosts')}
-                description={t('settings.sshKnownHostsDesc')}
-              >
-                <Button variant="outline" onClick={() => setSSHKnownHostsOpen(true)}>
-                  <Key data-icon="inline-start" weight="duotone" />
-                  {t('settings.manageSSHKnownHosts')}
-                </Button>
-              </Setting>
-            </div>
-          </SettingsGroup>
-          <SettingsGroup title={t('settings.privacy')} subtitle={t('settings.privacySubtitle')}>
-            <Setting label={t('settings.history')} description={t('settings.historyDesc')}>
-              <Button variant="destructive" onClick={() => setConfirmClear(true)}>
-                <Trash data-icon="inline-start" weight="duotone" />
-                {t('settings.clearHistory')}
-              </Button>
-            </Setting>
-          </SettingsGroup>
-          <SettingsGroup
-            title={t('settings.configManagement')}
-            subtitle={t('settings.configManagementSubtitle')}
-          >
-            <div className={settingStackClass}>
-              <Setting
-                label={t('settings.exportConfig')}
-                description={t('settings.exportConfigDesc')}
-              >
-                <Button variant="outline" onClick={() => setConfigAction('export')}>
-                  <DownloadSimple data-icon="inline-start" weight="duotone" />
-                  {t('settings.exportConfig')}
-                </Button>
-              </Setting>
-              <Setting
-                label={t('settings.importConfig')}
-                description={t('settings.importConfigDesc')}
-              >
-                <Button variant="outline" onClick={() => setConfigAction('import')}>
-                  <UploadSimple data-icon="inline-start" weight="duotone" />
-                  {t('settings.importConfig')}
-                </Button>
-              </Setting>
-              <Setting
-                label={t('settings.resetConfig')}
-                description={t('settings.resetConfigDesc')}
-              >
-                <Button variant="destructive" onClick={() => setConfigAction('reset')}>
-                  <ArrowCounterClockwise data-icon="inline-start" weight="duotone" />
-                  {t('settings.resetConfig')}
-                </Button>
-              </Setting>
-            </div>
-          </SettingsGroup>
-          <SettingsGroup title={t('settings.about')} subtitle={t('settings.aboutSubtitle')}>
-            <Setting label={t('settings.projectLink')} description={t('settings.projectLinkDesc')}>
-              <Button variant="outline" onClick={() => void Browser.OpenURL(GITHUB_REPO_URL)}>
-                <ArrowSquareOut data-icon="inline-start" weight="duotone" />
-                {t('settings.openProject')}
-              </Button>
-            </Setting>
-          </SettingsGroup>
-          <SettingsGroup
-            title={t('settings.application')}
-            subtitle={t('settings.applicationSubtitle')}
-          >
-            <Setting label={t('settings.quit')} description={t('settings.quitDesc')}>
-              <Button variant="outline" onClick={() => setConfirmQuit(true)}>
-                <Power data-icon="inline-start" weight="duotone" />
-                {t('settings.quit')}
-              </Button>
-            </Setting>
-          </SettingsGroup>
-        </ToolLayoutScrollableContent>
+          </Tabs>
+        </ToolLayoutContent>
       </ToolLayout>
       <ClearHistoryDialog
         open={confirmClear}
