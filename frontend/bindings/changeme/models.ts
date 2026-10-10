@@ -618,6 +618,11 @@ export interface RemoteFileOperationResult {
     "conflicts"?: string[] | null;
 }
 
+export interface RemoteTextFile {
+    "content": string;
+    "revision": string;
+}
+
 /**
  * SSHConfigHost 是 ~/.ssh/config 中可以直接交给系统 ssh 的 Host 别名。
  */

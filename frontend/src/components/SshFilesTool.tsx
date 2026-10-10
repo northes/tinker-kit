@@ -163,6 +163,10 @@ import { TargetHostManagerDialog } from './TargetHostManagerDialog';
 import { toast } from './ui/toast';
 import { backendErrorKey, formatBackendError, rawErrorMessage } from '../lib/backend-error';
 
+const RemoteTextEditorDialog = lazy(async () => ({
+  default: (await import('./RemoteTextEditorDialog')).RemoteTextEditorDialog,
+}));
+
 type ManagedFileSource = FileSource;
 
 const MANAGE_SOURCES_VALUE = '__manage-sources__';
@@ -404,6 +408,47 @@ function remoteFileIcon(path: string): Icon {
   if (codeFileExtensions.has(extension)) return FileCode;
   if (textFileExtensions.has(extension)) return FileText;
   return File;
+}
+
+function isEditableTextFile(path: string) {
+  const name = basename(path).toLowerCase();
+  const extension = remoteFileExtension(path);
+  return (
+    codeFileExtensions.has(extension) ||
+    (textFileExtensions.has(extension) && extension !== 'rtf') ||
+    [
+      'txt',
+      'text',
+      'csv',
+      'md',
+      'markdown',
+      'html',
+      'htm',
+      'css',
+      'js',
+      'jsx',
+      'ts',
+      'tsx',
+      'c',
+      'cc',
+      'cpp',
+      'cs',
+      'py',
+      'rs',
+      'sql',
+      'svg',
+      'ini',
+      'jsonc',
+      'mjs',
+      'cjs',
+      'mts',
+      'cts',
+    ].includes(extension) ||
+    ['dockerfile', 'makefile', 'readme', '.env', '.gitignore', '.editorconfig', '.npmrc'].includes(
+      name,
+    ) ||
+    name.startsWith('.env.')
+  );
 }
 
 function isArchivePath(value: string) {
@@ -1074,6 +1119,18 @@ export default function SshFilesTool({ active }: Props) {
     } else if (sourceID) {
       void loadDirectory(sourceID, currentPath, showHidden, true);
     }
+  };
+
+  const refreshAfterTextSave = () => {
+    if (editingFile) {
+      const parent = remoteParent(editingFile.path);
+      const prefix = [sourceID, activeSourceProfileID, profileListingKey].join('\0') + '\0';
+      for (const [key, listing] of directoryCacheRef.current) {
+        if (key.startsWith(prefix) && listing.path === parent)
+          directoryCacheRef.current.delete(key);
+      }
+    }
+    reloadCurrentView();
   };
 
   const clearSearch = () => {
@@ -2583,7 +2640,9 @@ export default function SshFilesTool({ active }: Props) {
                                   onClick={() =>
                                     entry.isDir
                                       ? navigate(entry.path)
-                                      : void downloadSelected([entry.path])
+                                      : isEditableTextFile(entry.path) && !entry.isSymlink
+                                        ? setEditingFile(entry)
+                                        : void downloadSelected([entry.path])
                                   }
                                 >
                                   <EntryIcon
@@ -3402,6 +3461,18 @@ export default function SshFilesTool({ active }: Props) {
           </ol>
         </ScrollArea>
       </ConfirmDialog>
+      {editingFile ? (
+        <Suspense fallback={null}>
+          <RemoteTextEditorDialog
+            key={`${sourceID}:${editingFile.path}`}
+            sourceID={sourceID}
+            path={editingFile.path}
+            name={editingFile.name}
+            onClose={() => setEditingFile(null)}
+            onSaved={refreshAfterTextSave}
+          />
+        </Suspense>
+      ) : null}
     </ToolLayout>
   );
 }
