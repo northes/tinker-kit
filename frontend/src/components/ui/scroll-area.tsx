@@ -43,11 +43,11 @@ export function ScrollArea<T extends ElementType = 'div'>({
 }: ScrollAreaProps<T>) {
   const syncRef = useRef<(() => void) | null>(null);
   const cleanupRef = useRef<(() => void) | null>(null);
-  const events = useMemo<EventListeners | undefined>(() => {
-    if (!onViewport && !scrollFade) return undefined;
+  const events = useMemo<EventListeners>(() => {
     return {
       initialized: (instance) => {
         const { target, viewport, content } = instance.elements();
+        content.classList.add('p-1');
         onViewport?.(viewport);
         if (!scrollFade) return;
         const sync = () => {
