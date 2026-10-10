@@ -94,7 +94,7 @@ user-invocable: false
 - Base UI `Select`：受控值使用内部 key 时，根组件必须同时提供 `items={[{ value, label }]}` 映射（动态/本地化选项按当前文案构建），仅渲染带文字的 `SelectItem` 不足以保证关闭后的 trigger 显示 label。验收时要实际选择并关闭下拉框，确认 trigger 显示本地化 label 而不是内部 key。
 - 保持 `SelectContent` 的 `alignItemWithTrigger` 默认值（原生对齐：选中项与 trigger 对齐）；不要为了“展开在下方”而设为 `false`，也不要在各处混用两种定位。
 - 允许切换来源或主机的 `Select` 必须在列表底部固定提供“管理”项，左侧带语义匹配的 phosphor icon；该项不随来源/主机数据排序或滚动，选中后打开对应的管理界面，不写入业务选中值。
-- 工具页 header 中的字段 label 统一抽成共享组件，尺寸、字重、颜色和间距以镜像管理 header 的 label 为基准；不要在各工具内重复拼接 label 样式。
+- 工具页 header 中的字段 label 与控件纵向排列时，复用 `shared.tsx` 的 `ToolHeaderField`；需要通过 `aria-labelledby` 关联控件时传入 `labelId`。尺寸、字重、颜色和间距以镜像管理 header 的 label 为基准；不要在各工具内重复拼接 label 样式，也不要把标签的 muted 颜色放在包住控件的容器上。
 - 浮层在暗色下“没有阴影”通常是主题 token 问题：`--shadow-*` 明暗同值（10% 黑），在深色背景上不可见；要改的是暗色 token，不要改组件或加局部阴影覆盖。
 - 图标默认使用 phosphor 的 `weight="duotone"`（按钮、下拉项等装饰性图标）；表格排序图标例外使用 Regular 的 `CaretUpDown` / `CaretDown` / `CaretUp`。新增或调整控件时不要遗漏个别图标。
 - 工具页操作栏中的清空按钮统一使用 phosphor `Trash`，复制按钮统一使用 `Copy`，由 `ToolActionBar` 以 `weight="duotone"` 渲染；同类操作跨工具保持图标一致，不使用 `X` 或 `ClipboardText` 替代。
