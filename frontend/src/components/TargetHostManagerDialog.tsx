@@ -1,30 +1,81 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import { HardDrives, PencilSimple, Plus, Trash } from '@phosphor-icons/react';
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from './ui/dialog';
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from '@dnd-kit/core';
+import {
+  SortableContext,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+  arrayMove,
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
+import { DotsSixVertical, PencilSimple, Plus, Trash } from '@phosphor-icons/react';
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from './ui/dialog';
 import { ScrollArea } from './ui/scroll-area';
 import { Button } from './ui/button';
 import { Spinner } from './ui/spinner';
 import { ConfirmDialog } from './ConfirmDialog';
 import { formatBackendError } from '../lib/backend-error';
+import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from './ui/empty';
+
+function SortableManagerItem({
+  id,
+  label,
+  disabled = false,
+  children,
+}: {
+  id: string;
+  label: string;
+  disabled?: boolean;
+  children: ReactNode;
+}) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    setActivatorNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id });
+  return (
+    <div
+      ref={setNodeRef}
+      style={{ transform: CSS.Transform.toString(transform), transition }}
+      className={`flex min-w-0 items-center gap-2 rounded-lg border border-border bg-card px-3 py-2.5 ${disabled ? 'opacity-75' : ''} ${isDragging ? 'z-10 shadow-md' : ''}`}
+    >
+      <Button
+        ref={setActivatorNodeRef}
+        variant="ghost"
+        size="icon-sm"
+        className="flex-none cursor-grab touch-none text-muted-foreground/60"
+        {...attributes}
+        {...listeners}
+        aria-label={label}
+      >
+        <DotsSixVertical weight="duotone" />
+      </Button>
+      {children}
+    </div>
+  );
+}
 
 type Strings = {
   title: ReactNode;
-  description: ReactNode;
-  listTitle: ReactNode;
   add: ReactNode;
   edit: string;
   remove: string;
+  dragItem: (name: string) => string;
   empty: ReactNode;
   emptyHint: ReactNode;
   save: ReactNode;
-  done: ReactNode;
   back: ReactNode;
   discardTitle: ReactNode;
   discardDescription: ReactNode;
@@ -40,6 +91,7 @@ export function TargetHostManagerDialog<TItem, TDraft>({
   items,
   itemKey,
   itemName,
+  itemDisabled,
   createDraft,
   toDraft,
   commitDraft,
@@ -56,6 +108,7 @@ export function TargetHostManagerDialog<TItem, TDraft>({
   items: TItem[];
   itemKey: (item: TItem) => string;
   itemName: (item: TItem) => string;
+  itemDisabled?: (item: TItem) => boolean;
   createDraft: () => TDraft;
   toDraft: (item: TItem) => TDraft;
   commitDraft: (draft: TDraft, previous: TItem[]) => Promise<TItem[] | string> | TItem[] | string;
@@ -75,6 +128,10 @@ export function TargetHostManagerDialog<TItem, TDraft>({
   const [saveError, setSaveError] = useState('');
   const [removeItem, setRemoveItem] = useState<TItem | null>(null);
   const [discardAction, setDiscardAction] = useState<'close' | 'back' | null>(null);
+  const sensors = useSensors(
+    useSensor(PointerSensor),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  );
 
   useEffect(() => {
     if (!open) return;
@@ -126,12 +183,23 @@ export function TargetHostManagerDialog<TItem, TDraft>({
       setSaveError(formatBackendError(error));
     }
   };
+  const handleDragEnd = ({ active, over }: DragEndEvent) => {
+    if (over && active.id !== over.id) {
+      setDraftItems((current) =>
+        arrayMove(
+          current,
+          current.findIndex((item) => itemKey(item) === active.id),
+          current.findIndex((item) => itemKey(item) === over.id),
+        ),
+      );
+    }
+  };
 
   return (
     <>
       <Dialog open={open} onOpenChange={(next) => (next ? onOpenChange(true) : requestClose())}>
         <DialogContent
-          className="flex max-h-[min(760px,calc(100dvh-32px))] w-[min(560px,calc(100vw-32px))] max-w-none flex-col gap-0 overflow-hidden p-0 sm:max-w-none"
+          className="flex h-[600px] max-h-[calc(100dvh-var(--app-titlebar-height)-4rem)] min-h-0 w-[min(560px,calc(100vw-32px))] max-w-none flex-col gap-0 overflow-hidden p-0 sm:max-w-none"
           showCloseButton
         >
           <DialogHeader className="flex-none border-b border-border px-6 py-5">
@@ -140,75 +208,87 @@ export function TargetHostManagerDialog<TItem, TDraft>({
                 ? strings.title
                 : strings.formTitle(formBaseline !== JSON.stringify(createDraft()))}
             </DialogTitle>
-            <DialogDescription className="text-xs leading-5">
-              {strings.description}
-            </DialogDescription>
           </DialogHeader>
-          <ScrollArea className="min-h-0 flex-1 px-6 py-5 [padding-inline-end:var(--overlay-scrollbar-size)]">
-            {formDraft === null ? (
-              <div className="grid gap-4">
-                <div className="flex items-center justify-between gap-3">
-                  <h3 className="text-sm font-medium text-foreground">{strings.listTitle}</h3>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    disabled={!canAdd || saving}
-                    onClick={() => startForm(createDraft())}
-                  >
-                    <Plus data-icon="inline-start" weight="duotone" />
-                    {strings.add}
-                  </Button>
-                </div>
-                {draftItems.length ? (
-                  <div className="divide-y divide-border border-y border-border">
-                    {draftItems.map((item) => (
-                      <div key={itemKey(item)} className="flex min-w-0 items-center gap-2 py-2.5">
-                        <div className="min-w-0 flex-1">
-                          <div className="truncate text-xs font-medium text-foreground">
-                            {itemName(item)}
-                          </div>
-                          <div className="mt-1 flex min-w-0 flex-wrap items-center gap-2 text-[10px] text-muted-foreground">
-                            {renderMeta(item)}
-                          </div>
+          {formDraft === null ? (
+            <div className="min-h-0 flex-1 px-6 pt-4">
+              <ScrollArea
+                className="h-full min-h-0 [padding-inline-end:var(--overlay-scrollbar-size)]"
+                scrollFade="y"
+                options={{ scrollbars: { visibility: 'hidden' } }}
+              >
+                <div className="grid min-h-full content-start gap-2 py-1">
+                  {draftItems.length ? (
+                    <DndContext
+                      sensors={sensors}
+                      collisionDetection={closestCenter}
+                      onDragEnd={handleDragEnd}
+                    >
+                      <SortableContext
+                        items={draftItems.map(itemKey)}
+                        strategy={verticalListSortingStrategy}
+                      >
+                        <div className="grid gap-2">
+                          {draftItems.map((item) => (
+                            <SortableManagerItem
+                              key={itemKey(item)}
+                              id={itemKey(item)}
+                              label={strings.dragItem(itemName(item))}
+                              disabled={itemDisabled?.(item) ?? false}
+                            >
+                              <div className="min-w-0 flex-1">
+                                <div className="truncate text-xs font-medium text-foreground">
+                                  {itemName(item)}
+                                </div>
+                                <div className="mt-1 flex min-w-0 flex-wrap items-center gap-2 text-[10px] text-muted-foreground">
+                                  {renderMeta(item)}
+                                </div>
+                              </div>
+                              <Button
+                                variant="ghost"
+                                size="icon-sm"
+                                disabled={saving || (itemDisabled?.(item) ?? false)}
+                                className="text-muted-foreground/60 hover:text-foreground disabled:opacity-35"
+                                aria-label={strings.edit}
+                                onClick={() => startForm(toDraft(item))}
+                              >
+                                <PencilSimple weight="duotone" />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="icon-sm"
+                                disabled={saving || (itemDisabled?.(item) ?? false)}
+                                className="text-muted-foreground/60 hover:text-destructive disabled:opacity-35"
+                                aria-label={strings.remove}
+                                onClick={() => setRemoveItem(item)}
+                              >
+                                <Trash weight="duotone" />
+                              </Button>
+                            </SortableManagerItem>
+                          ))}
                         </div>
-                        <Button
-                          variant="ghost"
-                          size="icon-sm"
-                          disabled={saving}
-                          aria-label={strings.edit}
-                          onClick={() => startForm(toDraft(item))}
-                        >
-                          <PencilSimple weight="duotone" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon-sm"
-                          disabled={saving}
-                          className="text-muted-foreground hover:text-destructive"
-                          aria-label={strings.remove}
-                          onClick={() => setRemoveItem(item)}
-                        >
-                          <Trash weight="duotone" />
-                        </Button>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="flex flex-col items-center justify-center gap-2 border-y border-dashed border-border py-10 text-center">
-                    <HardDrives size={28} weight="duotone" className="text-muted-foreground" />
-                    <p className="m-0 text-xs font-medium text-foreground">{strings.empty}</p>
-                    <p className="m-0 max-w-xs text-[10px] leading-4 text-muted-foreground">
-                      {strings.emptyHint}
+                      </SortableContext>
+                    </DndContext>
+                  ) : (
+                    <Empty className="min-h-48">
+                      <EmptyHeader>
+                        <EmptyMedia variant="icon">
+                          <Plus />
+                        </EmptyMedia>
+                        <EmptyTitle>{strings.empty}</EmptyTitle>
+                        <EmptyDescription>{strings.emptyHint}</EmptyDescription>
+                      </EmptyHeader>
+                    </Empty>
+                  )}
+                  {saveError ? (
+                    <p className="m-0 text-xs text-destructive" role="alert">
+                      {saveError}
                     </p>
-                  </div>
-                )}
-                {saveError ? (
-                  <p className="m-0 text-xs text-destructive" role="alert">
-                    {saveError}
-                  </p>
-                ) : null}
-              </div>
-            ) : (
+                  ) : null}
+                </div>
+              </ScrollArea>
+            </div>
+          ) : (
+            <ScrollArea className="min-h-0 flex-1 px-6 py-5 [padding-inline-end:var(--overlay-scrollbar-size)]">
               <form
                 id="target-host-form"
                 className="grid gap-4"
@@ -230,23 +310,29 @@ export function TargetHostManagerDialog<TItem, TDraft>({
                   </p>
                 ) : null}
               </form>
-            )}
-          </ScrollArea>
+            </ScrollArea>
+          )}
           <DialogFooter className="mx-0 mb-0 flex-none rounded-b-xl px-6 py-4">
-            <Button
-              variant="outline"
-              disabled={saving}
-              onClick={() => (formDraft === null ? requestClose() : requestBack())}
-            >
-              {formDraft === null ? strings.done : strings.back}
-            </Button>
             {formDraft === null ? (
-              <Button disabled={saving || !collectionDirty} onClick={() => void persist()}>
-                {saving ? <Spinner data-icon="inline-start" /> : null}
-                {strings.save}
-              </Button>
+              <>
+                <Button
+                  variant="outline"
+                  disabled={!canAdd || saving}
+                  onClick={() => startForm(createDraft())}
+                >
+                  <Plus data-icon="inline-start" weight="duotone" />
+                  {strings.add}
+                </Button>
+                <Button disabled={saving || !collectionDirty} onClick={() => void persist()}>
+                  {saving ? <Spinner data-icon="inline-start" /> : null}
+                  {strings.save}
+                </Button>
+              </>
             ) : (
               <>
+                <Button variant="outline" disabled={saving} onClick={requestBack}>
+                  {strings.back}
+                </Button>
                 {renderFormActions?.(formDraft)}
                 <Button type="submit" form="target-host-form" disabled={saving}>
                   {strings.save}

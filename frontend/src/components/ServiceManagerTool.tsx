@@ -984,10 +984,15 @@ export default function ServiceManagerTool({
             <Label htmlFor="service-target-profile">
               {t('serviceManagerTool.targetSSHProfile')}
             </Label>
-            <SSHProfileSelect
+            <SSHProfileFormField
               id="service-target-profile"
               value={editingTarget.sshProfileID ?? ''}
-              onValueChange={(value) => updateTargetDraft({ sshProfileID: value })}
+              onSelect={(profile) =>
+                updateTargetDraft({
+                  sshProfileID: profile?.id ?? '',
+                  name: editingTarget.name.trim() || profile?.name || editingTarget.name,
+                })
+              }
               placeholder={t('serviceManagerTool.selectSSHProfile')}
             />
             {editingTarget.sshProfileID && !profile ? (
@@ -1473,9 +1478,15 @@ export default function ServiceManagerTool({
             </div>
             <div className="grid gap-1.5">
               <Label>{t('serviceManagerTool.targetSSHProfile')}</Label>
-              <SSHProfileSelect
+              <SSHProfileFormField
                 value={draft.sshProfileID ?? ''}
-                onValueChange={(sshProfileID) => setDraft({ ...draft, sshProfileID })}
+                onSelect={(profile) =>
+                  setDraft({
+                    ...draft,
+                    sshProfileID: profile?.id ?? '',
+                    name: draft.name.trim() || profile?.name || draft.name,
+                  })
+                }
                 placeholder={t('serviceManagerTool.selectSSHProfile')}
               />
             </div>
@@ -1483,15 +1494,13 @@ export default function ServiceManagerTool({
         )}
         strings={{
           title: t('serviceManagerTool.manageTargetsTitle'),
-          description: t('serviceManagerTool.manageTargetsDesc'),
-          listTitle: t('serviceManagerTool.targets'),
           add: t('serviceManagerTool.addTarget'),
           edit: t('serviceManagerTool.editTarget'),
           remove: t('serviceManagerTool.removeTarget'),
+          dragItem: (name) => t('sidebar.dragTool', { name }),
           empty: t('serviceManagerTool.targetHostsEmpty'),
           emptyHint: t('serviceManagerTool.targetHostsEmptyHint'),
           save: t('common.save'),
-          done: t('common.done'),
           back: t('common.cancel'),
           discardTitle: t('serviceManagerTool.discardTargetsTitle'),
           discardDescription: t('serviceManagerTool.discardTargetsDescription'),

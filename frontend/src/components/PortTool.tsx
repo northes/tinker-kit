@@ -30,7 +30,7 @@ import type {
 } from '../../bindings/changeme/models';
 import { formatBackendError } from '../lib/backend-error';
 import { useSSHProfiles } from './SSHProfileManagerDialog';
-import { SSHProfileSelect } from './SSHProfileSelect';
+import { SSHProfileFormField } from './SSHProfileFormField';
 import { ConfirmDialog } from './ConfirmDialog';
 import { TargetHostManagerDialog } from './TargetHostManagerDialog';
 import {
@@ -307,12 +307,21 @@ export default function PortTool({ active }: { active: boolean }) {
   const [deleteError, setDeleteError] = useState('');
   const [manageOpen, setManageOpen] = useState(false);
   const [savingSources, setSavingSources] = useState(false);
+  const sourcesLoadedRef = useRef(false);
 
   const refreshSources = useCallback(async () => {
     try {
       const next = (await GetPortSources()) ?? [];
       setSources(next);
-      setSource((current) => (next.some((item) => item.id === current) ? current : 'local'));
+      const initialLoad = !sourcesLoadedRef.current;
+      sourcesLoadedRef.current = true;
+      setSource((current) =>
+        initialLoad
+          ? (next[0]?.id ?? 'local')
+          : next.some((item) => item.id === current)
+            ? current
+            : (next[0]?.id ?? 'local'),
+      );
     } catch (cause) {
       setError(formatBackendError(cause));
     }
@@ -419,7 +428,7 @@ export default function PortTool({ active }: { active: boolean }) {
   const selectedSource = sources.find((item) => item.id === source);
   const sourceOptions = sources.map((item) => ({
     value: item.id,
-    label: item.id === 'local' ? t('portTool.local') : item.name,
+    label: item.id === 'local' ? t('portTool.localMachine') : item.name,
   }));
   const forwardSourceOptions = sources
     .filter((item) => item.kind === 'ssh')
@@ -1169,9 +1178,10 @@ export default function PortTool({ active }: { active: boolean }) {
       <TargetHostManagerDialog<PortSource, PortSource>
         open={manageOpen}
         onOpenChange={setManageOpen}
-        items={sources.filter((item) => item.kind === 'ssh')}
+        items={sources}
         itemKey={(item) => item.id}
         itemName={(item) => item.name}
+        itemDisabled={(item) => item.id === 'local' || item.kind === 'local'}
         createDraft={() => ({
           id: '',
           name: '',
@@ -1192,16 +1202,20 @@ export default function PortTool({ active }: { active: boolean }) {
         }}
         saveItems={saveSources}
         saving={savingSources}
-        renderMeta={(item) => (
-          <>
-            <span>{t('portTool.sourceKindSsh')}</span>
-            {!profiles.some((profile) => profile.id === item.sshProfileID) ? (
-              <Badge variant="destructive" className="h-4 text-[9px]">
-                {t('portTool.sshProfileMissing')}
-              </Badge>
-            ) : null}
-          </>
-        )}
+        renderMeta={(item) =>
+          item.id === 'local' || item.kind === 'local' ? (
+            <span>{t('portTool.localMachine')}</span>
+          ) : (
+            <>
+              <span>{t('portTool.sourceKindSsh')}</span>
+              {!profiles.some((profile) => profile.id === item.sshProfileID) ? (
+                <Badge variant="destructive" className="h-4 text-[9px]">
+                  {t('portTool.sshProfileMissing')}
+                </Badge>
+              ) : null}
+            </>
+          )
+        }
         renderForm={({ draft, setDraft }) => (
           <>
             <div className="grid gap-1.5">
@@ -1213,9 +1227,15 @@ export default function PortTool({ active }: { active: boolean }) {
             </div>
             <div className="grid gap-1.5">
               <Label>{t('portTool.sshProfile')}</Label>
-              <SSHProfileSelect
+              <SSHProfileFormField
                 value={draft.sshProfileID ?? ''}
-                onValueChange={(sshProfileID) => setDraft({ ...draft, sshProfileID })}
+                onSelect={(profile) =>
+                  setDraft({
+                    ...draft,
+                    sshProfileID: profile?.id ?? '',
+                    name: draft.name.trim() || profile?.name || draft.name,
+                  })
+                }
                 placeholder={t('portTool.selectSSHProfile')}
               />
             </div>
@@ -1223,15 +1243,13 @@ export default function PortTool({ active }: { active: boolean }) {
         )}
         strings={{
           title: t('portTool.manageSourcesTitle'),
-          description: t('portTool.manageSourcesDesc'),
-          listTitle: t('portTool.sources'),
           add: t('portTool.addSource'),
           edit: t('portTool.editSource'),
           remove: t('portTool.removeSource'),
+          dragItem: (name) => t('sidebar.dragTool', { name }),
           empty: t('portTool.sourceHostsEmpty'),
           emptyHint: t('portTool.sourceHostsEmptyHint'),
           save: t('common.save'),
-          done: t('common.done'),
           back: t('common.cancel'),
           discardTitle: t('portTool.discardSourcesTitle'),
           discardDescription: t('portTool.discardSourcesDescription'),

@@ -146,7 +146,7 @@ import {
   StartRemoteFileOperation,
   StartFileUpload,
 } from '../../bindings/changeme/fileservice';
-import { SSHProfileSelect } from './SSHProfileSelect';
+import { SSHProfileFormField } from './SSHProfileFormField';
 import { openTaskCenter } from './TaskCenter';
 import { ConfirmDialog } from './ConfirmDialog';
 import { useSSHProfiles } from './SSHProfileManagerDialog';
@@ -2733,10 +2733,16 @@ export default function SshFilesTool({ active }: Props) {
                 <Label htmlFor="ssh-source-profile" className="text-xs text-muted-foreground">
                   {t('sshFilesTool.selectSSHProfile')}
                 </Label>
-                <SSHProfileSelect
+                <SSHProfileFormField
                   id="ssh-source-profile"
                   value={draft.sshProfileID}
-                  onValueChange={(sshProfileID) => setDraft({ ...draft, sshProfileID })}
+                  onSelect={(profile) =>
+                    setDraft({
+                      ...draft,
+                      sshProfileID: profile?.id ?? '',
+                      name: draft.name.trim() || profile?.name || draft.name,
+                    })
+                  }
                   placeholder={t('sshFilesTool.selectSSHProfile')}
                 />
                 <p className="m-0 text-[10px] leading-4 text-muted-foreground">
@@ -2765,15 +2771,13 @@ export default function SshFilesTool({ active }: Props) {
         }}
         strings={{
           title: t('sshFilesTool.manageTitle'),
-          description: t('sshFilesTool.manageDesc'),
-          listTitle: t('sshFilesTool.source'),
           add: t('sshFilesTool.addSource'),
           edit: t('sshFilesTool.editSource'),
           remove: t('sshFilesTool.removeSourceAction'),
+          dragItem: (name) => t('sidebar.dragTool', { name }),
           empty: t('sshFilesTool.empty'),
           emptyHint: t('sshFilesTool.emptyHint'),
           save: t('common.save'),
-          done: t('common.done'),
           back: t('sshFilesTool.backToList'),
           discardTitle: t('sshFilesTool.discardManageTitle'),
           discardDescription: t('sshFilesTool.discardManageConfirm'),

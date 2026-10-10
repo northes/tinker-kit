@@ -94,7 +94,7 @@ import { Spinner } from './ui/spinner';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
 import { toast } from './ui/toast';
 import { openTaskCenter } from './TaskCenter';
-import { SSHProfileSelect } from './SSHProfileSelect';
+import { SSHProfileFormField } from './SSHProfileFormField';
 import { useSSHProfiles } from './SSHProfileManagerDialog';
 import { ConfirmDialog } from './ConfirmDialog';
 import { TargetHostManagerDialog } from './TargetHostManagerDialog';
@@ -1674,10 +1674,15 @@ export default function ImageManagerTool({
             <>
               <div className="flex flex-col gap-2 sm:col-span-2">
                 <Label htmlFor="source-edit-ssh-profile">{t('imageManagerTool.sshProfile')}</Label>
-                <SSHProfileSelect
+                <SSHProfileFormField
                   id="source-edit-ssh-profile"
                   value={editingSource.sshProfileID ?? ''}
-                  onValueChange={(value) => updateDraft({ sshProfileID: value })}
+                  onSelect={(profile) =>
+                    updateDraft({
+                      sshProfileID: profile?.id ?? '',
+                      name: editingSource.name?.trim() || profile?.name || editingSource.name,
+                    })
+                  }
                   placeholder={t('imageManagerTool.selectSSHProfile')}
                 />
                 {editingSource.sshProfileID &&
@@ -1804,10 +1809,15 @@ export default function ImageManagerTool({
   };
 
   const saveManagedSources = async (managed: ImageSource[]) => {
-    const nextSources = [
-      bindingSource({ ...LOCAL_SOURCE, id: LOCAL_SOURCE_ID, kind: 'local' } as ManagedImageSource),
-      ...managed.map((item) => bindingSource(item as ManagedImageSource)),
-    ];
+    const nextSources = managed.map((item) =>
+      isLocalSource(item)
+        ? bindingSource({
+            ...LOCAL_SOURCE,
+            id: LOCAL_SOURCE_ID,
+            kind: 'local',
+          } as ManagedImageSource)
+        : bindingSource(item as ManagedImageSource),
+    );
     const invalid = nextSources.find((item) =>
       item.kind === 'ssh'
         ? !item.sshProfileID.trim() || !profiles.some((profile) => profile.id === item.sshProfileID)
@@ -3156,9 +3166,10 @@ export default function ImageManagerTool({
       <TargetHostManagerDialog<ImageSource, SourceDraft>
         open={manageOpen}
         onOpenChange={setManageOpen}
-        items={sources.filter((item) => !isLocalSource(item))}
+        items={sources}
         itemKey={(item) => item.id}
         itemName={(item) => sourceDisplayName(item, t, profiles)}
+        itemDisabled={isLocalSource}
         createDraft={() => ({ id: '', name: '', kind: 'ssh', sshProfileID: '' }) as SourceDraft}
         toDraft={(item) => ({ ...(item as ManagedImageSource) }) as SourceDraft}
         commitDraft={async (draft, previous) => {
@@ -3234,9 +3245,15 @@ export default function ImageManagerTool({
             {draft.kind === 'ssh' ? (
               <div className="grid gap-1.5">
                 <Label>{t('imageManagerTool.sshProfile')}</Label>
-                <SSHProfileSelect
+                <SSHProfileFormField
                   value={draft.sshProfileID ?? ''}
-                  onValueChange={(sshProfileID) => setDraft({ ...draft, sshProfileID })}
+                  onSelect={(profile) =>
+                    setDraft({
+                      ...draft,
+                      sshProfileID: profile?.id ?? '',
+                      name: draft.name?.trim() || profile?.name || draft.name,
+                    })
+                  }
                   placeholder={t('imageManagerTool.selectSSHProfile')}
                 />
               </div>
@@ -3305,15 +3322,13 @@ export default function ImageManagerTool({
         }
         strings={{
           title: t('imageManagerTool.manageSourcesTitle'),
-          description: t('imageManagerTool.manageSourcesDesc'),
-          listTitle: t('imageManagerTool.targetHosts'),
-          add: t('imageManagerTool.addTargetHost'),
+          add: t('common.add'),
           edit: t('imageManagerTool.editTargetHost'),
           remove: t('imageManagerTool.removeTargetHost'),
+          dragItem: (name) => t('sidebar.dragTool', { name }),
           empty: t('imageManagerTool.targetHostsEmpty'),
           emptyHint: t('imageManagerTool.targetHostsEmptyHint'),
           save: t('common.save'),
-          done: t('common.done'),
           back: t('common.cancel'),
           discardTitle: t('imageManagerTool.discardTargetsTitle'),
           discardDescription: t('imageManagerTool.discardTargetsDescription'),
