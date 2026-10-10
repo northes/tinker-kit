@@ -665,7 +665,6 @@
     "copy": "Copy parsed result",
     "copied": "URL parsed result",
     "copyPart": "Copy {{part}}",
-    "partCopied": "Copied {{part}}",
     "paramsCopied": "Copied parameters as JSON"
   },
   "qrTool": {

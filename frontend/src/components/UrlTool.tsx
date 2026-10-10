@@ -4,7 +4,7 @@ import { ScrollArea } from './ui/scroll-area';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { Switch } from './ui/switch';
-import { Check, Copy, Plus, Trash } from '@phosphor-icons/react';
+import { Copy, Plus, Trash } from '@phosphor-icons/react';
 import { useTranslation } from 'react-i18next';
 import CodeMirror from '@uiw/react-codemirror';
 import { EditorView } from '@codemirror/view';
@@ -108,7 +108,6 @@ export default function UrlTool({
   const consumed = useRef<PendingAction | null>(null);
   const lastRecorded = useRef('');
   const recordTimer = useRef<number | null>(null);
-  const [copied, setCopied] = useState('');
   const parts = useMemo(() => parseSupportedUrl(input), [input]);
   const invalid = !!input.trim() && !parts;
   useFocusOnActivate(active, () => inputView.current?.focus());
@@ -136,15 +135,13 @@ export default function UrlTool({
       if (recordTimer.current !== null) window.clearTimeout(recordTimer.current);
     };
   }, [parts, input, output, record, t]);
-  const copyValue = async (id: string, value: string, label: string) => {
+  const copyValue = async (value: string, label: string) => {
     await navigator.clipboard?.writeText(value).catch(() => {});
-    setCopied(id);
-    window.setTimeout(() => setCopied((current) => (current === id ? '' : current)), 1600);
     toast.add({ title: t('toast.copied', { value: label }) });
   };
   const copy = async () => {
     if (!parts) return;
-    await copyValue('all', output, t('urlTool.copied'));
+    await copyValue(output, t('urlTool.copied'));
     record(
       'url',
       t('urlTool.copy'),
@@ -411,7 +408,7 @@ export default function UrlTool({
                         className="size-8 min-w-8 flex-none"
                         aria-label={t('urlTool.copyPart', { part: t('urlTool.params') })}
                         onClick={() =>
-                          void copyValue('params', urlParamsJson(parts.params), t('urlTool.params'))
+                          void copyValue(urlParamsJson(parts.params), t('urlTool.params'))
                         }
                       >
                         <Copy size={14} weight="duotone" />
@@ -459,19 +456,16 @@ export default function UrlTool({
               },
               {
                 key: 'copyInput',
-                label:
-                  copied === 'input'
-                    ? t('urlTool.partCopied', { part: t('urlTool.input') })
-                    : t('urlTool.copyPart', { part: t('urlTool.input') }),
-                icon: copied === 'input' ? Check : Copy,
+                label: t('urlTool.copyPart', { part: t('urlTool.input') }),
+                icon: Copy,
                 variant: 'secondary',
                 disabled: !input,
-                onPress: () => void copyValue('input', input, t('urlTool.input')),
+                onPress: () => void copyValue(input, t('urlTool.input')),
               },
               {
                 key: 'copy',
-                label: copied === 'all' ? t('urlTool.copied') : t('urlTool.copy'),
-                icon: copied === 'all' ? Check : Copy,
+                label: t('urlTool.copy'),
+                icon: Copy,
                 variant: 'primary',
                 disabled: !parts,
                 onPress: () => void copy(),

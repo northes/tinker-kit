@@ -665,7 +665,6 @@
     "copy": "复制解析结果",
     "copied": "URL 解析结果",
     "copyPart": "复制{{part}}",
-    "partCopied": "已复制{{part}}",
     "paramsCopied": "已复制参数 JSON"
   },
   "qrTool": {

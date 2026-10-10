@@ -7,7 +7,6 @@ import {
   CaretDown,
   CaretLeft,
   CaretUp,
-  Check,
   CloudArrowDown,
   Copy,
   DownloadSimple,
@@ -1085,10 +1084,6 @@ export default function ImageManagerTool({
   const [sourceSaveError, setSourceSaveError] = useState('');
   const [sourceDraftError, setSourceDraftError] = useState('');
   const [testingSource, setTestingSource] = useState(false);
-  const [copiedName, setCopiedName] = useState<string | null>(null);
-  const [copiedId, setCopiedId] = useState<string | null>(null);
-  const [copiedDigest, setCopiedDigest] = useState<string | null>(null);
-  const [copiedTag, setCopiedTag] = useState<string | null>(null);
   const [confirm, setConfirm] = useState<ConfirmState>(null);
   const [operationDialog, setOperationDialog] = useState<ImageOperationDialogState>(null);
   const [operationError, setOperationError] = useState('');
@@ -1867,11 +1862,6 @@ export default function ImageManagerTool({
   const copyImageName = async (name: string) => {
     try {
       await navigator.clipboard.writeText(name);
-      setCopiedName(name);
-      window.setTimeout(
-        () => setCopiedName((current) => (current === name ? null : current)),
-        1400,
-      );
       toast.add({ title: t('imageManagerTool.copied') });
     } catch {
       toast.add({ title: t('imageManagerTool.copyFailed'), type: 'error' });
@@ -1881,8 +1871,6 @@ export default function ImageManagerTool({
   const copyImageId = async (id: string) => {
     try {
       await navigator.clipboard.writeText(id);
-      setCopiedId(id);
-      window.setTimeout(() => setCopiedId((current) => (current === id ? null : current)), 1400);
       toast.add({ title: t('imageManagerTool.idCopied') });
     } catch {
       toast.add({ title: t('imageManagerTool.copyFailed'), type: 'error' });
@@ -1906,11 +1894,6 @@ export default function ImageManagerTool({
   const copyDigest = async (digest: string) => {
     try {
       await navigator.clipboard.writeText(digest);
-      setCopiedDigest(digest);
-      window.setTimeout(
-        () => setCopiedDigest((current) => (current === digest ? null : current)),
-        1400,
-      );
       toast.add({ title: t('imageManagerTool.digestCopied') });
     } catch {
       toast.add({ title: t('imageManagerTool.copyFailed'), type: 'error' });
@@ -1920,8 +1903,6 @@ export default function ImageManagerTool({
   const copyTag = async (tag: string) => {
     try {
       await navigator.clipboard.writeText(tag);
-      setCopiedTag(tag);
-      window.setTimeout(() => setCopiedTag((current) => (current === tag ? null : current)), 1400);
       toast.add({ title: t('imageManagerTool.tagCopied') });
     } catch {
       toast.add({ title: t('imageManagerTool.copyFailed'), type: 'error' });
@@ -2657,9 +2638,7 @@ export default function ImageManagerTool({
                               <Copy data-icon="inline-start" weight="duotone" />
                               {operationRows.length > 1
                                 ? t('imageManagerTool.batchCopyName')
-                                : copiedName === copyableImageName(source, rowLabel)
-                                  ? t('imageManagerTool.copied')
-                                  : t('imageManagerTool.copyName')}
+                                : t('imageManagerTool.copyName')}
                             </ContextMenuItem>
                             <ContextMenuItem
                               disabled={interactionBlocked}
@@ -2668,9 +2647,7 @@ export default function ImageManagerTool({
                               <IdentificationCard data-icon="inline-start" weight="duotone" />
                               {operationRows.length > 1
                                 ? t('imageManagerTool.batchCopyId')
-                                : copiedId === row.image.id
-                                  ? t('imageManagerTool.idCopied')
-                                  : t('imageManagerTool.copyId')}
+                                : t('imageManagerTool.copyId')}
                             </ContextMenuItem>
                           </ContextMenuGroup>
                           <ContextMenuSeparator />
@@ -3423,11 +3400,7 @@ export default function ImageManagerTool({
                           aria-label={t('imageManagerTool.copyDigest')}
                           onClick={() => void copyDigest(digest)}
                         >
-                          {copiedDigest === digest ? (
-                            <Check aria-hidden="true" />
-                          ) : (
-                            <Copy aria-hidden="true" />
-                          )}
+                          <Copy aria-hidden="true" />
                         </Button>
                       </div>
                     ))}
@@ -3454,11 +3427,7 @@ export default function ImageManagerTool({
                           aria-label={t('imageManagerTool.copyTag')}
                           onClick={() => void copyTag(tag)}
                         >
-                          {copiedTag === tag ? (
-                            <Check size={13} className="mt-0.5 shrink-0" aria-hidden="true" />
-                          ) : (
-                            <Copy size={13} className="mt-0.5 shrink-0" aria-hidden="true" />
-                          )}
+                          <Copy size={13} className="mt-0.5 shrink-0" aria-hidden="true" />
                           <code className="min-w-0 break-all font-mono text-xs leading-5">
                             {tag}
                           </code>

@@ -1,5 +1,5 @@
 import React from 'react';
-import { ArrowsClockwise, Bug, Check, Copy, GithubLogo } from '@phosphor-icons/react';
+import { ArrowsClockwise, Bug, Copy, GithubLogo } from '@phosphor-icons/react';
 import { Browser, Window } from '@wailsio/runtime';
 import { useTranslation } from 'react-i18next';
 import type { SystemInfo } from '../../bindings/changeme/models';
@@ -8,6 +8,7 @@ import { GetCurrentVersion } from '../../bindings/changeme/updateservice';
 import { GITHUB_REPO_URL } from '../repositoryUrl';
 import { Button } from './ui/button';
 import { ScrollArea } from './ui/scroll-area';
+import { Toaster, toast } from './ui/toast';
 
 type FatalErrorBoundaryProps = { children: React.ReactNode };
 type FatalErrorBoundaryState = { error: Error | null };
@@ -41,7 +42,6 @@ function formatErrorDetails(error: Error): string {
 
 function CrashScreen({ error, onReload }: { error: Error; onReload: () => void }) {
   const { t } = useTranslation();
-  const [copied, setCopied] = React.useState(false);
   const [version, setVersion] = React.useState<string | null>(null);
   const [systemInfo, setSystemInfo] = React.useState<SystemInfo | null>(null);
   const unknownLabel = t('crash.unknown');
@@ -83,74 +83,71 @@ function CrashScreen({ error, onReload }: { error: Error; onReload: () => void }
         errorText,
       ].join('\n');
       await navigator.clipboard.writeText(report);
-      setCopied(true);
-      window.setTimeout(() => setCopied(false), 1600);
+      toast.add({ title: t('crash.copied'), type: 'success' });
     } catch {
       // WebView 出错时可能无法访问剪贴板。
     }
   };
 
   return (
-    <main className="relative flex h-dvh items-center justify-center bg-background px-6 text-foreground">
-      <header
-        className="absolute inset-x-0 top-0 h-(--app-titlebar-height) cursor-default [--wails-draggable:drag]"
-        data-wails-drag
-      />
-      <section className="flex w-full max-w-[420px] flex-col items-center text-center">
-        <Bug size={34} weight="duotone" className="mb-4 text-destructive" />
-        <h1 className="text-base font-semibold">{t('crash.title')}</h1>
-        <p className="mt-2 text-xs leading-5 text-muted-foreground">{t('crash.description')}</p>
-        <div className="mt-6 flex flex-wrap items-center justify-center gap-2">
-          <Button type="button" onClick={onReload}>
-            <ArrowsClockwise data-icon="inline-start" size={15} weight="duotone" />
-            {t('crash.reload')}
-          </Button>
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => void Browser.OpenURL(GITHUB_REPO_URL)}
-          >
-            <GithubLogo data-icon="inline-start" size={15} weight="duotone" />
-            {t('crash.openRepository')}
-          </Button>
-        </div>
-        <details className="mt-6 w-full text-left text-[10px] text-muted-foreground">
-          <summary className="cursor-pointer text-center">{t('crash.details')}</summary>
-          <dl className="mt-2 flex flex-col gap-3 rounded-lg border border-border bg-muted/30 p-3">
-            <div>
-              <dt className="font-medium text-foreground">{t('crash.version')}</dt>
-              <dd className="mt-1 break-all">{versionLabel}</dd>
-            </div>
-            <div>
-              <dt className="font-medium text-foreground">{t('crash.system')}</dt>
-              <dd className="mt-1 break-all">{systemLabel}</dd>
-            </div>
-            <div>
-              <dt className="font-medium text-foreground">{t('crash.error')}</dt>
-              <dd className="mt-1 flex items-start gap-2">
-                <ScrollArea element="pre" className="min-w-0 flex-1 max-h-32 whitespace-pre-wrap">
-                  {errorText}
-                </ScrollArea>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon-sm"
-                  aria-label={t(copied ? 'crash.copied' : 'crash.copy')}
-                  title={t(copied ? 'crash.copied' : 'crash.copy')}
-                  onClick={() => void copyErrorDetails()}
-                >
-                  {copied ? (
-                    <Check size={14} weight="duotone" />
-                  ) : (
+    <Toaster>
+      <main className="relative flex h-dvh items-center justify-center bg-background px-6 text-foreground">
+        <header
+          className="absolute inset-x-0 top-0 h-(--app-titlebar-height) cursor-default [--wails-draggable:drag]"
+          data-wails-drag
+        />
+        <section className="flex w-full max-w-[420px] flex-col items-center text-center">
+          <Bug size={34} weight="duotone" className="mb-4 text-destructive" />
+          <h1 className="text-base font-semibold">{t('crash.title')}</h1>
+          <p className="mt-2 text-xs leading-5 text-muted-foreground">{t('crash.description')}</p>
+          <div className="mt-6 flex flex-wrap items-center justify-center gap-2">
+            <Button type="button" onClick={onReload}>
+              <ArrowsClockwise data-icon="inline-start" size={15} weight="duotone" />
+              {t('crash.reload')}
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => void Browser.OpenURL(GITHUB_REPO_URL)}
+            >
+              <GithubLogo data-icon="inline-start" size={15} weight="duotone" />
+              {t('crash.openRepository')}
+            </Button>
+          </div>
+          <details className="mt-6 w-full text-left text-[10px] text-muted-foreground">
+            <summary className="cursor-pointer text-center">{t('crash.details')}</summary>
+            <dl className="mt-2 flex flex-col gap-3 rounded-lg border border-border bg-muted/30 p-3">
+              <div>
+                <dt className="font-medium text-foreground">{t('crash.version')}</dt>
+                <dd className="mt-1 break-all">{versionLabel}</dd>
+              </div>
+              <div>
+                <dt className="font-medium text-foreground">{t('crash.system')}</dt>
+                <dd className="mt-1 break-all">{systemLabel}</dd>
+              </div>
+              <div>
+                <dt className="font-medium text-foreground">{t('crash.error')}</dt>
+                <dd className="mt-1 flex items-start gap-2">
+                  <ScrollArea element="pre" className="min-w-0 flex-1 max-h-32 whitespace-pre-wrap">
+                    {errorText}
+                  </ScrollArea>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon-sm"
+                    aria-label={t('crash.copy')}
+                    title={t('crash.copy')}
+                    onClick={() => void copyErrorDetails()}
+                  >
                     <Copy size={14} weight="duotone" />
-                  )}
-                </Button>
-              </dd>
-            </div>
-          </dl>
-        </details>
-      </section>
-    </main>
+                  </Button>
+                </dd>
+              </div>
+            </dl>
+          </details>
+        </section>
+      </main>
+    </Toaster>
   );
 }
 
