@@ -44,6 +44,10 @@ user-invocable: false
 - 排序优先级为当前工具命令、工具命令、导航命令、设置命令，组内再按匹配分数。
 - 不消费输入的切换命令必须在 pending effect 中先处理并 `return`，不能先把空输入写回编辑器。
 
+## 工具文案
+
+- 工具页只显示工具标题，不添加副标题或重复说明。新增工具的 locale 文案只提供标题；确有必要的操作提示放在工具内容区，并保持简短。
+
 ## 文件拖入与打开
 
 工具需要接收本地文件时，统一使用 `frontend/src/components/fileDrop.tsx`，不要各自实现 HTML5 drop、隐藏 `<input type=file>` 或 window 级监听：

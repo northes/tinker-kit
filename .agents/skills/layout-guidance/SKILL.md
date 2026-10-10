@@ -20,6 +20,7 @@ user-invocable: false
 ## 工具页布局
 
 - 所有工具页使用 `shared.tsx` 的 `ToolLayout`，不要在工具组件中自行创建 `.tool-page` 外壳。
+- 工具页头部只保留工具标题，不显示副标题；操作提示应放在对应内容附近，避免重复标题或说明。
 - `ToolLayout` 固定为三行网格：`header auto / content minmax(0,1fr) / footer auto`。
 - 工具对应的 `Reveal` 使用 `fill`，`.tool-slot` 占满 workspace 高度；高度链上的每层都设置 `height: 100%` 或 `min-height: 0`。
 - content 默认使用自身滚动；CodeMirror 等内部管理滚动的工具使用 `contentMode="fixed"`。
