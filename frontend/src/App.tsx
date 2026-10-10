@@ -112,7 +112,7 @@ import {
   SaveImageSources,
 } from '../bindings/changeme/configservice';
 import { Log as LogFrontend } from '../bindings/changeme/logservice';
-import { SetAutoCheckEnabled } from '../bindings/changeme/updateservice';
+import { CheckForUpdates, SetAutoCheckEnabled } from '../bindings/changeme/updateservice';
 import type { Config as Settings, SidebarToolConfig } from '../bindings/changeme/models';
 import { useLocation, useNavigate, useNavigationType } from 'react-router';
 import { resolveTheme } from './theme';
@@ -1332,7 +1332,7 @@ function AppShell() {
   const [pending, setPending] = useState<PendingAction | null>(null);
   const [settingsCommandRequest, setSettingsCommandRequest] = useState<{
     id: number;
-    action: 'quit' | 'check-updates';
+    action: 'quit';
   } | null>(null);
   const settingsCommandId = useRef(0);
   const [jsonSchemaOpen, setJsonSchemaOpen] = useState(false);
@@ -1809,10 +1809,32 @@ function AppShell() {
     if (item.settingsAction) {
       switch (item.settingsAction) {
         case 'quit':
-        case 'check-updates':
           settingsCommandId.current += 1;
           setSettingsCommandRequest({ id: settingsCommandId.current, action: item.settingsAction });
           if (page !== 'settings') navigate('settings');
+          return;
+        case 'check-updates':
+          void (async () => {
+            window.dispatchEvent(new CustomEvent('tinkerkit:update-check', { detail: 'checking' }));
+            try {
+              const available = await CheckForUpdates();
+              if (!available) toast.add({ title: t('settings.upToDate'), type: 'success' });
+              window.dispatchEvent(
+                new CustomEvent('tinkerkit:update-check', {
+                  detail: available ? 'available' : 'finished',
+                }),
+              );
+            } catch (error) {
+              toast.add({
+                title: t('settings.updateFailed'),
+                description: formatBackendError(error) || t('settings.updateFailedDesc'),
+                type: 'error',
+              });
+              window.dispatchEvent(
+                new CustomEvent('tinkerkit:update-check', { detail: 'finished' }),
+              );
+            }
+          })();
           return;
         case 'toggle-display-mode':
           setSettingsWithThemeTransition((current) => {

@@ -659,7 +659,7 @@ export default function SettingsPage({
   tools: ToolDefinition[];
   sidebarManaging: boolean;
   onToggleSidebarManage: () => void;
-  commandRequest: { id: number; action: 'quit' | 'check-updates' } | null;
+  commandRequest: { id: number; action: 'quit' } | null;
   onCommandRequestHandled: (id: number) => void;
   flushSettingsSave: () => Promise<void>;
   onConfigReplaced: (config: Settings) => void;
@@ -747,8 +747,7 @@ export default function SettingsPage({
   useEffect(() => {
     if (!commandRequest || handledCommandRef.current === commandRequest.id) return;
     handledCommandRef.current = commandRequest.id;
-    if (commandRequest.action === 'quit') setConfirmQuit(true);
-    else void checkUpdates();
+    setConfirmQuit(true);
     onCommandRequestHandled(commandRequest.id);
   }, [commandRequest, onCommandRequestHandled]);
   const sendTestTaskNotification = async () => {
