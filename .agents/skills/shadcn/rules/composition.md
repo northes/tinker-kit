@@ -58,6 +58,8 @@ This applies to all group-based components:
 
 Chat components nest in a fixed order (`MessageScrollerProvider` → `MessageScroller` → `MessageScrollerViewport` → `MessageScrollerContent` → `MessageScrollerItem`). See [chat.md](./chat.md).
 
+For this project's `CommandDialog`, keep command items inside `CommandGroup`; the group supplies the inset around the selected highlight. Keyboard and pointer highlight behavior, including first/last-item looping, belongs to the shared `Command` in `frontend/src/components/ui/command.tsx`, not to individual dialogs.
+
 ---
 
 ## Callouts use Alert

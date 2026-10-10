@@ -67,6 +67,11 @@ user-invocable: false
 - 剪贴板或长文本预览用固定高度 + 自动换行 + 垂直滚动（如 `h-24 whitespace-pre-wrap break-all overflow-y-auto`），不要按字符截断成不可滚动，也不要只靠 `max-h` 裁切。
 - 圆角统一使用 shadcn 的 `--radius` 和既有组件圆角，不新增全局圆角覆盖层。
 
+### 命令面板
+
+- `CommandDialog` 内按 `Command` → `CommandInput` + `CommandList` → `CommandEmpty` + `CommandGroup` → `CommandItem` 组织；每个 `CommandItem` 都必须放在 `CommandGroup` 中。`CommandGroup` 提供列表内边距，避免选中高亮贴住列表边缘。
+- 键盘上下移动、首尾循环、鼠标移动高亮、列表变化后选中第一项及将高亮项滚入视口，统一由 `frontend/src/components/ui/command.tsx` 的共享 `Command` 实现。各面板不要单独维护高亮状态、指针移动处理或重复设置这些行为属性。
+
 ### WebView 小尺寸旋转图标
 
 - Wails WebView 中，小尺寸 SVG 即使是正方形且 `transform-origin` 正确，落在半物理像素位置时仍可能因逐帧栅格化出现约 1px 的视觉跳动，看起来像旋转中心偏移。先检查静态外框坐标乘以 `devicePixelRatio` 是否为整数，再判断是否属于此问题。
