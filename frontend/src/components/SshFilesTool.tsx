@@ -140,6 +140,7 @@ import type {
   SSHProfile,
 } from '../../bindings/changeme/models';
 import {
+  CancelRemoteFileRequest,
   CalculateRemoteSize,
   CancelFileTask,
   CreateRemoteDirectory,
@@ -798,6 +799,7 @@ export default function SshFilesTool({ active }: Props) {
   const cancelLoading = useCallback(() => {
     const kind = loadingKindRef.current;
     if (!kind) return;
+    const activeDirectoryRequestID = String(directoryRequestRef.current);
     // 目录加载被中断时清空已加载标记，返回该工具时会重新加载。
     if (kind === 'directory') directoryLoadKeyRef.current = '';
     sourcesRequestRef.current++;
@@ -806,7 +808,11 @@ export default function SshFilesTool({ active }: Props) {
     const requests = Array.from(loadingCallsRef.current);
     loadingCallsRef.current.clear();
     loadingKindRef.current = null;
-    for (const request of requests) void request.cancel();
+    if (kind === 'directory') {
+      void CancelRemoteFileRequest(activeDirectoryRequestID).catch(() => undefined);
+    } else {
+      for (const request of requests) void request.cancel();
+    }
     setLoadingSources(false);
     setLoading(false);
     setSearching(false);
@@ -816,12 +822,17 @@ export default function SshFilesTool({ active }: Props) {
 
   useEffect(() => {
     return () => {
+      const activeDirectoryRequestID = String(directoryRequestRef.current);
+      if (loadingKindRef.current === 'directory')
+        void CancelRemoteFileRequest(activeDirectoryRequestID).catch(() => undefined);
       sourcesRequestRef.current++;
       directoryRequestRef.current++;
       searchRequestRef.current++;
       const requests = Array.from(loadingCallsRef.current);
       loadingCallsRef.current.clear();
-      for (const request of requests) void request.cancel();
+      if (loadingKindRef.current !== 'directory') {
+        for (const request of requests) void request.cancel();
+      }
     };
   }, []);
 

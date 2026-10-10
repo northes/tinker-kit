@@ -183,6 +183,12 @@ func (s *FileService) invalidatePersistentSFTP(sourceID string, session *persist
 }
 
 func (s *FileService) shutdown() {
+	s.requestMu.Lock()
+	for requestID, cancel := range s.requests {
+		cancel()
+		delete(s.requests, requestID)
+	}
+	s.requestMu.Unlock()
 	s.sessionMu.Lock()
 	sessions := make([]*persistentSFTPSession, 0, len(s.sessions))
 	for sourceID, session := range s.sessions {
@@ -1330,7 +1336,36 @@ func (s *FileService) ListRemoteFiles(sourceID, currentPath string, showHidden b
 		return RemoteDirectoryListing{}, err
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
+	if requestID != "" {
+		s.requestMu.Lock()
+		if s.requests == nil {
+			s.requests = map[string]context.CancelFunc{}
+		}
+		for canceledID, canceledAt := range s.canceledRequests {
+			if time.Since(canceledAt) > time.Minute {
+				delete(s.canceledRequests, canceledID)
+			}
+		}
+		if previous := s.requests[requestID]; previous != nil {
+			previous()
+		}
+		s.requests[requestID] = cancel
+		if _, canceled := s.canceledRequests[requestID]; canceled {
+			delete(s.canceledRequests, requestID)
+			cancel()
+		}
+		s.requestMu.Unlock()
+		defer func() {
+			s.requestMu.Lock()
+			if s.requests[requestID] != nil {
+				delete(s.requests, requestID)
+			}
+			s.requestMu.Unlock()
+			cancel()
+		}()
+	} else {
+		defer cancel()
+	}
 	s.sessionMu.Lock()
 	cached := s.sessions[sourceID]
 	hasCachedSession := cached != nil && cached.connection == conn && !cached.retired
@@ -1373,6 +1408,25 @@ func (s *FileService) ListRemoteFiles(sourceID, currentPath string, showHidden b
 		return strings.ToLower(result[i].Name) < strings.ToLower(result[j].Name)
 	})
 	return RemoteDirectoryListing{Path: remotePath, Entries: result}, nil
+}
+
+// CancelRemoteFileRequest 中断正在连接或读取目录的请求。
+func (s *FileService) CancelRemoteFileRequest(requestID string) {
+	if requestID == "" {
+		return
+	}
+	s.requestMu.Lock()
+	cancel := s.requests[requestID]
+	if cancel == nil {
+		if s.canceledRequests == nil {
+			s.canceledRequests = map[string]time.Time{}
+		}
+		s.canceledRequests[requestID] = time.Now()
+	}
+	s.requestMu.Unlock()
+	if cancel != nil {
+		cancel()
+	}
 }
 
 func (s *FileService) emitDirectoryLoading(requestID, phase string) {
