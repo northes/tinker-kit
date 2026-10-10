@@ -55,10 +55,7 @@ function Command({
     const frame = requestAnimationFrame(() => {
       const selected = rootRef.current?.querySelector<HTMLElement>('[aria-selected="true"]');
       if (!selected) return;
-      const heading = selected
-        .closest<HTMLElement>('[cmdk-group]')
-        ?.querySelector<HTMLElement>('[cmdk-group-heading]');
-      (heading ?? selected).scrollIntoView({ block: 'nearest' });
+      selected.scrollIntoView({ block: 'nearest' });
     });
     return () => cancelAnimationFrame(frame);
   }, [activeValue]);
