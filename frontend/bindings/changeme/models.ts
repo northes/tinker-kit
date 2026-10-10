@@ -13,7 +13,6 @@ export interface CompletionOption {
 export interface Config {
     "trayMatchEnabled": boolean;
     "trayMatchTools": string[] | null;
-    "urlTrayMatchMigrated": boolean;
     "autoOverwrite": boolean;
     "autoCheckUpdates": boolean;
     "taskConcurrency": number;
@@ -32,12 +31,10 @@ export interface Config {
     "timeWeekStart": string;
     "ntpServers": string[] | null;
     "jsonAutoFormatOnFill": boolean;
-    "jsonAutoFormatOnFillMigrated": boolean;
     "textAlwaysShowSearch": boolean;
     "textGeneratorSources": TextGeneratorSource[] | null;
     "dockerCLIPath": string;
     "imageSources": ImageSource[] | null;
-    "sshProfilesVersion": number;
     "sshProfiles": SSHProfile[] | null;
     "fileSources": FileSource[] | null;
     "serviceTargets": ServiceTarget[] | null;
@@ -306,17 +303,6 @@ export interface ImageSource {
     "name": string;
     "kind": string;
     "sshProfileID": string;
-
-    /**
-     * 以下字段仅用于旧调用方的内存兼容；一次性配置清理时会从持久化 SSH 来源中移除。
-     */
-    "sshHost"?: string;
-    "sshPort"?: number;
-    "sshUsername"?: string;
-    "sshPassword"?: string;
-    "sshPrivateKey"?: string;
-    "sshPrivateKeyPath"?: string;
-    "sshKeyPassphrase"?: string;
     "registryURL": string;
     "registryUsername": string;
     "registryPassword": string;

@@ -19,40 +19,35 @@ import (
 )
 
 type Config struct {
-	TrayMatchEnabled             bool                  `json:"trayMatchEnabled"`
-	TrayMatchTools               []string              `json:"trayMatchTools"`
-	URLTrayMatchMigrated         bool                  `json:"urlTrayMatchMigrated"`
-	AutoOverwrite                bool                  `json:"autoOverwrite"`
-	AutoCheckUpdates             bool                  `json:"autoCheckUpdates"`
-	TaskConcurrency              int                   `json:"taskConcurrency"`
-	TaskChunkConcurrency         int                   `json:"taskChunkConcurrency"`
-	TaskNotificationMode         string                `json:"taskNotificationMode"`
-	Language                     string                `json:"language"`
-	SidebarMode                  string                `json:"sidebarMode"`
-	SidebarTools                 []SidebarToolConfig   `json:"sidebarTools"`
-	ThemeMode                    string                `json:"themeMode"`
-	LightTheme                   string                `json:"lightTheme"`
-	DarkTheme                    string                `json:"darkTheme"`
-	DiffClipboardTargetMode      string                `json:"diffClipboardTargetMode"`
-	CodeEditorFontSize           int                   `json:"codeEditorFontSize"`
-	TimeResultOrder              []string              `json:"timeResultOrder"`
-	HiddenTimeResults            []string              `json:"hiddenTimeResults"`
-	TimeWeekStart                string                `json:"timeWeekStart"`
-	NtpServers                   []string              `json:"ntpServers"`
-	JsonAutoFormatOnFill         bool                  `json:"jsonAutoFormatOnFill"`
-	JsonAutoFormatOnFillMigrated bool                  `json:"jsonAutoFormatOnFillMigrated"`
-	TextAlwaysShowSearch         bool                  `json:"textAlwaysShowSearch"`
-	TextGeneratorSources         []TextGeneratorSource `json:"textGeneratorSources"`
-	DockerCLIPath                string                `json:"dockerCLIPath"`
-	ImageSources                 []ImageSource         `json:"imageSources"`
-	SSHProfilesVersion           int                   `json:"sshProfilesVersion"`
-	SSHProfiles                  []SSHProfile          `json:"sshProfiles"`
-	// SSHConnections 仅作为旧调用方的内存兼容形状保留；新配置和新调用方使用 SSHProfiles。
-	SSHConnections []SSHConnection     `json:"-"`
-	FileSources    []FileSource        `json:"fileSources"`
-	ServiceTargets []ServiceTarget     `json:"serviceTargets"`
-	PortSources    []PortSource        `json:"portSources"`
-	PortForwards   []PortForwardConfig `json:"portForwards"`
+	TrayMatchEnabled        bool                  `json:"trayMatchEnabled"`
+	TrayMatchTools          []string              `json:"trayMatchTools"`
+	AutoOverwrite           bool                  `json:"autoOverwrite"`
+	AutoCheckUpdates        bool                  `json:"autoCheckUpdates"`
+	TaskConcurrency         int                   `json:"taskConcurrency"`
+	TaskChunkConcurrency    int                   `json:"taskChunkConcurrency"`
+	TaskNotificationMode    string                `json:"taskNotificationMode"`
+	Language                string                `json:"language"`
+	SidebarMode             string                `json:"sidebarMode"`
+	SidebarTools            []SidebarToolConfig   `json:"sidebarTools"`
+	ThemeMode               string                `json:"themeMode"`
+	LightTheme              string                `json:"lightTheme"`
+	DarkTheme               string                `json:"darkTheme"`
+	DiffClipboardTargetMode string                `json:"diffClipboardTargetMode"`
+	CodeEditorFontSize      int                   `json:"codeEditorFontSize"`
+	TimeResultOrder         []string              `json:"timeResultOrder"`
+	HiddenTimeResults       []string              `json:"hiddenTimeResults"`
+	TimeWeekStart           string                `json:"timeWeekStart"`
+	NtpServers              []string              `json:"ntpServers"`
+	JsonAutoFormatOnFill    bool                  `json:"jsonAutoFormatOnFill"`
+	TextAlwaysShowSearch    bool                  `json:"textAlwaysShowSearch"`
+	TextGeneratorSources    []TextGeneratorSource `json:"textGeneratorSources"`
+	DockerCLIPath           string                `json:"dockerCLIPath"`
+	ImageSources            []ImageSource         `json:"imageSources"`
+	SSHProfiles             []SSHProfile          `json:"sshProfiles"`
+	FileSources             []FileSource          `json:"fileSources"`
+	ServiceTargets          []ServiceTarget       `json:"serviceTargets"`
+	PortSources             []PortSource          `json:"portSources"`
+	PortForwards            []PortForwardConfig   `json:"portForwards"`
 }
 
 type SidebarToolConfig struct {
@@ -70,18 +65,17 @@ type TextGeneratorSource struct {
 }
 
 type ImageSource struct {
-	ID           string `json:"id"`
-	Name         string `json:"name"`
-	Kind         string `json:"kind"`
-	SSHProfileID string `json:"sshProfileID"`
-	// 以下字段仅用于旧调用方的内存兼容；一次性配置清理时会从持久化 SSH 来源中移除。
-	SSHHost           string `json:"sshHost,omitempty"`
-	SSHPort           int    `json:"sshPort,omitempty"`
-	SSHUsername       string `json:"sshUsername,omitempty"`
-	SSHPassword       string `json:"sshPassword,omitempty"`
-	SSHPrivateKey     string `json:"sshPrivateKey,omitempty"`
-	SSHPrivateKeyPath string `json:"sshPrivateKeyPath,omitempty"`
-	SSHKeyPassphrase  string `json:"sshKeyPassphrase,omitempty"`
+	ID                string `json:"id"`
+	Name              string `json:"name"`
+	Kind              string `json:"kind"`
+	SSHProfileID      string `json:"sshProfileID"`
+	SSHHost           string `json:"-"`
+	SSHPort           int    `json:"-"`
+	SSHUsername       string `json:"-"`
+	SSHPassword       string `json:"-"`
+	SSHPrivateKey     string `json:"-"`
+	SSHPrivateKeyPath string `json:"-"`
+	SSHKeyPassphrase  string `json:"-"`
 	RegistryURL       string `json:"registryURL"`
 	RegistryUsername  string `json:"registryUsername"`
 	RegistryPassword  string `json:"registryPassword"`
@@ -120,16 +114,12 @@ type SSHConnection struct {
 
 // FileSource 是 SSH 文件管理中的可浏览源；同一连接可被多个源引用。
 type FileSource struct {
-	ID           string `json:"id"`
-	Name         string `json:"name"`
-	SSHProfileID string `json:"sshProfileID"`
-	// SSHConnectionID 仅供旧调用方在内存中使用，新持久化配置不会使用它。
-	SSHConnectionID string   `json:"-"`
-	DefaultPath     string   `json:"defaultPath"`
-	FavoritePaths   []string `json:"favoritePaths,omitempty"`
+	ID            string   `json:"id"`
+	Name          string   `json:"name"`
+	SSHProfileID  string   `json:"sshProfileID"`
+	DefaultPath   string   `json:"defaultPath"`
+	FavoritePaths []string `json:"favoritePaths,omitempty"`
 }
-
-const currentSSHProfilesVersion = 1
 
 const localImageSourceID = "local"
 
@@ -185,13 +175,10 @@ type historyStored struct {
 }
 
 func defaultConfig() Config {
-	return Config{TrayMatchEnabled: true, TrayMatchTools: []string{"json", "time", "text", "base64", "diff", "jwt", "url"}, AutoOverwrite: true, AutoCheckUpdates: true, TaskConcurrency: 4, TaskChunkConcurrency: 4, TaskNotificationMode: "unfocused", Language: "zh-CN", SidebarMode: "full", SidebarTools: defaultSidebarTools(), ThemeMode: "dark", LightTheme: "default-light", DarkTheme: "default-dark", DiffClipboardTargetMode: "alternate", CodeEditorFontSize: 16, TimeResultOrder: []string{"local", "dateTime", "dateOnly", "timeOnly", "zonedIso8601", "rfc3339", "utc", "compact", "underscore", "unixSeconds", "unixMilliseconds", "unixNanoseconds"}, TimeWeekStart: "monday", NtpServers: defaultNtpServers(), JsonAutoFormatOnFill: true, JsonAutoFormatOnFillMigrated: true, ImageSources: defaultImageSources(), SSHProfilesVersion: currentSSHProfilesVersion, SSHProfiles: []SSHProfile{}, SSHConnections: []SSHConnection{}, FileSources: []FileSource{}, ServiceTargets: defaultServiceTargets(), PortSources: defaultPortSources(), PortForwards: []PortForwardConfig{}}
+	return Config{TrayMatchEnabled: true, TrayMatchTools: []string{"json", "time", "text", "base64", "diff", "jwt", "url"}, AutoOverwrite: true, AutoCheckUpdates: true, TaskConcurrency: 4, TaskChunkConcurrency: 4, TaskNotificationMode: "unfocused", Language: "zh-CN", SidebarMode: "full", SidebarTools: defaultSidebarTools(), ThemeMode: "dark", LightTheme: "default-light", DarkTheme: "default-dark", DiffClipboardTargetMode: "alternate", CodeEditorFontSize: 16, TimeResultOrder: []string{"local", "dateTime", "dateOnly", "timeOnly", "zonedIso8601", "rfc3339", "utc", "compact", "underscore", "unixSeconds", "unixMilliseconds", "unixNanoseconds"}, TimeWeekStart: "monday", NtpServers: defaultNtpServers(), JsonAutoFormatOnFill: true, ImageSources: defaultImageSources(), SSHProfiles: []SSHProfile{}, FileSources: []FileSource{}, ServiceTargets: defaultServiceTargets(), PortSources: defaultPortSources(), PortForwards: []PortForwardConfig{}}
 }
 
-func normalizeThemeID(theme string, defaultID string, legacyID string) string {
-	if theme == legacyID {
-		return defaultID
-	}
+func normalizeThemeID(theme string, defaultID string) string {
 	if theme != defaultID {
 		return defaultID
 	}
@@ -210,55 +197,7 @@ func stringSlicesEqual(a []string, b []string) bool {
 	return true
 }
 
-func sidebarToolsEqual(a []SidebarToolConfig, b []SidebarToolConfig) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := range a {
-		if a[i] != b[i] {
-			return false
-		}
-	}
-	return true
-}
-
 func imageSourcesEqual(a []ImageSource, b []ImageSource) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := range a {
-		if a[i] != b[i] {
-			return false
-		}
-	}
-	return true
-}
-
-func serviceTargetsEqual(a []ServiceTarget, b []ServiceTarget) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := range a {
-		if a[i] != b[i] {
-			return false
-		}
-	}
-	return true
-}
-
-func portSourcesEqual(a []PortSource, b []PortSource) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := range a {
-		if a[i] != b[i] {
-			return false
-		}
-	}
-	return true
-}
-
-func portForwardsEqual(a []PortForwardConfig, b []PortForwardConfig) bool {
 	if len(a) != len(b) {
 		return false
 	}
@@ -323,7 +262,7 @@ func validImageSourceID(value string) bool {
 		if prefix == "ssh" {
 			return validSSHHost(suffix)
 		}
-		return validLegacySourceSuffix(suffix)
+		return validSourceSuffix(suffix)
 	}
 	if !validConfigValue(value, 64) {
 		return false
@@ -337,7 +276,7 @@ func validImageSourceID(value string) bool {
 	return true
 }
 
-func validLegacySourceSuffix(value string) bool {
+func validSourceSuffix(value string) bool {
 	if !validConfigValue(value, 60) {
 		return false
 	}
@@ -412,11 +351,10 @@ func normalizeImageSource(
 			if !validConfigValue(source.SSHProfileID, 128) {
 				return ImageSource{}, userError("errors.config.sshProfileIDInvalid")
 			}
-			// 名称为空，或仍是旧版本写入的 SSH 配置 ID 时，改用 SSH 配置名称。
-			if source.Name == "" || source.Name == source.SSHProfileID {
+			if source.Name == "" {
 				if name := sshProfileNames[source.SSHProfileID]; name != "" {
 					source.Name = name
-				} else if source.Name == "" {
+				} else {
 					source.Name = source.SSHProfileID
 				}
 			}
@@ -435,7 +373,7 @@ func normalizeImageSource(
 			source.RegistryPassword = ""
 			break
 		}
-		// 旧内存调用方仍可使用旧来源；启动加载配置时会先清理这些来源。
+		// SSH 来源必须引用 SSHProfiles；未绑定配置的来源不保留。
 		if !validSSHHost(source.SSHHost) {
 			return ImageSource{}, userError("errors.config.sshHostInvalid")
 		}
@@ -565,9 +503,6 @@ func normalizeServiceTargets(
 		if target.Kind != "ssh" {
 			continue
 		}
-		if target.SSHProfileID == "" && strings.HasPrefix(target.ID, "ssh:") {
-			target.SSHProfileID = strings.TrimPrefix(target.ID, "ssh:")
-		}
 		if target.SSHProfileID == "" {
 			continue
 		}
@@ -577,7 +512,7 @@ func normalizeServiceTargets(
 			continue
 		}
 		seen[target.ID] = true
-		if name := sshProfileNames[target.SSHProfileID]; name != "" && (target.Name == "" || target.Name == target.SSHProfileID) {
+		if name := sshProfileNames[target.SSHProfileID]; name != "" && target.Name == "" {
 			target.Name = name
 		}
 		if target.Name == "" {
@@ -686,24 +621,14 @@ func normalizeConfig(cfg Config) Config {
 	}
 	cfg.TextGeneratorSources = normalizeTextGeneratorSources(cfg.TextGeneratorSources)
 	cfg.DockerCLIPath = normalizeDockerCLIPath(cfg.DockerCLIPath)
-	if cfg.SSHProfilesVersion == 0 {
-		cfg.SSHProfilesVersion = currentSSHProfilesVersion
-	}
 	cfg.SSHProfiles = normalizeSSHProfiles(cfg.SSHProfiles)
 	cfg.ImageSources = normalizeImageSources(cfg.ImageSources, sshProfileNameMap(cfg.SSHProfiles))
-	if cfg.SSHConnections == nil {
-		cfg.SSHConnections = []SSHConnection{}
-	}
 	if cfg.FileSources == nil {
 		cfg.FileSources = []FileSource{}
 	}
 	for index := range cfg.FileSources {
 		cfg.FileSources[index].FavoritePaths = normalizeFavoritePaths(cfg.FileSources[index].FavoritePaths)
 		cfg.FileSources[index].SSHProfileID = strings.TrimSpace(cfg.FileSources[index].SSHProfileID)
-		cfg.FileSources[index].SSHConnectionID = strings.TrimSpace(cfg.FileSources[index].SSHConnectionID)
-		if cfg.FileSources[index].SSHProfileID != "" {
-			cfg.FileSources[index].SSHConnectionID = ""
-		}
 	}
 	cfg.ServiceTargets = normalizeServiceTargets(cfg.ServiceTargets, sshProfileNameMap(cfg.SSHProfiles))
 	cfg.PortSources = normalizePortSources(cfg.PortSources, sshProfileNameMap(cfg.SSHProfiles))
@@ -721,11 +646,6 @@ func normalizeConfig(cfg Config) Config {
 			if validSidebarTool[tool.ID] && !seen[tool.ID] {
 				tools = append(tools, tool)
 				seen[tool.ID] = true
-			}
-		}
-		for _, id := range defaultSidebarToolIDs {
-			if !seen[id] {
-				tools = append(tools, SidebarToolConfig{ID: id, Enabled: true})
 			}
 		}
 		cfg.SidebarTools = tools
@@ -751,28 +671,30 @@ func normalizeConfig(cfg Config) Config {
 		}
 		cfg.TrayMatchTools = matched
 	}
-	if !cfg.URLTrayMatchMigrated {
-		seenURL := false
+	if cfg.DiffClipboardTargetMode == "" {
+		cfg.DiffClipboardTargetMode = "alternate"
+	}
+	if cfg.DiffClipboardTargetMode == "off" {
+		matched := cfg.TrayMatchTools[:0]
 		for _, id := range cfg.TrayMatchTools {
-			if id == "url" {
-				seenURL = true
-				break
+			if id != "diff" {
+				matched = append(matched, id)
 			}
 		}
-		if !seenURL {
-			cfg.TrayMatchTools = append(cfg.TrayMatchTools, "url")
+		if len(matched) == 0 {
+			matched = []string{"json", "time", "text", "base64", "jwt", "url"}
 		}
-		cfg.URLTrayMatchMigrated = true
+		cfg.TrayMatchTools = matched
 	}
 	switch cfg.ThemeMode {
 	case "light", "dark", "system":
 	default:
 		cfg.ThemeMode = "dark"
 	}
-	cfg.LightTheme = normalizeThemeID(cfg.LightTheme, "default-light", "modern-minimal-light")
-	cfg.DarkTheme = normalizeThemeID(cfg.DarkTheme, "default-dark", "modern-minimal-dark")
+	cfg.LightTheme = normalizeThemeID(cfg.LightTheme, "default-light")
+	cfg.DarkTheme = normalizeThemeID(cfg.DarkTheme, "default-dark")
 	switch cfg.DiffClipboardTargetMode {
-	case "alternate", "before", "after":
+	case "off", "alternate", "before", "after":
 	default:
 		cfg.DiffClipboardTargetMode = "alternate"
 	}
@@ -815,10 +737,6 @@ func normalizeConfig(cfg Config) Config {
 		cfg.TimeWeekStart = "monday"
 	}
 	cfg.NtpServers = normalizeNtpServers(cfg.NtpServers)
-	if !cfg.JsonAutoFormatOnFillMigrated {
-		cfg.JsonAutoFormatOnFill = true
-		cfg.JsonAutoFormatOnFillMigrated = true
-	}
 	return cfg
 }
 
@@ -841,31 +759,6 @@ func normalizeTextGeneratorSources(sources []TextGeneratorSource) []TextGenerato
 		result = append(result, source)
 	}
 	return result
-}
-
-func migrateLegacyTheme(cfg Config, legacyTheme string, hasThemeMode bool) Config {
-	if hasThemeMode || legacyTheme == "" {
-		return cfg
-	}
-	switch legacyTheme {
-	case "light":
-		cfg.ThemeMode = "light"
-	case "dark":
-		cfg.ThemeMode = "dark"
-	case "default-light":
-		cfg.ThemeMode = "light"
-		cfg.LightTheme = "default-light"
-	case "default-dark":
-		cfg.ThemeMode = "dark"
-		cfg.DarkTheme = "default-dark"
-	case "modern-minimal-light":
-		cfg.ThemeMode = "light"
-		cfg.LightTheme = "default-light"
-	case "modern-minimal-dark":
-		cfg.ThemeMode = "dark"
-		cfg.DarkTheme = "default-dark"
-	}
-	return cfg
 }
 
 const appDataDirName = "TinkerKit"
@@ -897,40 +790,7 @@ func NewConfigService() *ConfigService {
 	cfg := defaultConfig()
 	path := configPath()
 	if b, err := os.ReadFile(path); err == nil {
-		if err := json.Unmarshal(b, &cfg); err == nil {
-			beforeNormalize := cfg
-			var raw map[string]json.RawMessage
-			_ = json.Unmarshal(b, &raw)
-			var legacy struct {
-				Theme string `json:"theme"`
-			}
-			_ = json.Unmarshal(b, &legacy)
-			_, hasThemeMode := raw["themeMode"]
-			_, hasLegacyTheme := raw["theme"]
-			_, hasDockerCLIPath := raw["dockerCLIPath"]
-			_, hasImageSources := raw["imageSources"]
-			_, hasPortSources := raw["portSources"]
-			_, hasPortForwards := raw["portForwards"]
-			_, hasSSHProfilesVersion := raw["sshProfilesVersion"]
-			legacySSHReset := !hasSSHProfilesVersion || cfg.SSHProfilesVersion != currentSSHProfilesVersion
-			cfg = migrateLegacyTheme(cfg, legacy.Theme, hasThemeMode)
-			if legacySSHReset {
-				// SSH 凭据不迁移：删除旧 SSH 镜像/文件来源，并从空配置目录开始。
-				cfg.ImageSources = filterNonSSHImageSources(cfg.ImageSources)
-				cfg.SSHProfiles = []SSHProfile{}
-				cfg.SSHConnections = []SSHConnection{}
-				cfg.FileSources = []FileSource{}
-				cfg.PortSources = defaultPortSources()
-				cfg.SSHProfilesVersion = currentSSHProfilesVersion
-			}
-
-			cfg = normalizeConfig(cfg)
-			if legacySSHReset || hasLegacyTheme || !hasDockerCLIPath || !hasImageSources || !hasPortSources || !hasPortForwards || beforeNormalize.ThemeMode != cfg.ThemeMode || beforeNormalize.LightTheme != cfg.LightTheme || beforeNormalize.DarkTheme != cfg.DarkTheme || !stringSlicesEqual(beforeNormalize.TrayMatchTools, cfg.TrayMatchTools) || beforeNormalize.CodeEditorFontSize != cfg.CodeEditorFontSize || !stringSlicesEqual(beforeNormalize.NtpServers, cfg.NtpServers) || !sidebarToolsEqual(beforeNormalize.SidebarTools, cfg.SidebarTools) || !imageSourcesEqual(beforeNormalize.ImageSources, cfg.ImageSources) || !serviceTargetsEqual(beforeNormalize.ServiceTargets, cfg.ServiceTargets) || !portSourcesEqual(beforeNormalize.PortSources, cfg.PortSources) || !portForwardsEqual(beforeNormalize.PortForwards, cfg.PortForwards) || beforeNormalize.DockerCLIPath != cfg.DockerCLIPath {
-				if normalized, marshalErr := json.Marshal(cfg); marshalErr == nil {
-					_ = writeConfigAtomically(path, normalized)
-				}
-			}
-		}
+		_ = json.Unmarshal(b, &cfg)
 	}
 	cfg = normalizeConfig(cfg)
 	s := &ConfigService{path: path, historyPath: historyPath(), historyDir: historyDataDir(), cfg: cfg}
@@ -940,19 +800,30 @@ func NewConfigService() *ConfigService {
 	return s
 }
 
-func filterNonSSHImageSources(sources []ImageSource) []ImageSource {
-	filtered := make([]ImageSource, 0, len(sources))
-	for _, source := range sources {
-		if strings.EqualFold(strings.TrimSpace(source.Kind), "ssh") {
-			continue
-		}
-		filtered = append(filtered, source)
-	}
-	return filtered
-}
 func (s *ConfigService) ServiceName() string { return "ConfigService" }
 func (s *ConfigService) GetAppName() string  { return appName }
 func (s *ConfigService) Get() Config         { s.mu.Lock(); defer s.mu.Unlock(); return s.cfg }
+
+// IsAutostartEnabled 返回当前平台是否已将 TinkerKit 登记为登录时启动。
+func (s *ConfigService) IsAutostartEnabled() (bool, error) {
+	app := application.Get()
+	if app == nil || app.Autostart == nil {
+		return false, userError("errors.common.notInitialized")
+	}
+	return app.Autostart.IsEnabled()
+}
+
+// SetAutostart 为当前用户登记或移除 TinkerKit 的登录启动项。
+func (s *ConfigService) SetAutostart(enabled bool) error {
+	app := application.Get()
+	if app == nil || app.Autostart == nil {
+		return userError("errors.common.notInitialized")
+	}
+	if enabled {
+		return app.Autostart.Enable()
+	}
+	return app.Autostart.Disable()
+}
 
 // ExportConfig 将当前规范化配置写入用户选择的 JSON 文件。
 func (s *ConfigService) ExportConfig() (string, error) {
@@ -1088,9 +959,6 @@ func validateImportedConfig(cfg Config) error {
 		}
 		if kind == "ssh" {
 			profileID := strings.TrimSpace(target.SSHProfileID)
-			if profileID == "" && strings.HasPrefix(strings.TrimSpace(target.ID), "ssh:") {
-				profileID = strings.TrimPrefix(strings.TrimSpace(target.ID), "ssh:")
-			}
 			if _, ok := profiles[profileID]; !ok {
 				return fmt.Errorf("service target references missing SSH profile")
 			}
@@ -1185,8 +1053,6 @@ func idsOfPortSources(items []PortSource) []string {
 }
 
 func (s *ConfigService) replaceConfig(cfg Config) error {
-	cfg.SSHProfilesVersion = currentSSHProfilesVersion
-	cfg.SSHConnections = []SSHConnection{}
 	if err := validateImportedConfig(cfg); err != nil {
 		return userErrorCause("errors.config.invalidImport", err)
 	}
@@ -1272,9 +1138,7 @@ func (s *ConfigService) Save(cfg Config) error {
 	s.mu.Lock()
 	// SSH 配置和文件来源由各自的定向服务负责；保留内存值，避免设置页旧快照
 	// 覆盖其他入口刚刚修改的配置或来源。
-	cfg.SSHProfilesVersion = s.cfg.SSHProfilesVersion
 	cfg.SSHProfiles = copySSHProfiles(s.cfg.SSHProfiles)
-	cfg.SSHConnections = append([]SSHConnection(nil), s.cfg.SSHConnections...)
 	cfg.FileSources = copyFileSources(s.cfg.FileSources)
 	cfg.ServiceTargets = copyServiceTargets(s.cfg.ServiceTargets)
 	cfg.PortSources = append([]PortSource(nil), s.cfg.PortSources...)

@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -239,41 +238,5 @@ func TestSaveImageSourcesUsesProfileReferencesAtomically(t *testing.T) {
 		{ID: "remote", Name: "失效", Kind: "ssh", SSHProfileID: "missing"},
 	}); err == nil {
 		t.Fatal("镜像来源引用不存在的全局 SSH 配置时应失败")
-	}
-}
-
-func TestNewConfigServiceDropsLegacySSHDataOnce(t *testing.T) {
-	root := t.TempDir()
-	t.Setenv("HOME", root)
-	path := configPath()
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		t.Fatalf("创建配置目录失败: %v", err)
-	}
-	legacy := `{"imageSources":[{"id":"old-ssh","name":"旧 SSH","kind":"ssh","sshHost":"old.example.com"},{"id":"registry","name":"镜像仓库","kind":"registry","registryURL":"https://registry.example"}],"sshConnections":[{"id":"old","name":"旧连接"}],"fileSources":[{"id":"files","name":"旧文件源","sshConnectionID":"old"}]}`
-	if err := os.WriteFile(path, []byte(legacy), 0o600); err != nil {
-		t.Fatalf("写入旧 SSH 配置失败: %v", err)
-	}
-
-	service := NewConfigService()
-	cfg := service.Get()
-	if cfg.SSHProfilesVersion != currentSSHProfilesVersion || len(cfg.SSHProfiles) != 0 || len(cfg.SSHConnections) != 0 || len(cfg.FileSources) != 0 {
-		t.Fatalf("旧 SSH 数据未一次性清理: %#v", cfg)
-	}
-	if len(cfg.ImageSources) != 2 || cfg.ImageSources[1].Kind != "registry" {
-		t.Fatalf("本机和 Registry 来源保留结果错误: %#v", cfg.ImageSources)
-	}
-	b, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("读取清理后的配置失败: %v", err)
-	}
-	var saved map[string]json.RawMessage
-	if err := json.Unmarshal(b, &saved); err != nil {
-		t.Fatalf("清理后的配置不是有效 JSON: %v", err)
-	}
-	if _, ok := saved["sshConnections"]; ok {
-		t.Fatal("清理后的配置不应再保存旧 SSHConnections")
-	}
-	if _, ok := saved["sshProfilesVersion"]; !ok {
-		t.Fatal("清理后的配置缺少 SSH 配置版本标记")
 	}
 }

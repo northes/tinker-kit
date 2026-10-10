@@ -450,9 +450,6 @@ func (s *FileService) configSnapshot() Config {
 	return s.config.Get()
 }
 
-func copySSHConnections(items []SSHConnection) []SSHConnection {
-	return append([]SSHConnection(nil), items...)
-}
 func copyFileSources(items []FileSource) []FileSource {
 	copied := append([]FileSource(nil), items...)
 	for index := range copied {
@@ -461,90 +458,8 @@ func copyFileSources(items []FileSource) []FileSource {
 	return copied
 }
 
-func (s *FileService) GetSSHConnections() []SSHConnection {
-	return copySSHConnections(s.configSnapshot().SSHConnections)
-}
-
 func (s *FileService) GetFileSources() []FileSource {
 	return copyFileSources(s.configSnapshot().FileSources)
-}
-
-func validateSSHFileConfig(connections []SSHConnection, sources []FileSource) error {
-	seenConnections := make(map[string]bool, len(connections))
-	for i := range connections {
-		c := &connections[i]
-		c.ID, c.Name, c.Mode, c.Alias, c.Host, c.Username, c.PrivateKeyPath = strings.TrimSpace(c.ID), strings.TrimSpace(c.Name), strings.TrimSpace(c.Mode), strings.TrimSpace(c.Alias), strings.TrimSpace(c.Host), strings.TrimSpace(c.Username), strings.TrimSpace(c.PrivateKeyPath)
-		if !validConfigValue(c.ID, 128) || seenConnections[c.ID] {
-			return userErrorParams("errors.sshFile.invalidConnectionID", map[string]any{"id": c.ID})
-		}
-		seenConnections[c.ID] = true
-		if c.Mode == "" {
-			c.Mode = "manual"
-		}
-		if c.Mode != "manual" && c.Mode != "local" {
-			return userErrorParams("errors.sshFile.invalidConnectionMode", map[string]any{"id": c.ID})
-		}
-		if c.Mode == "local" {
-			if !validSSHHost(c.Alias) {
-				return userErrorParams("errors.sshFile.invalidLocalAlias", map[string]any{"id": c.ID})
-			}
-			c.Host = c.Alias
-		}
-		if c.Name == "" {
-			c.Name = c.Alias
-			if c.Name == "" {
-				c.Name = c.Host
-			}
-		}
-		if !validTextValue(c.Name, 256) || (c.Mode == "manual" && !validSSHHost(c.Host)) {
-			return userErrorParams("errors.sshFile.invalidConnectionConfig", map[string]any{"id": c.ID})
-		}
-		if c.Port == 0 {
-			c.Port = 22
-		}
-		if c.Port < 1 || c.Port > 65535 || (c.Mode == "manual" && (c.Username == "" || !validConfigValue(c.Username, 256))) {
-			return userErrorParams("errors.sshFile.invalidConnectionPortOrUser", map[string]any{"id": c.ID})
-		}
-		if !validSecretValue(c.Password, 4096) || !validSecretValue(c.PrivateKey, 128<<10) || !validSecretValue(c.KeyPassphrase, 4096) {
-			return userErrorParams("errors.sshFile.invalidConnectionAuth", map[string]any{"id": c.ID})
-		}
-		if c.Mode == "manual" && c.Password == "" && c.PrivateKey == "" && c.PrivateKeyPath == "" {
-			return userErrorParams("errors.sshFile.missingCredentials", map[string]any{"id": c.ID})
-		}
-		if c.PrivateKeyPath != "" && (!validPathValue(c.PrivateKeyPath, 4096) || strings.HasPrefix(c.PrivateKeyPath, "-")) {
-			return userErrorParams("errors.sshFile.invalidPrivateKeyPath", map[string]any{"id": c.ID})
-		}
-		if c.Mode == "manual" && c.KeyPassphrase != "" && c.PrivateKey == "" && c.PrivateKeyPath == "" {
-			return userErrorParams("errors.sshFile.passphraseWithoutKey", map[string]any{"id": c.ID})
-		}
-	}
-	seenSources := make(map[string]bool, len(sources))
-	for i := range sources {
-		src := &sources[i]
-		src.ID, src.Name, src.SSHConnectionID, src.DefaultPath = strings.TrimSpace(src.ID), strings.TrimSpace(src.Name), strings.TrimSpace(src.SSHConnectionID), strings.TrimSpace(src.DefaultPath)
-		if !validConfigValue(src.ID, 128) || seenSources[src.ID] || !validConfigValue(src.SSHConnectionID, 128) || !seenConnections[src.SSHConnectionID] {
-			return userErrorParams("errors.sshFile.invalidFileSource", map[string]any{"id": src.ID})
-		}
-		seenSources[src.ID] = true
-		if src.Name == "" || !validTextValue(src.Name, 256) || (src.DefaultPath != "" && !validPathValue(src.DefaultPath, 4096)) {
-			return userErrorParams("errors.sshFile.invalidFileSource", map[string]any{"id": src.ID})
-		}
-	}
-	return nil
-}
-
-func (s *FileService) SaveSSHFileConfig(connections []SSHConnection, sources []FileSource) error {
-	connections = copySSHConnections(connections)
-	sources = copyFileSources(sources)
-	if err := validateSSHFileConfig(connections, sources); err != nil {
-		return err
-	}
-	if s.config == nil {
-		return userError("errors.common.configNotInitialized")
-	}
-	cfg := s.config.Get()
-	cfg.SSHConnections, cfg.FileSources = connections, sources
-	return s.config.Save(cfg)
 }
 
 // SaveFileSources 只持久化文件工具元数据；SSH 凭据保存在 ConfigService.SSHProfiles，
@@ -564,7 +479,6 @@ func (s *FileService) SaveFileSources(sources []FileSource) error {
 			source.ID = strings.TrimSpace(source.ID)
 			source.Name = strings.TrimSpace(source.Name)
 			source.SSHProfileID = strings.TrimSpace(source.SSHProfileID)
-			source.SSHConnectionID = ""
 			source.DefaultPath = strings.TrimSpace(source.DefaultPath)
 			if !validConfigValue(source.ID, 128) || source.Name == "" || !validTextValue(source.Name, 256) {
 				return userErrorParams("errors.sshFile.invalidFileSource", map[string]any{"id": source.ID})
@@ -612,12 +526,7 @@ func (s *FileService) sourceSnapshot(sourceID string) (FileSource, SSHConnection
 		}
 		return FileSource{}, SSHConnection{}, userError("errors.sshFile.fileSourceSSHProfileNotFound")
 	}
-	for _, conn := range cfg.SSHConnections {
-		if conn.ID == src.SSHConnectionID {
-			return src, conn, nil
-		}
-	}
-	return FileSource{}, SSHConnection{}, userError("errors.sshFile.fileSourceSSHConnectionNotFound")
+	return FileSource{}, SSHConnection{}, userError("errors.sshFile.fileSourceSSHProfileNotFound")
 }
 
 func normalizedRemotePath(value string) string {

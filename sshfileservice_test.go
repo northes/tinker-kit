@@ -174,31 +174,6 @@ func TestRemoteCopyName(t *testing.T) {
 	}
 }
 
-func TestValidateSSHFileConfigAllowsSharedConnection(t *testing.T) {
-	connections := []SSHConnection{{ID: "prod", Name: "生产", Host: "example.com", Port: 22, Username: "deploy", Password: "secret"}}
-	sources := []FileSource{
-		{ID: "app", Name: "应用目录", SSHConnectionID: "prod", DefaultPath: "/srv/app"},
-		{ID: "logs", Name: "日志目录", SSHConnectionID: "prod", DefaultPath: "/var/log"},
-	}
-	if err := validateSSHFileConfig(connections, sources); err != nil {
-		t.Fatalf("共享 SSH 连接的多个源不应失败: %v", err)
-	}
-	if connections[0].Port != 22 {
-		t.Fatalf("默认端口被意外修改: %d", connections[0].Port)
-	}
-}
-
-func TestValidateSSHFileConfigAllowsLocalSSHAlias(t *testing.T) {
-	connections := []SSHConnection{{ID: "local", Name: "开发机", Mode: "local", Alias: "dev-box"}}
-	sources := []FileSource{{ID: "home", Name: "主目录", SSHConnectionID: "local", DefaultPath: "/home/dev"}}
-	if err := validateSSHFileConfig(connections, sources); err != nil {
-		t.Fatalf("本地 SSH 配置不应要求重复填写凭据: %v", err)
-	}
-	if connections[0].Host != "dev-box" || connections[0].Mode != "local" {
-		t.Fatalf("本地 SSH 配置未规范化: %#v", connections[0])
-	}
-}
-
 func TestNewSystemSFTPCommandUsesSSHSubsystem(t *testing.T) {
 	cmd := newSystemSFTPCommand(context.Background(), "dev-box")
 	if got, want := cmd.Args, []string{"ssh", "-o", "BatchMode=yes", "-o", "RequestTTY=no", "-s", "dev-box", "sftp"}; !reflect.DeepEqual(got, want) {
@@ -525,16 +500,6 @@ func TestSSHKnownHostStoreManagesExistingEntries(t *testing.T) {
 	}
 	if _, err := store.update(SSHKnownHost{Hosts: "new.test", PublicKey: entries[0].PublicKey}); err == nil {
 		t.Fatal("没有记录 ID 时不应创建新的 known_hosts 记录")
-	}
-}
-
-func TestValidateSSHFileConfigRejectsDanglingSource(t *testing.T) {
-	err := validateSSHFileConfig(
-		[]SSHConnection{{ID: "prod", Name: "生产", Host: "example.com", Username: "deploy", Password: "secret"}},
-		[]FileSource{{ID: "logs", Name: "日志目录", SSHConnectionID: "missing", DefaultPath: "/var/log"}},
-	)
-	if err == nil {
-		t.Fatal("引用不存在 SSH 连接的文件源应被拒绝")
 	}
 }
 
@@ -958,13 +923,4 @@ func TestDownloadRemoteSegmentReportsPackets(t *testing.T) {
 			t.Fatalf("累计进度 = %d, want %d", total, len(payload))
 		}
 	})
-}
-
-func TestCopySSHConfigSlicesAreIndependent(t *testing.T) {
-	original := []SSHConnection{{ID: "prod", Name: "生产"}}
-	copy := copySSHConnections(original)
-	copy[0].Name = "changed"
-	if reflect.DeepEqual(original, copy) {
-		t.Fatal("复制 SSH 连接切片后修改副本不应影响原切片")
-	}
 }

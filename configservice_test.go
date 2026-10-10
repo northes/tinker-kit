@@ -24,7 +24,7 @@ func TestDecodeImportedConfigFillsDefaultsAndKeepsCredentials(t *testing.T) {
 		t.Fatalf("decodeImportedConfig() error = %v", err)
 	}
 	if cfg.Language != "en-US" || cfg.ThemeMode != "dark" || cfg.ImageSources[0].ID != "local" {
-		t.Fatalf("legacy defaults were not filled: %#v", cfg)
+		t.Fatalf("defaults were not filled: %#v", cfg)
 	}
 	if len(cfg.SSHProfiles) != 1 || cfg.SSHProfiles[0].Password != "secret" {
 		t.Fatalf("credentials were not preserved: %#v", cfg.SSHProfiles)
@@ -164,36 +164,6 @@ func TestResetConfigRestoresDefaults(t *testing.T) {
 	}
 }
 
-func TestConfigIgnoresLegacyDiffHighlightMode(t *testing.T) {
-	cfg := defaultConfig()
-	if err := json.Unmarshal([]byte(`{"diffHighlightMode":"word","language":"en-US"}`), &cfg); err != nil {
-		t.Fatalf("解码含旧 diffHighlightMode 的配置失败: %v", err)
-	}
-	if cfg.Language != "en-US" {
-		t.Fatalf("解码旧配置时应保留其他字段，语言为 %q", cfg.Language)
-	}
-}
-
-func TestConfigServiceSaveOmitsLegacyDiffHighlightMode(t *testing.T) {
-	root := t.TempDir()
-	service := &ConfigService{path: filepath.Join(root, "config.json"), cfg: normalizeConfig(defaultConfig())}
-
-	if err := service.Save(defaultConfig()); err != nil {
-		t.Fatalf("保存配置失败: %v", err)
-	}
-	b, err := os.ReadFile(service.path)
-	if err != nil {
-		t.Fatalf("读取保存后的配置失败: %v", err)
-	}
-	var saved map[string]json.RawMessage
-	if err := json.Unmarshal(b, &saved); err != nil {
-		t.Fatalf("保存后的配置不是有效 JSON: %v", err)
-	}
-	if _, ok := saved["diffHighlightMode"]; ok {
-		t.Fatal("保存后的配置不应包含 diffHighlightMode")
-	}
-}
-
 func TestNormalizeConfigTheme(t *testing.T) {
 	tests := []struct {
 		name string
@@ -203,7 +173,7 @@ func TestNormalizeConfigTheme(t *testing.T) {
 		{name: "保留浅色模式", in: Config{ThemeMode: "light", LightTheme: "default-light", DarkTheme: "default-dark"}, want: Config{ThemeMode: "light", LightTheme: "default-light", DarkTheme: "default-dark"}},
 		{name: "保留深色模式", in: Config{ThemeMode: "dark", LightTheme: "default-light", DarkTheme: "default-dark"}, want: Config{ThemeMode: "dark", LightTheme: "default-light", DarkTheme: "default-dark"}},
 		{name: "保留系统模式", in: Config{ThemeMode: "system", LightTheme: "default-light", DarkTheme: "default-dark"}, want: Config{ThemeMode: "system", LightTheme: "default-light", DarkTheme: "default-dark"}},
-		{name: "迁移 Modern Minimal 主题", in: Config{ThemeMode: "system", LightTheme: "modern-minimal-light", DarkTheme: "modern-minimal-dark"}, want: Config{ThemeMode: "system", LightTheme: "default-light", DarkTheme: "default-dark"}},
+		{name: "未知主题回退", in: Config{ThemeMode: "system", LightTheme: "custom-light", DarkTheme: "custom-dark"}, want: Config{ThemeMode: "system", LightTheme: "default-light", DarkTheme: "default-dark"}},
 		{name: "未知模式回退为深色", in: Config{ThemeMode: "custom"}, want: Config{ThemeMode: "dark", LightTheme: "default-light", DarkTheme: "default-dark"}},
 		{name: "非法浅色主题回退", in: Config{ThemeMode: "light", LightTheme: "default-dark", DarkTheme: "default-dark"}, want: Config{ThemeMode: "light", LightTheme: "default-light", DarkTheme: "default-dark"}},
 		{name: "非法深色主题回退", in: Config{ThemeMode: "dark", LightTheme: "default-light", DarkTheme: "default-light"}, want: Config{ThemeMode: "dark", LightTheme: "default-light", DarkTheme: "default-dark"}},
@@ -248,7 +218,6 @@ func TestNormalizeConfigTrayMatchTools(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			cfg := defaultConfig()
 			cfg.TrayMatchTools = test.in
-			cfg.URLTrayMatchMigrated = true
 			got := normalizeConfig(cfg).TrayMatchTools
 			if len(got) != len(test.want) {
 				t.Fatalf("规范化后的托盘工具为 %#v，期望 %#v", got, test.want)
@@ -307,172 +276,26 @@ func TestNormalizeConfigTimeWeekStart(t *testing.T) {
 	}
 }
 
-func TestNormalizeConfigKeepsTrayToolsWhenURLMigrationIsComplete(t *testing.T) {
+func TestNormalizeConfigDoesNotAddTrayTools(t *testing.T) {
 	cfg := defaultConfig()
-	cfg.TrayMatchTools = []string{"invalid"}
-	cfg.URLTrayMatchMigrated = true
+	cfg.TrayMatchTools = []string{"json"}
 	got := normalizeConfig(cfg)
-	if len(got.TrayMatchTools) == 0 {
-		t.Fatal("URL 迁移完成后无效托盘工具不应规范化为空数组")
-	}
-	for _, id := range got.TrayMatchTools {
-		switch id {
-		case "json", "time", "text", "base64", "diff", "jwt", "url":
-		default:
-			t.Fatalf("规范化后的托盘工具包含无效项 %q", id)
-		}
+	if len(got.TrayMatchTools) != 1 || got.TrayMatchTools[0] != "json" {
+		t.Fatalf("规范化不应再向托盘工具列表补入其他项目，得到 %#v", got.TrayMatchTools)
 	}
 }
 
-func TestMigrateLegacyTheme(t *testing.T) {
-	base := defaultConfig()
-	tests := []struct {
-		name  string
-		in    string
-		mode  string
-		light string
-		dark  string
-	}{
-		{name: "旧浅色", in: "light", mode: "light", light: "default-light", dark: "default-dark"},
-		{name: "旧深色", in: "dark", mode: "dark", light: "default-light", dark: "default-dark"},
-		{name: "默认浅色主题", in: "default-light", mode: "light", light: "default-light", dark: "default-dark"},
-		{name: "默认深色主题", in: "default-dark", mode: "dark", light: "default-light", dark: "default-dark"},
-		{name: "Modern Minimal 浅色主题", in: "modern-minimal-light", mode: "light", light: "default-light", dark: "default-dark"},
-		{name: "Modern Minimal 深色主题", in: "modern-minimal-dark", mode: "dark", light: "default-light", dark: "default-dark"},
-	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			got := migrateLegacyTheme(base, test.in, false)
-			if got.ThemeMode != test.mode || got.LightTheme != test.light || got.DarkTheme != test.dark {
-				t.Fatalf("迁移后的主题配置为 %#v，期望模式 %q、浅色 %q、深色 %q", got, test.mode, test.light, test.dark)
-			}
-		})
-	}
-}
-
-func TestConfigServicePersistsNormalizedThemeIDs(t *testing.T) {
+func TestConfigServiceRejectsUnsupportedThemeIDs(t *testing.T) {
 	root := t.TempDir()
 	service := &ConfigService{path: filepath.Join(root, "config.json"), cfg: normalizeConfig(defaultConfig())}
 	cfg := defaultConfig()
-	cfg.LightTheme = "modern-minimal-light"
-	cfg.DarkTheme = "modern-minimal-dark"
+	cfg.LightTheme = "custom-light"
+	cfg.DarkTheme = "custom-dark"
 
 	if err := service.Save(cfg); err != nil {
-		t.Fatalf("保存旧主题配置失败: %v", err)
+		t.Fatalf("保存配置失败: %v", err)
 	}
 	b, err := os.ReadFile(service.path)
-	if err != nil {
-		t.Fatalf("读取迁移后的配置失败: %v", err)
-	}
-	var saved Config
-	if err := json.Unmarshal(b, &saved); err != nil {
-		t.Fatalf("迁移后的配置不是有效 JSON: %v", err)
-	}
-	if saved.LightTheme != "default-light" || saved.DarkTheme != "default-dark" {
-		t.Fatalf("保存后的主题 ID 为 %#v，期望 default-light 和 default-dark", saved)
-	}
-}
-
-func TestConfigServiceMigratesThemesOnLoad(t *testing.T) {
-	root := t.TempDir()
-	t.Setenv("HOME", root)
-	path := configPath()
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		t.Fatalf("创建配置目录失败: %v", err)
-	}
-	legacy := `{"themeMode":"system","lightTheme":"modern-minimal-light","darkTheme":"modern-minimal-dark"}`
-	if err := os.WriteFile(path, []byte(legacy), 0o600); err != nil {
-		t.Fatalf("写入旧主题配置失败: %v", err)
-	}
-
-	service := NewConfigService()
-	cfg := service.Get()
-	if cfg.LightTheme != "default-light" || cfg.DarkTheme != "default-dark" {
-		t.Fatalf("加载后的主题 ID 为 %#v，期望 default-light 和 default-dark", cfg)
-	}
-	b, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("读取持久化主题配置失败: %v", err)
-	}
-	var saved Config
-	if err := json.Unmarshal(b, &saved); err != nil {
-		t.Fatalf("持久化主题配置不是有效 JSON: %v", err)
-	}
-	if saved.LightTheme != "default-light" || saved.DarkTheme != "default-dark" {
-		t.Fatalf("持久化后的主题 ID 为 %#v，期望 default-light 和 default-dark", saved)
-	}
-}
-
-func TestConfigServiceMigratesLegacyThemeFieldOnLoad(t *testing.T) {
-	for _, test := range []struct {
-		name  string
-		theme string
-		mode  string
-	}{
-		{name: "Modern Minimal 浅色", theme: "modern-minimal-light", mode: "light"},
-		{name: "Modern Minimal 深色", theme: "modern-minimal-dark", mode: "dark"},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			root := t.TempDir()
-			t.Setenv("HOME", root)
-			path := configPath()
-			if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-				t.Fatalf("创建配置目录失败: %v", err)
-			}
-			legacy := fmt.Sprintf(`{"theme":%q}`, test.theme)
-			if err := os.WriteFile(path, []byte(legacy), 0o600); err != nil {
-				t.Fatalf("写入遗留 Theme 配置失败: %v", err)
-			}
-
-			service := NewConfigService()
-			cfg := service.Get()
-			if cfg.ThemeMode != test.mode || cfg.LightTheme != "default-light" || cfg.DarkTheme != "default-dark" {
-				t.Fatalf("遗留 Theme 迁移结果为 %#v，期望模式 %q 和默认主题", cfg, test.mode)
-			}
-			b, err := os.ReadFile(path)
-			if err != nil {
-				t.Fatalf("读取迁移后的配置失败: %v", err)
-			}
-			var saved map[string]json.RawMessage
-			if err := json.Unmarshal(b, &saved); err != nil {
-				t.Fatalf("迁移后的配置不是有效 JSON: %v", err)
-			}
-			if _, ok := saved["theme"]; ok {
-				t.Fatal("迁移后的配置不应保留遗留 theme 字段")
-			}
-			for _, key := range []string{"themeMode", "lightTheme", "darkTheme"} {
-				if _, ok := saved[key]; !ok {
-					t.Fatalf("迁移后的配置缺少 canonical 字段 %q", key)
-				}
-			}
-			var savedConfig Config
-			if err := json.Unmarshal(b, &savedConfig); err != nil {
-				t.Fatalf("迁移后的 canonical 配置无法解码: %v", err)
-			}
-			if savedConfig.ThemeMode != test.mode || savedConfig.LightTheme != "default-light" || savedConfig.DarkTheme != "default-dark" {
-				t.Fatalf("磁盘中的 canonical 主题配置为 %#v，期望模式 %q 和默认主题", savedConfig, test.mode)
-			}
-		})
-	}
-}
-
-func TestConfigServicePersistsNormalizedTrayToolsOnLoad(t *testing.T) {
-	root := t.TempDir()
-	t.Setenv("HOME", root)
-	path := configPath()
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		t.Fatalf("创建配置目录失败: %v", err)
-	}
-	legacy := `{"trayMatchTools":["invalid"],"urlTrayMatchMigrated":true,"codeEditorFontSize":13}`
-	if err := os.WriteFile(path, []byte(legacy), 0o600); err != nil {
-		t.Fatalf("写入遗留配置失败: %v", err)
-	}
-
-	service := NewConfigService()
-	if got := service.Get().TrayMatchTools; len(got) == 0 {
-		t.Fatal("加载后的托盘工具不应为空")
-	}
-	b, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatalf("读取规范化后的配置失败: %v", err)
 	}
@@ -480,9 +303,53 @@ func TestConfigServicePersistsNormalizedTrayToolsOnLoad(t *testing.T) {
 	if err := json.Unmarshal(b, &saved); err != nil {
 		t.Fatalf("规范化后的配置不是有效 JSON: %v", err)
 	}
-	if len(saved.TrayMatchTools) == 0 || saved.CodeEditorFontSize != 16 {
-		t.Fatalf("持久化后的托盘工具或字号不合法: %#v", saved)
+	if saved.LightTheme != "default-light" || saved.DarkTheme != "default-dark" {
+		t.Fatalf("保存后的主题 ID 为 %#v，期望 default-light 和 default-dark", saved)
 	}
+}
+
+func TestConfigServiceDoesNotRewriteConfigOnLoad(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("HOME", root)
+	path := configPath()
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatalf("创建配置目录失败: %v", err)
+	}
+	data := `{"language":"en-US","trayMatchTools":["invalid"],"codeEditorFontSize":13}`
+	if err := os.WriteFile(path, []byte(data), 0o600); err != nil {
+		t.Fatalf("写入测试配置失败: %v", err)
+	}
+
+	service := NewConfigService()
+	if got := service.Get(); got.Language != "en-US" || len(got.TrayMatchTools) == 0 || got.CodeEditorFontSize != 16 {
+		t.Fatalf("加载后的内存配置仍需应用当前默认值与规范化: %#v", got)
+	}
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("读取配置失败: %v", err)
+	}
+	if string(b) != data {
+		t.Fatalf("启动读取不应改写配置文件，得到 %s", b)
+	}
+}
+
+func TestDiffClipboardTargetOffNormalization(t *testing.T) {
+	cfg := defaultConfig()
+	cfg.DiffClipboardTargetMode = "off"
+	cfg.TrayMatchTools = []string{"diff"}
+	cfg = normalizeConfig(cfg)
+	if cfg.DiffClipboardTargetMode != "off" {
+		t.Fatalf("关闭模式被改写: %q", cfg.DiffClipboardTargetMode)
+	}
+	for _, id := range cfg.TrayMatchTools {
+		if id == "diff" {
+			t.Fatal("关闭差异对比后仍包含 diff 匹配项")
+		}
+	}
+	if len(cfg.TrayMatchTools) == 0 {
+		t.Fatal("关闭差异对比后至少应保留一个匹配工具")
+	}
+
 }
 
 func TestHistoryAccessHonorsDisabledSidebarTool(t *testing.T) {
@@ -709,12 +576,15 @@ func TestConfigServiceSaveRejectsInvalidImageSource(t *testing.T) {
 
 func TestConfigServiceSaveAcceptsNormalizableImageSource(t *testing.T) {
 	root := t.TempDir()
-	service := &ConfigService{path: filepath.Join(root, "config.json"), cfg: normalizeConfig(defaultConfig())}
+	profile := SSHProfile{ID: "profile-a", Name: "构建机A", Origin: "manual", Host: "box-a", Port: 22, Username: "dev"}
+	initial := defaultConfig()
+	initial.SSHProfiles = []SSHProfile{profile}
+	service := &ConfigService{path: filepath.Join(root, "config.json"), cfg: normalizeConfig(initial)}
 
 	cfg := defaultConfig()
 	cfg.ImageSources = []ImageSource{
 		{ID: "local", Kind: "local"},
-		{ID: "ssh:box-a", Name: "构建机A", Kind: "ssh", SSHHost: "box-a", SSHPort: 0},
+		{ID: "ssh:box-a", Name: "构建机A", Kind: "ssh", SSHProfileID: profile.ID},
 		{ID: "registry:repo-a", Name: "仓库A", Kind: "registry", RegistryURL: "https://REGISTRY.EXAMPLE/", RegistryUsername: "user", RegistryPassword: "pass"},
 	}
 	if err := service.Save(cfg); err != nil {
@@ -728,8 +598,8 @@ func TestConfigServiceSaveAcceptsNormalizableImageSource(t *testing.T) {
 	if saved.ImageSources[0].Name != "本机" {
 		t.Fatalf("本地来源名称未回填: %#v", saved.ImageSources[0])
 	}
-	if saved.ImageSources[1].SSHPort != 22 {
-		t.Fatalf("SSH 端口未回填为 22: %#v", saved.ImageSources[1])
+	if saved.ImageSources[1].SSHProfileID != profile.ID {
+		t.Fatalf("SSH 来源未保留配置引用: %#v", saved.ImageSources[1])
 	}
 	if saved.ImageSources[2].RegistryURL != "https://registry.example" {
 		t.Fatalf("registry 地址未标准化: %q", saved.ImageSources[2].RegistryURL)
@@ -758,9 +628,9 @@ func TestConfigServiceLoadsDropsInvalidImageSource(t *testing.T) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		t.Fatalf("创建配置目录失败: %v", err)
 	}
-	legacy := `{"imageSources":[{"id":"local","name":"本机","kind":"local"},{"id":"registry:bad","name":"坏仓库","kind":"registry","registryURL":"not a url"}]}`
-	if err := os.WriteFile(path, []byte(legacy), 0o600); err != nil {
-		t.Fatalf("写入含无效来源的旧配置失败: %v", err)
+	data := `{"imageSources":[{"id":"local","name":"本机","kind":"local"},{"id":"registry:bad","name":"坏仓库","kind":"registry","registryURL":"not a url"}]}`
+	if err := os.WriteFile(path, []byte(data), 0o600); err != nil {
+		t.Fatalf("写入含无效来源的测试配置失败: %v", err)
 	}
 
 	service := NewConfigService()
@@ -813,10 +683,10 @@ func TestNormalizeTextGeneratorSources(t *testing.T) {
 	}
 }
 
-func TestNormalizeConfigAddsTextGeneratorDefaults(t *testing.T) {
+func TestNormalizeConfigIncludesTextGeneratorDefaults(t *testing.T) {
 	cfg := normalizeConfig(Config{})
 	if cfg.TextGeneratorSources == nil || len(cfg.TextGeneratorSources) != 0 {
-		t.Fatalf("旧配置未补充空文本生成源: %#v", cfg.TextGeneratorSources)
+		t.Fatalf("空文本生成源应规范化为空列表: %#v", cfg.TextGeneratorSources)
 	}
 	found := false
 	for _, tool := range cfg.SidebarTools {
@@ -825,7 +695,7 @@ func TestNormalizeConfigAddsTextGeneratorDefaults(t *testing.T) {
 		}
 	}
 	if !found {
-		t.Fatalf("旧配置未默认启用文本生成工具: %#v", cfg.SidebarTools)
+		t.Fatalf("默认侧栏应启用文本生成工具: %#v", cfg.SidebarTools)
 	}
 }
 

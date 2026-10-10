@@ -134,7 +134,7 @@ func TestGetSSHConfigHostsAllowsConfigWithoutConcreteAliases(t *testing.T) {
 	}
 }
 
-func TestNormalizeConfigImageSourcesAndSidebarMigration(t *testing.T) {
+func TestNormalizeConfigImageSourcesAndSidebar(t *testing.T) {
 	cfg := Config{
 		SidebarTools: []SidebarToolConfig{{ID: "time", Enabled: false}, {ID: "time", Enabled: true}, {ID: "unknown", Enabled: true}},
 		ImageSources: []ImageSource{
@@ -154,20 +154,17 @@ func TestNormalizeConfigImageSourcesAndSidebarMigration(t *testing.T) {
 	if local.ID != "local" || local.Kind != "local" || local.SSHHost != "" || local.Name != "本机" {
 		t.Fatalf("本地来源未规范化为唯一标准来源: %#v", local)
 	}
-	if len(got.SidebarTools) != len(defaultSidebarToolIDs) {
-		t.Fatalf("侧栏工具迁移结果为 %#v", got.SidebarTools)
+	if len(got.SidebarTools) != 1 || got.SidebarTools[0].ID != "time" {
+		t.Fatalf("侧栏工具列表不应自动补入其他工具: %#v", got.SidebarTools)
 	}
 	for _, tool := range got.SidebarTools {
 		if tool.ID == "time" && tool.Enabled {
 			t.Fatal("规范化不应重置用户手动关闭的工具")
 		}
-		if tool.ID == "image-manager" && !tool.Enabled {
-			t.Fatal("迁移后的 image-manager 应默认启用")
-		}
 	}
 }
 
-func TestNormalizeImageSourcesMigratesCLIAndRegistryCredentials(t *testing.T) {
+func TestNormalizeImageSourcesAndRegistryCredentials(t *testing.T) {
 	cfg := Config{DockerCLIPath: "/custom/docker", ImageSources: []ImageSource{
 		{ID: "remote", Name: "远端", Kind: "ssh", SSHHost: "host.example", SSHUsername: "dev", SSHPassword: "secret"},
 		{ID: "registry", Name: "仓库", Kind: "registry", RegistryURL: "HTTPS://Registry.Example/", RegistryUsername: "user", RegistryPassword: "secret"},
