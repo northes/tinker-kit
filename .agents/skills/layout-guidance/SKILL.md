@@ -98,6 +98,7 @@ user-invocable: false
 - 浮层在暗色下“没有阴影”通常是主题 token 问题：`--shadow-*` 明暗同值（10% 黑），在深色背景上不可见；要改的是暗色 token，不要改组件或加局部阴影覆盖。
 - 图标默认使用 phosphor 的 `weight="duotone"`（按钮、下拉项等装饰性图标）；表格排序图标例外使用 Regular 的 `CaretUpDown` / `CaretDown` / `CaretUp`。新增或调整控件时不要遗漏个别图标。
 - 工具页操作栏中的清空按钮统一使用 phosphor `Trash`，复制按钮统一使用 `Copy`，由 `ToolActionBar` 以 `weight="duotone"` 渲染；同类操作跨工具保持图标一致，不使用 `X` 或 `ClipboardText` 替代。
+- 复制成功只通过 toast 反馈；按钮文案、`aria-label`、`title` 始终保持复制操作名称，图标保持 `Copy`，不要切换成“已复制”等成功态文案、对勾图标或延时复原状态。既有复制入口若缺少成功 toast，应补上。
 - 表格/列表右键不应改变选中项；右键菜单操作在目标行未被选中时回退到该行，已选中时作用于整个选择集，不要靠右键来建立选中。
 - 批量复制多项内容用「1. 值 / 2. 值 / … / 共 N 个」的编号格式（每项一行、末行汇总数量）；单选取原始值。
 - 搜索输入默认回车才触发（本地 `draft` + `onKeyDown` Enter），不要实时过滤，也不要引入防抖或 `useDeferredValue`。
