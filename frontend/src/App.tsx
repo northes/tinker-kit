@@ -71,6 +71,7 @@ import {
   HashStraight,
   Image as ImageIcon,
   LinkSimple,
+  Network,
   Package,
   Power,
   QrCode,
@@ -252,6 +253,7 @@ const defaultSettings: Settings = {
     { id: 'ssh-files', enabled: true },
     { id: 'service-manager', enabled: true },
     { id: 'ports', enabled: true },
+    { id: 'network-test', enabled: true },
   ],
   themeMode: 'dark',
   lightTheme: 'default-light',
@@ -274,6 +276,17 @@ const defaultSettings: Settings = {
   hiddenTimeResults: [],
   timeWeekStart: 'monday',
   ntpServers: ['time.cloudflare.com:123', 'time.google.com:123', 'pool.ntp.org:123'],
+  networkTestSettings: {
+    payload: 'ping',
+    timeoutSeconds: 10,
+    skipTLSVerify: false,
+    maxRedirects: 10,
+    proxyType: '',
+    proxyAddress: '',
+    dnsMode: 'system',
+    dnsAddress: '',
+    interfaceName: '',
+  },
   jsonAutoFormatOnFill: true,
   textAlwaysShowSearch: false,
   textGeneratorSources: [],
@@ -310,6 +323,7 @@ const ImageManagerDetailPage = lazy(() => import('./components/ImageManagerDetai
 const ServiceManagerTool = lazy(() => import('./components/ServiceManagerTool'));
 const SshFilesTool = lazy(() => import('./components/SshFilesTool'));
 const PortTool = lazy(() => import('./components/PortTool'));
+const NetworkTestTool = lazy(() => import('./components/NetworkTestTool'));
 const SettingsPage = lazy(() => import('./components/SettingsPage'));
 const HistoryPage = lazy(() => import('./components/HistoryPage'));
 const tools: ToolDefinition[] = [
@@ -405,6 +419,14 @@ const tools: ToolDefinition[] = [
     descriptionKey: 'tools.ports.description',
     icon: Plugs,
     keywords: 'port process pid ssh tunnel forward 端口 进程 转发',
+  },
+  {
+    id: 'network-test' as const,
+    nameKey: 'tools.network-test.name',
+    descriptionKey: 'tools.network-test.description',
+    icon: Network,
+    keywords:
+      'network http https tcp websocket proxy dns interface latency waterfall 网络 测试 代理 网卡 超时',
   },
   {
     id: 'ssh-files' as const,
@@ -594,6 +616,14 @@ const paletteItems: PaletteItem[] = [
     icon: Plugs,
     keywords: 'port process ssh forward 端口 进程 转发 打开工具',
     page: 'ports',
+  },
+  {
+    id: 'open:network-test',
+    labelKey: 'commands.openNetworkTest',
+    groupKey: 'groups.tools',
+    icon: Network,
+    keywords: 'network http https tcp websocket proxy dns interface 网络 测试 代理 网卡 打开工具',
+    page: 'network-test',
   },
   {
     id: 'open:ssh-files',
@@ -2258,6 +2288,18 @@ function AppShell() {
               {visited.has('ports') && (
                 <Suspense fallback={null}>
                   <PortTool active={page === 'ports'} />
+                </Suspense>
+              )}
+            </div>
+            <div className={toolSlotClass(page === 'network-test')}>
+              {visited.has('network-test') && (
+                <Suspense fallback={null}>
+                  <NetworkTestTool
+                    active={page === 'network-test'}
+                    record={record}
+                    pending={pending}
+                    clearPending={() => setPending(null)}
+                  />
                 </Suspense>
               )}
             </div>

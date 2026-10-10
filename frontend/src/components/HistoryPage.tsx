@@ -26,6 +26,7 @@ import {
   Image as ImageIcon,
   Key,
   LinkSimple,
+  Network,
   Package,
   QrCode,
   TextAa,
@@ -66,7 +67,8 @@ export function toHistoryItem(item: StoredHistoryItem): HistoryItem | null {
     item.tool === 'image-manager' ||
     item.tool === 'service-manager' ||
     item.tool === 'ssh-files' ||
-    item.tool === 'ports'
+    item.tool === 'ports' ||
+    item.tool === 'network-test'
     ? { ...item, tool: item.tool, detail: normalizeHistoryDetail(item.detail) }
     : null;
 }
@@ -113,6 +115,8 @@ export function HistoryIcon({ tool }: { tool: ToolId }) {
     <HardDrives weight="duotone" />
   ) : tool === 'ports' ? (
     <Plugs weight="duotone" />
+  ) : tool === 'network-test' ? (
+    <Network weight="duotone" />
   ) : tool === 'ssh-files' ? (
     <FolderSimple weight="duotone" />
   ) : (
@@ -176,6 +180,7 @@ const historyTools: Array<{ id: ToolId; nameKey: string }> = (
     'service-manager',
     'ssh-files',
     'ports',
+    'network-test',
   ] as const
 ).map((id) => ({ id, nameKey: `tools.${id}.name` }));
 

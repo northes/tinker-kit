@@ -104,6 +104,7 @@ func main() {
 	portService := NewPortService(cfgService)
 	jsonPipelineService := NewJSONPipelineService()
 	realTimeService := NewRealTimeService()
+	networkTestService := NewNetworkTestService()
 	dockService := dock.New()
 	isQuitting := false
 	app := application.New(application.Options{
@@ -124,6 +125,7 @@ func main() {
 			application.NewService(portService),
 			application.NewService(jsonPipelineService),
 			application.NewService(realTimeService),
+			application.NewService(networkTestService),
 			application.NewService(dockService),
 			application.NewService(taskNotificationService),
 		},
@@ -138,6 +140,9 @@ func main() {
 		_ = app.Event.Emit(name, data)
 	})
 	jsonPipelineService.setEventEmitter(func(name string, data any) {
+		_ = app.Event.Emit(name, data)
+	})
+	networkTestService.setEventEmitter(func(name string, data any) {
 		_ = app.Event.Emit(name, data)
 	})
 	serviceManagerService.start()
@@ -169,6 +174,7 @@ func main() {
 	app.OnShutdown(serviceManagerService.shutdown)
 	app.OnShutdown(portService.shutdown)
 	app.OnShutdown(jsonPipelineService.shutdown)
+	app.OnShutdown(networkTestService.shutdown)
 
 	window := app.Window.NewWithOptions(application.WebviewWindowOptions{
 		Name:             appName,

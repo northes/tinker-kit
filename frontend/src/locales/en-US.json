@@ -114,6 +114,10 @@
     "ports": {
       "name": "Ports",
       "description": "Inspect local and remote ports and manage SSH forwarding"
+    },
+    "network-test": {
+      "name": "Network Test",
+      "description": "Test HTTP, TCP, and WebSocket connections"
     }
   },
   "commands": {
@@ -139,7 +143,8 @@
     "togglePipeline": "Toggle pipeline",
     "toggleAutoFormatOnFill": "Toggle auto-format on fill",
     "paste": "Paste",
-    "openPorts": "Ports"
+    "openPorts": "Ports",
+    "openNetworkTest": "Network Test"
   },
   "jsonTool": {
     "title": "JSON Workspace",
@@ -2325,5 +2330,136 @@
     "stopped": "Stopped",
     "deleteConfirmTitle": "Delete port forward?",
     "deleteConfirmDescription": "This removes the forward listening on {{listen}}."
+  },
+  "networkTestTool": {
+    "title": "Network Test",
+    "protocol": {
+      "label": "Protocol",
+      "autoDefault": "Automatic",
+      "auto": "Automatic ({{protocol}})",
+      "unrecognized": "Unrecognized",
+      "http": "HTTP / HTTPS",
+      "tcp": "TCP",
+      "websocket": "WebSocket",
+      "udp": "UDP",
+      "ntp": "NTP time sync"
+    },
+    "target": {
+      "label": "Target address",
+      "placeholder": {
+        "auto": "Enter http(s)://, ws(s)://, or host:port",
+        "http": "https://example.com or example.com",
+        "tcp": "example.com:443",
+        "websocket": "wss://example.com/socket",
+        "udp": "example.com:53",
+        "ntp": "time.cloudflare.com:123"
+      }
+    },
+    "udp": {
+      "payload": "Payload (UTF-8)",
+      "payloadPlaceholder": "For example: ping",
+      "payloadNote": "This UDP test succeeds only when a reply arrives; no reply does not prove the target is unreachable. Text is sent as UTF-8, up to 1200 bytes."
+    },
+    "timeout": { "label": "Total timeout (seconds)" },
+    "tls": {
+      "skipVerification": "Skip TLS certificate verification",
+      "skipVerificationNote": "Skips certificate chain and hostname checks. Use for self-signed or internal certificates only."
+    },
+    "redirects": {
+      "label": "Redirect limit",
+      "note": "Follow up to 10 redirects. Set to 0 to stop and return the 3xx response.",
+      "request": "Redirect request · #{{count}}"
+    },
+    "advanced": {
+      "title": "Advanced options",
+      "routingNote": "The interface binds the local address used for the next-hop connection. With a proxy, the next hop is the proxy server. System proxy reads manual settings on macOS, Windows, and GNOME, plus proxy environment variables; PAC/WPAD is not supported. System DNS routing remains under OS control; target DNS behavior for HTTP and SOCKS5 proxies is shown in the stage details. UDP/NTP proxying requires SOCKS5 with UDP ASSOCIATE support."
+    },
+    "proxy": {
+      "label": "Proxy",
+      "none": "No proxy",
+      "system": "Use system proxy",
+      "http": "HTTP proxy / CONNECT",
+      "socks5": "SOCKS5",
+      "address": "Proxy address",
+      "addressPlaceholder": "proxy.example.com:8080"
+    },
+    "dns": {
+      "label": "DNS strategy",
+      "system": "System DNS",
+      "custom": "Custom DNS",
+      "proxy": "Resolve target through SOCKS5 proxy",
+      "address": "DNS server",
+      "addressPlaceholder": "1.1.1.1 or 1.1.1.1:53",
+      "resolution": {
+        "system": {
+          "summary": "OS resolver · source unknown",
+          "detail": "The OS resolver handles this lookup. The result may come from a hosts entry, local cache, or configured upstream DNS; the app cannot identify which source answered or the upstream address used."
+        },
+        "custom": {
+          "summary": "DNS {{server}} · cache hit unknown",
+          "detail": "DNS endpoint {{server}} is configured. A matching hosts entry may satisfy the lookup before that endpoint is queried; the app also cannot tell whether the DNS server used its cache or queried an upstream."
+        },
+        "proxy": {
+          "summary": "Proxy DNS · cache hit unknown",
+          "detail": "The proxy resolves the target hostname. The app cannot inspect the proxy's DNS address or cache hit; the proxy protocol does not expose a separate DNS duration."
+        },
+        "literal": {
+          "summary": "IP address · no DNS lookup",
+          "detail": "The target is an IP address, so no DNS lookup was made."
+        }
+      }
+    },
+    "interface": {
+      "label": "Outgoing interface",
+      "automatic": "Automatic"
+    },
+    "actions": {
+      "label": "Network test actions",
+      "run": "Start test",
+      "cancel": "Cancel test"
+    },
+    "empty": "Enter a target address to start. Bare HTTP targets default to http://; WebSocket targets default to wss://; set the UDP payload in Advanced options; NTP defaults to port 123.",
+    "running": "Test in progress · {{elapsed}} elapsed",
+    "duration": {
+      "milliseconds": "{{value}} ms",
+      "seconds": "{{value}} s"
+    },
+    "status": {
+      "success": "Complete",
+      "error": "Failed",
+      "timeout": "Timed out",
+      "canceled": "Canceled",
+      "running": "In progress"
+    },
+    "waterfall": {
+      "stage": "Stage",
+      "timeline": "Route timeline",
+      "duration": "Duration",
+      "details": "View request, response, and metadata"
+    },
+    "stages": {
+      "validate": "Validate target",
+      "proxy-resolve": "Resolve system proxy",
+      "dns-target": "Resolve target address",
+      "dns-proxy": "Resolve proxy address",
+      "tcp-connect": "Establish TCP connection",
+      "proxy-tunnel": "Establish proxy tunnel",
+      "tls": "TLS handshake",
+      "http-request": "Send HTTP request",
+      "http-response": "Receive HTTP response",
+      "websocket-handshake": "WebSocket handshake",
+      "udp-send": "Send UDP datagram",
+      "udp-response": "Wait for UDP response",
+      "ntp-request": "Send NTP request",
+      "ntp-response": "Validate NTP response"
+    },
+    "recordAction": "Network test",
+    "historyDetail": "{{protocol}} · {{target}}",
+    "footer": {
+      "copyTarget": "Copy target address",
+      "copyError": "Copy error message",
+      "errorLabel": "error message",
+      "copyFailed": "Copy failed"
+    }
   }
 }

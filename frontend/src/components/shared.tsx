@@ -34,7 +34,8 @@ export type ToolId =
   | 'image-manager'
   | 'service-manager'
   | 'ssh-files'
-  | 'ports';
+  | 'ports'
+  | 'network-test';
 export type PendingAction = {
   tool: ToolId;
   action: string;
@@ -338,10 +339,18 @@ function groupMenuOptions(options: Array<{ key: string; label: string; group?: s
   return groups;
 }
 
-export function ToolActionBar({ label, actions }: { label: string; actions: ToolBarAction[] }) {
+export function ToolActionBar({
+  label,
+  actions,
+  className = 'mt-3',
+}: {
+  label: string;
+  actions: ToolBarAction[];
+  className?: string;
+}) {
   return (
     <div
-      className="mt-3 flex min-h-[30px] flex-wrap items-center justify-end gap-1.5"
+      className={`${className} flex min-h-[30px] flex-wrap items-center justify-end gap-1.5`}
       role="toolbar"
       aria-label={label}
     >

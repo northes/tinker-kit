@@ -30,6 +30,7 @@ export interface Config {
     "hiddenTimeResults": string[] | null;
     "timeWeekStart": string;
     "ntpServers": string[] | null;
+    "networkTestSettings": NetworkTestSettings;
     "jsonAutoFormatOnFill": boolean;
     "textAlwaysShowSearch": boolean;
     "textGeneratorSources": TextGeneratorSource[] | null;
@@ -422,6 +423,68 @@ export interface LogMonitor {
     "state": string;
     "error"?: string;
     "truncated": boolean;
+}
+
+export interface NetworkInterface {
+    "name": string;
+    "index": number;
+    "addresses": string[] | null;
+}
+
+export interface NetworkTestRequest {
+    "runID": string;
+    "protocol": string;
+    "target": string;
+    "payload": string;
+    "timeoutMillis": number;
+    "skipTLSVerify": boolean;
+    "maxRedirects": number;
+    "proxyType": string;
+    "proxyAddress": string;
+    "dnsAddress": string;
+    "dnsMode": string;
+    "interfaceName": string;
+}
+
+export interface NetworkTestResult {
+    "runID": string;
+    "protocol": string;
+    "target": string;
+    "status": string;
+    "startedAt": number;
+    "finishedAt": number;
+    "durationMillis": number;
+    "error": string;
+    "stages": NetworkTestStage[] | null;
+}
+
+/**
+ * NetworkTestSettings 保存网络测试工具当前使用的超时和高级选项。
+ */
+export interface NetworkTestSettings {
+    "payload": string;
+    "timeoutSeconds": number;
+    "skipTLSVerify": boolean;
+    "maxRedirects": number;
+    "proxyType": string;
+    "proxyAddress": string;
+    "dnsMode": string;
+    "dnsAddress": string;
+    "interfaceName": string;
+}
+
+export interface NetworkTestStage {
+    "runID": string;
+    "id": string;
+    "status": string;
+    "startedAt": number;
+    "finishedAt": number;
+    "durationMillis": number;
+    "request": string;
+    "response": string;
+    "statusCode": number;
+    "meta": { [_ in string]?: string } | null;
+    "error": string;
 }
 
 export interface PM2Process {

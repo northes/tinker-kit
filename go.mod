@@ -3,6 +3,7 @@ module changeme
 go 1.26.0
 
 require (
+	github.com/coder/websocket v1.8.15
 	github.com/google/go-containerregistry v0.22.1
 	github.com/leaanthony/dmg v0.0.0-20260731074841-5c28840cf819
 	github.com/pkg/sftp v1.13.11
@@ -17,7 +18,6 @@ require (
 
 require (
 	github.com/adrg/xdg v0.5.3 // indirect
-	github.com/coder/websocket v1.8.15 // indirect
 	github.com/docker/cli v29.8.1+incompatible // indirect
 	github.com/docker/docker-credential-helpers v0.9.9 // indirect
 	github.com/go-ole/go-ole v1.3.0 // indirect

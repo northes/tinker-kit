@@ -38,6 +38,7 @@ type Config struct {
 	HiddenTimeResults       []string              `json:"hiddenTimeResults"`
 	TimeWeekStart           string                `json:"timeWeekStart"`
 	NtpServers              []string              `json:"ntpServers"`
+	NetworkTestSettings     NetworkTestSettings   `json:"networkTestSettings"`
 	JsonAutoFormatOnFill    bool                  `json:"jsonAutoFormatOnFill"`
 	TextAlwaysShowSearch    bool                  `json:"textAlwaysShowSearch"`
 	TextGeneratorSources    []TextGeneratorSource `json:"textGeneratorSources"`
@@ -55,7 +56,29 @@ type SidebarToolConfig struct {
 	Enabled bool   `json:"enabled"`
 }
 
-var defaultSidebarToolIDs = []string{"json", "time", "text", "base64", "jwt", "url", "qrcode", "image", "diff", "text-generator", "image-manager", "ssh-files", "service-manager", "ports"}
+// NetworkTestSettings 保存网络测试工具当前使用的超时和高级选项。
+type NetworkTestSettings struct {
+	Payload        string `json:"payload"`
+	TimeoutSeconds int    `json:"timeoutSeconds"`
+	SkipTLSVerify  bool   `json:"skipTLSVerify"`
+	MaxRedirects   int    `json:"maxRedirects"`
+	ProxyType      string `json:"proxyType"`
+	ProxyAddress   string `json:"proxyAddress"`
+	DNSMode        string `json:"dnsMode"`
+	DNSAddress     string `json:"dnsAddress"`
+	InterfaceName  string `json:"interfaceName"`
+}
+
+func defaultNetworkTestSettings() NetworkTestSettings {
+	return NetworkTestSettings{
+		Payload:        "ping",
+		TimeoutSeconds: 10,
+		MaxRedirects:   10,
+		DNSMode:        "system",
+	}
+}
+
+var defaultSidebarToolIDs = []string{"json", "time", "text", "base64", "jwt", "url", "qrcode", "image", "diff", "text-generator", "image-manager", "ssh-files", "service-manager", "ports", "network-test"}
 
 type TextGeneratorSource struct {
 	ID      string `json:"id"`
@@ -175,7 +198,7 @@ type historyStored struct {
 }
 
 func defaultConfig() Config {
-	return Config{TrayMatchEnabled: true, TrayMatchTools: []string{"json", "time", "text", "base64", "diff", "jwt", "url"}, AutoOverwrite: true, AutoCheckUpdates: true, TaskConcurrency: 4, TaskChunkConcurrency: 4, TaskNotificationMode: "unfocused", Language: "zh-CN", SidebarMode: "full", SidebarTools: defaultSidebarTools(), ThemeMode: "dark", LightTheme: "default-light", DarkTheme: "default-dark", DiffClipboardTargetMode: "alternate", CodeEditorFontSize: 16, TimeResultOrder: []string{"local", "dateTime", "dateOnly", "timeOnly", "zonedIso8601", "rfc3339", "utc", "compact", "underscore", "unixSeconds", "unixMilliseconds", "unixNanoseconds"}, TimeWeekStart: "monday", NtpServers: defaultNtpServers(), JsonAutoFormatOnFill: true, ImageSources: defaultImageSources(), SSHProfiles: []SSHProfile{}, FileSources: []FileSource{}, ServiceTargets: defaultServiceTargets(), PortSources: defaultPortSources(), PortForwards: []PortForwardConfig{}}
+	return Config{TrayMatchEnabled: true, TrayMatchTools: []string{"json", "time", "text", "base64", "diff", "jwt", "url"}, AutoOverwrite: true, AutoCheckUpdates: true, TaskConcurrency: 4, TaskChunkConcurrency: 4, TaskNotificationMode: "unfocused", Language: "zh-CN", SidebarMode: "full", SidebarTools: defaultSidebarTools(), ThemeMode: "dark", LightTheme: "default-light", DarkTheme: "default-dark", DiffClipboardTargetMode: "alternate", CodeEditorFontSize: 16, TimeResultOrder: []string{"local", "dateTime", "dateOnly", "timeOnly", "zonedIso8601", "rfc3339", "utc", "compact", "underscore", "unixSeconds", "unixMilliseconds", "unixNanoseconds"}, TimeWeekStart: "monday", NtpServers: defaultNtpServers(), NetworkTestSettings: defaultNetworkTestSettings(), JsonAutoFormatOnFill: true, ImageSources: defaultImageSources(), SSHProfiles: []SSHProfile{}, FileSources: []FileSource{}, ServiceTargets: defaultServiceTargets(), PortSources: defaultPortSources(), PortForwards: []PortForwardConfig{}}
 }
 
 func normalizeThemeID(theme string, defaultID string) string {
@@ -648,6 +671,11 @@ func normalizeConfig(cfg Config) Config {
 				seen[tool.ID] = true
 			}
 		}
+		for _, id := range defaultSidebarToolIDs {
+			if !seen[id] {
+				tools = append(tools, SidebarToolConfig{ID: id, Enabled: true})
+			}
+		}
 		cfg.SidebarTools = tools
 	}
 	trayTools := []string{"json", "time", "text", "base64", "diff", "jwt", "url"}
@@ -737,7 +765,33 @@ func normalizeConfig(cfg Config) Config {
 		cfg.TimeWeekStart = "monday"
 	}
 	cfg.NtpServers = normalizeNtpServers(cfg.NtpServers)
+	cfg.NetworkTestSettings = normalizeNetworkTestSettings(cfg.NetworkTestSettings)
 	return cfg
+}
+
+func normalizeNetworkTestSettings(settings NetworkTestSettings) NetworkTestSettings {
+	if settings.TimeoutSeconds < 1 || settings.TimeoutSeconds > 300 {
+		settings.TimeoutSeconds = 10
+	}
+	if settings.MaxRedirects < 0 || settings.MaxRedirects > 10 {
+		settings.MaxRedirects = 10
+	}
+	switch settings.ProxyType {
+	case "", "system", "http", "socks5":
+	default:
+		settings.ProxyType = ""
+		settings.ProxyAddress = ""
+	}
+	switch settings.DNSMode {
+	case "system", "custom", "proxy":
+	default:
+		settings.DNSMode = "system"
+		settings.DNSAddress = ""
+	}
+	if settings.DNSMode == "proxy" && settings.ProxyType != "socks5" && settings.ProxyType != "system" {
+		settings.DNSMode = "system"
+	}
+	return settings
 }
 
 func normalizeTextGeneratorSources(sources []TextGeneratorSource) []TextGeneratorSource {
@@ -803,6 +857,21 @@ func NewConfigService() *ConfigService {
 func (s *ConfigService) ServiceName() string { return "ConfigService" }
 func (s *ConfigService) GetAppName() string  { return appName }
 func (s *ConfigService) Get() Config         { s.mu.Lock(); defer s.mu.Unlock(); return s.cfg }
+
+// GetNetworkTestSettings 返回网络测试工具保存的配置。
+func (s *ConfigService) GetNetworkTestSettings() NetworkTestSettings {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.cfg.NetworkTestSettings
+}
+
+// SaveNetworkTestSettings 只更新网络测试工具拥有的配置项。
+func (s *ConfigService) SaveNetworkTestSettings(settings NetworkTestSettings) error {
+	return s.updateConfigAllowDanglingRefs(func(cfg *Config) error {
+		cfg.NetworkTestSettings = settings
+		return nil
+	})
+}
 
 // IsAutostartEnabled 返回当前平台是否已将 TinkerKit 登记为登录时启动。
 func (s *ConfigService) IsAutostartEnabled() (bool, error) {
@@ -1143,6 +1212,8 @@ func (s *ConfigService) Save(cfg Config) error {
 	cfg.ServiceTargets = copyServiceTargets(s.cfg.ServiceTargets)
 	cfg.PortSources = append([]PortSource(nil), s.cfg.PortSources...)
 	cfg.PortForwards = append([]PortForwardConfig(nil), s.cfg.PortForwards...)
+	// 网络测试工具通过定向接口维护设置，避免设置页旧快照覆盖新值。
+	cfg.NetworkTestSettings = s.cfg.NetworkTestSettings
 	// 删除 SSH 配置后，工具引用可以暂时悬空；镜像/文件来源定向接口会在写入新引用前
 	// 校验配置，而设置页快照仍应能保存无关设置，交由界面修复悬空来源。
 	if err := validateConfigForSave(cfg, true); err != nil {

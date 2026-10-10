@@ -114,6 +114,10 @@
     "ports": {
       "name": "端口工具",
       "description": "检查本地与远程端口，管理 SSH 端口转发"
+    },
+    "network-test": {
+      "name": "网络测试",
+      "description": "测试 HTTP、TCP 与 WebSocket 连接"
     }
   },
   "commands": {
@@ -139,7 +143,8 @@
     "togglePipeline": "切换流水线",
     "toggleAutoFormatOnFill": "切换填入后自动格式化",
     "paste": "粘贴",
-    "openPorts": "端口工具"
+    "openPorts": "端口工具",
+    "openNetworkTest": "网络测试"
   },
   "jsonTool": {
     "title": "JSON 工作区",
@@ -2325,5 +2330,136 @@
     "stopped": "已停止",
     "deleteConfirmTitle": "删除端口转发？",
     "deleteConfirmDescription": "将删除监听 {{listen}} 的转发配置。"
+  },
+  "networkTestTool": {
+    "title": "网络测试",
+    "protocol": {
+      "label": "协议",
+      "autoDefault": "自动",
+      "auto": "自动({{protocol}})",
+      "unrecognized": "未识别",
+      "http": "HTTP / HTTPS",
+      "tcp": "TCP",
+      "websocket": "WebSocket",
+      "udp": "UDP",
+      "ntp": "NTP 时间同步"
+    },
+    "target": {
+      "label": "目标地址",
+      "placeholder": {
+        "auto": "输入 http(s)://、ws(s)://，或 host:port",
+        "http": "https://example.com 或 example.com",
+        "tcp": "example.com:443",
+        "websocket": "wss://example.com/socket",
+        "udp": "example.com:53",
+        "ntp": "time.cloudflare.com:123"
+      }
+    },
+    "udp": {
+      "payload": "发送内容（UTF-8）",
+      "payloadPlaceholder": "例如：ping",
+      "payloadNote": "收到回包才算本次 UDP 测试成功；没有回包不代表目标一定不可达。文本会按 UTF-8 发送，最多 1200 字节。"
+    },
+    "timeout": { "label": "总超时（秒）" },
+    "tls": {
+      "skipVerification": "跳过 TLS 证书校验",
+      "skipVerificationNote": "跳过证书链和主机名检查，仅建议用于自签名或内部证书。"
+    },
+    "redirects": {
+      "label": "重定向次数",
+      "note": "最多跟随 10 次；设为 0 时不跟随，返回 3xx 响应。",
+      "request": "重定向发起 · 第 {{count}} 次"
+    },
+    "advanced": {
+      "title": "高级选项",
+      "routingNote": "网卡用于绑定本机到下一跳的连接地址；使用代理时下一跳是代理服务器。系统代理读取 macOS、Windows、GNOME 的手动代理设置及代理环境变量；PAC/WPAD 自动代理暂不支持。系统 DNS 仍由操作系统选择路由；HTTP 代理和 SOCKS5 代理解析目标域名的行为会显示在阶段详情中。UDP/NTP 代理仅支持启用 UDP ASSOCIATE 的 SOCKS5。"
+    },
+    "proxy": {
+      "label": "代理",
+      "none": "不使用代理",
+      "system": "使用系统代理",
+      "http": "HTTP 代理 / CONNECT",
+      "socks5": "SOCKS5",
+      "address": "代理地址",
+      "addressPlaceholder": "proxy.example.com:8080"
+    },
+    "dns": {
+      "label": "DNS 策略",
+      "system": "系统 DNS",
+      "custom": "指定 DNS",
+      "proxy": "由 SOCKS5 代理解析目标",
+      "address": "DNS 服务器",
+      "addressPlaceholder": "1.1.1.1 或 1.1.1.1:53",
+      "resolution": {
+        "system": {
+          "summary": "系统解析器 · 命中来源未知",
+          "detail": "通过操作系统解析器解析。结果可能来自 hosts 配置、本机缓存，也可能来自配置的上游 DNS；应用无法判断本次实际命中哪一层或上游地址。"
+        },
+        "custom": {
+          "summary": "DNS {{server}} · 缓存命中未知",
+          "detail": "已配置 DNS 端点 {{server}}。如果 hosts 配置中有匹配记录，可能不会查询该端点；应用也无法判断 DNS 服务是否命中自身缓存或继续请求上游。"
+        },
+        "proxy": {
+          "summary": "代理侧 DNS · 缓存命中未知",
+          "detail": "目标域名由代理侧解析。应用无法查看代理使用的 DNS 地址，也无法判断是否命中缓存；代理协议未单独提供 DNS 耗时。"
+        },
+        "literal": {
+          "summary": "IP 地址 · 未查询 DNS",
+          "detail": "目标是 IP 地址，因此没有发起 DNS 查询。"
+        }
+      }
+    },
+    "interface": {
+      "label": "出站网卡",
+      "automatic": "自动选择"
+    },
+    "actions": {
+      "label": "网络测试操作",
+      "run": "开始测试",
+      "cancel": "取消测试"
+    },
+    "empty": "输入目标地址后开始测试。HTTP 默认使用 http://；WebSocket 默认使用 wss://；UDP 可在高级选项设置探测内容，NTP 默认端口为 123。",
+    "running": "测试进行中 · 已用时 {{elapsed}}",
+    "duration": {
+      "milliseconds": "{{value}} 毫秒",
+      "seconds": "{{value}} 秒"
+    },
+    "status": {
+      "success": "完成",
+      "error": "失败",
+      "timeout": "超时",
+      "canceled": "已取消",
+      "running": "进行中"
+    },
+    "waterfall": {
+      "stage": "阶段",
+      "timeline": "链路时间线",
+      "duration": "耗时",
+      "details": "查看请求、响应与元信息"
+    },
+    "stages": {
+      "validate": "校验目标",
+      "proxy-resolve": "解析系统代理",
+      "dns-target": "解析目标地址",
+      "dns-proxy": "解析代理地址",
+      "tcp-connect": "建立 TCP 连接",
+      "proxy-tunnel": "建立代理隧道",
+      "tls": "TLS 握手",
+      "http-request": "发送 HTTP 请求",
+      "http-response": "接收 HTTP 响应",
+      "websocket-handshake": "WebSocket 握手",
+      "udp-send": "发送 UDP 数据报",
+      "udp-response": "等待 UDP 回包",
+      "ntp-request": "发送 NTP 请求",
+      "ntp-response": "校验 NTP 响应"
+    },
+    "recordAction": "网络测试",
+    "historyDetail": "{{protocol}} · {{target}}",
+    "footer": {
+      "copyTarget": "复制目标地址",
+      "copyError": "复制错误信息",
+      "errorLabel": "错误信息",
+      "copyFailed": "复制失败"
+    }
   }
 }
