@@ -1,13 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
-  ClipboardText,
+  Copy,
   GearSix,
   HashStraight,
   PencilSimple,
   Plus,
   Trash,
-  X,
 } from '@phosphor-icons/react';
 import type { TextGeneratorSource } from '../../bindings/changeme/models';
 import { Button } from './ui/button';
@@ -168,11 +167,18 @@ export default function TextGeneratorTool({
     consumed.current = pending;
     clearPending();
     if (pending.action === 'generate') generate();
-    else if (pending.action === 'restore') {
+    else if (pending.action === 'clear') {
+      setItems([]);
+      setRestoredOutput(null);
+    } else if (pending.action === 'copy' && output) {
+      void navigator.clipboard.writeText(output).then(() =>
+        toast.add({ title: t('toast.copied', { value: t('textGeneratorTool.output') }) }),
+      );
+    } else if (pending.action === 'restore') {
       setItems([]);
       setRestoredOutput(pending.output ?? '');
     }
-  }, [pending, pool, source, sets, length, quantity, separator, quote]);
+  }, [pending, pool, source, sets, length, quantity, separator, quote, output, t]);
 
   const saveSource = (event: React.FormEvent) => {
     event.preventDefault();
@@ -363,7 +369,7 @@ export default function TextGeneratorTool({
             </>
           }
         />
-        <ToolLayoutContent>
+        <ToolLayoutContent className="py-1">
           <Textarea
             readOnly
             value={output}
@@ -379,7 +385,7 @@ export default function TextGeneratorTool({
               {
                 key: 'clear',
                 label: t('common.clear'),
-                icon: X,
+                icon: Trash,
                 variant: 'tertiary',
                 disabled: !output,
                 onPress: () => {
@@ -390,7 +396,7 @@ export default function TextGeneratorTool({
               {
                 key: 'copy',
                 label: t('common.copy'),
-                icon: ClipboardText,
+                icon: Copy,
                 variant: 'secondary',
                 disabled: !output,
                 onPress: () =>

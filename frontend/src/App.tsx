@@ -52,10 +52,12 @@ import {
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import {
+  ArrowsClockwise,
   BracketsCurly,
   CaretLeft as ArrowLeft,
   CaretRight as ArrowRight,
   ClipboardText,
+  Copy,
   Clock,
   ClockCounterClockwise,
   Command as CommandIcon,
@@ -71,14 +73,19 @@ import {
   Image as ImageIcon,
   LinkSimple,
   Package,
+  Power,
   QrCode,
   FolderSimple,
   Plugs,
   SidebarSimple,
+  MoonStars,
+  Translate,
   TextAa,
   TextT,
+  Trash,
 } from '@phosphor-icons/react';
 import type { ToolDefinition } from './components/SettingsPage';
+import { EDITOR_FONT_SIZES } from './settings-options';
 import { type HistoryItem, normalizeHistoryDetail } from './components/HistoryPage';
 import {
   decodeBase64,
@@ -88,6 +95,8 @@ import {
   type PendingAction,
   type ToolId,
 } from './components/shared';
+import { SUPPORTED_LANGUAGES } from './i18n';
+import { THEME_MODE_OPTIONS } from './theme';
 import { parseTimeInput } from './utils/time';
 import { parseSupportedUrl } from './utils/url';
 import { toast, Toaster } from './components/ui/toast';
@@ -199,6 +208,15 @@ type PaletteItem = {
   subgroupKey?: string;
   needsInput?: boolean;
   context?: PaletteContext;
+  historyDelta?: -1 | 1;
+  toggle?: boolean;
+  settingsAction?:
+    | 'quit'
+    | 'check-updates'
+    | 'toggle-display-mode'
+    | 'toggle-language'
+    | 'toggle-font-size'
+    | 'toggle-sidebar';
 };
 type TranslatablePaletteItem = PaletteItem & { label: string; group: string; subgroup: string };
 type IndexedItem = TranslatablePaletteItem & { text: string; pinyin: string; initials: string };
@@ -213,7 +231,6 @@ function logFrontend(message: string) {
 const defaultSettings: Settings = {
   trayMatchEnabled: true,
   trayMatchTools: ['json', 'time', 'text', 'base64', 'diff', 'jwt', 'url'],
-  urlTrayMatchMigrated: true,
   autoOverwrite: false,
   autoCheckUpdates: true,
   taskConcurrency: 4,
@@ -259,7 +276,6 @@ const defaultSettings: Settings = {
   timeWeekStart: 'monday',
   ntpServers: ['time.cloudflare.com:123', 'time.google.com:123', 'pool.ntp.org:123'],
   jsonAutoFormatOnFill: true,
-  jsonAutoFormatOnFillMigrated: true,
   textAlwaysShowSearch: false,
   textGeneratorSources: [],
   dockerCLIPath: '',
@@ -274,7 +290,6 @@ const defaultSettings: Settings = {
       registryPassword: '',
     },
   ],
-  sshProfilesVersion: 1,
   sshProfiles: [],
   fileSources: [],
   serviceTargets: [{ id: 'local', name: '本机', kind: 'local', sshProfileID: '' }],
@@ -402,6 +417,22 @@ const tools: ToolDefinition[] = [
 ];
 const paletteItems: PaletteItem[] = [
   {
+    id: 'nav:back',
+    labelKey: 'commands.back',
+    groupKey: 'groups.nav',
+    icon: ArrowLeft,
+    keywords: 'back previous 后退 返回',
+    historyDelta: -1,
+  },
+  {
+    id: 'nav:forward',
+    labelKey: 'commands.forward',
+    groupKey: 'groups.nav',
+    icon: ArrowRight,
+    keywords: 'forward next 前进',
+    historyDelta: 1,
+  },
+  {
     id: 'nav:settings',
     labelKey: 'nav.settings',
     groupKey: 'groups.nav',
@@ -416,6 +447,57 @@ const paletteItems: PaletteItem[] = [
     icon: ClockCounterClockwise,
     keywords: 'history recent log activity 历史 记录',
     page: 'history',
+  },
+  {
+    id: 'settings:quit',
+    labelKey: 'settings.quitAction',
+    groupKey: 'groups.settings',
+    icon: Power,
+    keywords: 'quit exit application 退出 应用',
+    settingsAction: 'quit',
+  },
+  {
+    id: 'settings:check-updates',
+    labelKey: 'settings.checkUpdates',
+    groupKey: 'groups.settings',
+    icon: ArrowsClockwise,
+    keywords: 'update version check 更新 版本 检查',
+    settingsAction: 'check-updates',
+  },
+  {
+    id: 'settings:toggle-display-mode',
+    labelKey: 'commands.toggleDisplayMode',
+    groupKey: 'groups.settings',
+    icon: MoonStars,
+    keywords: 'theme appearance light dark system mode 显示模式 主题 明暗',
+    toggle: true,
+    settingsAction: 'toggle-display-mode',
+  },
+  {
+    id: 'settings:toggle-language',
+    labelKey: 'commands.toggleLanguage',
+    groupKey: 'groups.settings',
+    icon: Translate,
+    keywords: 'language locale switch 语言 切换',
+    toggle: true,
+    settingsAction: 'toggle-language',
+  },
+  {
+    id: 'settings:toggle-font-size',
+    labelKey: 'commands.toggleFontSize',
+    groupKey: 'groups.settings',
+    icon: TextAa,
+    keywords: 'font size editor text 大小 字体 编辑器',
+    toggle: true,
+    settingsAction: 'toggle-font-size',
+  },
+  {
+    id: 'settings:toggle-sidebar',
+    labelKey: 'settings.adjustSidebar',
+    groupKey: 'groups.settings',
+    icon: SidebarSimple,
+    keywords: 'sidebar customize manage 侧边栏 调整 管理',
+    settingsAction: 'toggle-sidebar',
   },
   {
     id: 'open:json',
@@ -538,6 +620,24 @@ const paletteItems: PaletteItem[] = [
     keywords: 'generate random text uuid 生成 随机文本',
     tool: 'text-generator',
     action: 'generate',
+  },
+  {
+    id: 'text-generator:clear',
+    labelKey: 'common.clear',
+    groupKey: 'tools.text-generator.name',
+    icon: Trash,
+    keywords: 'clear output empty 清空 输出',
+    tool: 'text-generator',
+    action: 'clear',
+  },
+  {
+    id: 'text-generator:copy',
+    labelKey: 'common.copy',
+    groupKey: 'tools.text-generator.name',
+    icon: Copy,
+    keywords: 'copy output clipboard 复制 输出 剪贴板',
+    tool: 'text-generator',
+    action: 'copy',
   },
   {
     id: 'paste',
@@ -1275,6 +1375,11 @@ function AppShell() {
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [romanize, setRomanize] = useState<Romanize>(() => (text) => text);
   const [pending, setPending] = useState<PendingAction | null>(null);
+  const [settingsCommandRequest, setSettingsCommandRequest] = useState<{
+    id: number;
+    action: 'quit' | 'check-updates';
+  } | null>(null);
+  const settingsCommandId = useRef(0);
   const [jsonSchemaOpen, setJsonSchemaOpen] = useState(false);
   const [jsonPipelineOpen, setJsonPipelineOpen] = useState(false);
   const [matchDialog, setMatchDialog] = useState<null | {
@@ -1634,13 +1739,42 @@ function AppShell() {
     return buildIndex(
       items.map((item) => ({
         ...item,
-        label: t(item.labelKey),
+        label: t(
+          item.labelKey,
+          item.settingsAction === 'toggle-display-mode'
+            ? {
+                current: t(
+                  THEME_MODE_OPTIONS.find(({ id }) => id === settings.themeMode)?.labelKey ??
+                    'settings.themeModeSystem',
+                ),
+              }
+            : item.settingsAction === 'toggle-language'
+              ? {
+                  current: t(
+                    SUPPORTED_LANGUAGES.find(({ code }) => code === settings.language)?.labelKey ??
+                      'settings.languages.zh-CN',
+                  ),
+                }
+              : item.settingsAction === 'toggle-font-size'
+                ? { current: `${settings.codeEditorFontSize || 16}px` }
+                : undefined,
+        ),
         group: t(item.groupKey),
         subgroup: item.subgroupKey ? t(item.subgroupKey) : '',
       })),
       romanize,
     );
-  }, [t, jsonSchemaOpen, jsonPipelineOpen, page, romanize, enabledToolSet]);
+  }, [
+    t,
+    jsonSchemaOpen,
+    jsonPipelineOpen,
+    page,
+    romanize,
+    enabledToolSet,
+    settings.themeMode,
+    settings.language,
+    settings.codeEditorFontSize,
+  ]);
   const record = (
     tool: ToolId,
     action: string,
@@ -1746,7 +1880,55 @@ function AppShell() {
       void pasteIntoFocused();
       return;
     }
-    setPaletteOpen(false);
+    if (!item.toggle) setPaletteOpen(false);
+    if (item.settingsAction) {
+      switch (item.settingsAction) {
+        case 'quit':
+        case 'check-updates':
+          settingsCommandId.current += 1;
+          setSettingsCommandRequest({ id: settingsCommandId.current, action: item.settingsAction });
+          if (page !== 'settings') navigate('settings');
+          return;
+        case 'toggle-display-mode':
+          setSettingsWithThemeTransition((current) => {
+            const modes = THEME_MODE_OPTIONS.map(({ id }) => id);
+            const currentIndex = modes.indexOf(current.themeMode as (typeof modes)[number]);
+            return {
+              ...current,
+              themeMode: modes[(currentIndex + 1 + modes.length) % modes.length],
+            };
+          });
+          return;
+        case 'toggle-language':
+          setSettings((current) => {
+            const currentIndex = SUPPORTED_LANGUAGES.findIndex(
+              ({ code }) => code === current.language,
+            );
+            const next = SUPPORTED_LANGUAGES[(currentIndex + 1) % SUPPORTED_LANGUAGES.length];
+            return { ...current, language: next.code };
+          });
+          return;
+        case 'toggle-font-size':
+          setSettings((current) => {
+            const currentIndex = EDITOR_FONT_SIZES.indexOf(
+              (current.codeEditorFontSize || 16) as (typeof EDITOR_FONT_SIZES)[number],
+            );
+            return {
+              ...current,
+              codeEditorFontSize: EDITOR_FONT_SIZES[(currentIndex + 1) % EDITOR_FONT_SIZES.length],
+            };
+          });
+          return;
+        case 'toggle-sidebar':
+          toggleSidebarManage();
+          return;
+      }
+    }
+    if (item.historyDelta) {
+      setPending(null);
+      routerNavigate(item.historyDelta);
+      return;
+    }
     if (!item.tool) {
       setPending(null);
       navigate(item.page!);
@@ -1809,7 +1991,12 @@ function AppShell() {
     let tool: ToolId | null = null;
     let mode: string | undefined;
     let target: 'before' | 'after' | undefined;
-    if (currentPage === 'diff' && enabledSidebarTools.has('diff')) {
+    if (
+      currentPage === 'diff' &&
+      trayTools.has('diff') &&
+      enabledSidebarTools.has('diff') &&
+      currentSettings.diffClipboardTargetMode !== 'off'
+    ) {
       tool = 'diff';
       target =
         currentSettings.diffClipboardTargetMode === 'before'
@@ -2026,10 +2213,6 @@ function AppShell() {
                   <DiffTool
                     active={page === 'diff'}
                     theme={theme}
-                    clipboardTargetMode={settings.diffClipboardTargetMode}
-                    onClipboardTargetModeChange={(diffClipboardTargetMode) =>
-                      setSettings((current) => ({ ...current, diffClipboardTargetMode }))
-                    }
                     record={record}
                     pending={pending}
                     clearPending={() => setPending(null)}
@@ -2152,6 +2335,10 @@ function AppShell() {
                     clearHistory={clearHistory}
                     sidebarManaging={sidebarManaging}
                     onToggleSidebarManage={toggleSidebarManage}
+                    commandRequest={settingsCommandRequest}
+                    onCommandRequestHandled={(id) =>
+                      setSettingsCommandRequest((current) => (current?.id === id ? null : current))
+                    }
                     flushSettingsSave={flushSettingsSave}
                   />
                 </Suspense>
@@ -2305,18 +2492,40 @@ function CommandPalette({
 }) {
   const { t } = useTranslation();
   const [input, setInput] = useState('');
+  const [selectedCommand, setSelectedCommand] = useState<string | undefined>();
   const listRef = useRef<HTMLDivElement>(null);
+  const lastPointerPositionRef = useRef<{ x: number; y: number } | null>(null);
   useEffect(() => {
     if (open) setInput('');
   }, [open]);
   useLayoutEffect(() => {
     if (open) listRef.current?.scrollTo({ top: 0, left: 0 });
   }, [open]);
+  const handlePointerMoveCapture = (event: React.PointerEvent<HTMLDivElement>) => {
+    const previous = lastPointerPositionRef.current;
+    const hasMoved =
+      event.movementX !== 0 ||
+      event.movementY !== 0 ||
+      (previous !== null && (event.clientX !== previous.x || event.clientY !== previous.y));
+    lastPointerPositionRef.current = { x: event.clientX, y: event.clientY };
+    if (hasMoved && event.target instanceof Element) {
+      const item = event.target.closest<HTMLElement>('[cmdk-item][data-value]');
+      const value = item?.getAttribute('data-value');
+      if (value && item?.getAttribute('aria-disabled') !== 'true') setSelectedCommand(value);
+    }
+  };
   const matches = useMemo(() => {
     const q = input.trim().toLowerCase().replace(/\s+/g, '');
     if (!q) return null;
     const isEnglish = /^[a-z0-9]+$/i.test(q);
-    const rank = (i: IndexedItem) => (i.tool && i.tool === page ? 0 : i.page ? 1 : 2);
+    const rank = (i: IndexedItem) =>
+      i.tool === page
+        ? 0
+        : i.tool || i.groupKey === 'groups.tools'
+          ? 1
+          : i.groupKey === 'groups.nav'
+            ? 2
+            : 3;
     const labelHit = (i: IndexedItem) =>
       isEnglish && i.label.toLowerCase().replace(/\s+/g, '').includes(q) ? 1 : 0;
     const initialsHit = (i: IndexedItem) => (isEnglish && i.initials.includes(q) ? 1 : 0);
@@ -2331,9 +2540,9 @@ function CommandPalette({
     }
     scored.sort(
       (a, b) =>
+        rank(a.item) - rank(b.item) ||
         labelHit(b.item) - labelHit(a.item) ||
         initialsHit(b.item) - initialsHit(a.item) ||
-        rank(a.item) - rank(b.item) ||
         b.score - a.score,
     );
     return scored.map((s) => s.item);
@@ -2347,8 +2556,25 @@ function CommandPalette({
       if (group) group.items.push(item);
       else grouped.set(heading, { heading, items: [item] });
     }
-    return [...grouped.values()];
-  }, [list]);
+    const groupRank = (items: IndexedItem[]) =>
+      Math.min(
+        ...items.map((item) =>
+          item.tool === page
+            ? 0
+            : item.tool || item.groupKey === 'groups.tools'
+              ? 1
+              : item.groupKey === 'groups.nav'
+                ? 2
+                : 3,
+        ),
+      );
+    return [...grouped.values()].sort((a, b) => groupRank(a.items) - groupRank(b.items));
+  }, [list, page]);
+  const initialCommandId = groups[0]?.items[0]?.id;
+  useLayoutEffect(() => {
+    if (open) setSelectedCommand(initialCommandId);
+    else setSelectedCommand(undefined);
+  }, [open, page, input, initialCommandId]);
   useEffect(() => {
     if (!open) return;
     const frame = requestAnimationFrame(() => {
@@ -2370,7 +2596,15 @@ function CommandPalette({
       title={t('palette.title')}
       description={t('palette.description')}
     >
-      <Command shouldFilter={false} aria-label={t('palette.listLabel')}>
+      <Command
+        loop
+        value={selectedCommand}
+        onValueChange={setSelectedCommand}
+        disablePointerSelection
+        onPointerMoveCapture={handlePointerMoveCapture}
+        shouldFilter={false}
+        aria-label={t('palette.listLabel')}
+      >
         <CommandInput
           autoFocus
           aria-label={t('palette.searchLabel')}
@@ -2387,7 +2621,7 @@ function CommandPalette({
                 {group.items.map((item) => (
                   <CommandItem key={item.id} value={item.id} onSelect={() => run(item)}>
                     <item.icon size={16} weight="duotone" />
-                    <span>{t(item.labelKey)}</span>
+                    <span>{item.label}</span>
                   </CommandItem>
                 ))}
               </CommandGroup>

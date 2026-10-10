@@ -61,7 +61,9 @@ import {
   GetSSHKnownHosts,
   ExportConfig,
   ImportConfig,
+  IsAutostartEnabled,
   ResetConfig,
+  SetAutostart,
   UpdateSSHKnownHost,
 } from '../../bindings/changeme/configservice';
 import { CheckForUpdates, GetCurrentVersion } from '../../bindings/changeme/updateservice';
@@ -70,6 +72,7 @@ import { ToolLayout, ToolLayoutHeader, ToolLayoutContent, type Icon, type ToolId
 import { toast } from './ui/toast';
 import { GITHUB_REPO_URL } from '../repositoryUrl';
 import { THEME_MODE_OPTIONS, type ThemeMode } from '../theme';
+import { EDITOR_FONT_SIZES } from '../settings-options';
 import { cn } from '@/lib/utils';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
@@ -85,7 +88,8 @@ import {
   Send as SendTaskNotification,
 } from '../../bindings/changeme/tasknotificationservice';
 
-const TRAY_MATCH_DEFAULT_TOOLS: readonly ToolId[] = [
+// Keep in sync with Go config normalization and the frontend's initial settings.
+const TRAY_MATCHABLE_TOOLS: readonly ToolId[] = [
   'json',
   'time',
   'text',
@@ -94,7 +98,8 @@ const TRAY_MATCH_DEFAULT_TOOLS: readonly ToolId[] = [
   'jwt',
   'url',
 ];
-const EDITOR_FONT_SIZES = [12, 14, 16, 18] as const;
+const DIFF_CLIPBOARD_TARGET_MODES = ['off', 'alternate', 'before', 'after'] as const;
+type DiffClipboardTargetMode = (typeof DIFF_CLIPBOARD_TARGET_MODES)[number];
 const settingRowClass = 'flex min-h-8 items-center justify-between gap-5';
 const settingLabelClass = 'text-xs leading-[1.4] font-medium text-foreground';
 const settingHintClass = 'text-[10px] leading-[1.4] text-muted-foreground';
@@ -125,12 +130,14 @@ function SettingSwitch({
   selected,
   onChange,
   isDisabled = false,
+  ariaLabel,
   id,
   describedBy,
 }: {
   selected: boolean;
   onChange: (v: boolean) => void;
   isDisabled?: boolean;
+  ariaLabel?: string;
   id?: string;
   describedBy?: string;
 }) {
@@ -140,6 +147,7 @@ function SettingSwitch({
       checked={selected}
       onCheckedChange={onChange}
       disabled={isDisabled}
+      aria-label={ariaLabel}
       size="sm"
       aria-describedby={describedBy}
     />
@@ -628,7 +636,7 @@ function SSHKnownHostsDialog({
 }
 
 function trayMatchToolSet(toolIds: string[] | null | undefined) {
-  return new Set((toolIds ?? TRAY_MATCH_DEFAULT_TOOLS) as ToolId[]);
+  return new Set((toolIds ?? TRAY_MATCHABLE_TOOLS) as ToolId[]);
 }
 
 export default function SettingsPage({
@@ -639,6 +647,8 @@ export default function SettingsPage({
   tools,
   sidebarManaging,
   onToggleSidebarManage,
+  commandRequest,
+  onCommandRequestHandled,
   flushSettingsSave,
   onConfigReplaced,
 }: {
@@ -649,6 +659,8 @@ export default function SettingsPage({
   tools: ToolDefinition[];
   sidebarManaging: boolean;
   onToggleSidebarManage: () => void;
+  commandRequest: { id: number; action: 'quit' | 'check-updates' } | null;
+  onCommandRequestHandled: (id: number) => void;
   flushSettingsSave: () => Promise<void>;
   onConfigReplaced: (config: Settings) => void;
 }) {
@@ -660,13 +672,54 @@ export default function SettingsPage({
   const [configBusy, setConfigBusy] = useState(false);
   const [checking, setChecking] = useState(false);
   const [testingTaskNotification, setTestingTaskNotification] = useState(false);
+  const [autostartEnabled, setAutostartEnabled] = useState(false);
+  const [autostartLoading, setAutostartLoading] = useState(true);
+  const [autostartSaving, setAutostartSaving] = useState(false);
   const [quitting, setQuitting] = useState(false);
   const [version, setVersion] = useState('');
+  const handledCommandRef = useRef<number | null>(null);
   const [sshKnownHostsOpen, setSSHKnownHostsOpen] = useState(false);
   const trayMatchMinHintId = useId();
   useEffect(() => {
     void GetCurrentVersion().then(setVersion);
   }, []);
+  useEffect(() => {
+    let cancelled = false;
+    void IsAutostartEnabled()
+      .then((enabled) => {
+        if (!cancelled) setAutostartEnabled(enabled);
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          toast.add({
+            title: t('settings.autostartReadFailed'),
+            description: formatBackendError(error),
+            type: 'error',
+          });
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setAutostartLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [t]);
+  const setAutostart = async (enabled: boolean) => {
+    setAutostartSaving(true);
+    try {
+      await SetAutostart(enabled);
+      setAutostartEnabled(enabled);
+    } catch (error) {
+      toast.add({
+        title: t('settings.autostartUpdateFailed'),
+        description: formatBackendError(error),
+        type: 'error',
+      });
+    } finally {
+      setAutostartSaving(false);
+    }
+  };
   const update = (key: BooleanSettingKey, value: boolean) =>
     setSettings((current) => ({ ...current, [key]: value }));
   const checkUpdates = async () => {
@@ -691,6 +744,13 @@ export default function SettingsPage({
       setChecking(false);
     }
   };
+  useEffect(() => {
+    if (!commandRequest || handledCommandRef.current === commandRequest.id) return;
+    handledCommandRef.current = commandRequest.id;
+    if (commandRequest.action === 'quit') setConfirmQuit(true);
+    else void checkUpdates();
+    onCommandRequestHandled(commandRequest.id);
+  }, [commandRequest, onCommandRequestHandled]);
   const sendTestTaskNotification = async () => {
     setTestingTaskNotification(true);
     try {
@@ -714,17 +774,22 @@ export default function SettingsPage({
       setTestingTaskNotification(false);
     }
   };
-  const matchableTools = tools.filter((tool) => TRAY_MATCH_DEFAULT_TOOLS.includes(tool.id));
+  const matchableTools = tools.filter((tool) => TRAY_MATCHABLE_TOOLS.includes(tool.id));
   const toggleTrayTool = (tool: ToolId, value: boolean) =>
     setSettings((current) => {
       const selected = new Set(
         [...trayMatchToolSet(current.trayMatchTools)].filter((id) =>
-          TRAY_MATCH_DEFAULT_TOOLS.includes(id),
+          TRAY_MATCHABLE_TOOLS.includes(id),
         ),
       );
+      const disabledSidebarTools = new Set(
+        (current.sidebarTools ?? []).filter((item) => !item.enabled).map((item) => item.id),
+      );
+      if (disabledSidebarTools.has(tool)) return current;
       if (value) selected.add(tool);
       else {
-        if (selected.size <= 1 && selected.has(tool)) return current;
+        const enabledSelected = [...selected].filter((id) => !disabledSidebarTools.has(id));
+        if (enabledSelected.length <= 1 && enabledSelected.includes(tool)) return current;
         selected.delete(tool);
       }
       const trayMatchTools = matchableTools
@@ -792,16 +857,14 @@ export default function SettingsPage({
   };
   const trayTools = new Set(
     [...trayMatchToolSet(settings.trayMatchTools)].filter((id) =>
-      TRAY_MATCH_DEFAULT_TOOLS.includes(id),
+      TRAY_MATCHABLE_TOOLS.includes(id),
     ),
   );
-  const lastTrayToolLocked = trayTools.size <= 1;
-  const defaultTrayTools = matchableTools.filter((tool) =>
-    TRAY_MATCH_DEFAULT_TOOLS.includes(tool.id),
+  const disabledSidebarToolIds = new Set(
+    (settings.sidebarTools ?? []).filter((tool) => !tool.enabled).map((tool) => tool.id),
   );
-  const extraTrayTools = matchableTools.filter(
-    (tool) => !TRAY_MATCH_DEFAULT_TOOLS.includes(tool.id),
-  );
+  const enabledTrayTools = new Set([...trayTools].filter((id) => !disabledSidebarToolIds.has(id)));
+  const lastTrayToolLocked = enabledTrayTools.size <= 1;
   const themeModeOptions = THEME_MODE_OPTIONS.map(({ id, labelKey }) => ({
     id,
     label: t(labelKey),
@@ -814,6 +877,15 @@ export default function SettingsPage({
     id: language.code,
     label: t(language.labelKey),
   }));
+  const diffTargetMode = DIFF_CLIPBOARD_TARGET_MODES.includes(
+    settings.diffClipboardTargetMode as DiffClipboardTargetMode,
+  )
+    ? (settings.diffClipboardTargetMode as DiffClipboardTargetMode)
+    : 'alternate';
+  const diffTargetOptions = DIFF_CLIPBOARD_TARGET_MODES.map((value) => ({
+    value,
+    label: t(`diffTool.targets.${value}`),
+  }));
   const categoryOptions = SETTINGS_CATEGORIES.map((id) => ({
     id,
     label: t(`settings.categories.${id}.title`),
@@ -821,13 +893,72 @@ export default function SettingsPage({
   const [category, setCategory] = useState<SettingsCategory>('preferences');
   const renderTrayToolSwitch = (tool: ToolDefinition) => {
     const selected = trayTools.has(tool.id);
-    const restricted = selected && lastTrayToolLocked;
+    const sidebarDisabled = disabledSidebarToolIds.has(tool.id);
+    const restricted = selected && !sidebarDisabled && lastTrayToolLocked;
+    if (tool.id === 'diff') {
+      const changeDiffTarget = (value: string | null) => {
+        if (!value || !DIFF_CLIPBOARD_TARGET_MODES.includes(value as DiffClipboardTargetMode))
+          return;
+        const mode = value as DiffClipboardTargetMode;
+        setSettings((current) => {
+          const selectedTools = new Set(trayMatchToolSet(current.trayMatchTools));
+          const disabledTools = new Set(
+            (current.sidebarTools ?? []).filter((item) => !item.enabled).map((item) => item.id),
+          );
+          if (disabledTools.has('diff')) return current;
+          const enabledSelected = [...selectedTools].filter((id) => !disabledTools.has(id));
+          if (mode === 'off' && enabledSelected.length <= 1 && selectedTools.has('diff'))
+            return current;
+          if (mode === 'off') selectedTools.delete('diff');
+          else selectedTools.add('diff');
+          const trayMatchTools = matchableTools
+            .filter((item) => selectedTools.has(item.id))
+            .map((item) => item.id);
+          if (trayMatchTools.length === 0) return current;
+          return { ...current, diffClipboardTargetMode: mode, trayMatchTools };
+        });
+      };
+      return (
+        <Setting
+          key={tool.id}
+          label={t(tool.nameKey)}
+          description={sidebarDisabled ? t('settings.trayMatchToolSidebarDisabled') : undefined}
+        >
+          <Select value={diffTargetMode} items={diffTargetOptions} onValueChange={changeDiffTarget}>
+            <SelectTrigger
+              className="w-44 max-w-full"
+              aria-label={t('diffTool.clipboardTarget')}
+              disabled={sidebarDisabled}
+            >
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectGroup>
+                {diffTargetOptions.map(({ value, label }) => (
+                  <SelectItem
+                    key={value}
+                    value={value}
+                    disabled={value === 'off' && lastTrayToolLocked && selected}
+                  >
+                    {label}
+                  </SelectItem>
+                ))}
+              </SelectGroup>
+            </SelectContent>
+          </Select>
+        </Setting>
+      );
+    }
     return (
-      <Setting key={tool.id} label={t(tool.nameKey)}>
+      <Setting
+        key={tool.id}
+        label={t(tool.nameKey)}
+        description={sidebarDisabled ? t('settings.trayMatchToolSidebarDisabled') : undefined}
+      >
         <SettingSwitch
           selected={selected}
           onChange={(value) => toggleTrayTool(tool.id, value)}
-          isDisabled={restricted}
+          isDisabled={restricted || sidebarDisabled}
           describedBy={restricted ? trayMatchMinHintId : undefined}
         />
       </Setting>
@@ -899,17 +1030,23 @@ export default function SettingsPage({
         case 'automation':
           return (
             <>
-              <SettingsGroup divider={false} title={t('settings.clipboard')}>
+              <SettingsGroup divider={false} title={t('settings.trayRecognition')}>
                 <div className="flex flex-col gap-3">
                   <div className={settingStackClass}>
-                    <Setting label={t('settings.trayMatch')}>
+                    <Setting
+                      label={t('settings.trayRecognitionEnabled')}
+                      description={t('settings.trayRecognitionEnabledDesc')}
+                    >
                       <SettingSwitch
                         selected={settings.trayMatchEnabled}
                         onChange={(value) => update('trayMatchEnabled', value)}
                       />
                     </Setting>
                     {settings.trayMatchEnabled ? (
-                      <Setting label={t('settings.autoOverwrite')}>
+                      <Setting
+                        label={t('settings.autoFill')}
+                        description={t('settings.autoFillDesc')}
+                      >
                         <SettingSwitch
                           selected={settings.autoOverwrite}
                           onChange={(value) => update('autoOverwrite', value)}
@@ -919,36 +1056,27 @@ export default function SettingsPage({
                   </div>
                   {settings.trayMatchEnabled ? (
                     <div className="flex flex-col gap-3 border-t border-border pt-3">
-                      <strong className={settingLabelClass}>{t('settings.trayMatchTools')}</strong>
-                      <div>
-                        <strong className={cn(settingLabelClass, 'block pb-2')}>
-                          {t('settings.trayMatchToolsDefault')}
-                        </strong>
-                        <div className="grid grid-cols-2 gap-x-5 gap-y-2.5 max-[700px]:grid-cols-1">
-                          {defaultTrayTools.map(renderTrayToolSwitch)}
-                        </div>
+                      <strong className={settingLabelClass}>{t('settings.matchableTools')}</strong>
+                      <div className="grid grid-cols-2 gap-x-5 gap-y-2.5 max-[700px]:grid-cols-1">
+                        {matchableTools.map(renderTrayToolSwitch)}
                       </div>
-                      {extraTrayTools.length > 0 ? (
-                        <div className="border-t border-border pt-3">
-                          <strong className={cn(settingLabelClass, 'block pb-2')}>
-                            {t('settings.trayMatchToolsExtra')}
-                          </strong>
-                          <div className="grid grid-cols-2 gap-x-5 gap-y-2.5 max-[700px]:grid-cols-1">
-                            {extraTrayTools.map(renderTrayToolSwitch)}
-                          </div>
-                        </div>
-                      ) : null}
                       {lastTrayToolLocked ? (
                         <p id={trayMatchMinHintId} className={cn('m-0', settingHintClass)}>
-                          {t('settings.trayMatchToolsMin')}
+                          {t('settings.matchableToolsMin')}
                         </p>
                       ) : null}
                     </div>
-                  ) : (
-                    <p className={cn('m-0 border-t border-border pt-3', settingHintClass)}>
-                      {t('settings.trayMatchDisabledHint')}
-                    </p>
-                  )}
+                  ) : null}
+                </div>
+              </SettingsGroup>
+              <SettingsGroup title={t('settings.autostart')}>
+                <div className={settingControlClass}>
+                  <SettingSwitch
+                    selected={autostartEnabled}
+                    onChange={(enabled) => void setAutostart(enabled)}
+                    isDisabled={autostartLoading || autostartSaving}
+                    ariaLabel={t('settings.autostart')}
+                  />
                 </div>
               </SettingsGroup>
               <SettingsGroup title={t('settings.taskNotifications')}>

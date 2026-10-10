@@ -12,19 +12,9 @@ import {
 import { StreamLanguage } from '@codemirror/language';
 import { json } from '@codemirror/lang-json';
 import { quietEditorTheme } from './codeMirrorTheme';
-import { ArrowsLeftRight, Info, Trash } from '@phosphor-icons/react';
-import { Tooltip } from '@base-ui/react/tooltip';
+import { ArrowsLeftRight, Trash } from '@phosphor-icons/react';
 import { useTranslation } from 'react-i18next';
-import { Button } from './ui/button';
 import { Label } from './ui/label';
-import {
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from './ui/select';
 import { Switch } from './ui/switch';
 import {
   Reveal,
@@ -423,15 +413,11 @@ function DiffMerge({
 export default function DiffTool({
   active,
   theme,
-  clipboardTargetMode,
-  onClipboardTargetModeChange,
   pending,
   clearPending,
 }: {
   active: boolean;
   theme: string;
-  clipboardTargetMode: string;
-  onClipboardTargetModeChange: (mode: 'alternate' | 'before' | 'after') => void;
   record?: unknown;
   pending: PendingAction | null;
   clearPending: () => void;
@@ -442,10 +428,6 @@ export default function DiffTool({
   const [lastFilled, setLastFilled] = useState<'before' | 'after' | null>(null);
   const [collapseUnchanged, setCollapseUnchanged] = useState(false);
   const noticeTimer = useRef<number | null>(null);
-  const targetMode =
-    clipboardTargetMode === 'before' || clipboardTargetMode === 'after'
-      ? clipboardTargetMode
-      : 'alternate';
   const [, setCounts] = useState<Counts>({ deletions: 0, additions: 0 });
   const detectedLanguage = detectLanguage(`${before}\n${after}`);
   const [languageExtensions, setLanguageExtensions] = useState<Extension[]>([]);
@@ -521,62 +503,6 @@ export default function DiffTool({
       <ToolLayout className="diff-tool-layout [container-type:inline-size]">
         <ToolLayoutHeader title={t('diffTool.title')} />
         <ToolLayoutToolbar
-          left={
-            <div className="flex h-8 flex-none items-center gap-2 text-[11px] text-muted-foreground">
-              <span id="diff-clipboard-target-label" className="whitespace-nowrap">
-                {t('diffTool.clipboardTarget')}
-              </span>
-              <Select
-                value={targetMode}
-                items={(['alternate', 'before', 'after'] as const).map((key) => ({
-                  value: key,
-                  label: t(`diffTool.targets.${key}`),
-                }))}
-                onValueChange={(value) => {
-                  if (value === 'before' || value === 'after' || value === 'alternate')
-                    onClipboardTargetModeChange(value);
-                }}
-              >
-                <SelectTrigger
-                  className="h-8 w-32 flex-none text-[11px]"
-                  aria-labelledby="diff-clipboard-target-label"
-                >
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectGroup>
-                    {(['alternate', 'before', 'after'] as const).map((key) => (
-                      <SelectItem key={key} value={key}>
-                        {t(`diffTool.targets.${key}`)}
-                      </SelectItem>
-                    ))}
-                  </SelectGroup>
-                </SelectContent>
-              </Select>
-              <Tooltip.Root>
-                <Tooltip.Trigger
-                  delay={300}
-                  render={
-                    <Button
-                      variant="ghost"
-                      size="icon-xs"
-                      className="size-6 min-w-6 flex-none"
-                      aria-label={t('diffTool.clipboardTargetHintLabel')}
-                    />
-                  }
-                >
-                  <Info />
-                </Tooltip.Trigger>
-                <Tooltip.Portal>
-                  <Tooltip.Positioner className="isolate z-50" side="bottom" sideOffset={6}>
-                    <Tooltip.Popup className="relative isolate z-50 max-w-72 origin-(--transform-origin) rounded-md bg-popover px-2.5 py-2 text-xs leading-relaxed text-popover-foreground shadow-md ring-1 ring-foreground/10 outline-hidden data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95">
-                      {t('diffTool.clipboardTargetHint')}
-                    </Tooltip.Popup>
-                  </Tooltip.Positioner>
-                </Tooltip.Portal>
-              </Tooltip.Root>
-            </div>
-          }
           right={
             <ToolLayoutToolbarGroup>
               <Label className="flex h-8 flex-none items-center gap-2 border border-transparent bg-transparent py-0 pr-1.5 text-[11px] text-muted-foreground">
