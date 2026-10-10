@@ -2342,17 +2342,19 @@
       "tcp": "TCP",
       "websocket": "WebSocket",
       "udp": "UDP",
-      "ntp": "NTP time sync"
+      "ntp": "NTP time sync",
+      "rtsp": "RTSP streaming"
     },
     "target": {
       "label": "Target address",
       "placeholder": {
-        "auto": "Enter http(s)://, ws(s)://, or host:port",
+        "auto": "Enter http(s)://, ws(s)://, rtsp(s)://, or host:port",
         "http": "https://example.com or example.com",
         "tcp": "example.com:443",
         "websocket": "wss://example.com/socket",
         "udp": "example.com:53",
-        "ntp": "time.cloudflare.com:123"
+        "ntp": "time.cloudflare.com:123",
+        "rtsp": "rtsp://user:password@example.com:554/stream"
       }
     },
     "udp": {
@@ -2367,12 +2369,12 @@
     },
     "redirects": {
       "label": "Redirect limit",
-      "note": "Follow up to 10 redirects. Set to 0 to stop and return the 3xx response.",
-      "request": "Redirect request · #{{count}}"
+      "note": "Counted per request chain for HTTP, WebSocket, and RTSP; follow up to 10 redirects. Set to 0 to stop and return the 3xx response.",
+      "request": "Request after redirect #{{count}}"
     },
     "advanced": {
       "title": "Advanced options",
-      "routingNote": "The interface binds the local address used for the next-hop connection. With a proxy, the next hop is the proxy server. System proxy reads manual settings on macOS, Windows, and GNOME, plus proxy environment variables; PAC/WPAD is not supported. System DNS routing remains under OS control; target DNS behavior for HTTP and SOCKS5 proxies is shown in the stage details. UDP/NTP proxying requires SOCKS5 with UDP ASSOCIATE support."
+      "routingNote": "The interface binds the local address used for the next-hop connection. With a proxy, the next hop is the proxy server. System proxy reads manual settings on macOS, Windows, and GNOME, plus proxy environment variables; PAC/WPAD is not supported. System DNS routing remains under OS control; target DNS behavior for HTTP and SOCKS5 proxies is shown in the stage details. UDP/NTP proxying requires SOCKS5 with UDP ASSOCIATE support; RTSP tunnels through HTTP CONNECT, and rtsps adds a TLS handshake on top of that tunnel; credentials embedded in the target address are used to answer Digest (or Basic) challenges automatically."
     },
     "proxy": {
       "label": "Proxy",
@@ -2409,6 +2411,74 @@
         }
       }
     },
+    "backend": {
+      "messages": {
+        "connectTunnelEstablished": "HTTP CONNECT tunnel established",
+        "datagramAccepted": "Datagram accepted by the local network stack; this does not confirm remote delivery",
+        "datagramPayload": "{{bytes}} bytes\\nUTF-8:\\n{{text}}\\n\\nhex:\\n{{hex}}",
+        "ntpRequestSummary": "NTPv4 client request (mode 3, {{bytes}} bytes)\\nhex: {{hex}}",
+        "ntpResponseSummary": "NTPv{{version}} server response · stratum {{stratum}} · delay {{delay}} ms · offset {{offset}} ms\\nhex: {{hex}}",
+        "phaseWaitingForResponse": "Waiting for the response",
+        "resolveSystemProxyFor": "Resolve system proxy for {{target}}",
+        "rtspAuthRequired": "RTSP server requires authentication ({{status}}); include credentials in the target address, for example {{example}}",
+        "rtspCredentialsRejected": "The server rejected the supplied credentials (RTSP {{method}} returned {{status}})",
+        "rtspRedirectCredentialsDropped": "Redirect target uses a different host; credentials were not forwarded",
+        "rtspRedirectInvalid": "Invalid redirect target {{target}}: {{detail}}",
+        "rtspRedirectNotFollowed": "RTSP {{method}} returned {{status}}; redirect target {{target}} was not followed because the redirect limit is {{limit}}",
+        "socks5ConnectRequest": "SOCKS5: no-auth CONNECT",
+        "socks5TunnelEstablished": "SOCKS5: tunnel established",
+        "socks5UdpAssociateRequest": "SOCKS5: no-auth UDP ASSOCIATE",
+        "socks5UdpRelayEstablished": "SOCKS5 UDP relay established",
+        "systemProxyAbsent": "No system proxy is configured; connecting directly",
+        "systemProxyBypassed": "Target is excluded by system proxy bypass rules; connecting directly",
+        "systemProxyUsing": "Using {{type}} system proxy {{proxy}}",
+        "tcpConnectOnly": "TCP connect only; no application payload sent",
+        "tunnelOutbound": "Traffic to {{peer}} leaves this machine through {{interface}} (gateway {{gateway}}), so the handshake completed with the local VPN/proxy tunnel endpoint, not necessarily with the target device. A completed handshake does not prove the device is reachable: check the tunnel or proxy rules for this address.",
+        "tunnelOutboundNoGateway": "Traffic to {{peer}} leaves this machine through {{interface}}, so the handshake completed with the local VPN/proxy tunnel endpoint, not necessarily with the target device. A completed handshake does not prove the device is reachable: check the tunnel or proxy rules for this address.",
+        "tunnelOutboundNoRoute": "Traffic to {{peer}} leaves this machine through a tunnel interface, so the handshake completed with the local VPN/proxy tunnel endpoint, not necessarily with the target device. A completed handshake does not prove the device is reachable: check the tunnel or proxy rules for this address.",
+        "udpNoReply": "No UDP response was received before the timeout; because UDP does not guarantee a reply, this alone does not prove that the target is unreachable: {{detail}}",
+        "dnsServerInvalid": "Custom DNS server must be an IP address, optionally followed by :port",
+        "httpScheme": "HTTP target must use http:// or https://",
+        "interfaceNoAddress": "Network interface {{interface}} has no address for the target IP family",
+        "interfaceUnavailable": "Network interface {{interface}} is unavailable: {{detail}}",
+        "noIPForTarget": "No IP address was available for the target",
+        "noIPForUDPTarget": "No IP address was available for the target",
+        "proxyAddressInvalid": "Proxy address must be a host and port without credentials",
+        "proxyHTTPScheme": "HTTP proxy address must use http://",
+        "proxyPortRequired": "Proxy address must include a port",
+        "proxySocks5Scheme": "SOCKS5 proxy address must use socks5://",
+        "proxyTypeInvalid": "Proxy type must be system, HTTP CONNECT, or SOCKS5",
+        "redirectLimit": "Redirect limit must be between 0 and {{max}}",
+        "rtspClosedMidResponse": "The peer closed the connection while sending the RTSP {{method}} response: {{detail}}",
+        "rtspClosedWithoutResponse": "The peer closed the connection without sending an RTSP {{method}} response: {{detail}}",
+        "rtspNoResponse": "No RTSP {{method}} response before the timeout; the TCP connection was established but the peer sent no reply (devices, VPNs and firewalls sometimes accept connections on ports that have no RTSP service): {{detail}}",
+        "rtspScheme": "RTSP target must use rtsp:// or rtsps://",
+        "rtspStatus": "RTSP {{method}} returned {{status}}",
+        "rtspStatusWithNotice": "RTSP {{method}} returned {{status}}; {{notice}}",
+        "rtspStoppedWhileWaiting": "The test stopped while waiting for the RTSP {{method}} response: {{detail}}",
+        "targetCredentials": "Target must be a valid URL without embedded credentials for this protocol",
+        "targetInvalidChars": "Target address contains invalid characters",
+        "targetInvalidURL": "Target must be a valid URL",
+        "targetRequired": "Target address is required",
+        "udpPayloadEmpty": "UDP payload must not be empty",
+        "udpPayloadTooLarge": "UDP payload must be 1200 bytes or less to avoid IP fragmentation",
+        "udpProxyUnsupported": "UDP and NTP require a direct route or a SOCKS5 proxy with UDP ASSOCIATE; HTTP CONNECT does not relay UDP datagrams",
+        "unsupportedProtocol": "Unsupported network test protocol",
+        "websocketScheme": "WebSocket target must use ws:// or wss://"
+      },
+      "failure": {
+        "directWithSystemProxy": "{{detail}}; this test connected directly while the system proxy {{proxy}} is configured: select that proxy in the advanced options if the target is only reachable through it"
+      }
+    },
+    "outbound": {
+      "proxy": {
+        "summary": "Relayed through proxy {{proxy}} · device reachability unverified"
+      },
+      "tunnel": {
+        "withInterface": "Leaves through {{interface}} · device reachability unverified",
+        "withoutInterface": "Leaves through a tunnel · device reachability unverified"
+      }
+    },
     "interface": {
       "label": "Outgoing interface",
       "automatic": "Automatic"
@@ -2418,7 +2488,7 @@
       "run": "Start test",
       "cancel": "Cancel test"
     },
-    "empty": "Enter a target address to start. Bare HTTP targets default to http://; WebSocket targets default to wss://; set the UDP payload in Advanced options; NTP defaults to port 123.",
+    "empty": "Enter a target address to start. Bare HTTP targets default to http://; WebSocket targets default to wss://; RTSP uses port 554 and probes with OPTIONS then DESCRIBE, and the address may embed a username and password for Digest authentication; set the UDP payload in Advanced options; NTP defaults to port 123.",
     "running": "Test in progress · {{elapsed}} elapsed",
     "duration": {
       "milliseconds": "{{value}} ms",
@@ -2443,6 +2513,7 @@
       "dns-target": "Resolve target address",
       "dns-proxy": "Resolve proxy address",
       "tcp-connect": "Establish TCP connection",
+      "tunnel-route": "Outbound tunnel",
       "proxy-tunnel": "Establish proxy tunnel",
       "tls": "TLS handshake",
       "http-request": "Send HTTP request",
@@ -2451,7 +2522,10 @@
       "udp-send": "Send UDP datagram",
       "udp-response": "Wait for UDP response",
       "ntp-request": "Send NTP request",
-      "ntp-response": "Validate NTP response"
+      "ntp-response": "Validate NTP response",
+      "rtsp-options": "Send RTSP OPTIONS",
+      "rtsp-auth": "RTSP authentication",
+      "rtsp-describe": "Send RTSP DESCRIBE"
     },
     "recordAction": "Network test",
     "historyDetail": "{{protocol}} · {{target}}",

@@ -72,7 +72,7 @@ type NetworkTestSettings struct {
 func defaultNetworkTestSettings() NetworkTestSettings {
 	return NetworkTestSettings{
 		Payload:        "ping",
-		TimeoutSeconds: 10,
+		TimeoutSeconds: 30,
 		MaxRedirects:   10,
 		DNSMode:        "system",
 	}
@@ -771,7 +771,7 @@ func normalizeConfig(cfg Config) Config {
 
 func normalizeNetworkTestSettings(settings NetworkTestSettings) NetworkTestSettings {
 	if settings.TimeoutSeconds < 1 || settings.TimeoutSeconds > 300 {
-		settings.TimeoutSeconds = 10
+		settings.TimeoutSeconds = 30
 	}
 	if settings.MaxRedirects < 0 || settings.MaxRedirects > 10 {
 		settings.MaxRedirects = 10

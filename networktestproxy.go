@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/url"
 	"os"
@@ -13,6 +14,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"syscall"
 )
 
 type systemProxyConfig struct {
@@ -40,7 +42,7 @@ func (r *networkRoute) resolveSystemProxy(target networkTarget) error {
 
 	protocol := strings.ToLower(strings.TrimSpace(r.request.Protocol))
 	r.run.stage("proxy-resolve", "running", NetworkTestStage{
-		Request: "Resolve system proxy for " + net.JoinHostPort(target.Host, target.Port),
+		Request: networkTestText("networkTestTool.backend.resolveSystemProxyFor", map[string]any{"target": net.JoinHostPort(target.Host, target.Port)}),
 		Meta:    map[string]string{"protocol": protocol},
 	})
 
@@ -66,7 +68,7 @@ func (r *networkRoute) resolveSystemProxy(target networkTarget) error {
 		r.proxyURL = nil
 		meta["mode"] = "direct"
 		meta["bypassed"] = "true"
-		r.run.stage("proxy-resolve", "success", NetworkTestStage{Response: "Target is excluded by system proxy bypass rules; connecting directly", Meta: meta})
+		r.run.stage("proxy-resolve", "success", NetworkTestStage{Response: networkTestText("networkTestTool.backend.systemProxyBypassed", nil), Meta: meta})
 		return nil
 	}
 
@@ -84,7 +86,7 @@ func (r *networkRoute) resolveSystemProxy(target networkTarget) error {
 	r.proxyURL = proxyURL
 	if proxyURL == nil {
 		meta["mode"] = "direct"
-		response := "No system proxy is configured; connecting directly"
+		response := networkTestText("networkTestTool.backend.systemProxyAbsent", nil)
 		if protocol == "udp" || protocol == "ntp" {
 			if config.hasHTTPProxy() {
 				err := errors.New("the system has only an HTTP proxy configured; UDP and NTP require a SOCKS5 proxy with UDP ASSOCIATE or a direct route")
@@ -97,7 +99,7 @@ func (r *networkRoute) resolveSystemProxy(target networkTarget) error {
 	}
 	meta["mode"] = proxyType
 	meta["proxy"] = proxyURL.String()
-	r.run.stage("proxy-resolve", "success", NetworkTestStage{Response: "Using " + strings.ToUpper(proxyType) + " system proxy " + proxyURL.String(), Meta: meta})
+	r.run.stage("proxy-resolve", "success", NetworkTestStage{Response: networkTestText("networkTestTool.backend.systemProxyUsing", map[string]any{"type": strings.ToUpper(proxyType), "proxy": proxyURL.String()}), Meta: meta})
 	return nil
 }
 
@@ -122,9 +124,9 @@ func (c systemProxyConfig) proxyFor(protocol string, target networkTarget) (stri
 			return "http", c.httpProxy, nil
 		}
 		return "", nil, nil
-	case "http", "websocket":
+	case "http", "websocket", "rtsp":
 		scheme := "http"
-		if target.URL != nil && (target.URL.Scheme == "https" || target.URL.Scheme == "wss") {
+		if target.URL != nil && (target.URL.Scheme == "https" || target.URL.Scheme == "wss" || target.URL.Scheme == "rtsps") {
 			scheme = "https"
 		}
 		if scheme == "https" && c.httpsProxy != nil {
@@ -198,6 +200,39 @@ func (c systemProxyConfig) isBypassed(host, port string) bool {
 		}
 	}
 	return false
+}
+
+// isConnectionLevelFailure 判断错误是否属于「连接被丢下」这一类（EOF/重置/超时）。这类失败
+// 在 TUN/VPN 或代理链路上很常见，值得提示用户检查路径，而不是当作目标不可达。
+func isConnectionLevelFailure(err error) bool {
+	if err == nil {
+		return false
+	}
+	var timeoutError interface{ Timeout() bool }
+	return errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) ||
+		errors.Is(err, syscall.ECONNRESET) || errors.Is(err, syscall.EPIPE) ||
+		errors.Is(err, context.DeadlineExceeded) ||
+		(errors.As(err, &timeoutError) && timeoutError.Timeout())
+}
+
+// directProxyHint 返回应当提示的系统代理地址：仅当本次直连、失败属于连接被丢下、且本机确实
+// 配置了代理时给出，其余情况返回空串。文案由前端按 key 渲染，这里只负责判定与取值。
+func directProxyHint(proxyType string, err error, config systemProxyConfig, found bool) string {
+	if strings.TrimSpace(proxyType) != "" || !isConnectionLevelFailure(err) {
+		return ""
+	}
+	if !found || !config.hasProxy() {
+		return ""
+	}
+	switch {
+	case config.httpProxy != nil:
+		return config.httpProxy.String()
+	case config.httpsProxy != nil:
+		return config.httpsProxy.String()
+	case config.socksProxy != nil:
+		return config.socksProxy.String()
+	}
+	return ""
 }
 
 func splitBypassPort(value string) (string, string) {

@@ -278,7 +278,7 @@ const defaultSettings: Settings = {
   ntpServers: ['time.cloudflare.com:123', 'time.google.com:123', 'pool.ntp.org:123'],
   networkTestSettings: {
     payload: 'ping',
-    timeoutSeconds: 10,
+    timeoutSeconds: 30,
     skipTLSVerify: false,
     maxRedirects: 10,
     proxyType: '',

@@ -35,6 +35,11 @@ tasks:
     cmds:
       - node --experimental-strip-types --test frontend/src/lib/ansi.test.mjs
 
+  test:network-target:
+    summary: Checks network test target detection and completion rules
+    cmds:
+      - node --experimental-strip-types --test frontend/src/lib/network-target.test.mjs
+
   test:json-repair:
     summary: Checks JSON repair handling
     cmds:

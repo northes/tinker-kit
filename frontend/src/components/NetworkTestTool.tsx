@@ -19,6 +19,11 @@ import {
   SaveNetworkTestSettings,
 } from '../../bindings/changeme/configservice';
 import { formatBackendError } from '../lib/backend-error';
+import {
+  automaticTarget,
+  detectTargetProtocol,
+  type NetworkTestProtocol,
+} from '../lib/network-target';
 import { Button } from './ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from './ui/dialog';
 import { ScrollArea } from './ui/scroll-area';
@@ -46,7 +51,7 @@ import {
   SelectValue,
 } from './ui/select';
 
-type Protocol = 'http' | 'tcp' | 'websocket' | 'udp' | 'ntp';
+type Protocol = NetworkTestProtocol;
 type ProtocolSelection = Protocol | 'auto';
 type ProxyType = '' | 'http' | 'socks5' | 'system';
 type DNSMode = 'system' | 'custom' | 'proxy';
@@ -60,7 +65,7 @@ type NetworkTestOptions = Omit<NetworkTestSettings, 'timeoutSeconds' | 'maxRedir
 
 const defaultNetworkTestSettings: NetworkTestSettings = {
   payload: 'ping',
-  timeoutSeconds: 10,
+  timeoutSeconds: 30,
   skipTLSVerify: false,
   maxRedirects: 10,
   proxyType: '',
@@ -81,6 +86,7 @@ const protocolItems = [
   { value: 'websocket', labelKey: 'networkTestTool.protocol.websocket' },
   { value: 'udp', labelKey: 'networkTestTool.protocol.udp' },
   { value: 'ntp', labelKey: 'networkTestTool.protocol.ntp' },
+  { value: 'rtsp', labelKey: 'networkTestTool.protocol.rtsp' },
 ] as const;
 const stageOrder = [
   'validate',
@@ -88,7 +94,11 @@ const stageOrder = [
   'dns-proxy',
   'dns-target',
   'tcp-connect',
+  'tunnel-route',
   'proxy-tunnel',
+  'rtsp-options',
+  'rtsp-auth',
+  'rtsp-describe',
   'udp-send',
   'udp-response',
   'ntp-request',
@@ -125,84 +135,6 @@ function toPersistedNetworkTestSettings(
   };
 }
 
-function explicitHostPort(value: string) {
-  if (/[/?#]/.test(value)) return null;
-  try {
-    const parsed = new URL(`tcp://${value}`);
-    if (!parsed.hostname || !parsed.port || parsed.username || parsed.password) {
-      return null;
-    }
-    const port = Number(parsed.port);
-    return port >= 0 && port <= 65535 ? port : null;
-  } catch {
-    return null;
-  }
-}
-
-function detectTargetProtocol(value: string): Protocol | null {
-  const target = value.trim();
-  if (!target) return null;
-
-  if (target.includes('://')) {
-    try {
-      const parsed = new URL(target);
-      if (!parsed.hostname || parsed.username || parsed.password) return null;
-      switch (parsed.protocol.toLowerCase()) {
-        case 'http:':
-        case 'https:':
-          return 'http';
-        case 'ws:':
-        case 'wss:':
-          return 'websocket';
-        case 'tcp:':
-          return explicitHostPort(target.slice(target.indexOf('://') + 3)) ? 'tcp' : null;
-        case 'udp:':
-          return explicitHostPort(target.slice(target.indexOf('://') + 3)) ? 'udp' : null;
-        case 'ntp:':
-          return !/[/?#]/.test(target.slice(target.indexOf('://') + 3)) ? 'ntp' : null;
-        default:
-          return null;
-      }
-    } catch {
-      return null;
-    }
-  }
-
-  const port = explicitHostPort(target);
-  if (port === 0 || target.endsWith(':')) return null;
-  if (port === 123) return 'ntp';
-  if (port === 53) return 'udp';
-  if (
-    port === 80 ||
-    port === 443 ||
-    port === 8000 ||
-    port === 8080 ||
-    port === 8443 ||
-    port === 8888
-  )
-    return 'http';
-  if (port !== null) return 'tcp';
-
-  try {
-    const parsed = new URL(`http://${target}`);
-    if (parsed.hostname && !parsed.username && !parsed.password) return 'http';
-  } catch {
-    return null;
-  }
-  return null;
-}
-
-function automaticTarget(value: string, protocol: Protocol) {
-  const target = value.trim();
-  const scheme = /^([a-z][a-z\d+.-]*):\/\//i.exec(target)?.[1]?.toLowerCase();
-  if (scheme && ['tcp', 'udp', 'ntp'].includes(scheme))
-    return target.slice(target.indexOf('://') + 3);
-  if (scheme) return target;
-  const port = explicitHostPort(target);
-  if (protocol === 'http' && (port === 443 || port === 8443)) return `https://${target}`;
-  return target;
-}
-
 function stageSortValue(stage: NetworkTestStage) {
   const redirectCount = Number(/-redirect-(\d+)$/.exec(stage.id)?.[1] ?? 0);
   const baseID = stage.id.replace(/-redirect-\d+$/, '');
@@ -220,6 +152,16 @@ function httpResponseTone(statusCode: number) {
   if (statusCode >= 500 && statusCode < 600)
     return { text: 'text-destructive', bar: 'bg-destructive' };
   return { text: 'text-warning', bar: 'bg-warning' };
+}
+
+// 带状态码的阶段取色：HTTP 响应阶段按状态码；RTSP 请求阶段的 3xx 是服务端要求的绕行，
+// 用警示色表示，失败状态仍保留错误色。
+function stageResponseTone(stageLabelID: string, status: string, statusCode: number) {
+  if (statusCode <= 0) return null;
+  if (stageLabelID === 'http-response') return httpResponseTone(statusCode);
+  if ((stageLabelID === 'rtsp-options' || stageLabelID === 'rtsp-describe') && status !== 'error')
+    return httpResponseTone(statusCode);
+  return null;
 }
 
 function sortedStages(stages: NetworkTestStage[]) {
@@ -240,6 +182,42 @@ function parseHistoryValue<T>(value: string): T | null {
   } catch {
     return null;
   }
+}
+
+// 阶段行的说明文字可能长于行宽：横向可滚、不显示滚动条、两端按实际溢出量渐隐，不再截断成省略号。
+// 这里不复用 ScrollArea：它会固定给内容加 4px 内边距（为边缘控件的焦点环预留），而用负 margin 抵消
+// 会把文字压到裁切边缘并让左端出现假渐隐；这些提示行本身没有可聚焦控件，用 .no-scrollbar 隐藏滚动条
+// 即可（与浮层、命令面板内部滚动同一做法）。完整内容同时保留在 title 与阶段详情里。
+function StageHintLine({ text, className }: { text: string; className: string }) {
+  const scrollerRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const element = scrollerRef.current;
+    if (!element) return;
+    const sync = () => {
+      element.style.setProperty('--scroll-area-overflow-x-start', `${element.scrollLeft}px`);
+      element.style.setProperty(
+        '--scroll-area-overflow-x-end',
+        `${element.scrollWidth - element.clientWidth - element.scrollLeft}px`,
+      );
+    };
+    const observer = new ResizeObserver(sync);
+    observer.observe(element);
+    element.addEventListener('scroll', sync, { passive: true });
+    sync();
+    return () => {
+      observer.disconnect();
+      element.removeEventListener('scroll', sync);
+    };
+  }, [text]);
+  return (
+    <div
+      ref={scrollerRef}
+      className={`no-scrollbar scroll-fade-x overflow-x-auto overflow-y-hidden whitespace-nowrap ${className}`}
+      title={text}
+    >
+      {text}
+    </div>
+  );
 }
 
 export default function NetworkTestTool({
@@ -374,9 +352,13 @@ export default function NetworkTestTool({
   const detectedProtocol = detectTargetProtocol(target);
   const effectiveProtocol = protocolSelection === 'auto' ? detectedProtocol : protocolSelection;
   const supportsHTTPSettings = effectiveProtocol === 'http' || effectiveProtocol === 'websocket';
+  const supportsRedirectSettings = supportsHTTPSettings || effectiveProtocol === 'rtsp';
+  const resolvedTarget = target.trim() ? automaticTarget(target, effectiveProtocol ?? 'http') : '';
+  const supportsTLSSettings =
+    supportsHTTPSettings || (effectiveProtocol === 'rtsp' && resolvedTarget.startsWith('rtsps://'));
   const redirectLimit = Number(maxRedirects);
   const invalidRedirectLimit =
-    supportsHTTPSettings &&
+    supportsRedirectSettings &&
     (!maxRedirects.trim() ||
       !Number.isInteger(redirectLimit) ||
       redirectLimit < 0 ||
@@ -692,7 +674,9 @@ export default function NetworkTestTool({
                         const redirectLabel =
                           redirectCount &&
                           (stageLabelID === 'http-request' ||
-                            stageLabelID === 'websocket-handshake')
+                            stageLabelID === 'websocket-handshake' ||
+                            stageLabelID === 'rtsp-options' ||
+                            stageLabelID === 'rtsp-describe')
                             ? t('networkTestTool.redirects.request', { count: redirectCount })
                             : null;
                         const resolver = stage.meta?.resolver;
@@ -735,11 +719,35 @@ export default function NetworkTestTool({
                           100 - left,
                           Math.max(0.6, (duration / timelineDuration) * 100),
                         );
-                        const responseTone =
-                          stageLabelID === 'http-response' && stage.statusCode > 0
-                            ? httpResponseTone(stage.statusCode)
+                        const responseTone = stageResponseTone(
+                          stageLabelID,
+                          stage.status,
+                          stage.statusCode,
+                        );
+                        // 经隧道出口时握手对象是本机隧道端点，用警示色并补充说明，
+                        // 避免把 tcp-connect 的「成功」读成设备可达。
+                        const reachabilityTone =
+                          stage.meta?.reachability === 'unverified' &&
+                          (stage.status === 'success' || stage.status === 'running')
+                            ? { text: 'text-warning', bar: 'bg-warning' }
+                            : null;
+                        // 经隧道或经代理的连接都要说明下一跳是什么，避免把「连接成功」
+                        // 读成目标设备可达。
+                        const outboundHint =
+                          stageLabelID !== 'tunnel-route' &&
+                          stage.meta?.reachability === 'unverified'
+                            ? stage.meta?.outbound === 'proxy'
+                              ? t('networkTestTool.outbound.proxy.summary', {
+                                  proxy: stage.meta?.proxy ?? '',
+                                })
+                              : stage.meta?.tunnelInterface
+                                ? t('networkTestTool.outbound.tunnel.withInterface', {
+                                    interface: stage.meta.tunnelInterface,
+                                  })
+                                : t('networkTestTool.outbound.tunnel.withoutInterface')
                             : null;
                         const statusTextColor =
+                          reachabilityTone?.text ??
                           responseTone?.text ??
                           (stage.status === 'success'
                             ? 'text-emerald-500'
@@ -747,6 +755,7 @@ export default function NetworkTestTool({
                               ? 'text-primary'
                               : 'text-destructive');
                         const color =
+                          reachabilityTone?.bar ??
                           responseTone?.bar ??
                           (stage.status === 'success'
                             ? 'bg-emerald-500'
@@ -763,23 +772,25 @@ export default function NetworkTestTool({
                                 {t(`networkTestTool.stages.${stageLabelID}`)}
                               </div>
                               {redirectLabel ? (
-                                <div
-                                  className="mt-0.5 truncate text-[10px] text-warning"
-                                  title={redirectLabel}
-                                >
-                                  {redirectLabel}
-                                </div>
+                                <StageHintLine
+                                  text={redirectLabel}
+                                  className="mt-0.5 text-[10px] text-warning"
+                                />
                               ) : null}
                               {resolutionSummary ? (
-                                <div
-                                  className={`${redirectLabel ? 'mt-0' : 'mt-0.5'} truncate text-[10px] text-muted-foreground`}
-                                  title={resolutionSummary}
-                                >
-                                  {resolutionSummary}
-                                </div>
+                                <StageHintLine
+                                  text={resolutionSummary}
+                                  className={`${redirectLabel ? 'mt-0' : 'mt-0.5'} text-[10px] text-muted-foreground`}
+                                />
+                              ) : null}
+                              {outboundHint ? (
+                                <StageHintLine
+                                  text={outboundHint}
+                                  className={`${resolutionSummary ? 'mt-0' : 'mt-0.5'} text-[10px] text-warning`}
+                                />
                               ) : null}
                               <div
-                                className={`${resolutionSummary ? 'mt-0' : 'mt-0.5'} text-[10px] ${statusTextColor}`}
+                                className={`${resolutionSummary || outboundHint ? 'mt-0' : 'mt-0.5'} text-[10px] ${statusTextColor}`}
                               >
                                 {stage.statusCode ? `${stage.statusCode} · ` : ''}
                                 {t(`networkTestTool.status.${stage.status}`)}
@@ -813,16 +824,27 @@ export default function NetworkTestTool({
                                 ) : null}
                                 {stage.response ? (
                                   <pre className="m-0 whitespace-pre-wrap break-all rounded-sm bg-muted/30 p-2 font-mono text-[10px]">
-                                    {stage.response}
+                                    {formatBackendError(stage.response)}
                                   </pre>
                                 ) : null}
                                 {stage.meta && Object.keys(stage.meta).length ? (
                                   <pre className="m-0 whitespace-pre-wrap break-all rounded-sm bg-muted/30 p-2 font-mono text-[10px]">
-                                    {JSON.stringify(stage.meta, null, 2)}
+                                    {JSON.stringify(
+                                      Object.fromEntries(
+                                        Object.entries(stage.meta).map(([key, value]) => [
+                                          key,
+                                          formatBackendError(value),
+                                        ]),
+                                      ),
+                                      null,
+                                      2,
+                                    )}
                                   </pre>
                                 ) : null}
                                 {stage.error ? (
-                                  <p className="m-0 break-all text-destructive">{stage.error}</p>
+                                  <p className="m-0 break-all text-destructive">
+                                    {formatBackendError(stage.error)}
+                                  </p>
                                 ) : null}
                               </div>
                             </details>
@@ -869,14 +891,21 @@ export default function NetworkTestTool({
                   {result.error ? (
                     <button
                       type="button"
-                      className="flex min-w-0 flex-1 cursor-default items-center gap-1 bg-transparent p-0 text-left text-destructive/70 hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                      // 复制图标必须紧贴文案：按钮按内容宽度收缩（w-fit）而不是撑满剩余宽度，
+                      // 超过上限时长文案截断；窄窗口下再靠 shrink 让出空间给操作栏。
+                      className="flex w-fit min-w-0 max-w-[min(45%,24rem)] shrink cursor-default items-center gap-1 bg-transparent p-0 text-left text-destructive/70 hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                       aria-label={t('networkTestTool.footer.copyError')}
                       title={t('networkTestTool.footer.copyError')}
                       onClick={() =>
-                        void copyFooterText(result.error, t('networkTestTool.footer.errorLabel'))
+                        void copyFooterText(
+                          formatBackendError(result.error),
+                          t('networkTestTool.footer.errorLabel'),
+                        )
                       }
                     >
-                      <span className="min-w-0 flex-1 truncate">{result.error}</span>
+                      <span className="min-w-0 flex-1 truncate">
+                        {formatBackendError(result.error)}
+                      </span>
                       <Copy className="size-3 shrink-0" weight="duotone" />
                     </button>
                   ) : null}
@@ -1040,58 +1069,56 @@ export default function NetworkTestTool({
                 />
               </ToolHeaderField>
             ) : null}
-            {effectiveProtocol === 'http' || effectiveProtocol === 'websocket' ? (
-              <>
-                <ToolHeaderField
-                  label={t('networkTestTool.tls.skipVerification')}
-                  labelId="network-test-skip-tls-verify-label"
-                >
-                  <div className="flex min-h-8 items-center justify-between gap-3">
-                    <span
-                      id="network-test-skip-tls-verify-description"
-                      className="text-[10px] leading-relaxed text-muted-foreground"
-                    >
-                      {t('networkTestTool.tls.skipVerificationNote')}
-                    </span>
-                    <Switch
-                      checked={skipTLSVerify}
-                      onCheckedChange={(checked) =>
-                        updateNetworkSettings({ skipTLSVerify: checked === true })
-                      }
-                      disabled={running}
-                      size="sm"
-                      aria-labelledby="network-test-skip-tls-verify-label"
-                      aria-describedby="network-test-skip-tls-verify-description"
-                    />
-                  </div>
-                </ToolHeaderField>
-                <ToolHeaderField
-                  label={t('networkTestTool.redirects.label')}
-                  htmlFor="network-test-max-redirects"
-                >
-                  <Input
-                    id="network-test-max-redirects"
-                    type="number"
-                    min={0}
-                    max={10}
-                    step={1}
-                    value={maxRedirects}
-                    onChange={(event) =>
-                      updateNetworkSettings({ maxRedirects: event.target.value })
-                    }
-                    onKeyDown={submitOnEnter}
-                    disabled={running}
-                    aria-describedby="network-test-max-redirects-note"
-                    className="font-mono text-xs"
-                  />
-                  <p
-                    id="network-test-max-redirects-note"
-                    className="m-0 text-[10px] leading-relaxed text-muted-foreground"
+            {supportsTLSSettings ? (
+              <ToolHeaderField
+                label={t('networkTestTool.tls.skipVerification')}
+                labelId="network-test-skip-tls-verify-label"
+              >
+                <div className="flex min-h-8 items-center justify-between gap-3">
+                  <span
+                    id="network-test-skip-tls-verify-description"
+                    className="text-[10px] leading-relaxed text-muted-foreground"
                   >
-                    {t('networkTestTool.redirects.note')}
-                  </p>
-                </ToolHeaderField>
-              </>
+                    {t('networkTestTool.tls.skipVerificationNote')}
+                  </span>
+                  <Switch
+                    checked={skipTLSVerify}
+                    onCheckedChange={(checked) =>
+                      updateNetworkSettings({ skipTLSVerify: checked === true })
+                    }
+                    disabled={running}
+                    size="sm"
+                    aria-labelledby="network-test-skip-tls-verify-label"
+                    aria-describedby="network-test-skip-tls-verify-description"
+                  />
+                </div>
+              </ToolHeaderField>
+            ) : null}
+            {supportsRedirectSettings ? (
+              <ToolHeaderField
+                label={t('networkTestTool.redirects.label')}
+                htmlFor="network-test-max-redirects"
+              >
+                <Input
+                  id="network-test-max-redirects"
+                  type="number"
+                  min={0}
+                  max={10}
+                  step={1}
+                  value={maxRedirects}
+                  onChange={(event) => updateNetworkSettings({ maxRedirects: event.target.value })}
+                  onKeyDown={submitOnEnter}
+                  disabled={running}
+                  aria-describedby="network-test-max-redirects-note"
+                  className="font-mono text-xs"
+                />
+                <p
+                  id="network-test-max-redirects-note"
+                  className="m-0 text-[10px] leading-relaxed text-muted-foreground"
+                >
+                  {t('networkTestTool.redirects.note')}
+                </p>
+              </ToolHeaderField>
             ) : null}
             {effectiveProtocol === 'udp' ? (
               <>

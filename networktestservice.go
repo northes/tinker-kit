@@ -4,8 +4,11 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/md5"
 	"crypto/rand"
+	"crypto/sha256"
 	"crypto/tls"
+	"encoding/base64"
 	"encoding/binary"
 	"encoding/hex"
 	"errors"
@@ -15,6 +18,7 @@ import (
 	"net/http"
 	"net/http/httptrace"
 	"net/url"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -157,9 +161,13 @@ type networkTestRun struct {
 	service *NetworkTestService
 	runID   string
 	ctx     context.Context
+	request NetworkTestRequest
 	mu      sync.Mutex
 	stages  map[string]NetworkTestStage
 	starts  map[string]time.Time
+	// proxyHint 缓存「直连失败时用于提示的系统代理地址」，每次运行最多查询一次。
+	proxyHint       string
+	proxyHintLoaded bool
 }
 
 type networkRequestTraceState struct {
@@ -288,7 +296,8 @@ func (r *networkTestRun) fail(id string, err error) {
 			status = "timeout"
 		}
 	}
-	r.stage(id, status, NetworkTestStage{Error: err.Error()})
+	// 阶段错误与页脚结论同源：都经过提示合成，避免只有一处带提示。
+	r.stage(id, status, NetworkTestStage{Error: r.composeFailureHint(err).Error()})
 }
 
 func (r *networkTestRun) currentStage(fallback string) string {
@@ -299,14 +308,14 @@ func (r *networkTestRun) currentStageForHop(fallback string, redirectCount int) 
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	stageID := func(id string) string { return networkRedirectStageID(id, redirectCount) }
-	for _, baseID := range []string{"http-response", "websocket-handshake", "http-request", "ntp-response", "udp-response", "ntp-request", "udp-send", "tls", "proxy-tunnel", "tcp-connect", "dns-target", "dns-proxy", "proxy-resolve"} {
+	for _, baseID := range []string{"rtsp-describe", "http-response", "websocket-handshake", "http-request", "ntp-response", "udp-response", "ntp-request", "udp-send", "rtsp-auth", "rtsp-options", "tls", "proxy-tunnel", "tcp-connect", "dns-target", "dns-proxy", "proxy-resolve"} {
 		id := stageID(baseID)
 		stage, ok := r.stages[id]
 		if ok && stage.Status == "running" {
 			return id
 		}
 	}
-	for _, baseID := range []string{"proxy-resolve", "dns-target", "dns-proxy", "tcp-connect", "proxy-tunnel", "tls", "http-request", "websocket-handshake", "http-response", "udp-send", "udp-response", "ntp-request", "ntp-response"} {
+	for _, baseID := range []string{"proxy-resolve", "dns-target", "dns-proxy", "tcp-connect", "proxy-tunnel", "tls", "http-request", "websocket-handshake", "http-response", "rtsp-options", "rtsp-auth", "rtsp-describe", "udp-send", "udp-response", "ntp-request", "ntp-response"} {
 		id := stageID(baseID)
 		stage, ok := r.stages[id]
 		if ok && (stage.Status == "error" || stage.Status == "timeout" || stage.Status == "canceled") {
@@ -325,6 +334,28 @@ func (r *networkTestRun) currentStageForHop(fallback string, redirectCount int) 
 	return fallback
 }
 
+// composeFailureHint 在「本次直连 + 失败属于连接被丢下 + 本机配置了系统代理」时，把提示合成进
+// 同一条本地化结论；阶段错误与页脚结论共用它，因此两处文案完全一致。
+func (r *networkTestRun) composeFailureHint(err error) error {
+	if err == nil || strings.TrimSpace(r.request.ProxyType) != "" || !isConnectionLevelFailure(err) {
+		return err
+	}
+	if !r.proxyHintLoaded {
+		r.proxyHintLoaded = true
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		if config, loadErr := loadSystemProxyConfig(ctx); loadErr == nil {
+			r.proxyHint = directProxyHint(r.request.ProxyType, err, config, config.hasProxy())
+		}
+	}
+	if r.proxyHint == "" {
+		return err
+	}
+	// 以原错误作为 cause：detail 保留其完整文本（若本身已是本地化结论，前端会递归渲染），
+	// 同时保住错误链，供超时/取消判定使用。
+	return userErrorParamsCause("networkTestTool.backend.failure.directWithSystemProxy", map[string]any{"proxy": r.proxyHint}, err)
+}
+
 func newNetworkRunID() string {
 	var bytes [16]byte
 	if _, err := rand.Read(bytes[:]); err != nil {
@@ -340,7 +371,7 @@ func (s *NetworkTestService) RunNetworkTest(request NetworkTestRequest) NetworkT
 	}
 	request.RunID = strings.TrimSpace(request.RunID)
 	if request.TimeoutMillis < 1000 {
-		request.TimeoutMillis = 10000
+		request.TimeoutMillis = 30000
 	}
 	if request.TimeoutMillis > 300000 {
 		request.TimeoutMillis = 300000
@@ -356,7 +387,7 @@ func (s *NetworkTestService) RunNetworkTest(request NetworkTestRequest) NetworkT
 		s.mu.Unlock()
 	}()
 
-	run := &networkTestRun{service: s, runID: request.RunID, ctx: ctx, stages: make(map[string]NetworkTestStage), starts: make(map[string]time.Time)}
+	run := &networkTestRun{service: s, runID: request.RunID, ctx: ctx, request: request, stages: make(map[string]NetworkTestStage), starts: make(map[string]time.Time)}
 	result := NetworkTestResult{RunID: request.RunID, Protocol: request.Protocol, Target: strings.TrimSpace(request.Target), StartedAt: started.UnixMilli()}
 	var err error
 	switch strings.ToLower(strings.TrimSpace(request.Protocol)) {
@@ -370,8 +401,10 @@ func (s *NetworkTestService) RunNetworkTest(request NetworkTestRequest) NetworkT
 		err = run.runUDP(request)
 	case "ntp":
 		err = run.runNTP(request)
+	case "rtsp":
+		err = run.runRTSP(request)
 	default:
-		err = errors.New("unsupported network test protocol")
+		err = networkTestError("networkTestTool.backend.unsupportedProtocol")
 	}
 	result.FinishedAt = time.Now().UnixMilli()
 	result.DurationMillis = max(0, result.FinishedAt-result.StartedAt)
@@ -387,7 +420,8 @@ func (s *NetworkTestService) RunNetworkTest(request NetworkTestRequest) NetworkT
 				result.Status = "timeout"
 			}
 		}
-		result.Error = err.Error()
+		// 阶段错误与页脚结论必须同源：这里用与 r.fail 相同的合成，避免只有一处带提示。
+		result.Error = run.composeFailureHint(err).Error()
 	} else {
 		result.Status = "success"
 	}
@@ -404,16 +438,19 @@ type networkTarget struct {
 	URL  *url.URL
 	Host string
 	Port string
+	// creds 保存 URL 内嵌的凭据：凭据随 Authorization 头发送，不进入请求行与阶段元信息。
+	creds *rtspCredentials
 }
 
 func parseNetworkTarget(protocol, raw string) (networkTarget, error) {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
-		return networkTarget{}, errors.New("target address is required")
+		return networkTarget{}, networkTestError("networkTestTool.backend.targetRequired")
 	}
 	if strings.ContainsAny(raw, "\r\n\x00") {
-		return networkTarget{}, errors.New("target address contains invalid characters")
+		return networkTarget{}, networkTestError("networkTestTool.backend.targetInvalidChars")
 	}
+	// TCP、UDP、NTP 目标形如 host:port；HTTP、WebSocket、RTSP 目标形如 URL。
 	if protocol == "tcp" || protocol == "udp" || protocol == "ntp" {
 		host, port, err := net.SplitHostPort(raw)
 		if err != nil || host == "" {
@@ -442,41 +479,67 @@ func parseNetworkTarget(protocol, raw string) (networkTarget, error) {
 	}
 	if !strings.Contains(raw, "://") {
 		scheme := "https"
-		if protocol == "websocket" {
+		switch protocol {
+		case "websocket":
 			scheme = "wss"
-		} else {
+		case "rtsp":
+			scheme = "rtsp"
+		default:
 			scheme = "http"
 		}
 		raw = scheme + "://" + raw
 	}
 	u, err := url.Parse(raw)
-	if err != nil || u.Hostname() == "" || u.User != nil {
-		return networkTarget{}, errors.New("target must be a valid URL without embedded credentials")
+	if err != nil || u.Hostname() == "" {
+		return networkTarget{}, networkTestError("networkTestTool.backend.targetInvalidURL")
+	}
+	var credentials *rtspCredentials
+	if u.User != nil {
+		// RTSP 流媒体普遍用 Digest 认证，允许 rtsp://user:pass@host/path 形式；
+		// 其余协议不在 URL 内传递凭据。
+		if protocol != "rtsp" {
+			return networkTarget{}, networkTestError("networkTestTool.backend.targetCredentials")
+		}
+		password, _ := u.User.Password()
+		credentials = &rtspCredentials{username: u.User.Username(), password: password}
+		u.User = nil
 	}
 	switch protocol {
 	case "http":
 		if u.Scheme != "http" && u.Scheme != "https" {
-			return networkTarget{}, errors.New("HTTP target must use http:// or https://")
+			return networkTarget{}, networkTestError("networkTestTool.backend.httpScheme")
 		}
 	case "websocket":
 		if u.Scheme != "ws" && u.Scheme != "wss" {
-			return networkTarget{}, errors.New("WebSocket target must use ws:// or wss://")
+			return networkTarget{}, networkTestError("networkTestTool.backend.websocketScheme")
+		}
+	case "rtsp":
+		if u.Scheme != "rtsp" && u.Scheme != "rtsps" {
+			return networkTarget{}, networkTestError("networkTestTool.backend.rtspScheme")
 		}
 	}
 	port := u.Port()
 	if port == "" {
-		if u.Scheme == "https" || u.Scheme == "wss" {
+		switch u.Scheme {
+		case "https", "wss":
 			port = "443"
-		} else {
+		case "rtsp":
+			port = "554"
+		case "rtsps":
+			port = "322"
+		default:
 			port = "80"
 		}
 	}
-	return networkTarget{URL: u, Host: u.Hostname(), Port: port}, nil
+	return networkTarget{URL: u, Host: u.Hostname(), Port: port, creds: credentials}, nil
 }
 
 type networkRoute struct {
-	run          *networkTestRun
-	request      NetworkTestRequest
+	run     *networkTestRun
+	request NetworkTestRequest
+	// hop 是当前重定向跳次：跟随重定向后重建连接时递增，使 dns/tcp/tls 等链路阶段
+	// 各自成为独立的一项，而不是用同一个 ID 覆盖上一跳的时间。
+	hop          int
 	proxyType    string
 	proxyURL     *url.URL
 	resolver     *net.Resolver
@@ -486,7 +549,7 @@ type networkRoute struct {
 }
 
 func (r *networkRoute) stage(id, status string, fields NetworkTestStage) {
-	redirectCount := 0
+	redirectCount := r.hop
 	if r.requestTrace != nil {
 		redirectCount = r.requestTrace.redirectCount()
 	}
@@ -504,7 +567,7 @@ func (r *networkRoute) fail(id string, err error) {
 	if err == nil {
 		return
 	}
-	redirectCount := 0
+	redirectCount := r.hop
 	if r.requestTrace != nil {
 		redirectCount = r.requestTrace.redirectCount()
 	}
@@ -515,10 +578,10 @@ func (r *networkRoute) fail(id string, err error) {
 func newNetworkRoute(run *networkTestRun, request NetworkTestRequest) (*networkRoute, error) {
 	route := &networkRoute{run: run, request: request, proxyType: strings.ToLower(strings.TrimSpace(request.ProxyType))}
 	if (strings.EqualFold(strings.TrimSpace(request.Protocol), "udp") || strings.EqualFold(strings.TrimSpace(request.Protocol), "ntp")) && route.proxyType == "http" {
-		return nil, errors.New("UDP and NTP require a direct route or a SOCKS5 proxy with UDP ASSOCIATE; HTTP CONNECT does not relay UDP datagrams")
+		return nil, networkTestError("networkTestTool.backend.udpProxyUnsupported")
 	}
 	if route.proxyType != "" && route.proxyType != "http" && route.proxyType != "socks5" && route.proxyType != "system" {
-		return nil, errors.New("proxy type must be system, HTTP CONNECT, or SOCKS5")
+		return nil, networkTestError("networkTestTool.backend.proxyTypeInvalid")
 	}
 	if route.proxyType == "http" || route.proxyType == "socks5" {
 		proxyValue := strings.TrimSpace(request.ProxyAddress)
@@ -530,16 +593,16 @@ func newNetworkRoute(run *networkTestRun, request NetworkTestRequest) (*networkR
 		}
 		proxyURL, err := url.Parse(proxyValue)
 		if err != nil || proxyURL.Hostname() == "" || proxyURL.User != nil || proxyURL.RawQuery != "" || proxyURL.Fragment != "" {
-			return nil, errors.New("proxy address must be a host and port without credentials")
+			return nil, networkTestError("networkTestTool.backend.proxyAddressInvalid")
 		}
 		if proxyURL.Port() == "" {
-			return nil, errors.New("proxy address must include a port")
+			return nil, networkTestError("networkTestTool.backend.proxyPortRequired")
 		}
 		if route.proxyType == "http" && proxyURL.Scheme != "http" {
-			return nil, errors.New("HTTP proxy address must use http://")
+			return nil, networkTestError("networkTestTool.backend.proxyHTTPScheme")
 		}
 		if route.proxyType == "socks5" && proxyURL.Scheme != "socks5" {
-			return nil, errors.New("SOCKS5 proxy address must use socks5://")
+			return nil, networkTestError("networkTestTool.backend.proxySocks5Scheme")
 		}
 		route.proxyURL = proxyURL
 	}
@@ -550,7 +613,7 @@ func newNetworkRoute(run *networkTestRun, request NetworkTestRequest) (*networkR
 		}
 		dnsHost, _, err := net.SplitHostPort(dnsAddress)
 		if err != nil || net.ParseIP(strings.Trim(dnsHost, "[]")) == nil {
-			return nil, errors.New("custom DNS server must be an IP address, optionally followed by :port")
+			return nil, networkTestError("networkTestTool.backend.dnsServerInvalid")
 		}
 		route.dnsServer = dnsAddress
 		dialer := &net.Dialer{Timeout: 3 * time.Second}
@@ -574,7 +637,7 @@ func newNetworkRoute(run *networkTestRun, request NetworkTestRequest) (*networkR
 	if name := strings.TrimSpace(request.InterfaceName); name != "" {
 		item, err := net.InterfaceByName(name)
 		if err != nil {
-			return nil, fmt.Errorf("network interface %q is unavailable: %w", name, err)
+			return nil, networkTestErrorParamsCause("networkTestTool.backend.interfaceUnavailable", map[string]any{"interface": name}, err)
 		}
 		route.iface = item
 	}
@@ -663,7 +726,7 @@ func (r *networkRoute) localAddress(remote net.IP) (net.Addr, error) {
 		}
 		return &net.TCPAddr{IP: ip}, nil
 	}
-	return nil, fmt.Errorf("network interface %q has no address for the target IP family", r.iface.Name)
+	return nil, networkTestErrorf("networkTestTool.backend.interfaceNoAddress", "interface", r.iface.Name)
 }
 
 func (r *networkRoute) dialDirect(ctx context.Context, host, port string) (net.Conn, error) {
@@ -682,15 +745,44 @@ func (r *networkRoute) dialDirect(ctx context.Context, host, port string) (net.C
 		dialer := net.Dialer{Timeout: time.Until(deadlineOr(ctx, time.Now().Add(10*time.Second))), LocalAddr: local}
 		conn, err := dialer.DialContext(ctx, "tcp", net.JoinHostPort(address.IP.String(), port))
 		if err == nil {
-			localAddress := "automatic"
-			if local != nil {
-				localAddress = local.String()
+			// localAddress 记录真实的本机出口地址：经 VPN/代理 TUN 的流量会显示 TUN 地址，
+			// 据此可以判断连接是否真的走了物理网卡，而不是只看到「连接成功」。
+			meta := map[string]string{
+				"peer":          net.JoinHostPort(host, port),
+				"remoteAddress": conn.RemoteAddr().String(),
+				"localAddress":  conn.LocalAddr().String(),
+				"interface":     r.interfaceName(),
 			}
-			stage := NetworkTestStage{Meta: map[string]string{"peer": net.JoinHostPort(host, port), "remoteAddress": conn.RemoteAddr().String(), "localAddress": localAddress, "interface": r.interfaceName()}}
+			if local != nil {
+				meta["boundLocalAddress"] = local.String()
+			}
+			if r.proxyURL != nil && strings.EqualFold(r.proxyURL.Hostname(), host) && r.proxyURL.Port() == port {
+				// 这次拨号连的是代理服务器：连接阶段本身就是「经代理」的记录项，
+				// 否则用户只看到 peer 是代理地址，无法判断下一跳是谁。
+				meta["outbound"] = "proxy"
+				meta["proxy"] = net.JoinHostPort(host, port)
+				meta["reachability"] = "unverified"
+			}
+			path, tunnel := probeTunnelOutbound(ctx, address.IP, conn.LocalAddr().String())
+			if tunnel {
+				// 握手对象是本机隧道端点，不是设备：不能让这一阶段只表达「连接成功」。
+				meta["outbound"] = "tunnel"
+				meta["reachability"] = "unverified"
+				if path.Interface != "" {
+					meta["tunnelInterface"] = path.Interface
+				}
+				if path.Gateway != "" {
+					meta["tunnelGateway"] = path.Gateway
+				}
+			}
+			stage := NetworkTestStage{Meta: meta}
 			if r.request.Protocol == "tcp" {
-				stage.Request = "TCP connect only; no application payload sent"
+				stage.Request = networkTestText("networkTestTool.backend.tcpConnectOnly", nil)
 			}
 			r.stage("tcp-connect", "success", stage)
+			if tunnel {
+				r.reportTunnelOutbound(net.JoinHostPort(host, port), conn.LocalAddr().String(), path)
+			}
 			return conn, nil
 		}
 		lastErr = err
@@ -699,7 +791,7 @@ func (r *networkRoute) dialDirect(ctx context.Context, host, port string) (net.C
 		}
 	}
 	if lastErr == nil {
-		lastErr = errors.New("no IP address was available for the target")
+		lastErr = networkTestError("networkTestTool.backend.noIPForTarget")
 	}
 	r.fail("tcp-connect", lastErr)
 	return nil, lastErr
@@ -754,7 +846,7 @@ func (r *networkRoute) dialSOCKS5(ctx context.Context, targetHost, targetPort st
 	if deadline, ok := ctx.Deadline(); ok {
 		_ = conn.SetDeadline(deadline)
 	}
-	r.stage("proxy-tunnel", "running", NetworkTestStage{Request: "SOCKS5: no-auth CONNECT", Meta: map[string]string{"proxy": net.JoinHostPort(proxyHost, proxyPort), "targetResolution": r.targetResolution()}})
+	r.stage("proxy-tunnel", "running", NetworkTestStage{Request: networkTestText("networkTestTool.backend.socks5ConnectRequest", nil), Meta: map[string]string{"proxy": net.JoinHostPort(proxyHost, proxyPort), "targetResolution": r.targetResolution()}})
 	if _, err := conn.Write([]byte{5, 1, 0}); err != nil {
 		r.fail("proxy-tunnel", err)
 		return nil, err
@@ -832,7 +924,7 @@ func (r *networkRoute) dialSOCKS5(ctx context.Context, targetHost, targetPort st
 		return nil, err
 	}
 	closeOnError = false
-	r.stage("proxy-tunnel", "success", NetworkTestStage{Response: "SOCKS5: tunnel established", Meta: map[string]string{"proxy": net.JoinHostPort(proxyHost, proxyPort), "target": net.JoinHostPort(targetHost, targetPort), "targetResolution": r.targetResolution()}})
+	r.stage("proxy-tunnel", "success", NetworkTestStage{Response: networkTestText("networkTestTool.backend.socks5TunnelEstablished", nil), Meta: map[string]string{"proxy": net.JoinHostPort(proxyHost, proxyPort), "target": net.JoinHostPort(targetHost, targetPort), "targetResolution": r.targetResolution()}})
 	return conn, nil
 }
 
@@ -950,7 +1042,7 @@ func (c *socks5DatagramChannel) Close() error {
 
 func (r *networkRoute) openUDPChannel(target networkTarget) (networkDatagramChannel, error) {
 	if r.proxyType == "http" {
-		return nil, errors.New("UDP and NTP do not support HTTP CONNECT proxy; use SOCKS5 UDP ASSOCIATE or connect directly")
+		return nil, networkTestError("networkTestTool.backend.udpProxyUnsupported")
 	}
 	if r.proxyType == "socks5" {
 		return r.openSOCKS5UDPChannel(target)
@@ -982,7 +1074,7 @@ func (r *networkRoute) openUDPChannel(target networkTarget) (networkDatagramChan
 		}
 	}
 	if lastErr == nil {
-		lastErr = errors.New("no IP address was available for the UDP target")
+		lastErr = networkTestError("networkTestTool.backend.noIPForTarget")
 	}
 	return nil, lastErr
 }
@@ -1010,7 +1102,7 @@ func (r *networkRoute) openSOCKS5UDPChannel(target networkTarget) (networkDatagr
 	if deadline, ok := r.run.ctx.Deadline(); ok {
 		_ = control.SetDeadline(deadline)
 	}
-	r.stage("proxy-tunnel", "running", NetworkTestStage{Request: "SOCKS5: no-auth UDP ASSOCIATE", Meta: map[string]string{"proxy": net.JoinHostPort(proxyHost, proxyPort)}})
+	r.stage("proxy-tunnel", "running", NetworkTestStage{Request: networkTestText("networkTestTool.backend.socks5UdpAssociateRequest", nil), Meta: map[string]string{"proxy": net.JoinHostPort(proxyHost, proxyPort)}})
 	if _, err := control.Write([]byte{5, 1, 0}); err != nil {
 		r.fail("proxy-tunnel", err)
 		return nil, err
@@ -1087,7 +1179,7 @@ func (r *networkRoute) openSOCKS5UDPChannel(target networkTarget) (networkDatagr
 		return nil, err
 	}
 	closeControl = false
-	r.stage("proxy-tunnel", "success", NetworkTestStage{Response: "SOCKS5 UDP relay established", Meta: map[string]string{"proxy": net.JoinHostPort(proxyHost, proxyPort), "relay": relay.String(), "target": net.JoinHostPort(target.Host, target.Port), "targetResolution": r.targetResolution()}})
+	r.stage("proxy-tunnel", "success", NetworkTestStage{Response: networkTestText("networkTestTool.backend.socks5UdpRelayEstablished", nil), Meta: map[string]string{"proxy": net.JoinHostPort(proxyHost, proxyPort), "relay": relay.String(), "target": net.JoinHostPort(target.Host, target.Port), "targetResolution": r.targetResolution()}})
 	return &socks5DatagramChannel{conn: udpConn, control: control, requestHead: requestHead, targetHost: target.Host, targetPort: mustPortNumber(target.Port), targetIP: targetIP, remote: net.JoinHostPort(target.Host, target.Port)}, nil
 }
 
@@ -1239,7 +1331,7 @@ func (r *networkTestRun) runHTTP(request NetworkTestRequest) error {
 		trace := &httptrace.ClientTrace{
 			TLSHandshakeStart: func() {
 				if route.proxyType == "http" && requestURL.Scheme == "https" {
-					route.stage("proxy-tunnel", "success", NetworkTestStage{Request: "CONNECT " + net.JoinHostPort(requestHost, requestPort), Response: "HTTP CONNECT tunnel established", Meta: map[string]string{"proxy": route.proxyURL.Host, "targetResolution": "proxy"}})
+					route.stage("proxy-tunnel", "success", NetworkTestStage{Request: "CONNECT " + net.JoinHostPort(requestHost, requestPort), Response: networkTestText("networkTestTool.backend.connectTunnelEstablished", nil), Meta: map[string]string{"proxy": route.proxyURL.Host, "targetResolution": "proxy"}})
 				}
 				r.stage(networkRedirectStageID("tls", redirectCount), "running", NetworkTestStage{Meta: mergeStageMeta(redirectMeta(redirectCount), map[string]string{"serverName": requestHost})})
 			},
@@ -1262,12 +1354,24 @@ func (r *networkTestRun) runHTTP(request NetworkTestRequest) error {
 					return
 				}
 				r.stage(stageID, "success", NetworkTestStage{Request: requestDump, Meta: meta})
+				// 请求写完即进入等待响应：response 阶段必须从这里开始计时，否则等待期
+				// 没有任何阶段覆盖（失败时只在末尾补出一个 0 毫秒的错误项），时间线会
+				// 出现无法解释的空白。首个字节到达、读取完成或失败都沿用这个起始时间。
+				r.stage(responseID, "running", NetworkTestStage{Meta: mergeStageMeta(redirectMeta(redirectCount), map[string]string{"phase": networkTestText("networkTestTool.backend.phaseWaitingForResponse", nil)})})
 			},
 			GotFirstResponseByte: func() {
 				r.stage(responseID, "running", NetworkTestStage{Meta: mergeStageMeta(redirectMeta(redirectCount), map[string]string{"firstByteAt": strconv.FormatInt(time.Now().UnixMilli(), 10)})})
 			},
 		}
 		req = req.WithContext(httptrace.WithClientTrace(r.ctx, trace))
+		if route.proxyType == "http" && requestURL.Scheme == "https" {
+			// transport 会先向代理发 CONNECT：先上报 running，CONNECT 的等待时间与失败
+			// 才能落在这个阶段的时间窗里（否则只在失败时补出一个 0 毫秒的错误项）。
+			route.stage("proxy-tunnel", "running", NetworkTestStage{
+				Request: "CONNECT " + net.JoinHostPort(requestHost, requestPort) + " HTTP/1.1\r\nHost: " + net.JoinHostPort(requestHost, requestPort) + "\r\n\r\n",
+				Meta:    mergeStageMeta(redirectMeta(redirectCount), map[string]string{"proxy": route.proxyURL.Host, "targetResolution": "proxy"}),
+			})
+		}
 		response, err := client.Do(req)
 		if err != nil {
 			if route.proxyType == "http" && requestURL.Scheme == "https" && strings.Contains(strings.ToLower(err.Error()), "proxyconnect") {
@@ -1374,7 +1478,7 @@ func (r *networkTestRun) runWebSocket(request NetworkTestRequest) error {
 				if port == "" {
 					port = "443"
 				}
-				route.stage("proxy-tunnel", "success", NetworkTestStage{Request: "CONNECT " + net.JoinHostPort(requestURL.Hostname(), port), Response: "HTTP CONNECT tunnel established", Meta: map[string]string{"proxy": route.proxyURL.Host, "targetResolution": "proxy"}})
+				route.stage("proxy-tunnel", "success", NetworkTestStage{Request: "CONNECT " + net.JoinHostPort(requestURL.Hostname(), port), Response: networkTestText("networkTestTool.backend.connectTunnelEstablished", nil), Meta: map[string]string{"proxy": route.proxyURL.Host, "targetResolution": "proxy"}})
 			}
 			route.stage("tls", "running", NetworkTestStage{Meta: map[string]string{"serverName": requestURL.Hostname()}})
 		},
@@ -1396,6 +1500,18 @@ func (r *networkTestRun) runWebSocket(request NetworkTestRequest) error {
 		},
 	}
 	ctx := httptrace.WithClientTrace(r.ctx, trace)
+	if route.proxyType == "http" && (target.URL.Scheme == "https" || target.URL.Scheme == "wss") {
+		// 与 HTTP 一致：CONNECT 的等待期必须有自己的阶段。
+		requestHost := target.URL.Hostname()
+		requestPort := target.URL.Port()
+		if requestPort == "" {
+			requestPort = "443"
+		}
+		route.stage("proxy-tunnel", "running", NetworkTestStage{
+			Request: "CONNECT " + net.JoinHostPort(requestHost, requestPort) + " HTTP/1.1\r\nHost: " + net.JoinHostPort(requestHost, requestPort) + "\r\n\r\n",
+			Meta:    mergeStageMeta(redirectMeta(requestTrace.redirectCount()), map[string]string{"proxy": route.proxyURL.Host, "targetResolution": "proxy"}),
+		})
+	}
 	conn, response, err := websocket.Dial(ctx, target.URL.String(), &websocket.DialOptions{HTTPClient: client})
 	if response != nil {
 		var body []byte
@@ -1442,7 +1558,7 @@ const maxNetworkRedirects = 10
 
 func validateNetworkRedirectLimit(limit int) error {
 	if limit < 0 || limit > maxNetworkRedirects {
-		return fmt.Errorf("redirect limit must be between 0 and %d", maxNetworkRedirects)
+		return networkTestErrorf("networkTestTool.backend.redirectLimit", "max", maxNetworkRedirects)
 	}
 	return nil
 }
@@ -1485,6 +1601,816 @@ func (t *captureNetworkRoundTripper) RoundTrip(request *http.Request) (*http.Res
 	return t.base.RoundTrip(request)
 }
 
+// tunnelRouteStageID 是「经隧道出口」阶段：本机把目标交给 VPN/代理 TUN 转发时列出。
+const tunnelRouteStageID = "tunnel-route"
+
+const maxRTSPResponseBytes = 64 * 1024
+
+// runRTSP 执行一次 RTSP 1.0 探测：先 OPTIONS 查看服务端支持的方法，再 DESCRIBE 取回媒体
+// 描述（SDP）。两个请求都不建立会话，因此不会触发 PLAY，也不会依赖 Transport 参数。目标
+// URL 带凭据时自动应答 Digest（或 Basic）挑战；服务端用 3xx 指向新的流地址时按重定向次数
+// 跟随，并在新地址上重建连接。
+func (r *networkTestRun) runRTSP(request NetworkTestRequest) error {
+	target, err := parseNetworkTarget("rtsp", request.Target)
+	if err != nil {
+		r.stage("validate", "error", NetworkTestStage{Error: err.Error()})
+		return err
+	}
+	if err := validateNetworkRedirectLimit(request.MaxRedirects); err != nil {
+		r.stage("validate", "error", NetworkTestStage{Error: err.Error()})
+		return err
+	}
+	route, err := newNetworkRoute(r, request)
+	if err != nil {
+		r.stage("validate", "error", NetworkTestStage{Error: err.Error()})
+		return err
+	}
+	if err := route.resolveSystemProxy(target); err != nil {
+		return err
+	}
+	client, err := r.newRTSPClient(route, target)
+	if err != nil {
+		return err
+	}
+	defer client.close()
+
+	options := client.request("rtsp-options", "OPTIONS", 1, nil)
+	if options.err != nil {
+		r.fail(options.stageID, options.err)
+		return options.err
+	}
+	optionsMeta := mergeStageMeta(redirectMeta(options.hops), rtspResponseMeta(options.response, route.targetResolution()))
+	optionsMeta["cseq"] = strconv.Itoa(options.nextSeq - 1)
+	if server := firstNonEmpty(options.response.header.Get("Server"), options.response.header.Get("Public")); server != "" {
+		optionsMeta["server"] = server
+	}
+	if err := rtspStatusError("OPTIONS", options.response); err != nil {
+		r.stage(options.stageID, "error", NetworkTestStage{Response: rtspResponseSummary(options.response), StatusCode: options.response.statusCode, Meta: optionsMeta, Error: err.Error()})
+		return err
+	}
+	r.stage(options.stageID, "success", NetworkTestStage{Response: rtspResponseSummary(options.response), StatusCode: options.response.statusCode, Meta: optionsMeta})
+
+	describeHeaders := map[string]string{"Accept": "application/sdp"}
+	describe := client.request("rtsp-describe", "DESCRIBE", options.nextSeq, describeHeaders)
+	if describe.err != nil {
+		r.fail(describe.stageID, describe.err)
+		return describe.err
+	}
+	// 重定向后请求实际发往新地址：这里取最终生效的流地址与序号。
+	describeURI := rtspRequestURI(client.target.URL)
+	describeRequest := formatRTSPRequest("DESCRIBE", describeURI, describeHeaders, describe.nextSeq-1)
+	describeMeta := mergeStageMeta(redirectMeta(describe.hops), rtspResponseMeta(describe.response, route.targetResolution()))
+	describeMeta["requestURI"] = describeURI
+	describeMeta["cseq"] = strconv.Itoa(describe.nextSeq - 1)
+	describeMeta = mergeStageMeta(describeMeta, describeMediaMeta(describe.response.body))
+	if err := rtspStatusError("DESCRIBE", describe.response); err != nil {
+		r.stage(describe.stageID, "error", NetworkTestStage{Request: describeRequest, Response: rtspResponseSummary(describe.response), StatusCode: describe.response.statusCode, Meta: describeMeta, Error: err.Error()})
+		return err
+	}
+	r.stage(describe.stageID, "success", NetworkTestStage{Request: describeRequest, Response: rtspResponseSummary(describe.response), StatusCode: describe.response.statusCode, Meta: describeMeta})
+	return nil
+}
+
+// rtspClient 持有到当前流地址的连接。RTSP 的重定向可能换主机或端口，因此每次跟随都会
+// 重建连接，并把同一个请求重新发往新地址；CSeq 在同一连接内递增且不复用。
+type rtspClient struct {
+	run     *networkTestRun
+	route   *networkRoute
+	target  networkTarget
+	conn    net.Conn
+	session *rtspSession
+	stop    func() bool
+}
+
+func (r *networkTestRun) newRTSPClient(route *networkRoute, target networkTarget) (*rtspClient, error) {
+	conn, stop, err := r.dialRTSP(route, target)
+	if err != nil {
+		return nil, err
+	}
+	return &rtspClient{run: r, route: route, target: target, conn: conn, session: &rtspSession{conn: conn}, stop: stop}, nil
+}
+
+// dialRTSP 建立到目标的连接：包含代理隧道与 rtsps 的 TLS 阶段，并挂上运行超时与取消清理。
+func (r *networkTestRun) dialRTSP(route *networkRoute, target networkTarget) (net.Conn, func() bool, error) {
+	conn, err := route.openRTSPStream(r.ctx, target)
+	if err != nil {
+		return nil, nil, err
+	}
+	if deadline, ok := r.ctx.Deadline(); ok {
+		_ = conn.SetDeadline(deadline)
+	}
+	stop := context.AfterFunc(r.ctx, func() { _ = conn.Close() })
+	return conn, stop, nil
+}
+
+func (c *rtspClient) close() {
+	if c == nil || c.conn == nil {
+		return
+	}
+	if c.stop != nil {
+		c.stop()
+	}
+	_ = c.conn.Close()
+	c.conn = nil
+}
+
+// reconnect 关闭旧连接并连到重定向后的地址；接口、代理隧道与 TLS 阶段按新目标重新上报。
+func (c *rtspClient) reconnect(target networkTarget) error {
+	conn, stop, err := c.run.dialRTSP(c.route, target)
+	if err != nil {
+		return err
+	}
+	c.close()
+	c.conn, c.stop, c.session, c.target = conn, stop, &rtspSession{conn: conn}, target
+	return nil
+}
+
+// rtspRequestOutcome 是一次 RTSP 请求的最终结果。hops 只统计本次请求自身跟随的重定向次数，
+// 因此跟随次数不同的请求各自使用自己的阶段后缀。
+type rtspRequestOutcome struct {
+	response *rtspResponse
+	nextSeq  int
+	stageID  string
+	hops     int
+	err      error
+}
+
+// request 发送一个请求：先按当前地址发送（401 时用凭据重试），收到带 Location 的 3xx 且
+// 未超过上限时记录本跳、重建连接并把同一请求发往新地址。
+func (c *rtspClient) request(baseStageID, method string, cseq int, headers map[string]string) rtspRequestOutcome {
+	hops := 0
+	for {
+		// 阶段 ID 由 route.stage 按当前跳次加后缀：跟随重定向后重建的 dns/tcp/tls 与
+		// 本阶段请求各自独立成项，不再覆盖上一跳的时间。
+		c.route.hop = hops
+		stageID := networkRedirectStageID(baseStageID, hops)
+		uri := rtspRequestURI(c.target.URL)
+		meta := map[string]string{
+			"requestURI":       uri,
+			"cseq":             strconv.Itoa(cseq),
+			"targetResolution": c.route.targetResolution(),
+		}
+		c.route.stage(baseStageID, "running", NetworkTestStage{Request: formatRTSPRequest(method, uri, headers, cseq), Meta: meta})
+		response, nextSeq, err := c.exchange(method, uri, headers, cseq)
+		if err != nil {
+			return rtspRequestOutcome{nextSeq: nextSeq, stageID: stageID, hops: hops, err: err}
+		}
+		if !isNetworkRedirectStatus(response.statusCode) {
+			return rtspRequestOutcome{response: response, nextSeq: nextSeq, stageID: stageID, hops: hops}
+		}
+		location := response.header.Get("Location")
+		if location == "" {
+			return rtspRequestOutcome{response: response, nextSeq: nextSeq, stageID: stageID, hops: hops}
+		}
+		if hops >= c.route.request.MaxRedirects {
+			limit := c.route.request.MaxRedirects
+			meta["redirectTarget"] = location
+			meta["redirectLimit"] = strconv.Itoa(limit)
+			message := networkTestErrorf("networkTestTool.backend.rtspRedirectNotFollowed", "method", method, "status", response.statusLine, "target", location, "limit", limit).Error()
+			c.route.stage(baseStageID, "error", NetworkTestStage{Response: rtspResponseSummary(response), StatusCode: response.statusCode, Meta: meta, Error: message})
+			return rtspRequestOutcome{response: response, nextSeq: nextSeq, stageID: stageID, hops: hops, err: errors.New(message)}
+		}
+		next, droppedCredentials, err := resolveRTSPRedirect(c.target, location)
+		if err != nil {
+			meta["redirectTarget"] = location
+			c.route.stage(baseStageID, "error", NetworkTestStage{Response: rtspResponseSummary(response), StatusCode: response.statusCode, Meta: meta, Error: err.Error()})
+			return rtspRequestOutcome{response: response, nextSeq: nextSeq, stageID: stageID, hops: hops, err: err}
+		}
+		meta["redirectTarget"] = location
+		meta["redirectFollowed"] = "true"
+		if droppedCredentials {
+			meta["credentialsDropped"] = networkTestText("networkTestTool.backend.rtspRedirectCredentialsDropped", nil)
+		}
+		c.route.stage(baseStageID, "success", NetworkTestStage{Response: rtspResponseSummary(response), StatusCode: response.statusCode, Meta: meta})
+		// 新一跳的链路阶段使用新后缀：先切跳次再重连，dns/tcp/tls 才不会覆盖上一跳。
+		c.route.hop = hops + 1
+		if err := c.reconnect(next); err != nil {
+			// 连不上跳转地址：错误记在下一跳上，具体失败原因在 tcp-connect / tls 阶段。
+			return rtspRequestOutcome{nextSeq: nextSeq, stageID: networkRedirectStageID(baseStageID, hops+1), hops: hops, err: err}
+		}
+		cseq = nextSeq
+		hops++
+	}
+}
+
+// exchange 发送一次请求；服务端用 401 要求认证时，用当前地址的凭据应答挑战并重试一次，
+// 认证过程单独记在 rtsp-auth 阶段。返回响应与下一个可用 CSeq。
+func (c *rtspClient) exchange(method, uri string, headers map[string]string, cseq int) (*rtspResponse, int, error) {
+	response, err := c.session.exchange(method, uri, headers, cseq)
+	if err != nil {
+		return nil, cseq + 1, rtspExchangeError(c.run.ctx, method, err)
+	}
+	if response.statusCode != http.StatusUnauthorized {
+		return response, cseq + 1, nil
+	}
+	pictureURL := redactURLUserinfo(c.target.URL)
+	if c.target.creds == nil || c.target.creds.username == "" {
+		c.route.stage("rtsp-auth", "error", NetworkTestStage{
+			Response:   rtspResponseSummary(response),
+			StatusCode: response.statusCode,
+			Meta:       rtspAuthMeta(response, pictureURL, false),
+			Error:      rtspAuthRequiredError(response, pictureURL).Error(),
+		})
+		return response, cseq + 1, nil
+	}
+	challenge := parseRTSPAuthChallenge(response.header.Values("WWW-Authenticate"))
+	if challenge == nil {
+		return response, cseq + 1, nil
+	}
+	authenticated := cloneStringMap(headers)
+	authenticated["Authorization"] = c.target.creds.authorizationHeader(challenge, method, uri, cseq)
+	c.route.stage("rtsp-auth", "running", NetworkTestStage{
+		Request: formatRTSPRequest(method, uri, map[string]string{"Authorization": "<credentials withheld>"}, cseq+1),
+		Meta:    rtspAuthMeta(response, pictureURL, true),
+	})
+	retry, retryErr := c.session.exchange(method, uri, authenticated, cseq+1)
+	if retryErr != nil {
+		wrapped := rtspExchangeError(c.run.ctx, method, retryErr)
+		c.route.fail("rtsp-auth", wrapped)
+		return nil, cseq + 2, wrapped
+	}
+	if err := rtspStatusError(method, retry); err != nil {
+		c.route.stage("rtsp-auth", "error", NetworkTestStage{
+			Response:   rtspResponseSummary(retry),
+			StatusCode: retry.statusCode,
+			Meta:       rtspAuthMeta(retry, pictureURL, true),
+			Error:      networkTestErrorf("networkTestTool.backend.rtspCredentialsRejected", "method", method, "status", retry.statusLine).Error(),
+		})
+		return retry, cseq + 2, nil
+	}
+	c.route.stage("rtsp-auth", "success", NetworkTestStage{
+		Response:   rtspResponseSummary(retry),
+		StatusCode: retry.statusCode,
+		Meta:       rtspAuthMeta(retry, pictureURL, true),
+	})
+	return retry, cseq + 2, nil
+}
+
+// resolveRTSPRedirect 解析 3xx 的 Location：Location 可以是绝对地址，也可以只是路径。
+// 只有重定向仍指向同一主机时才继续使用原凭据，跨主机跳转不再发送凭据，避免把密码交给
+// 另一台设备。
+func resolveRTSPRedirect(current networkTarget, location string) (networkTarget, bool, error) {
+	if current.URL == nil {
+		return networkTarget{}, false, errors.New("redirect target cannot be resolved without a base URL")
+	}
+	resolved, err := current.URL.Parse(strings.TrimSpace(location))
+	if err != nil {
+		return networkTarget{}, false, networkTestErrorParamsCause("networkTestTool.backend.rtspRedirectInvalid", map[string]any{"target": location}, err)
+	}
+	target, err := parseNetworkTarget("rtsp", resolved.String())
+	if err != nil {
+		// 外层说明是哪个 Location 无效，内层保留具体原因（例如协议不符）。
+		return networkTarget{}, false, networkTestErrorParamsCause("networkTestTool.backend.rtspRedirectInvalid", map[string]any{"target": location}, err)
+	}
+	if current.creds == nil || current.creds.username == "" {
+		return target, false, nil
+	}
+	if !strings.EqualFold(target.Host, current.Host) {
+		return target, true, nil
+	}
+	target.creds = current.creds
+	return target, false, nil
+}
+
+// rtspExchangeError 把网络层错误翻译成可读结论。TCP 连接成功但服务端不回一个字节是
+// 这类设备与中间盒最常见的表现：设备、VPN 或防火墙可能对任意端口都接受连接，而原始
+// 的 "i/o timeout" 无法说明这一点。
+func rtspExchangeError(ctx context.Context, method string, err error) error {
+	var timeoutError interface{ Timeout() bool }
+	switch {
+	case errors.Is(ctx.Err(), context.DeadlineExceeded),
+		errors.Is(err, context.DeadlineExceeded),
+		errors.As(err, &timeoutError) && timeoutError.Timeout():
+		return networkTestErrorParamsCause("networkTestTool.backend.rtspNoResponse", map[string]any{"method": method}, err)
+	case errors.Is(ctx.Err(), context.Canceled):
+		// 超时或取消时运行上下文会主动关闭连接，读操作可能返回 net.ErrClosed
+		// （use of closed network connection）；结论应取自上下文而不是错误文本。
+		return networkTestErrorParamsCause("networkTestTool.backend.rtspStoppedWhileWaiting", map[string]any{"method": method}, err)
+	}
+	var responseError *rtspResponseError
+	if errors.As(err, &responseError) {
+		if !responseError.received {
+			return networkTestErrorParamsCause("networkTestTool.backend.rtspClosedWithoutResponse", map[string]any{"method": method}, err)
+		}
+		if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
+			return networkTestErrorParamsCause("networkTestTool.backend.rtspClosedMidResponse", map[string]any{"method": method}, err)
+		}
+	}
+	return err
+}
+
+func rtspAuthMeta(response *rtspResponse, pictureURL string, sent bool) map[string]string {
+	meta := rtspResponseMeta(response, "")
+	delete(meta, "targetResolution")
+	delete(meta, "statusLine")
+	meta["method"] = response.statusLine
+	if pictureURL != "" {
+		meta["target"] = pictureURL
+	}
+	meta["credentialsSent"] = strconv.FormatBool(sent)
+	if challenge := strings.Join(response.header.Values("WWW-Authenticate"), ", "); challenge != "" {
+		meta["challenge"] = challenge
+	}
+	return meta
+}
+
+// rtspAuthRequiredError 说明服务端要求认证且目标 URL 没有提供凭据。提示使用脱敏后的
+// 地址形态，避免把凭据写进错误信息。
+func rtspAuthRequiredError(response *rtspResponse, pictureURL string) error {
+	return networkTestErrorf("networkTestTool.backend.rtspAuthRequired", "status", response.statusLine, "example", credentialTargetHint(pictureURL))
+}
+
+func credentialTargetHint(pictureURL string) string {
+	scheme := "rtsp://"
+	rest := pictureURL
+	for _, prefix := range []string{"rtsp://", "rtsps://"} {
+		if strings.HasPrefix(pictureURL, prefix) {
+			scheme = prefix
+			rest = strings.TrimPrefix(pictureURL, prefix)
+			break
+		}
+	}
+	return scheme + "user:password@" + rest
+}
+
+// rtspSession 在一条 TCP（或 rtsps 的 TLS）连接上按 CSeq 顺序收发 RTSP 报文。
+type rtspSession struct {
+	conn   net.Conn
+	reader *bufio.Reader
+}
+
+type rtspResponse struct {
+	protocol      string
+	statusCode    int
+	reason        string
+	statusLine    string
+	header        http.Header
+	body          []byte
+	bodyTruncated bool
+}
+
+// exchange 写入一个 RTSP 请求并读取对应响应；请求语法固定为 RTSP/1.0，不需要额外协商。
+func (s *rtspSession) exchange(method, uri string, extraHeaders map[string]string, cseq int) (*rtspResponse, error) {
+	if s.reader == nil {
+		s.reader = bufio.NewReader(s.conn)
+	}
+	if _, err := io.WriteString(s.conn, formatRTSPRequest(method, uri, extraHeaders, cseq)); err != nil {
+		return nil, err
+	}
+	return readRTSPResponse(s.reader)
+}
+
+// formatRTSPRequest 生成 RTSP 请求文本。URI 中的 CR/LF 会被移除，避免请求拆分。
+func formatRTSPRequest(method, uri string, extraHeaders map[string]string, cseq int) string {
+	var builder strings.Builder
+	builder.WriteString(method + " " + strings.NewReplacer("\r", "", "\n", "").Replace(uri) + " RTSP/1.0\r\n")
+	builder.WriteString("CSeq: " + strconv.Itoa(cseq) + "\r\n")
+	builder.WriteString("User-Agent: TinkerKit Network Test\r\n")
+	keys := make([]string, 0, len(extraHeaders))
+	for key := range extraHeaders {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		builder.WriteString(key + ": " + strings.NewReplacer("\r", "", "\n", "").Replace(extraHeaders[key]) + "\r\n")
+	}
+	builder.WriteString("\r\n")
+	return builder.String()
+}
+
+// rtspRequestURI 返回 RTSP 请求行中的绝对 URI（RFC 2326 允许直接使用目标 URL）。
+// 凭据通过 Authorization 头单独发送，不出现在请求行里。
+func rtspRequestURI(target *url.URL) string {
+	if target == nil {
+		return "*"
+	}
+	clean := *target
+	clean.User = nil
+	uri := clean.String()
+	if uri == "" {
+		return "*"
+	}
+	return uri
+}
+
+// readRTSPResponse 按 RFC 2326 的消息格式读取一个响应：状态行、头部（直到空行），
+// 以及由 Content-Length 声明的消息体。
+func readRTSPResponse(reader *bufio.Reader) (*rtspResponse, error) {
+	statusLine, err := readRTSPLine(reader)
+	if err != nil {
+		return nil, &rtspResponseError{err: err}
+	}
+	line := strings.TrimRight(statusLine, "\r\n")
+	fields := strings.SplitN(line, " ", 3)
+	if len(fields) < 2 || !strings.HasPrefix(strings.ToUpper(fields[0]), "RTSP/") {
+		return nil, fmt.Errorf("unexpected RTSP status line %q", line)
+	}
+	statusCode, err := strconv.Atoi(fields[1])
+	if err != nil {
+		return nil, fmt.Errorf("unexpected RTSP status line %q", line)
+	}
+	response := &rtspResponse{protocol: fields[0], statusCode: statusCode, header: make(http.Header)}
+	if len(fields) == 3 {
+		response.reason = fields[2]
+	}
+	response.statusLine = strings.TrimSpace(strconv.Itoa(response.statusCode) + " " + response.reason)
+	for {
+		headerLine, err := readRTSPLine(reader)
+		if err != nil {
+			return nil, &rtspResponseError{received: true, err: err}
+		}
+		trimmed := strings.TrimRight(headerLine, "\r\n")
+		if trimmed == "" {
+			break
+		}
+		key, value, ok := strings.Cut(trimmed, ":")
+		if !ok {
+			continue
+		}
+		response.header.Add(strings.TrimSpace(key), strings.TrimSpace(value))
+	}
+	contentLength := int64(0)
+	if value := response.header.Get("Content-Length"); value != "" {
+		contentLength, err = strconv.ParseInt(strings.TrimSpace(value), 10, 64)
+		if err != nil || contentLength < 0 {
+			return nil, fmt.Errorf("invalid Content-Length %q in RTSP response", value)
+		}
+	}
+	if contentLength > maxRTSPResponseBytes {
+		response.bodyTruncated = true
+		contentLength = maxRTSPResponseBytes
+	}
+	if contentLength == 0 {
+		return response, nil
+	}
+	response.body, err = io.ReadAll(io.LimitReader(reader, contentLength))
+	if err != nil {
+		return nil, &rtspResponseError{received: true, err: err}
+	}
+	return response, nil
+}
+
+// rtspResponseError 记录读取 RTSP 响应失败时是否已经收到过字节。没有收到任何字节说明
+// 服务端未响应；据此给出结论，而不是依赖不同平台各自的连接错误码（EOF 与
+// ECONNRESET 会随关闭时机交替出现）。
+type rtspResponseError struct {
+	received bool
+	err      error
+}
+
+func (e *rtspResponseError) Error() string { return e.err.Error() }
+
+func (e *rtspResponseError) Unwrap() error { return e.err }
+
+// readRTSPLine 读取一行，并在服务端行过长时返回明确错误，而不是无限缓冲。
+func readRTSPLine(reader *bufio.Reader) (string, error) {
+	line, err := reader.ReadString('\n')
+	if err != nil {
+		return "", err
+	}
+	if len(line) > 8192 {
+		return "", errors.New("RTSP header line exceeds 8192 bytes")
+	}
+	return line, nil
+}
+
+// rtspResponseSummary 复用 HTTP 响应摘要的排版（状态行 + 排序后的头部 + 消息体）。
+func rtspResponseSummary(response *rtspResponse) string {
+	status := strings.TrimSpace(fmt.Sprintf("%d %s", response.statusCode, response.reason))
+	summary, _ := httpResponseSummary(&http.Response{Proto: response.protocol, Status: status, Header: response.header}, response.body)
+	if response.bodyTruncated {
+		summary += "\n[response body truncated after 64 KiB]\n"
+	}
+	return summary
+}
+
+// rtspResponseMeta 记录状态行、原因短语与响应头部，供阶段详情展示。
+func rtspResponseMeta(response *rtspResponse, targetResolution string) map[string]string {
+	meta := map[string]string{
+		"statusLine":       strings.TrimSpace(response.protocol + " " + response.statusLine),
+		"protocol":         response.protocol,
+		"statusCode":       strconv.Itoa(response.statusCode),
+		"targetResolution": targetResolution,
+		"bodyBytes":        strconv.Itoa(len(response.body)),
+	}
+	if response.reason != "" {
+		meta["reason"] = response.reason
+	}
+	for key, values := range response.header {
+		meta["header."+strings.ToLower(key)] = strings.Join(values, ", ")
+	}
+	return meta
+}
+
+// rtspStatusError 把非 2xx 状态转换为错误，并保留服务端给出的诊断信息。
+func rtspStatusError(method string, response *rtspResponse) error {
+	if response.statusCode >= 200 && response.statusCode < 300 {
+		return nil
+	}
+	notice := ""
+	for _, key := range []string{"Notice", "Warning"} {
+		if value := response.header.Get(key); value != "" {
+			notice = strings.TrimSpace(notice + "; " + key + ": " + value)
+		}
+	}
+	notice = strings.TrimLeft(notice, "; ")
+	if notice != "" {
+		return networkTestErrorf("networkTestTool.backend.rtspStatusWithNotice", "method", method, "status", response.statusLine, "notice", strings.NewReplacer("\r", " ", "\n", " ").Replace(notice))
+	}
+	return networkTestErrorf("networkTestTool.backend.rtspStatus", "method", method, "status", response.statusLine)
+}
+
+// describeMediaMeta 从 SDP 描述中提取媒体数量与类型，用于快速判断 DESCRIBE 是否返回了
+// 可播放的会话描述。
+func describeMediaMeta(body []byte) map[string]string {
+	if len(body) == 0 {
+		return nil
+	}
+	text := strings.ToValidUTF8(string(body), "�")
+	lines := strings.Split(strings.ReplaceAll(text, "\r\n", "\n"), "\n")
+	mediaTypes := make([]string, 0, 4)
+	count := 0
+	for _, line := range lines {
+		if !strings.HasPrefix(line, "m=") {
+			continue
+		}
+		count++
+		if mediaType, _, ok := strings.Cut(strings.TrimSpace(strings.TrimPrefix(line, "m=")), " "); ok && mediaType != "" {
+			if !slices.Contains(mediaTypes, mediaType) {
+				mediaTypes = append(mediaTypes, mediaType)
+			}
+		}
+	}
+	meta := map[string]string{"sdpLines": strconv.Itoa(len(lines))}
+	if count > 0 {
+		meta["mediaSections"] = strconv.Itoa(count)
+	}
+	if len(mediaTypes) > 0 {
+		meta["mediaTypes"] = strings.Join(mediaTypes, ", ")
+	}
+	return meta
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return value
+		}
+	}
+	return ""
+}
+
+// rtspCredentials 保存从目标 URL 提取的凭据。凭据只在会话内存中使用，不会出现在
+// 阶段展示的 URL、请求行或响应摘要里。
+type rtspCredentials struct {
+	username string
+	password string
+}
+
+// rtspAuthChallenge 是 RFC 7616 Digest 挑战中本工具使用的参数。qop 只接受 auth：
+// RTSP 没有请求体，auth-int 在这里没有意义。
+type rtspAuthChallenge struct {
+	realm     string
+	nonce     string
+	algorithm string
+	qop       string
+	opaque    string
+	basic     bool
+}
+
+// authorizationHeader 生成应答挑战的 Authorization 值。nonceCount 是同一 challenge
+// 下的第几次请求，用于 qop=auth 的 nc 参数。
+func (c *rtspCredentials) authorizationHeader(challenge *rtspAuthChallenge, method, uri string, nonceCount int) string {
+	if c == nil || challenge == nil || c.username == "" {
+		return ""
+	}
+	if challenge.basic {
+		return "Basic " + base64.StdEncoding.EncodeToString([]byte(c.username+":"+c.password))
+	}
+	digest := func(value string) string { return hashDigestValue(challenge.algorithm, value) }
+	ha1 := digest(c.username + ":" + challenge.realm + ":" + c.password)
+	ha2 := digest(method + ":" + uri)
+	parts := []string{
+		`username="` + c.username + `"`,
+		`realm="` + challenge.realm + `"`,
+		`nonce="` + challenge.nonce + `"`,
+		`uri="` + uri + `"`,
+	}
+	if challenge.algorithm != "" {
+		parts = append(parts, "algorithm="+challenge.algorithm)
+	}
+	if challenge.opaque != "" {
+		parts = append(parts, `opaque="`+challenge.opaque+`"`)
+	}
+	var response string
+	if challenge.qop != "" {
+		cnonce := randomHexToken()
+		nc := fmt.Sprintf("%08x", nonceCount)
+		response = digest(ha1 + ":" + challenge.nonce + ":" + nc + ":" + cnonce + ":auth:" + ha2)
+		parts = append(parts, "qop=auth", "nc="+nc, `cnonce="`+cnonce+`"`)
+	} else {
+		response = digest(ha1 + ":" + challenge.nonce + ":" + ha2)
+	}
+	parts = append(parts, `response="`+response+`"`)
+	return "Digest " + strings.Join(parts, ", ")
+}
+
+func hashDigestValue(algorithm, value string) string {
+	base := strings.TrimSuffix(strings.ToUpper(strings.TrimSpace(algorithm)), "-SESS")
+	if base == "" || base == "MD5" {
+		sum := md5.Sum([]byte(value))
+		return hex.EncodeToString(sum[:])
+	}
+	sum := sha256.Sum256([]byte(value))
+	return hex.EncodeToString(sum[:])
+}
+
+// parseRTSPAuthChallenge 解析 WWW-Authenticate 头。服务端可以下发多个挑战，按顺序取第一个
+// 能识别的；Digest 优先于 Basic，避免凭据以明文形式发送。
+func parseRTSPAuthChallenge(values []string) *rtspAuthChallenge {
+	var basic *rtspAuthChallenge
+	for _, value := range values {
+		scheme, rest, ok := strings.Cut(strings.TrimSpace(value), " ")
+		if !ok {
+			continue
+		}
+		switch {
+		case strings.EqualFold(scheme, "Digest"):
+			challenge := &rtspAuthChallenge{}
+			for _, part := range splitAuthChallengeParts(rest) {
+				key, raw, ok := strings.Cut(part, "=")
+				if !ok {
+					continue
+				}
+				key = strings.ToLower(strings.TrimSpace(key))
+				raw = strings.Trim(strings.TrimSpace(raw), `"`)
+				switch key {
+				case "realm":
+					challenge.realm = raw
+				case "nonce":
+					challenge.nonce = raw
+				case "algorithm":
+					challenge.algorithm = strings.ToUpper(raw)
+				case "qop":
+					for _, option := range strings.Split(raw, ",") {
+						if strings.EqualFold(strings.TrimSpace(option), "auth") {
+							challenge.qop = "auth"
+						}
+					}
+				case "opaque":
+					challenge.opaque = raw
+				}
+			}
+			if challenge.realm == "" || challenge.nonce == "" {
+				continue
+			}
+			if challenge.algorithm == "" {
+				challenge.algorithm = "MD5"
+			}
+			if !supportedDigestAlgorithm(challenge.algorithm) {
+				continue
+			}
+			return challenge
+		case strings.EqualFold(scheme, "Basic") && basic == nil:
+			realm := ""
+			if key, raw, ok := strings.Cut(strings.TrimSpace(rest), "="); ok && strings.EqualFold(strings.TrimSpace(key), "realm") {
+				realm = strings.Trim(strings.TrimSpace(raw), `"`)
+			}
+			basic = &rtspAuthChallenge{realm: realm, basic: true}
+		}
+	}
+	return basic
+}
+
+// splitAuthChallengeParts 按引号外的逗号切分挑战参数，例如
+// `qop="auth,auth-int", nonce="..."`。
+func splitAuthChallengeParts(value string) []string {
+	var parts []string
+	var builder strings.Builder
+	quoted := false
+	for _, symbol := range value {
+		switch {
+		case symbol == '"':
+			quoted = !quoted
+			builder.WriteRune(symbol)
+		case symbol == ',' && !quoted:
+			parts = append(parts, builder.String())
+			builder.Reset()
+		default:
+			builder.WriteRune(symbol)
+		}
+	}
+	parts = append(parts, builder.String())
+	return parts
+}
+
+func supportedDigestAlgorithm(algorithm string) bool {
+	switch strings.TrimSuffix(strings.ToUpper(strings.TrimSpace(algorithm)), "-SESS") {
+	case "", "MD5", "SHA-256", "SHA-512-256":
+		return true
+	default:
+		return false
+	}
+}
+
+func randomHexToken() string {
+	var bytes [8]byte
+	if _, err := rand.Read(bytes[:]); err != nil {
+		return strconv.FormatInt(time.Now().UnixNano(), 16)
+	}
+	return hex.EncodeToString(bytes[:])
+}
+
+// redactURLUserinfo 把 URL 中的凭据替换为 ***，用于阶段元信息与错误提示。
+func redactURLUserinfo(target *url.URL) string {
+	if target == nil {
+		return ""
+	}
+	clean := *target
+	if clean.User != nil {
+		clean.User = url.UserPassword(clean.User.Username(), "***")
+	}
+	return clean.String()
+}
+
+// openRTSPStream 建立可以直接读写 RTSP 报文的连接：目标为 rtsps:// 时，在直连或 HTTP
+// CONNECT 隧道之上再完成 TLS 握手。
+func (r *networkRoute) openRTSPStream(ctx context.Context, target networkTarget) (net.Conn, error) {
+	var conn net.Conn
+	var err error
+	if r.proxyType == "http" {
+		conn, err = r.openHTTPCONNECTTunnel(ctx, target.Host, target.Port)
+	} else {
+		conn, err = r.dialContext(ctx, "tcp", net.JoinHostPort(target.Host, target.Port))
+	}
+	if err != nil {
+		return nil, err
+	}
+	secure := target.URL != nil && strings.EqualFold(target.URL.Scheme, "rtsps")
+	if !secure {
+		return conn, nil
+	}
+	closeOnError := true
+	defer func() {
+		if closeOnError {
+			_ = conn.Close()
+		}
+	}()
+	stopOnCancel := context.AfterFunc(ctx, func() { _ = conn.Close() })
+	defer stopOnCancel()
+	serverName := target.Host
+	r.stage("tls", "running", NetworkTestStage{Meta: map[string]string{"serverName": serverName}})
+	tlsConn := tls.Client(conn, networkTLSConfig(r.request.SkipTLSVerify))
+	if err := tlsConn.HandshakeContext(ctx); err != nil {
+		r.fail("tls", err)
+		return nil, err
+	}
+	state := tlsConn.ConnectionState()
+	r.stage("tls", "success", NetworkTestStage{Meta: map[string]string{"serverName": serverName, "version": tls.VersionName(state.Version), "cipher": tls.CipherSuiteName(state.CipherSuite), "alpn": state.NegotiatedProtocol}})
+	closeOnError = false
+	return tlsConn, nil
+}
+
+// openHTTPCONNECTTunnel 通过 HTTP 代理申请到目标的 CONNECT 隧道，并保留 runTCP 原有的
+// proxy-tunnel 阶段语义。返回的是隧道建立后的原始连接，是否需要 TLS 由调用方决定。
+func (r *networkRoute) openHTTPCONNECTTunnel(ctx context.Context, host, port string) (net.Conn, error) {
+	conn, err := r.dialDirect(ctx, r.proxyURL.Hostname(), r.proxyURL.Port())
+	if err != nil {
+		return nil, err
+	}
+	closeOnError := true
+	defer func() {
+		if closeOnError {
+			_ = conn.Close()
+		}
+	}()
+	stopOnCancel := context.AfterFunc(ctx, func() { _ = conn.Close() })
+	defer stopOnCancel()
+	peer := net.JoinHostPort(host, port)
+	r.stage("proxy-tunnel", "running", NetworkTestStage{Request: "CONNECT " + peer + " HTTP/1.1\r\nHost: " + peer + "\r\n\r\n", Meta: map[string]string{"proxy": r.proxyURL.Host}})
+	if deadline, ok := ctx.Deadline(); ok {
+		_ = conn.SetDeadline(deadline)
+	}
+	if _, err := fmt.Fprintf(conn, "CONNECT %s HTTP/1.1\r\nHost: %s\r\nProxy-Connection: Keep-Alive\r\n\r\n", peer, peer); err != nil {
+		r.fail("proxy-tunnel", err)
+		return nil, err
+	}
+	response, err := http.ReadResponse(bufio.NewReader(conn), &http.Request{Method: http.MethodConnect})
+	if err != nil {
+		r.fail("proxy-tunnel", err)
+		return nil, err
+	}
+	responseDump, _ := httpResponseSummary(response, nil)
+	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		err := fmt.Errorf("HTTP proxy rejected CONNECT with status %s", response.Status)
+		r.stage("proxy-tunnel", "error", NetworkTestStage{Response: responseDump, StatusCode: response.StatusCode, Error: err.Error()})
+		return nil, err
+	}
+	r.stage("proxy-tunnel", "success", NetworkTestStage{Response: responseDump, StatusCode: response.StatusCode, Meta: map[string]string{"proxy": r.proxyURL.Host, "targetResolution": "proxy"}})
+	closeOnError = false
+	return conn, nil
+}
+
 func (r *networkTestRun) runTCP(request NetworkTestRequest) error {
 	target, err := parseNetworkTarget("tcp", request.Target)
 	if err != nil {
@@ -1499,38 +2425,12 @@ func (r *networkTestRun) runTCP(request NetworkTestRequest) error {
 	if err := route.resolveSystemProxy(target); err != nil {
 		return err
 	}
+	var conn net.Conn
 	if route.proxyType == "http" {
-		conn, err := route.dialDirect(r.ctx, route.proxyURL.Hostname(), route.proxyURL.Port())
-		if err != nil {
-			return err
-		}
-		defer conn.Close()
-		stopOnCancel := context.AfterFunc(r.ctx, func() { _ = conn.Close() })
-		defer stopOnCancel()
-		r.stage("proxy-tunnel", "running", NetworkTestStage{Request: "CONNECT " + net.JoinHostPort(target.Host, target.Port) + " HTTP/1.1\r\nHost: " + net.JoinHostPort(target.Host, target.Port) + "\r\n\r\n", Meta: map[string]string{"proxy": route.proxyURL.Host}})
-		if deadline, ok := r.ctx.Deadline(); ok {
-			_ = conn.SetDeadline(deadline)
-		}
-		_, writeErr := fmt.Fprintf(conn, "CONNECT %s HTTP/1.1\r\nHost: %s\r\nProxy-Connection: Keep-Alive\r\n\r\n", net.JoinHostPort(target.Host, target.Port), net.JoinHostPort(target.Host, target.Port))
-		if writeErr != nil {
-			r.fail("proxy-tunnel", writeErr)
-			return writeErr
-		}
-		response, readErr := http.ReadResponse(bufio.NewReader(conn), &http.Request{Method: http.MethodConnect})
-		if readErr != nil {
-			r.fail("proxy-tunnel", readErr)
-			return readErr
-		}
-		responseDump, _ := httpResponseSummary(response, nil)
-		if response.StatusCode < 200 || response.StatusCode >= 300 {
-			err := fmt.Errorf("HTTP proxy rejected CONNECT with status %s", response.Status)
-			r.stage("proxy-tunnel", "error", NetworkTestStage{Response: responseDump, StatusCode: response.StatusCode, Error: err.Error()})
-			return err
-		}
-		r.stage("proxy-tunnel", "success", NetworkTestStage{Response: responseDump, StatusCode: response.StatusCode, Meta: map[string]string{"proxy": route.proxyURL.Host, "targetResolution": "proxy"}})
-		return nil
+		conn, err = route.openHTTPCONNECTTunnel(r.ctx, target.Host, target.Port)
+	} else {
+		conn, err = route.dialContext(r.ctx, "tcp", net.JoinHostPort(target.Host, target.Port))
 	}
-	conn, err := route.dialContext(r.ctx, "tcp", net.JoinHostPort(target.Host, target.Port))
 	if err != nil {
 		return err
 	}
@@ -1546,12 +2446,12 @@ func (r *networkTestRun) runUDP(request NetworkTestRequest) error {
 	}
 	payload := []byte(request.Payload)
 	if len(payload) == 0 {
-		err := errors.New("UDP payload must not be empty")
+		err := networkTestError("networkTestTool.backend.udpPayloadEmpty")
 		r.stage("validate", "error", NetworkTestStage{Error: err.Error()})
 		return err
 	}
 	if len(payload) > 1200 {
-		err := errors.New("UDP payload must be 1200 bytes or less to avoid IP fragmentation")
+		err := networkTestError("networkTestTool.backend.udpPayloadTooLarge")
 		r.stage("validate", "error", NetworkTestStage{Error: err.Error()})
 		return err
 	}
@@ -1591,7 +2491,7 @@ func (r *networkTestRun) runNTP(request NetworkTestRequest) error {
 		func() ([]byte, string, time.Time, error) {
 			sentAt := time.Now()
 			packet := makeNTPRequest(sentAt)
-			return packet, fmt.Sprintf("NTPv4 client request (mode 3, %d bytes)\nhex: %s", len(packet), hex.EncodeToString(packet)), sentAt, nil
+			return packet, networkTestText("networkTestTool.backend.ntpRequestSummary", map[string]any{"bytes": len(packet), "hex": hex.EncodeToString(packet)}), sentAt, nil
 		},
 		func(response []byte, sentAt, receivedAt time.Time) (string, map[string]string, error) {
 			return parseNTPResponse(response, sentAt, receivedAt)
@@ -1625,6 +2525,23 @@ func (r *networkTestRun) exchangeDatagram(
 		"transport":        "UDP",
 		"targetResolution": route.targetResolution(),
 	}
+	var tunnelPath networkRouteInfo
+	tunnel := false
+	if remoteHost, _, err := net.SplitHostPort(channel.RemoteAddr()); err == nil {
+		if remoteIP := net.ParseIP(remoteHost); remoteIP != nil {
+			tunnelPath, tunnel = probeTunnelOutbound(r.ctx, remoteIP, channel.LocalAddr())
+		}
+	}
+	if tunnel {
+		requestMeta["outbound"] = "tunnel"
+		requestMeta["reachability"] = "unverified"
+		if tunnelPath.Interface != "" {
+			requestMeta["tunnelInterface"] = tunnelPath.Interface
+		}
+		if tunnelPath.Gateway != "" {
+			requestMeta["tunnelGateway"] = tunnelPath.Gateway
+		}
+	}
 	r.stage(requestStage, "running", NetworkTestStage{Meta: requestMeta})
 	payload, requestDump, sentAt, err := makeRequest()
 	if err != nil {
@@ -1637,8 +2554,11 @@ func (r *networkTestRun) exchangeDatagram(
 	}
 	requestSuccessMeta := cloneStringMap(requestMeta)
 	requestSuccessMeta["bytes"] = strconv.Itoa(len(payload))
-	requestSuccessMeta["delivery"] = "datagram accepted by the local network stack; this does not confirm remote delivery"
+	requestSuccessMeta["delivery"] = networkTestText("networkTestTool.backend.datagramAccepted", nil)
 	r.stage(requestStage, "success", NetworkTestStage{Request: requestDump, Meta: requestSuccessMeta})
+	if tunnel {
+		route.reportTunnelOutbound(channel.RemoteAddr(), channel.LocalAddr(), tunnelPath)
+	}
 
 	responseMeta := map[string]string{"peer": channel.RemoteAddr(), "transport": "UDP"}
 	r.stage(responseStage, "running", NetworkTestStage{Meta: responseMeta})
@@ -1653,7 +2573,7 @@ func (r *networkTestRun) exchangeDatagram(
 	if err != nil {
 		var timeoutError interface{ Timeout() bool }
 		if errors.Is(r.ctx.Err(), context.DeadlineExceeded) || (errors.As(err, &timeoutError) && timeoutError.Timeout()) {
-			err = fmt.Errorf("no UDP response was received before the timeout; because UDP does not guarantee a reply, this alone does not prove that the target is unreachable: %w", err)
+			err = networkTestErrorCause("networkTestTool.backend.udpNoReply", err)
 		}
 		r.fail(responseStage, err)
 		return err
@@ -1696,7 +2616,7 @@ func formatDatagramPayload(payload []byte) string {
 	if truncated {
 		text += "\n[display truncated]"
 	}
-	return fmt.Sprintf("%d bytes\nUTF-8:\n%s\n\nhex:\n%s", len(payload), text, hex.EncodeToString(shown))
+	return networkTestText("networkTestTool.backend.datagramPayload", map[string]any{"bytes": len(payload), "text": text, "hex": hex.EncodeToString(shown)})
 }
 
 const ntpEpochOffset = int64(2208988800)
@@ -1808,7 +2728,7 @@ func parseNTPResponse(packet []byte, sentAt, receivedAt time.Time) (string, map[
 		"roundTripDelay":    fmt.Sprintf("%.3f ms", float64(roundTripDelay)/float64(time.Millisecond)),
 		"clockOffset":       fmt.Sprintf("%+.3f ms", float64(clockOffset)/float64(time.Millisecond)),
 	}
-	response := fmt.Sprintf("NTPv%d server response · stratum %d · delay %.3f ms · offset %+.3f ms\nhex: %s", version, stratum, float64(roundTripDelay)/float64(time.Millisecond), float64(clockOffset)/float64(time.Millisecond), hex.EncodeToString(packet))
+	response := networkTestText("networkTestTool.backend.ntpResponseSummary", map[string]any{"version": version, "stratum": stratum, "delay": fmt.Sprintf("%.3f", float64(roundTripDelay)/float64(time.Millisecond)), "offset": fmt.Sprintf("%+.3f", float64(clockOffset)/float64(time.Millisecond)), "hex": hex.EncodeToString(packet)})
 	return response, meta, nil
 }
 
