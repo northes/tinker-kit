@@ -2527,13 +2527,8 @@
       "rtsp-auth": "RTSP 认证",
       "rtsp-describe": "发送 RTSP DESCRIBE"
     },
+    "runFailed": "测试未能执行：{{error}}",
     "recordAction": "网络测试",
-    "historyDetail": "{{protocol}} · {{target}}",
-    "footer": {
-      "copyTarget": "复制目标地址",
-      "copyError": "复制错误信息",
-      "errorLabel": "错误信息",
-      "copyFailed": "复制失败"
-    }
+    "historyDetail": "{{protocol}} · {{target}}"
   }
 }

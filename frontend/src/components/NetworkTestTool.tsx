@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Events } from '@wailsio/runtime';
-import { ArrowClockwise, Copy, GearSix, Network, Stop } from '@phosphor-icons/react';
+import { ArrowClockwise, GearSix, Network, Stop } from '@phosphor-icons/react';
 import type {
   NetworkInterface,
   NetworkTestSettings,
@@ -239,15 +239,6 @@ export default function NetworkTestTool({
   clearPending: () => void;
 }) {
   const { t } = useTranslation();
-  const copyFooterText = async (value: string, label: string) => {
-    try {
-      if (!navigator.clipboard) throw new Error('clipboard unavailable');
-      await navigator.clipboard.writeText(value);
-      toast.add({ title: t('toast.copied', { value: label }) });
-    } catch {
-      toast.add({ title: t('networkTestTool.footer.copyFailed'), type: 'error' });
-    }
-  };
   const [protocolSelection, setProtocolSelection] = useState<ProtocolSelection>('auto');
   const [target, setTarget] = useState('');
   const [networkSettings, setNetworkSettings] =
@@ -527,6 +518,13 @@ export default function NetworkTestTool({
       );
     } catch (error) {
       if (activeRunID.current !== request.runID) return;
+      // footer 只显示状态与耗时：调用层失败（没有任何阶段）时用 toast 说明原因，
+      // 避免出现「只有失败状态、看不到原因」的静默失败。
+      const failureMessage = formatBackendError(error);
+      toast.add({
+        title: t('networkTestTool.runFailed', { error: failureMessage }),
+        type: 'error',
+      });
       const failed: DisplayResult = {
         runID: request.runID,
         protocol: effectiveProtocol,
@@ -873,42 +871,9 @@ export default function NetworkTestTool({
                   >
                     {t(`networkTestTool.status.${result.status}`)}
                   </span>
-                  <button
-                    type="button"
-                    className="flex w-fit min-w-0 max-w-[min(45%,24rem)] flex-none cursor-default items-center gap-1 bg-transparent p-0 text-left font-mono text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                    aria-label={t('networkTestTool.footer.copyTarget')}
-                    title={t('networkTestTool.footer.copyTarget')}
-                    onClick={() =>
-                      void copyFooterText(result.target, t('networkTestTool.target.label'))
-                    }
-                  >
-                    <span className="min-w-0 flex-1 truncate">{result.target}</span>
-                    <Copy className="size-3 shrink-0" weight="duotone" />
-                  </button>
                   <span className="shrink-0 text-muted-foreground">
                     {durationText(result.durationMillis)}
                   </span>
-                  {result.error ? (
-                    <button
-                      type="button"
-                      // 复制图标必须紧贴文案：按钮按内容宽度收缩（w-fit）而不是撑满剩余宽度，
-                      // 超过上限时长文案截断；窄窗口下再靠 shrink 让出空间给操作栏。
-                      className="flex w-fit min-w-0 max-w-[min(45%,24rem)] shrink cursor-default items-center gap-1 bg-transparent p-0 text-left text-destructive/70 hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                      aria-label={t('networkTestTool.footer.copyError')}
-                      title={t('networkTestTool.footer.copyError')}
-                      onClick={() =>
-                        void copyFooterText(
-                          formatBackendError(result.error),
-                          t('networkTestTool.footer.errorLabel'),
-                        )
-                      }
-                    >
-                      <span className="min-w-0 flex-1 truncate">
-                        {formatBackendError(result.error)}
-                      </span>
-                      <Copy className="size-3 shrink-0" weight="duotone" />
-                    </button>
-                  ) : null}
                 </div>
               ) : running ? (
                 <div

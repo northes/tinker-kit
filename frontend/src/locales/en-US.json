@@ -2527,13 +2527,8 @@
       "rtsp-auth": "RTSP authentication",
       "rtsp-describe": "Send RTSP DESCRIBE"
     },
+    "runFailed": "The test could not run: {{error}}",
     "recordAction": "Network test",
-    "historyDetail": "{{protocol}} · {{target}}",
-    "footer": {
-      "copyTarget": "Copy target address",
-      "copyError": "Copy error message",
-      "errorLabel": "error message",
-      "copyFailed": "Copy failed"
-    }
+    "historyDetail": "{{protocol}} · {{target}}"
   }
 }
