@@ -141,6 +141,7 @@ const stageOrder = [
 const NO_PROXY = '__network-test-no-proxy__';
 const MANAGE_NETWORK_SOURCES = '__manage-network-test-sources__';
 const AUTOMATIC_INTERFACE = '__network-test-automatic-interface__';
+const HTTP_METHOD_PRESETS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'];
 
 function validIntegerInput(value: string, min: number, max: number) {
   const trimmed = value.trim();
@@ -541,7 +542,7 @@ export default function NetworkTestTool({
           timeoutSeconds: String(Math.max(1, Math.round(restoredRequest.timeoutMillis / 1000))),
           skipTLSVerify: restoredRequest.skipTLSVerify ?? false,
           maxRedirects: String(restoredRequest.maxRedirects ?? 10),
-          method: restoredRequest.method || 'GET',
+          method: restoredRequest.method ?? 'GET',
           headers: restoredRequest.headers || '',
           body: restoredRequest.body || '',
           hasBody: restoredRequest.hasBody ?? Boolean(restoredRequest.body),
@@ -1486,14 +1487,21 @@ export default function NetworkTestTool({
               >
                 <Input
                   id="network-test-http-method"
+                  list="network-test-http-method-options"
                   value={method}
                   onChange={(event) => updateNetworkSettings({ method: event.target.value })}
                   disabled={running}
+                  placeholder={t('networkTestTool.requestSettings.methodPlaceholder')}
                   autoCapitalize="characters"
                   autoCorrect="off"
                   spellCheck={false}
                   className="font-mono text-xs"
                 />
+                <datalist id="network-test-http-method-options">
+                  {HTTP_METHOD_PRESETS.map((httpMethod) => (
+                    <option key={httpMethod} value={httpMethod} />
+                  ))}
+                </datalist>
               </ToolHeaderField>
               <ToolHeaderField
                 label={t('networkTestTool.requestSettings.headers')}

@@ -2408,6 +2408,7 @@
       "title": "HTTP 请求设置",
       "description": "设置请求方法、Header 和请求体，也可以粘贴 curl 命令导入。",
       "method": "请求方法",
+      "methodPlaceholder": "选择或输入请求方法；留空时使用 GET",
       "headers": "请求 Header",
       "headersPlaceholder": "每行一个 Header，例如：\nAccept: application/json\nAuthorization: Bearer …",
       "sendBody": "发送请求体",

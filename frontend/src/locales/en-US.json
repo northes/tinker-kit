@@ -2408,6 +2408,7 @@
       "title": "HTTP request settings",
       "description": "Set the method, headers, and body, or paste a curl command to import them.",
       "method": "Request method",
+      "methodPlaceholder": "Choose or enter a method; leave blank to use GET",
       "headers": "Request headers",
       "headersPlaceholder": "One header per line, for example:\nAccept: application/json\nAuthorization: Bearer …",
       "sendBody": "Send request body",
