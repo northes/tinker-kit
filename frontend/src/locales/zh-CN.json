@@ -2258,10 +2258,10 @@
       "scanFailed": "端口扫描失败：{{detail}}"
     },
     "networkTest": {
-      "sourceInvalid": "第 {{index}} 项网络测试来源无效",
-      "sourceDuplicate": "第 {{index}} 项网络测试来源 ID 重复",
-      "sourceProfileNotFound": "第 {{index}} 项网络测试来源引用的 SSH 配置不存在",
-      "selectedSourceNotFound": "当前网络测试来源不存在"
+      "sourceInvalid": "第 {{index}} 项网络测试发起端无效",
+      "sourceDuplicate": "第 {{index}} 项网络测试发起端 ID 重复",
+      "sourceProfileNotFound": "第 {{index}} 项网络测试发起端引用的 SSH 配置不存在",
+      "selectedSourceNotFound": "当前网络测试发起端不存在"
     }
   },
   "portTool": {
@@ -2380,29 +2380,29 @@
       }
     },
     "source": {
-      "label": "请求来源",
+      "label": "发起请求",
       "local": "本机",
-      "manage": "管理来源…",
-      "managerTitle": "管理网络测试来源",
-      "add": "添加 SSH 来源",
-      "edit": "编辑来源",
-      "name": "来源名称",
+      "manage": "管理发起端…",
+      "managerTitle": "管理网络测试发起端",
+      "add": "添加 SSH 发起端",
+      "edit": "编辑发起端",
+      "name": "发起端名称",
       "namePlaceholder": "例如：生产跳板机",
       "sshProfile": "SSH 配置",
       "selectSSHProfile": "选择 SSH 配置",
       "sshProfileRequired": "请选择已添加的 SSH 配置",
-      "kindSSH": "SSH 来源",
-      "remove": "移除来源",
-      "removeConfirmTitle": "移除 SSH 来源？",
-      "removeConfirmDescription": "确定从列表移除“{{name}}”？保存来源列表后生效；如果当前正在使用该来源，将切回本机。",
-      "empty": "还没有 SSH 来源",
-      "emptyHint": "添加 SSH 来源后将在此显示。",
+      "kindSSH": "SSH 发起端",
+      "remove": "移除发起端",
+      "removeConfirmTitle": "移除 SSH 发起端？",
+      "removeConfirmDescription": "确定从列表移除“{{name}}”？保存发起端列表后生效；如果当前正在使用该发起端，将切回本机。",
+      "empty": "还没有 SSH 发起端",
+      "emptyHint": "添加 SSH 发起端后将在此显示。",
       "discardTitle": "放弃未保存的修改？",
-      "discardDescription": "当前来源修改尚未保存，继续将丢失这些修改。",
+      "discardDescription": "当前发起端修改尚未保存，继续将丢失这些修改。",
       "discardConfirm": "放弃修改",
       "profileMissing": "SSH 配置不存在",
-      "httpOnly": "SSH 来源仅支持 HTTP / HTTPS 请求。",
-      "remoteRoutingNote": "请求通过 SSH 连接转发到远端发起；远端负责解析目标域名，本机代理、DNS 和网卡设置不生效。"
+      "httpOnly": "SSH 发起端仅支持 HTTP / HTTPS 请求。",
+      "remoteRoutingNote": "请求经 SSH 转发并由远端发起；远端负责解析目标域名，本机代理、DNS 和网卡设置不生效。"
     },
     "requestSettings": {
       "title": "HTTP 请求设置",
@@ -2514,11 +2514,11 @@
         "httpHeaderInvalid": "HTTP 请求 Header 格式无效",
         "httpHeaderInvalidAt": "第 {{line}} 行 HTTP Header 格式无效",
         "httpHeaderManagedByClient": "第 {{line}} 行 Header 由 HTTP 客户端管理，不能手动设置",
-        "sshProtocolUnsupported": "SSH 来源仅支持 HTTP / HTTPS 测试",
-        "sourceMissing": "网络测试来源不存在",
-        "sourceProfileMissing": "网络测试来源引用的 SSH 配置不存在",
-        "sshConnectFailed": "连接 SSH 来源失败：{{detail}}",
-        "sshForwardFailed": "通过 SSH 转发到 {{target}} 失败：{{detail}}",
+        "sshProtocolUnsupported": "SSH 发起端仅支持 HTTP / HTTPS 测试",
+        "sourceMissing": "网络测试发起端不存在",
+        "sourceProfileMissing": "网络测试发起端引用的 SSH 配置不存在",
+        "sshConnectFailed": "连接 SSH 发起端失败：{{detail}}",
+        "sshForwardFailed": "通过 SSH 向 {{target}} 转发失败：{{detail}}",
         "datagramAccepted": "数据报已被本机网络栈接受；这不代表对端已收到",
         "datagramPayload": "{{bytes}} 字节\\nUTF-8:\\n{{text}}\\n\\nhex:\\n{{hex}}",
         "ntpRequestSummary": "NTPv4 客户端请求（模式 3，{{bytes}} 字节）\\nhex: {{hex}}",
@@ -2581,7 +2581,7 @@
     },
     "outbound": {
       "ssh": {
-        "summary": "经 SSH 来源 {{source}} 转发 · 目标可达性未验证"
+        "summary": "由 SSH 发起端 {{source}} 发起 · 目标可达性未验证"
       },
       "proxy": {
         "summary": "经代理 {{proxy}} 转发 · 目标可达性未验证"
@@ -2624,7 +2624,7 @@
       "proxy-resolve": "解析系统代理",
       "dns-target": "解析目标地址",
       "dns-proxy": "解析代理地址",
-      "ssh-connect": "连接 SSH 来源",
+      "ssh-connect": "连接 SSH 发起端",
       "ssh-forward": "SSH 转发到目标",
       "tcp-connect": "建立 TCP 连接",
       "tunnel-route": "经隧道出口",

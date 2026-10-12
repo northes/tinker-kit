@@ -2258,10 +2258,10 @@
       "scanFailed": "Port scan failed: {{detail}}"
     },
     "networkTest": {
-      "sourceInvalid": "Network test source #{{index}} is invalid",
-      "sourceDuplicate": "Network test source ID at item {{index}} is duplicated",
-      "sourceProfileNotFound": "The SSH profile referenced by network test source #{{index}} does not exist",
-      "selectedSourceNotFound": "The selected network test source does not exist"
+      "sourceInvalid": "Network test initiator #{{index}} is invalid",
+      "sourceDuplicate": "Network test initiator ID at item {{index}} is duplicated",
+      "sourceProfileNotFound": "The SSH profile referenced by network test initiator #{{index}} does not exist",
+      "selectedSourceNotFound": "The selected network test initiator does not exist"
     }
   },
   "portTool": {
@@ -2380,29 +2380,29 @@
       }
     },
     "source": {
-      "label": "Request source",
+      "label": "Request initiator",
       "local": "Local machine",
-      "manage": "Manage sources…",
-      "managerTitle": "Manage network test sources",
-      "add": "Add SSH source",
-      "edit": "Edit source",
-      "name": "Source name",
+      "manage": "Manage initiators…",
+      "managerTitle": "Manage network test initiators",
+      "add": "Add SSH initiator",
+      "edit": "Edit initiator",
+      "name": "Initiator name",
       "namePlaceholder": "For example: Production bastion",
       "sshProfile": "SSH profile",
       "selectSSHProfile": "Select an SSH profile",
       "sshProfileRequired": "Select an existing SSH profile",
-      "kindSSH": "SSH source",
-      "remove": "Remove source",
-      "removeConfirmTitle": "Remove SSH source?",
-      "removeConfirmDescription": "Remove “{{name}}” from the list? This takes effect when you save the sources. If it is selected, the source will switch to the local machine.",
-      "empty": "No SSH sources yet",
-      "emptyHint": "Add an SSH source to see it here.",
+      "kindSSH": "SSH initiator",
+      "remove": "Remove initiator",
+      "removeConfirmTitle": "Remove SSH initiator?",
+      "removeConfirmDescription": "Remove “{{name}}” from the list? This takes effect when you save the initiators. If it is selected, requests will be initiated from the local machine instead.",
+      "empty": "No SSH initiators yet",
+      "emptyHint": "Add an SSH initiator to see it here.",
       "discardTitle": "Discard unsaved changes?",
-      "discardDescription": "The current source changes are not saved and will be lost.",
+      "discardDescription": "The current initiator changes are not saved and will be lost.",
       "discardConfirm": "Discard changes",
       "profileMissing": "SSH profile not found",
-      "httpOnly": "SSH sources support HTTP / HTTPS requests only.",
-      "remoteRoutingNote": "Requests are forwarded through SSH and started remotely. The remote host resolves the target; local proxy, DNS, and interface settings do not apply."
+      "httpOnly": "SSH initiators support HTTP / HTTPS requests only.",
+      "remoteRoutingNote": "Requests are initiated on the remote host over SSH. The SSH host resolves the target; local proxy, DNS, and interface settings do not apply."
     },
     "requestSettings": {
       "title": "HTTP request settings",
@@ -2514,11 +2514,11 @@
         "httpHeaderInvalid": "Invalid HTTP request header format",
         "httpHeaderInvalidAt": "Invalid HTTP header format on line {{line}}",
         "httpHeaderManagedByClient": "The HTTP client manages the header on line {{line}}; it cannot be set manually",
-        "sshProtocolUnsupported": "SSH sources support HTTP / HTTPS tests only",
-        "sourceMissing": "Network test source not found",
-        "sourceProfileMissing": "The SSH profile referenced by the network test source does not exist",
-        "sshConnectFailed": "Failed to connect to the SSH source: {{detail}}",
-        "sshForwardFailed": "Failed to forward to {{target}} through SSH: {{detail}}",
+        "sshProtocolUnsupported": "SSH initiators support HTTP / HTTPS tests only",
+        "sourceMissing": "Network test initiator not found",
+        "sourceProfileMissing": "The SSH profile referenced by the network test initiator does not exist",
+        "sshConnectFailed": "Failed to connect to the SSH initiator: {{detail}}",
+        "sshForwardFailed": "Failed to forward the request to {{target}} over SSH: {{detail}}",
         "datagramAccepted": "Datagram accepted by the local network stack; this does not confirm remote delivery",
         "datagramPayload": "{{bytes}} bytes\\nUTF-8:\\n{{text}}\\n\\nhex:\\n{{hex}}",
         "ntpRequestSummary": "NTPv4 client request (mode 3, {{bytes}} bytes)\\nhex: {{hex}}",
@@ -2581,7 +2581,7 @@
     },
     "outbound": {
       "ssh": {
-        "summary": "Forwarded through SSH source {{source}} · target reachability unverified"
+        "summary": "Initiated from SSH host {{source}} · target reachability unverified"
       },
       "proxy": {
         "summary": "Relayed through proxy {{proxy}} · device reachability unverified"
@@ -2624,7 +2624,7 @@
       "proxy-resolve": "Resolve system proxy",
       "dns-target": "Resolve target address",
       "dns-proxy": "Resolve proxy address",
-      "ssh-connect": "Connect to SSH source",
+      "ssh-connect": "Connect to SSH initiator",
       "ssh-forward": "Forward to target over SSH",
       "tcp-connect": "Establish TCP connection",
       "tunnel-route": "Outbound tunnel",
