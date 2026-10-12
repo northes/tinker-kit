@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Events } from '@wailsio/runtime';
-import { ArrowClockwise, GearSix, Network, Stop } from '@phosphor-icons/react';
+import { ArrowClockwise, Code, GearSix, Network, Stop } from '@phosphor-icons/react';
 import type {
   NetworkInterface,
   NetworkTestSettings,
+  NetworkTestSource,
   NetworkTestRequest,
   NetworkTestResult,
   NetworkTestStage as BackendNetworkTestStage,
@@ -16,7 +17,9 @@ import {
 } from '../../bindings/changeme/networktestservice';
 import {
   GetNetworkTestSettings,
+  GetNetworkTestSources,
   SaveNetworkTestSettings,
+  SaveNetworkTestSources,
 } from '../../bindings/changeme/configservice';
 import { formatBackendError } from '../lib/backend-error';
 import {
@@ -25,7 +28,7 @@ import {
   type NetworkTestProtocol,
 } from '../lib/network-target';
 import { Button } from './ui/button';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from './ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from './ui/dialog';
 import { ScrollArea } from './ui/scroll-area';
 import {
   Reveal,
@@ -42,11 +45,18 @@ import {
 import { Input } from './ui/input';
 import { Switch } from './ui/switch';
 import { toast } from './ui/toast';
+import { Textarea } from './ui/textarea';
+import { Badge } from './ui/badge';
+import { TargetHostManagerDialog, upsertManagerItem } from './TargetHostManagerDialog';
+import { SSHProfileFormField } from './SSHProfileFormField';
+import { useSSHProfiles } from './SSHProfileManagerDialog';
+import { parseCurlCommand, CurlCommandParseError } from '../lib/curl-command';
 import {
   Select,
   SelectContent,
   SelectGroup,
   SelectItem,
+  SelectSeparator,
   SelectTrigger,
   SelectValue,
 } from './ui/select';
@@ -70,12 +80,16 @@ type NetworkTestOptions = Omit<NetworkTestSettings, 'timeoutSeconds' | 'maxRedir
   timeoutSeconds: string;
   maxRedirects: string;
 };
-
 const defaultNetworkTestSettings: NetworkTestSettings = {
   payload: 'ping',
   timeoutSeconds: 30,
   skipTLSVerify: false,
   maxRedirects: 10,
+  method: 'GET',
+  headers: '',
+  body: '',
+  hasBody: false,
+  sourceID: 'local',
   // 空值表示使用工具默认的 User-Agent（TinkerKit Network Test）；见后端 userAgent()。
   userAgent: '',
   proxyType: '',
@@ -84,6 +98,9 @@ const defaultNetworkTestSettings: NetworkTestSettings = {
   dnsAddress: '',
   interfaceName: '',
 };
+const defaultNetworkTestSources: NetworkTestSource[] = [
+  { id: 'local', name: '本机', kind: 'local', sshProfileID: '' },
+];
 const defaultNetworkTestOptions: NetworkTestOptions = {
   ...defaultNetworkTestSettings,
   timeoutSeconds: String(defaultNetworkTestSettings.timeoutSeconds),
@@ -101,6 +118,8 @@ const protocolItems = [
 const stageOrder = [
   'validate',
   'proxy-resolve',
+  'ssh-connect',
+  'ssh-forward',
   'dns-proxy',
   'dns-target',
   'tcp-connect',
@@ -120,6 +139,7 @@ const stageOrder = [
   'tls-probe',
 ];
 const NO_PROXY = '__network-test-no-proxy__';
+const MANAGE_NETWORK_SOURCES = '__manage-network-test-sources__';
 const AUTOMATIC_INTERFACE = '__network-test-automatic-interface__';
 
 function validIntegerInput(value: string, min: number, max: number) {
@@ -138,6 +158,11 @@ function toPersistedNetworkTestSettings(
     timeoutSeconds: validIntegerInput(options.timeoutSeconds, 1, 300) ?? fallback.timeoutSeconds,
     skipTLSVerify: options.skipTLSVerify,
     maxRedirects: validIntegerInput(options.maxRedirects, 0, 10) ?? fallback.maxRedirects,
+    method: options.method,
+    headers: options.headers,
+    body: options.body,
+    hasBody: options.hasBody,
+    sourceID: options.sourceID || 'local',
     userAgent: options.userAgent.trim(),
     proxyType: options.proxyType,
     proxyAddress: options.proxyAddress,
@@ -251,8 +276,14 @@ export default function NetworkTestTool({
   clearPending: () => void;
 }) {
   const { t } = useTranslation();
+  const { profiles } = useSSHProfiles();
   const [protocolSelection, setProtocolSelection] = useState<ProtocolSelection>('auto');
   const [target, setTarget] = useState('');
+  const [networkTestSources, setNetworkTestSources] = useState(defaultNetworkTestSources);
+  const [sourceManagerOpen, setSourceManagerOpen] = useState(false);
+  const [savingSources, setSavingSources] = useState(false);
+  const [requestSettingsOpen, setRequestSettingsOpen] = useState(false);
+  const [curlCommand, setCurlCommand] = useState('');
   // User-Agent 下拉的当前选项：它不由保存值推导（「自定义」且内容为空时无法与默认区分），
   // 而是在加载设置与恢复历史时用 userAgentSelectionFor 同步一次。
   const [userAgentSelection, setUserAgentSelection] = useState<string>(USER_AGENT_DEFAULT);
@@ -310,6 +341,11 @@ export default function NetworkTestTool({
     timeoutSeconds,
     skipTLSVerify,
     maxRedirects,
+    method,
+    headers,
+    body,
+    hasBody,
+    sourceID,
     userAgent,
     proxyType,
     proxyAddress,
@@ -369,6 +405,34 @@ export default function NetworkTestTool({
   );
   const detectedProtocol = detectTargetProtocol(target);
   const effectiveProtocol = protocolSelection === 'auto' ? detectedProtocol : protocolSelection;
+  const selectedSource =
+    networkTestSources.find((source) => source.id === sourceID) ?? defaultNetworkTestSources[0];
+  const remoteSourceSelected = selectedSource.kind === 'ssh';
+  const selectedSourceProfileMissing =
+    remoteSourceSelected && !profiles.some((profile) => profile.id === selectedSource.sshProfileID);
+  const unsupportedRemoteProtocol =
+    remoteSourceSelected && effectiveProtocol !== null && effectiveProtocol !== 'http';
+  const sourceLabel = useCallback(
+    (source: NetworkTestSource) =>
+      source.id === 'local'
+        ? t('networkTestTool.source.local')
+        : `${source.name}${
+            source.kind === 'ssh' && !profiles.some((profile) => profile.id === source.sshProfileID)
+              ? ` · ${t('networkTestTool.source.profileMissing')}`
+              : ''
+          }`,
+    [profiles, t],
+  );
+  const sourceItems = useMemo(
+    () => [
+      ...networkTestSources.map((source) => ({
+        value: source.id,
+        label: sourceLabel(source),
+      })),
+      { value: MANAGE_NETWORK_SOURCES, label: t('networkTestTool.source.manage') },
+    ],
+    [networkTestSources, sourceLabel],
+  );
   // 高级选项全部展示、不按协议过滤：字段是否生效只影响校验，不影响可见性。
   const supportsRedirectSettings =
     effectiveProtocol === 'http' ||
@@ -403,9 +467,18 @@ export default function NetworkTestTool({
   useEffect(() => {
     if (!active || settingsLoadStarted.current) return;
     settingsLoadStarted.current = true;
-    void GetNetworkTestSettings()
-      .then((savedSettings) => {
-        const saved = { ...defaultNetworkTestSettings, ...savedSettings };
+    void Promise.all([
+      GetNetworkTestSettings(),
+      GetNetworkTestSources().catch(() => defaultNetworkTestSources),
+    ])
+      .then(([savedSettings, savedSources]) => {
+        const sources = savedSources?.length ? savedSources : defaultNetworkTestSources;
+        setNetworkTestSources(sources);
+        const storedSourceID = savedSettings?.sourceID || 'local';
+        const sourceID = sources.some((source) => source.id === storedSourceID)
+          ? storedSourceID
+          : 'local';
+        const saved = { ...defaultNetworkTestSettings, ...savedSettings, sourceID };
         persistedSettingsRef.current = saved;
         if (!settingsTouched.current) {
           const loadedOptions: NetworkTestOptions = {
@@ -468,6 +541,11 @@ export default function NetworkTestTool({
           timeoutSeconds: String(Math.max(1, Math.round(restoredRequest.timeoutMillis / 1000))),
           skipTLSVerify: restoredRequest.skipTLSVerify ?? false,
           maxRedirects: String(restoredRequest.maxRedirects ?? 10),
+          method: restoredRequest.method || 'GET',
+          headers: restoredRequest.headers || '',
+          body: restoredRequest.body || '',
+          hasBody: restoredRequest.hasBody ?? Boolean(restoredRequest.body),
+          sourceID: restoredRequest.sourceID || 'local',
           userAgent: restoredRequest.userAgent ?? '',
           proxyType: (restoredRequest.proxyType || '') as ProxyType,
           proxyAddress: restoredRequest.proxyAddress,
@@ -498,12 +576,19 @@ export default function NetworkTestTool({
       !Number.isFinite(duration) ||
       duration < 1 ||
       duration > 300 ||
-      invalidRedirectLimit
+      invalidRedirectLimit ||
+      selectedSourceProfileMissing ||
+      unsupportedRemoteProtocol
     )
       return;
     if (effectiveProtocol === 'udp' && !payload.length) return;
-    if ((proxyType === 'http' || proxyType === 'socks5') && !proxyAddress.trim()) return;
-    if (dnsMode === 'custom' && !dnsAddress.trim()) return;
+    if (
+      !remoteSourceSelected &&
+      (proxyType === 'http' || proxyType === 'socks5') &&
+      !proxyAddress.trim()
+    )
+      return;
+    if (!remoteSourceSelected && dnsMode === 'custom' && !dnsAddress.trim()) return;
     const startedAt = Date.now();
     const request: NetworkTestRequest = {
       runID: crypto.randomUUID(),
@@ -511,6 +596,11 @@ export default function NetworkTestTool({
       target:
         protocolSelection === 'auto' ? automaticTarget(target, effectiveProtocol) : target.trim(),
       payload,
+      method,
+      headers,
+      body,
+      hasBody,
+      sourceID: selectedSource.id,
       userAgent: effectiveUserAgent,
       timeoutMillis: Math.round(duration * 1000),
       skipTLSVerify,
@@ -578,6 +668,51 @@ export default function NetworkTestTool({
     if (activeRunID.current) void CancelNetworkTest(activeRunID.current).catch(() => {});
   };
 
+  const openSourceManager = () => {
+    setSourceManagerOpen(true);
+  };
+
+  const saveNetworkSources = async (nextSources: NetworkTestSource[]) => {
+    if (savingSources) return;
+    setSavingSources(true);
+    try {
+      await SaveNetworkTestSources(nextSources);
+      const sources = (await GetNetworkTestSources()) ?? defaultNetworkTestSources;
+      setNetworkTestSources(sources.length ? sources : defaultNetworkTestSources);
+      const nextSourceID = sources.some((source) => source.id === sourceID) ? sourceID : 'local';
+      updateNetworkSettings({ sourceID: nextSourceID });
+    } finally {
+      setSavingSources(false);
+    }
+  };
+
+  const importCurlCommand = () => {
+    try {
+      const parsed = parseCurlCommand(curlCommand);
+      setTarget(parsed.target);
+      setProtocolSelection('http');
+      updateNetworkSettings({
+        method: parsed.method,
+        headers: parsed.headers,
+        body: parsed.body,
+        hasBody: parsed.hasBody,
+        maxRedirects: String(parsed.maxRedirects),
+        skipTLSVerify: parsed.skipTLSVerify,
+        ...(parsed.timeoutSeconds === undefined
+          ? {}
+          : { timeoutSeconds: String(parsed.timeoutSeconds) }),
+      });
+      toast.add({ title: t('networkTestTool.curl.imported'), type: 'success' });
+    } catch (error) {
+      const parseError =
+        error instanceof CurlCommandParseError ? error : new CurlCommandParseError('syntax');
+      toast.add({
+        title: t(`networkTestTool.curl.errors.${parseError.code}`, { option: parseError.option }),
+        type: 'error',
+      });
+    }
+  };
+
   const submitOnEnter = (event: React.KeyboardEvent<HTMLInputElement>) => {
     if (event.key !== 'Enter' || running) return;
     event.preventDefault();
@@ -634,6 +769,55 @@ export default function NetworkTestTool({
                   </Select>
                 </ToolHeaderField>
                 <ToolHeaderField
+                  label={t('networkTestTool.source.label')}
+                  labelId="network-test-source-label"
+                >
+                  <Select
+                    value={sourceID || 'local'}
+                    onValueChange={(value) => {
+                      if (value === MANAGE_NETWORK_SOURCES) {
+                        openSourceManager();
+                        return;
+                      }
+                      if (value) updateNetworkSettings({ sourceID: value });
+                    }}
+                    items={sourceItems}
+                  >
+                    <SelectTrigger
+                      disabled={running}
+                      aria-labelledby="network-test-source-label"
+                      className="w-[168px] max-w-full"
+                    >
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectGroup>
+                        {networkTestSources.map((source) => (
+                          <SelectItem key={source.id} value={source.id}>
+                            {sourceLabel(source)}
+                          </SelectItem>
+                        ))}
+                      </SelectGroup>
+                      <SelectSeparator />
+                      <SelectGroup>
+                        <SelectItem value={MANAGE_NETWORK_SOURCES}>
+                          <GearSix weight="duotone" />
+                          {t('networkTestTool.source.manage')}
+                        </SelectItem>
+                      </SelectGroup>
+                    </SelectContent>
+                  </Select>
+                  {selectedSourceProfileMissing ? (
+                    <p className="m-0 text-[10px] leading-relaxed text-destructive">
+                      {t('networkTestTool.source.profileMissing')}
+                    </p>
+                  ) : unsupportedRemoteProtocol ? (
+                    <p className="m-0 text-[10px] leading-relaxed text-muted-foreground">
+                      {t('networkTestTool.source.httpOnly')}
+                    </p>
+                  ) : null}
+                </ToolHeaderField>
+                <ToolHeaderField
                   label={t('networkTestTool.target.label')}
                   className="min-w-[280px] flex-1"
                 >
@@ -671,16 +855,28 @@ export default function NetworkTestTool({
               </>
             }
             right={
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon-sm"
-                aria-label={t('networkTestTool.advanced.title')}
-                title={t('networkTestTool.advanced.title')}
-                onClick={() => setAdvancedSettingsOpen(true)}
-              >
-                <GearSix size={16} weight="duotone" />
-              </Button>
+              <>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon-sm"
+                  aria-label={t('networkTestTool.requestSettings.title')}
+                  title={t('networkTestTool.requestSettings.title')}
+                  onClick={() => setRequestSettingsOpen(true)}
+                >
+                  <Code size={16} weight="duotone" />
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon-sm"
+                  aria-label={t('networkTestTool.advanced.title')}
+                  title={t('networkTestTool.advanced.title')}
+                  onClick={() => setAdvancedSettingsOpen(true)}
+                >
+                  <GearSix size={16} weight="duotone" />
+                </Button>
+              </>
             }
           />
           <ToolLayoutContent className="px-2">
@@ -711,16 +907,13 @@ export default function NetworkTestTool({
                             ? t('networkTestTool.redirects.request', { count: redirectCount })
                             : null;
                         const resolver = stage.meta?.resolver;
-                        const resolutionKind =
-                          resolver === 'system'
-                            ? 'system'
-                            : resolver === 'literal'
-                              ? 'literal'
-                              : resolver === 'proxy' || stage.meta?.targetResolution === 'proxy'
-                                ? 'proxy'
-                                : resolver
-                                  ? 'custom'
-                                  : null;
+                        let resolutionKind: string | null = null;
+                        if (resolver === 'ssh-remote') resolutionKind = 'sshRemote';
+                        else if (resolver === 'system') resolutionKind = 'system';
+                        else if (resolver === 'literal') resolutionKind = 'literal';
+                        else if (resolver === 'proxy' || stage.meta?.targetResolution === 'proxy') {
+                          resolutionKind = 'proxy';
+                        } else if (resolver) resolutionKind = 'custom';
                         const resolutionSummary =
                           resolutionKind === 'custom'
                             ? t('networkTestTool.dns.resolution.custom.summary', {
@@ -764,19 +957,27 @@ export default function NetworkTestTool({
                             : null;
                         // 经隧道或经代理的连接都要说明下一跳是什么，避免把「连接成功」
                         // 读成目标设备可达。
-                        const outboundHint =
+                        let outboundHint: string | null = null;
+                        if (
                           stageLabelID !== 'tunnel-route' &&
                           stage.meta?.reachability === 'unverified'
-                            ? stage.meta?.outbound === 'proxy'
-                              ? t('networkTestTool.outbound.proxy.summary', {
-                                  proxy: stage.meta?.proxy ?? '',
-                                })
-                              : stage.meta?.tunnelInterface
-                                ? t('networkTestTool.outbound.tunnel.withInterface', {
-                                    interface: stage.meta.tunnelInterface,
-                                  })
-                                : t('networkTestTool.outbound.tunnel.withoutInterface')
-                            : null;
+                        ) {
+                          if (stage.meta.outbound === 'ssh') {
+                            outboundHint = t('networkTestTool.outbound.ssh.summary', {
+                              source: stage.meta.source ?? '',
+                            });
+                          } else if (stage.meta.outbound === 'proxy') {
+                            outboundHint = t('networkTestTool.outbound.proxy.summary', {
+                              proxy: stage.meta.proxy ?? '',
+                            });
+                          } else if (stage.meta.tunnelInterface) {
+                            outboundHint = t('networkTestTool.outbound.tunnel.withInterface', {
+                              interface: stage.meta.tunnelInterface,
+                            });
+                          } else {
+                            outboundHint = t('networkTestTool.outbound.tunnel.withoutInterface');
+                          }
+                        }
                         const statusTextColor =
                           reachabilityTone?.text ??
                           responseTone?.text ??
@@ -941,12 +1142,15 @@ export default function NetworkTestTool({
                             !target.trim() ||
                             !effectiveProtocol ||
                             (effectiveProtocol === 'udp' && !payload.length) ||
-                            ((proxyType === 'http' || proxyType === 'socks5') &&
+                            (!remoteSourceSelected &&
+                              (proxyType === 'http' || proxyType === 'socks5') &&
                               !proxyAddress.trim()) ||
-                            (dnsMode === 'custom' && !dnsAddress.trim()) ||
+                            (!remoteSourceSelected && dnsMode === 'custom' && !dnsAddress.trim()) ||
                             !Number.isFinite(Number(timeoutSeconds)) ||
                             Number(timeoutSeconds) < 1 ||
                             Number(timeoutSeconds) > 300 ||
+                            selectedSourceProfileMissing ||
+                            unsupportedRemoteProtocol ||
                             invalidRedirectLimit,
                           onPress: () => void startTest(),
                         },
@@ -963,6 +1167,11 @@ export default function NetworkTestTool({
             <DialogTitle>{t('networkTestTool.advanced.title')}</DialogTitle>
           </DialogHeader>
           <div className="-m-1 grid min-h-0 grid-cols-2 gap-x-5 gap-y-3 overflow-y-auto p-1 max-[450px]:grid-cols-1">
+            {remoteSourceSelected ? (
+              <p className="col-span-2 m-0 text-[10px] leading-relaxed text-muted-foreground max-[450px]:col-span-1">
+                {t('networkTestTool.source.remoteRoutingNote')}
+              </p>
+            ) : null}
             <ToolHeaderField
               label={t('networkTestTool.proxy.label')}
               labelId="network-test-proxy-label"
@@ -983,7 +1192,7 @@ export default function NetworkTestTool({
                 items={proxyItems}
               >
                 <SelectTrigger
-                  disabled={running}
+                  disabled={running || remoteSourceSelected}
                   aria-labelledby="network-test-proxy-label"
                   className="w-full"
                 >
@@ -1010,7 +1219,7 @@ export default function NetworkTestTool({
                   value={proxyAddress}
                   onChange={(event) => updateNetworkSettings({ proxyAddress: event.target.value })}
                   onKeyDown={submitOnEnter}
-                  disabled={running}
+                  disabled={running || remoteSourceSelected}
                   placeholder={t('networkTestTool.proxy.addressPlaceholder')}
                   autoCapitalize="none"
                   autoCorrect="off"
@@ -1031,7 +1240,7 @@ export default function NetworkTestTool({
                 items={dnsItems}
               >
                 <SelectTrigger
-                  disabled={running}
+                  disabled={running || remoteSourceSelected}
                   aria-labelledby="network-test-dns-label"
                   className="w-full"
                 >
@@ -1058,7 +1267,7 @@ export default function NetworkTestTool({
                   value={dnsAddress}
                   onChange={(event) => updateNetworkSettings({ dnsAddress: event.target.value })}
                   onKeyDown={submitOnEnter}
-                  disabled={running}
+                  disabled={running || remoteSourceSelected}
                   placeholder={t('networkTestTool.dns.addressPlaceholder')}
                   autoCapitalize="none"
                   autoCorrect="off"
@@ -1207,7 +1416,7 @@ export default function NetworkTestTool({
                 items={interfaceItems}
               >
                 <SelectTrigger
-                  disabled={running}
+                  disabled={running || remoteSourceSelected}
                   aria-labelledby="network-test-interface-label"
                   className="w-full"
                 >
@@ -1224,12 +1433,215 @@ export default function NetworkTestTool({
                 </SelectContent>
               </Select>
             </ToolHeaderField>
-            <p className="col-span-2 m-0 text-[10px] leading-relaxed text-muted-foreground max-[450px]:col-span-1">
-              {t('networkTestTool.advanced.routingNote')}
-            </p>
+            {!remoteSourceSelected ? (
+              <p className="col-span-2 m-0 text-[10px] leading-relaxed text-muted-foreground max-[450px]:col-span-1">
+                {t('networkTestTool.advanced.routingNote')}
+              </p>
+            ) : null}
           </div>
         </DialogContent>
       </Dialog>
+      <Dialog open={requestSettingsOpen} onOpenChange={setRequestSettingsOpen}>
+        <DialogContent className="grid max-h-[min(720px,calc(100dvh-2rem))] min-h-0 sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>{t('networkTestTool.requestSettings.title')}</DialogTitle>
+            <DialogDescription>
+              {t('networkTestTool.requestSettings.description')}
+            </DialogDescription>
+          </DialogHeader>
+          <ScrollArea className="min-h-0 -m-1 p-1">
+            <div className="grid gap-4">
+              <ToolHeaderField
+                label={t('networkTestTool.curl.label')}
+                htmlFor="network-test-curl-command"
+              >
+                <Textarea
+                  id="network-test-curl-command"
+                  value={curlCommand}
+                  onChange={(event) => setCurlCommand(event.target.value)}
+                  disabled={running}
+                  placeholder={t('networkTestTool.curl.placeholder')}
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                  spellCheck={false}
+                  rows={4}
+                  className="max-h-40 min-h-24 resize-y overflow-auto font-mono text-xs"
+                />
+                <div className="flex justify-end">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={importCurlCommand}
+                    disabled={running || !curlCommand.trim()}
+                  >
+                    <Code weight="duotone" />
+                    {t('networkTestTool.curl.parse')}
+                  </Button>
+                </div>
+              </ToolHeaderField>
+              <ToolHeaderField
+                label={t('networkTestTool.requestSettings.method')}
+                htmlFor="network-test-http-method"
+              >
+                <Input
+                  id="network-test-http-method"
+                  value={method}
+                  onChange={(event) => updateNetworkSettings({ method: event.target.value })}
+                  disabled={running}
+                  autoCapitalize="characters"
+                  autoCorrect="off"
+                  spellCheck={false}
+                  className="font-mono text-xs"
+                />
+              </ToolHeaderField>
+              <ToolHeaderField
+                label={t('networkTestTool.requestSettings.headers')}
+                htmlFor="network-test-http-headers"
+              >
+                <Textarea
+                  id="network-test-http-headers"
+                  value={headers}
+                  onChange={(event) => updateNetworkSettings({ headers: event.target.value })}
+                  disabled={running}
+                  placeholder={t('networkTestTool.requestSettings.headersPlaceholder')}
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                  spellCheck={false}
+                  rows={5}
+                  className="max-h-40 min-h-28 resize-y overflow-auto font-mono text-xs"
+                />
+              </ToolHeaderField>
+              <ToolHeaderField
+                label={t('networkTestTool.requestSettings.sendBody')}
+                labelId="network-test-http-has-body-label"
+              >
+                <div className="flex min-h-8 items-center justify-between gap-3">
+                  <span className="text-[10px] leading-relaxed text-muted-foreground">
+                    {t('networkTestTool.requestSettings.sendBodyNote')}
+                  </span>
+                  <Switch
+                    checked={hasBody}
+                    onCheckedChange={(checked) =>
+                      updateNetworkSettings({ hasBody: checked === true })
+                    }
+                    disabled={running}
+                    size="sm"
+                    aria-labelledby="network-test-http-has-body-label"
+                  />
+                </div>
+              </ToolHeaderField>
+              <ToolHeaderField
+                label={t('networkTestTool.requestSettings.body')}
+                htmlFor="network-test-http-body"
+              >
+                <Textarea
+                  id="network-test-http-body"
+                  value={body}
+                  onChange={(event) =>
+                    updateNetworkSettings({ body: event.target.value, hasBody: true })
+                  }
+                  disabled={running || !hasBody}
+                  placeholder={t('networkTestTool.requestSettings.bodyPlaceholder')}
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                  spellCheck={false}
+                  rows={5}
+                  className="max-h-40 min-h-28 resize-y overflow-auto font-mono text-xs"
+                />
+              </ToolHeaderField>
+            </div>
+          </ScrollArea>
+        </DialogContent>
+      </Dialog>
+      <TargetHostManagerDialog<NetworkTestSource, NetworkTestSource>
+        open={sourceManagerOpen}
+        onOpenChange={setSourceManagerOpen}
+        items={networkTestSources}
+        itemKey={(item) => item.id}
+        itemName={(item) =>
+          item.id === 'local' || item.kind === 'local'
+            ? t('networkTestTool.source.local')
+            : item.name
+        }
+        itemDisabled={(item) => item.id === 'local' || item.kind === 'local'}
+        createDraft={() => ({
+          id: '',
+          name: '',
+          kind: 'ssh',
+          sshProfileID: profiles[0]?.id ?? '',
+        })}
+        toDraft={(item) => ({ ...item })}
+        commitDraft={(draft, previous) => {
+          const profile = profiles.find((item) => item.id === draft.sshProfileID);
+          if (!profile) return t('networkTestTool.source.sshProfileRequired');
+          const next: NetworkTestSource = {
+            id: draft.id || `network-test:${crypto.randomUUID()}`,
+            name: draft.name.trim() || profile.name,
+            kind: 'ssh',
+            sshProfileID: profile.id,
+          };
+          return upsertManagerItem(previous, next, (item) => item.id, draft.id || undefined);
+        }}
+        saveItems={saveNetworkSources}
+        saving={savingSources}
+        renderMeta={(item) =>
+          item.id === 'local' || item.kind === 'local' ? (
+            <span>{t('networkTestTool.source.local')}</span>
+          ) : (
+            <>
+              <span>{t('networkTestTool.source.kindSSH')}</span>
+              {!profiles.some((profile) => profile.id === item.sshProfileID) ? (
+                <Badge variant="destructive" className="h-4 text-[9px]">
+                  {t('networkTestTool.source.profileMissing')}
+                </Badge>
+              ) : null}
+            </>
+          )
+        }
+        renderForm={({ draft, setDraft }) => (
+          <>
+            <ToolHeaderField label={t('networkTestTool.source.name')}>
+              <Input
+                value={draft.name}
+                onChange={(event) => setDraft({ ...draft, name: event.target.value })}
+                placeholder={t('networkTestTool.source.namePlaceholder')}
+              />
+            </ToolHeaderField>
+            <ToolHeaderField label={t('networkTestTool.source.sshProfile')}>
+              <SSHProfileFormField
+                value={draft.sshProfileID}
+                onSelect={(profile) =>
+                  setDraft({
+                    ...draft,
+                    sshProfileID: profile?.id ?? '',
+                    name: draft.name.trim() || profile?.name || draft.name,
+                  })
+                }
+                placeholder={t('networkTestTool.source.selectSSHProfile')}
+              />
+            </ToolHeaderField>
+          </>
+        )}
+        strings={{
+          title: t('networkTestTool.source.managerTitle'),
+          edit: t('networkTestTool.source.edit'),
+          remove: t('networkTestTool.source.remove'),
+          dragItem: (name) => t('sidebar.dragTool', { name }),
+          empty: t('networkTestTool.source.empty'),
+          emptyHint: t('networkTestTool.source.emptyHint'),
+          save: t('common.save'),
+          back: t('common.cancel'),
+          discardTitle: t('networkTestTool.source.discardTitle'),
+          discardDescription: t('networkTestTool.source.discardDescription'),
+          discardConfirm: t('networkTestTool.source.discardConfirm'),
+          removeTitle: t('networkTestTool.source.removeConfirmTitle'),
+          removeDescription: (name) =>
+            t('networkTestTool.source.removeConfirmDescription', { name }),
+          formTitle: (editing) =>
+            t(editing ? 'networkTestTool.source.edit' : 'networkTestTool.source.add'),
+        }}
+      />
     </>
   );
 }

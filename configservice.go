@@ -39,6 +39,7 @@ type Config struct {
 	TimeWeekStart           string                `json:"timeWeekStart"`
 	NtpServers              []string              `json:"ntpServers"`
 	NetworkTestSettings     NetworkTestSettings   `json:"networkTestSettings"`
+	NetworkTestSources      []NetworkTestSource   `json:"networkTestSources"`
 	JsonAutoFormatOnFill    bool                  `json:"jsonAutoFormatOnFill"`
 	TextAlwaysShowSearch    bool                  `json:"textAlwaysShowSearch"`
 	TextGeneratorSources    []TextGeneratorSource `json:"textGeneratorSources"`
@@ -56,12 +57,17 @@ type SidebarToolConfig struct {
 	Enabled bool   `json:"enabled"`
 }
 
-// NetworkTestSettings 保存网络测试工具当前使用的超时和高级选项。
+// NetworkTestSettings 保存网络测试工具当前使用的请求、超时和高级选项。
 type NetworkTestSettings struct {
 	Payload        string `json:"payload"`
 	TimeoutSeconds int    `json:"timeoutSeconds"`
 	SkipTLSVerify  bool   `json:"skipTLSVerify"`
 	MaxRedirects   int    `json:"maxRedirects"`
+	Method         string `json:"method"`
+	Headers        string `json:"headers"`
+	Body           string `json:"body"`
+	HasBody        bool   `json:"hasBody"`
+	SourceID       string `json:"sourceID"`
 	UserAgent      string `json:"userAgent"`
 	ProxyType      string `json:"proxyType"`
 	ProxyAddress   string `json:"proxyAddress"`
@@ -70,11 +76,21 @@ type NetworkTestSettings struct {
 	InterfaceName  string `json:"interfaceName"`
 }
 
+// NetworkTestSource 是网络测试工具自己的执行来源；SSH 凭据只引用全局 SSHProfile。
+type NetworkTestSource struct {
+	ID           string `json:"id"`
+	Name         string `json:"name"`
+	Kind         string `json:"kind"`
+	SSHProfileID string `json:"sshProfileID"`
+}
+
 func defaultNetworkTestSettings() NetworkTestSettings {
 	return NetworkTestSettings{
 		Payload:        "ping",
 		TimeoutSeconds: 30,
 		MaxRedirects:   10,
+		Method:         "GET",
+		SourceID:       "local",
 		// UserAgent 留空表示使用工具默认的标识（defaultNetworkTestUserAgent）：不把默认值复制进
 		// 配置，将来默认值变化时已保存的设置不会把它固定住。
 		DNSMode: "system",
@@ -201,7 +217,7 @@ type historyStored struct {
 }
 
 func defaultConfig() Config {
-	return Config{TrayMatchEnabled: true, TrayMatchTools: []string{"json", "time", "text", "base64", "diff", "jwt", "url"}, AutoOverwrite: true, AutoCheckUpdates: true, TaskConcurrency: 4, TaskChunkConcurrency: 4, TaskNotificationMode: "unfocused", Language: "zh-CN", SidebarMode: "full", SidebarTools: defaultSidebarTools(), ThemeMode: "dark", LightTheme: "default-light", DarkTheme: "default-dark", DiffClipboardTargetMode: "alternate", CodeEditorFontSize: 16, TimeResultOrder: []string{"local", "dateTime", "dateOnly", "timeOnly", "zonedIso8601", "rfc3339", "utc", "compact", "underscore", "unixSeconds", "unixMilliseconds", "unixNanoseconds"}, TimeWeekStart: "monday", NtpServers: defaultNtpServers(), NetworkTestSettings: defaultNetworkTestSettings(), JsonAutoFormatOnFill: true, ImageSources: defaultImageSources(), SSHProfiles: []SSHProfile{}, FileSources: []FileSource{}, ServiceTargets: defaultServiceTargets(), PortSources: defaultPortSources(), PortForwards: []PortForwardConfig{}}
+	return Config{TrayMatchEnabled: true, TrayMatchTools: []string{"json", "time", "text", "base64", "diff", "jwt", "url"}, AutoOverwrite: true, AutoCheckUpdates: true, TaskConcurrency: 4, TaskChunkConcurrency: 4, TaskNotificationMode: "unfocused", Language: "zh-CN", SidebarMode: "full", SidebarTools: defaultSidebarTools(), ThemeMode: "dark", LightTheme: "default-light", DarkTheme: "default-dark", DiffClipboardTargetMode: "alternate", CodeEditorFontSize: 16, TimeResultOrder: []string{"local", "dateTime", "dateOnly", "timeOnly", "zonedIso8601", "rfc3339", "utc", "compact", "underscore", "unixSeconds", "unixMilliseconds", "unixNanoseconds"}, TimeWeekStart: "monday", NtpServers: defaultNtpServers(), NetworkTestSettings: defaultNetworkTestSettings(), NetworkTestSources: defaultNetworkTestSources(), JsonAutoFormatOnFill: true, ImageSources: defaultImageSources(), SSHProfiles: []SSHProfile{}, FileSources: []FileSource{}, ServiceTargets: defaultServiceTargets(), PortSources: defaultPortSources(), PortForwards: []PortForwardConfig{}}
 }
 
 func normalizeThemeID(theme string, defaultID string) string {
@@ -657,6 +673,7 @@ func normalizeConfig(cfg Config) Config {
 	cfg.TextGeneratorSources = normalizeTextGeneratorSources(cfg.TextGeneratorSources)
 	cfg.DockerCLIPath = normalizeDockerCLIPath(cfg.DockerCLIPath)
 	cfg.SSHProfiles = normalizeSSHProfiles(cfg.SSHProfiles)
+	cfg.NetworkTestSources = normalizeNetworkTestSources(cfg.NetworkTestSources, sshProfileNameMap(cfg.SSHProfiles))
 	cfg.ImageSources = normalizeImageSources(cfg.ImageSources, sshProfileNameMap(cfg.SSHProfiles))
 	if cfg.FileSources == nil {
 		cfg.FileSources = []FileSource{}
@@ -778,6 +795,9 @@ func normalizeConfig(cfg Config) Config {
 	}
 	cfg.NtpServers = normalizeNtpServers(cfg.NtpServers)
 	cfg.NetworkTestSettings = normalizeNetworkTestSettings(cfg.NetworkTestSettings)
+	if !networkTestSourceExists(cfg.NetworkTestSources, cfg.NetworkTestSettings.SourceID) {
+		cfg.NetworkTestSettings.SourceID = "local"
+	}
 	return cfg
 }
 
@@ -787,6 +807,14 @@ func normalizeNetworkTestSettings(settings NetworkTestSettings) NetworkTestSetti
 	}
 	if settings.MaxRedirects < 0 || settings.MaxRedirects > 10 {
 		settings.MaxRedirects = 10
+	}
+	settings.Method = strings.TrimSpace(settings.Method)
+	if settings.Method == "" {
+		settings.Method = "GET"
+	}
+	settings.SourceID = strings.TrimSpace(settings.SourceID)
+	if settings.SourceID == "" {
+		settings.SourceID = "local"
 	}
 	// User-Agent 会原样写进请求报文：去掉首尾空白与 CR/LF，其余按用户输入保留。
 	settings.UserAgent = sanitizeHeaderValue(strings.TrimSpace(settings.UserAgent))
@@ -1226,6 +1254,7 @@ func (s *ConfigService) Save(cfg Config) error {
 	cfg.ServiceTargets = copyServiceTargets(s.cfg.ServiceTargets)
 	cfg.PortSources = append([]PortSource(nil), s.cfg.PortSources...)
 	cfg.PortForwards = append([]PortForwardConfig(nil), s.cfg.PortForwards...)
+	cfg.NetworkTestSources = append([]NetworkTestSource(nil), s.cfg.NetworkTestSources...)
 	// 网络测试工具通过定向接口维护设置，避免设置页旧快照覆盖新值。
 	cfg.NetworkTestSettings = s.cfg.NetworkTestSettings
 	// 删除 SSH 配置后，工具引用可以暂时悬空；镜像/文件来源定向接口会在写入新引用前

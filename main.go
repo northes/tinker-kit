@@ -104,7 +104,7 @@ func main() {
 	portService := NewPortService(cfgService)
 	jsonPipelineService := NewJSONPipelineService()
 	realTimeService := NewRealTimeService()
-	networkTestService := NewNetworkTestService()
+	networkTestService := NewNetworkTestService(cfgService)
 	dockService := dock.New()
 	isQuitting := false
 	app := application.New(application.Options{

@@ -31,6 +31,7 @@ export interface Config {
     "timeWeekStart": string;
     "ntpServers": string[] | null;
     "networkTestSettings": NetworkTestSettings;
+    "networkTestSources": NetworkTestSource[] | null;
     "jsonAutoFormatOnFill": boolean;
     "textAlwaysShowSearch": boolean;
     "textGeneratorSources": TextGeneratorSource[] | null;
@@ -436,6 +437,11 @@ export interface NetworkTestRequest {
     "protocol": string;
     "target": string;
     "payload": string;
+    "method": string;
+    "headers": string;
+    "body": string;
+    "hasBody": boolean;
+    "sourceID": string;
     "userAgent": string;
     "timeoutMillis": number;
     "skipTLSVerify": boolean;
@@ -460,19 +466,34 @@ export interface NetworkTestResult {
 }
 
 /**
- * NetworkTestSettings 保存网络测试工具当前使用的超时和高级选项。
+ * NetworkTestSettings 保存网络测试工具当前使用的请求、超时和高级选项。
  */
 export interface NetworkTestSettings {
     "payload": string;
     "timeoutSeconds": number;
     "skipTLSVerify": boolean;
     "maxRedirects": number;
+    "method": string;
+    "headers": string;
+    "body": string;
+    "hasBody": boolean;
+    "sourceID": string;
     "userAgent": string;
     "proxyType": string;
     "proxyAddress": string;
     "dnsMode": string;
     "dnsAddress": string;
     "interfaceName": string;
+}
+
+/**
+ * NetworkTestSource 是网络测试工具自己的执行来源；SSH 凭据只引用全局 SSHProfile。
+ */
+export interface NetworkTestSource {
+    "id": string;
+    "name": string;
+    "kind": string;
+    "sshProfileID": string;
 }
 
 export interface NetworkTestStage {

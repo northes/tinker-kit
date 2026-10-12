@@ -2240,6 +2240,12 @@
       "invalidForward": "端口转发参数无效",
       "forwardNotFound": "端口转发不存在",
       "scanFailed": "端口扫描失败：{{detail}}"
+    },
+    "networkTest": {
+      "sourceInvalid": "第 {{index}} 项网络测试来源无效",
+      "sourceDuplicate": "第 {{index}} 项网络测试来源 ID 重复",
+      "sourceProfileNotFound": "第 {{index}} 项网络测试来源引用的 SSH 配置不存在",
+      "selectedSourceNotFound": "当前网络测试来源不存在"
     }
   },
   "portTool": {
@@ -2357,6 +2363,59 @@
         "rtsp": "rtsp://用户名:密码@example.com:554/stream"
       }
     },
+    "source": {
+      "label": "请求来源",
+      "local": "本机",
+      "manage": "管理来源…",
+      "managerTitle": "管理网络测试来源",
+      "add": "添加 SSH 来源",
+      "edit": "编辑来源",
+      "name": "来源名称",
+      "namePlaceholder": "例如：生产跳板机",
+      "sshProfile": "SSH 配置",
+      "selectSSHProfile": "选择 SSH 配置",
+      "sshProfileRequired": "请选择已添加的 SSH 配置",
+      "kindSSH": "SSH 来源",
+      "remove": "移除来源",
+      "removeConfirmTitle": "移除 SSH 来源？",
+      "removeConfirmDescription": "确定从列表移除“{{name}}”？保存来源列表后生效；如果当前正在使用该来源，将切回本机。",
+      "empty": "还没有 SSH 来源",
+      "emptyHint": "添加 SSH 来源后将在此显示。",
+      "discardTitle": "放弃未保存的修改？",
+      "discardDescription": "当前来源修改尚未保存，继续将丢失这些修改。",
+      "discardConfirm": "放弃修改",
+      "profileMissing": "SSH 配置不存在",
+      "httpOnly": "SSH 来源仅支持 HTTP / HTTPS 请求。",
+      "remoteRoutingNote": "请求通过 SSH 连接转发到远端发起；远端负责解析目标域名，本机代理、DNS 和网卡设置不生效。"
+    },
+    "requestSettings": {
+      "title": "HTTP 请求设置",
+      "description": "设置请求方法、Header 和请求体，也可以粘贴 curl 命令导入。",
+      "method": "请求方法",
+      "headers": "请求 Header",
+      "headersPlaceholder": "每行一个 Header，例如：\nAccept: application/json\nAuthorization: Bearer …",
+      "sendBody": "发送请求体",
+      "sendBodyNote": "启用后即使内容为空也会发送请求体。",
+      "body": "请求体",
+      "bodyPlaceholder": "输入请求体内容"
+    },
+    "curl": {
+      "label": "从 curl 导入",
+      "placeholder": "粘贴 curl 命令，例如：curl -X POST -H 'Content-Type: application/json' --data '{\"ok\":true}' https://example.com",
+      "parse": "解析并填入",
+      "imported": "已从 curl 命令导入请求设置",
+      "errors": {
+        "empty": "请粘贴 curl 命令",
+        "syntax": "curl 命令引号或转义格式无效",
+        "command": "命令必须以 curl 开头",
+        "urlMissing": "curl 命令缺少目标 URL",
+        "urlMultiple": "curl 命令包含多个目标 URL",
+        "unsupportedOption": "暂不支持 curl 选项 {{option}}",
+        "fileReference": "不读取本地文件，curl 选项 {{option}} 的文件参数无法导入",
+        "redirectLimit": "curl 重定向上限必须在 0 到 10 之间",
+        "timeout": "curl 超时必须在 1 到 300 秒之间"
+      }
+    },
     "userAgent": {
       "label": "User-Agent",
       "option": {
@@ -2422,12 +2481,27 @@
         "literal": {
           "summary": "IP 地址 · 未查询 DNS",
           "detail": "目标是 IP 地址，因此没有发起 DNS 查询。"
+        },
+        "sshRemote": {
+          "summary": "SSH 远端解析 · 缓存命中未知",
+          "detail": "目标域名由 SSH 服务器侧解析并建立转发连接；本机无法查看 SSH 服务器使用的 DNS 地址或缓存命中情况。"
         }
       }
     },
     "backend": {
       "messages": {
         "connectTunnelEstablished": "HTTP CONNECT 隧道已建立",
+        "httpBodyTooLarge": "HTTP 请求体不能超过 1 MiB",
+        "httpHeadersTooLarge": "HTTP 请求 Header 不能超过 64 KiB",
+        "httpMethodInvalid": "HTTP 请求方法无效",
+        "httpHeaderInvalid": "HTTP 请求 Header 格式无效",
+        "httpHeaderInvalidAt": "第 {{line}} 行 HTTP Header 格式无效",
+        "httpHeaderManagedByClient": "第 {{line}} 行 Header 由 HTTP 客户端管理，不能手动设置",
+        "sshProtocolUnsupported": "SSH 来源仅支持 HTTP / HTTPS 测试",
+        "sourceMissing": "网络测试来源不存在",
+        "sourceProfileMissing": "网络测试来源引用的 SSH 配置不存在",
+        "sshConnectFailed": "连接 SSH 来源失败：{{detail}}",
+        "sshForwardFailed": "通过 SSH 转发到 {{target}} 失败：{{detail}}",
         "datagramAccepted": "数据报已被本机网络栈接受；这不代表对端已收到",
         "datagramPayload": "{{bytes}} 字节\\nUTF-8:\\n{{text}}\\n\\nhex:\\n{{hex}}",
         "ntpRequestSummary": "NTPv4 客户端请求（模式 3，{{bytes}} 字节）\\nhex: {{hex}}",
@@ -2489,6 +2563,9 @@
       }
     },
     "outbound": {
+      "ssh": {
+        "summary": "经 SSH 来源 {{source}} 转发 · 目标可达性未验证"
+      },
       "proxy": {
         "summary": "经代理 {{proxy}} 转发 · 目标可达性未验证"
       },
@@ -2530,6 +2607,8 @@
       "proxy-resolve": "解析系统代理",
       "dns-target": "解析目标地址",
       "dns-proxy": "解析代理地址",
+      "ssh-connect": "连接 SSH 来源",
+      "ssh-forward": "SSH 转发到目标",
       "tcp-connect": "建立 TCP 连接",
       "tunnel-route": "经隧道出口",
       "proxy-tunnel": "建立代理隧道",

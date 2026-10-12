@@ -393,23 +393,27 @@ func (s *ConfigService) TestSSHProfile(profile SSHProfile) error {
 }
 
 func testSSHProfile(ctx context.Context, profile SSHProfile, language string) error {
-	auth, err := sshAuthMethodsForProfile(profile)
-	if err != nil {
-		return err
-	}
-	hostKeyCallback, err := newAppSSHHostKeyCallback(language)
-	if err != nil {
-		return userErrorCause("errors.sshProfile.knownHostsFailed", err)
-	}
-	host := strings.TrimPrefix(strings.TrimSuffix(profile.Host, "]"), "[")
-	address := net.JoinHostPort(host, strconv.Itoa(profile.Port))
-	config := &ssh.ClientConfig{User: profile.Username, Auth: auth, HostKeyCallback: hostKeyCallback, Timeout: 15 * time.Second}
-	client, err := dialSSHClient(ctx, address, config)
+	client, err := dialSSHProfileClient(ctx, profile, language)
 	if err != nil {
 		return err
 	}
 	closeSSHClient(client)
 	return nil
+}
+
+func dialSSHProfileClient(ctx context.Context, profile SSHProfile, language string) (*ssh.Client, error) {
+	auth, err := sshAuthMethodsForProfile(profile)
+	if err != nil {
+		return nil, err
+	}
+	hostKeyCallback, err := newAppSSHHostKeyCallback(language)
+	if err != nil {
+		return nil, userErrorCause("errors.sshProfile.knownHostsFailed", err)
+	}
+	host := strings.TrimPrefix(strings.TrimSuffix(profile.Host, "]"), "[")
+	address := net.JoinHostPort(host, strconv.Itoa(profile.Port))
+	config := &ssh.ClientConfig{User: profile.Username, Auth: auth, HostKeyCallback: hostKeyCallback, Timeout: 15 * time.Second}
+	return dialSSHClient(ctx, address, config)
 }
 
 func sshAuthMethodsForProfile(profile SSHProfile) ([]ssh.AuthMethod, error) {
@@ -595,6 +599,29 @@ func validateConfigForSave(cfg Config, allowDanglingRefs ...bool) error {
 			if _, ok := profiles[target.SSHProfileID]; !ok {
 				return userErrorParams("errors.sshProfile.serviceTargetProfileMissing", map[string]any{"index": index + 1})
 			}
+		}
+	}
+	if err := validateUniqueConfigIDs("network test source", idsOfNetworkTestSources(cfg.NetworkTestSources)); err != nil {
+		return err
+	}
+	networkSources := make(map[string]struct{}, len(cfg.NetworkTestSources))
+	for index, source := range cfg.NetworkTestSources {
+		id := strings.TrimSpace(source.ID)
+		kind := strings.ToLower(strings.TrimSpace(source.Kind))
+		if id == "local" || kind == "local" {
+			continue
+		}
+		if kind != "ssh" || !validConfigValue(id, 128) || !validTextValue(strings.TrimSpace(source.Name), 128) || !validConfigValue(strings.TrimSpace(source.SSHProfileID), 128) {
+			return userErrorParams("errors.networkTest.sourceInvalid", map[string]any{"index": index + 1})
+		}
+		if _, ok := profiles[strings.TrimSpace(source.SSHProfileID)]; !ok {
+			return userErrorParams("errors.networkTest.sourceProfileNotFound", map[string]any{"index": index + 1})
+		}
+		networkSources[id] = struct{}{}
+	}
+	if sourceID := strings.TrimSpace(cfg.NetworkTestSettings.SourceID); sourceID != "" {
+		if _, ok := networkSources[sourceID]; sourceID != "local" && !ok {
+			return userError("errors.networkTest.selectedSourceNotFound")
 		}
 	}
 	return nil

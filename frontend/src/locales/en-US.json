@@ -2240,6 +2240,12 @@
       "invalidForward": "Invalid port forward settings",
       "forwardNotFound": "Port forward not found",
       "scanFailed": "Port scan failed: {{detail}}"
+    },
+    "networkTest": {
+      "sourceInvalid": "Network test source #{{index}} is invalid",
+      "sourceDuplicate": "Network test source ID at item {{index}} is duplicated",
+      "sourceProfileNotFound": "The SSH profile referenced by network test source #{{index}} does not exist",
+      "selectedSourceNotFound": "The selected network test source does not exist"
     }
   },
   "portTool": {
@@ -2357,6 +2363,59 @@
         "rtsp": "rtsp://user:password@example.com:554/stream"
       }
     },
+    "source": {
+      "label": "Request source",
+      "local": "Local machine",
+      "manage": "Manage sources…",
+      "managerTitle": "Manage network test sources",
+      "add": "Add SSH source",
+      "edit": "Edit source",
+      "name": "Source name",
+      "namePlaceholder": "For example: Production bastion",
+      "sshProfile": "SSH profile",
+      "selectSSHProfile": "Select an SSH profile",
+      "sshProfileRequired": "Select an existing SSH profile",
+      "kindSSH": "SSH source",
+      "remove": "Remove source",
+      "removeConfirmTitle": "Remove SSH source?",
+      "removeConfirmDescription": "Remove “{{name}}” from the list? This takes effect when you save the sources. If it is selected, the source will switch to the local machine.",
+      "empty": "No SSH sources yet",
+      "emptyHint": "Add an SSH source to see it here.",
+      "discardTitle": "Discard unsaved changes?",
+      "discardDescription": "The current source changes are not saved and will be lost.",
+      "discardConfirm": "Discard changes",
+      "profileMissing": "SSH profile not found",
+      "httpOnly": "SSH sources support HTTP / HTTPS requests only.",
+      "remoteRoutingNote": "Requests are forwarded through SSH and started remotely. The remote host resolves the target; local proxy, DNS, and interface settings do not apply."
+    },
+    "requestSettings": {
+      "title": "HTTP request settings",
+      "description": "Set the method, headers, and body, or paste a curl command to import them.",
+      "method": "Request method",
+      "headers": "Request headers",
+      "headersPlaceholder": "One header per line, for example:\nAccept: application/json\nAuthorization: Bearer …",
+      "sendBody": "Send request body",
+      "sendBodyNote": "When enabled, a body is sent even if it is empty.",
+      "body": "Request body",
+      "bodyPlaceholder": "Enter the request body"
+    },
+    "curl": {
+      "label": "Import from curl",
+      "placeholder": "Paste a curl command, for example: curl -X POST -H 'Content-Type: application/json' --data '{\"ok\":true}' https://example.com",
+      "parse": "Parse and fill",
+      "imported": "Request settings imported from curl",
+      "errors": {
+        "empty": "Paste a curl command",
+        "syntax": "The curl command has invalid quoting or escaping",
+        "command": "The command must start with curl",
+        "urlMissing": "The curl command is missing a target URL",
+        "urlMultiple": "The curl command contains multiple target URLs",
+        "unsupportedOption": "curl option {{option}} is not supported",
+        "fileReference": "Local files are not read; the file argument for curl option {{option}} cannot be imported",
+        "redirectLimit": "The curl redirect limit must be between 0 and 10",
+        "timeout": "The curl timeout must be between 1 and 300 seconds"
+      }
+    },
     "userAgent": {
       "label": "User-Agent",
       "option": {
@@ -2422,12 +2481,27 @@
         "literal": {
           "summary": "IP address · no DNS lookup",
           "detail": "The target is an IP address, so no DNS lookup was made."
+        },
+        "sshRemote": {
+          "summary": "SSH remote resolver · cache hit unknown",
+          "detail": "The SSH server resolves the target hostname and opens the forwarded connection; this machine cannot inspect its DNS address or cache hit."
         }
       }
     },
     "backend": {
       "messages": {
         "connectTunnelEstablished": "HTTP CONNECT tunnel established",
+        "httpBodyTooLarge": "The HTTP request body must be 1 MiB or smaller",
+        "httpHeadersTooLarge": "HTTP request headers must be 64 KiB or smaller",
+        "httpMethodInvalid": "Invalid HTTP request method",
+        "httpHeaderInvalid": "Invalid HTTP request header format",
+        "httpHeaderInvalidAt": "Invalid HTTP header format on line {{line}}",
+        "httpHeaderManagedByClient": "The HTTP client manages the header on line {{line}}; it cannot be set manually",
+        "sshProtocolUnsupported": "SSH sources support HTTP / HTTPS tests only",
+        "sourceMissing": "Network test source not found",
+        "sourceProfileMissing": "The SSH profile referenced by the network test source does not exist",
+        "sshConnectFailed": "Failed to connect to the SSH source: {{detail}}",
+        "sshForwardFailed": "Failed to forward to {{target}} through SSH: {{detail}}",
         "datagramAccepted": "Datagram accepted by the local network stack; this does not confirm remote delivery",
         "datagramPayload": "{{bytes}} bytes\\nUTF-8:\\n{{text}}\\n\\nhex:\\n{{hex}}",
         "ntpRequestSummary": "NTPv4 client request (mode 3, {{bytes}} bytes)\\nhex: {{hex}}",
@@ -2489,6 +2563,9 @@
       }
     },
     "outbound": {
+      "ssh": {
+        "summary": "Forwarded through SSH source {{source}} · target reachability unverified"
+      },
       "proxy": {
         "summary": "Relayed through proxy {{proxy}} · device reachability unverified"
       },
@@ -2530,6 +2607,8 @@
       "proxy-resolve": "Resolve system proxy",
       "dns-target": "Resolve target address",
       "dns-proxy": "Resolve proxy address",
+      "ssh-connect": "Connect to SSH source",
+      "ssh-forward": "Forward to target over SSH",
       "tcp-connect": "Establish TCP connection",
       "tunnel-route": "Outbound tunnel",
       "proxy-tunnel": "Establish proxy tunnel",

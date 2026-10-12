@@ -45,6 +45,11 @@ type NetworkTestRequest struct {
 	Protocol      string `json:"protocol"`
 	Target        string `json:"target"`
 	Payload       string `json:"payload"`
+	Method        string `json:"method"`
+	Headers       string `json:"headers"`
+	Body          string `json:"body"`
+	HasBody       bool   `json:"hasBody"`
+	SourceID      string `json:"sourceID"`
 	UserAgent     string `json:"userAgent"`
 	TimeoutMillis int    `json:"timeoutMillis"`
 	SkipTLSVerify bool   `json:"skipTLSVerify"`
@@ -92,10 +97,43 @@ type NetworkTestService struct {
 	cancels  map[string]context.CancelFunc
 	emitMu   sync.RWMutex
 	emitFunc func(string, any)
+	config   *ConfigService
 }
 
-func NewNetworkTestService() *NetworkTestService {
-	return &NetworkTestService{cancels: make(map[string]context.CancelFunc)}
+func NewNetworkTestService(config ...*ConfigService) *NetworkTestService {
+	service := &NetworkTestService{cancels: make(map[string]context.CancelFunc)}
+	if len(config) > 0 {
+		service.config = config[0]
+	}
+	return service
+}
+
+func (s *NetworkTestService) resolveNetworkTestSource(sourceID string) (NetworkTestSource, *SSHProfile, error) {
+	sourceID = strings.TrimSpace(sourceID)
+	if sourceID == "" || sourceID == "local" {
+		return defaultNetworkTestSources()[0], nil, nil
+	}
+	if s == nil || s.config == nil {
+		return NetworkTestSource{}, nil, networkTestError("networkTestTool.backend.sourceMissing")
+	}
+	var source NetworkTestSource
+	found := false
+	for _, candidate := range s.config.GetNetworkTestSources() {
+		if candidate.ID == sourceID {
+			source = candidate
+			found = true
+			break
+		}
+	}
+	if !found || source.Kind != "ssh" {
+		return NetworkTestSource{}, nil, networkTestError("networkTestTool.backend.sourceMissing")
+	}
+	for _, profile := range s.config.GetSSHProfiles() {
+		if profile.ID == source.SSHProfileID {
+			return source, &profile, nil
+		}
+	}
+	return source, nil, networkTestError("networkTestTool.backend.sourceProfileMissing")
 }
 
 func (s *NetworkTestService) ServiceName() string { return "NetworkTestService" }
@@ -167,6 +205,8 @@ type networkTestRun struct {
 	runID   string
 	ctx     context.Context
 	request NetworkTestRequest
+	source  NetworkTestSource
+	profile *SSHProfile
 	mu      sync.Mutex
 	stages  map[string]NetworkTestStage
 	starts  map[string]time.Time
@@ -195,6 +235,9 @@ func (s *networkRequestTraceState) set(stageID string, request *http.Request, ta
 		"method":           request.Method,
 		"url":              request.URL.String(),
 		"targetResolution": targetResolution,
+	}
+	if request.ContentLength > 0 {
+		meta["bodyBytes"] = strconv.FormatInt(request.ContentLength, 10)
 	}
 	if redirectCount > 0 {
 		meta["redirectCount"] = strconv.Itoa(redirectCount)
@@ -316,14 +359,14 @@ func (r *networkTestRun) currentStageForHop(fallback string, redirectCount int) 
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	stageID := func(id string) string { return networkRedirectStageID(id, redirectCount) }
-	for _, baseID := range []string{"rtsp-describe", "http-response", "websocket-handshake", "http-request", "ntp-response", "udp-response", "ntp-request", "udp-send", "rtsp-auth", "rtsp-options", "tls", "proxy-tunnel", "tcp-connect", "dns-target", "dns-proxy", "proxy-resolve"} {
+	for _, baseID := range []string{"rtsp-describe", "http-response", "websocket-handshake", "http-request", "ntp-response", "udp-response", "ntp-request", "udp-send", "rtsp-auth", "rtsp-options", "tls", "proxy-tunnel", "ssh-forward", "ssh-connect", "tcp-connect", "dns-target", "dns-proxy", "proxy-resolve"} {
 		id := stageID(baseID)
 		stage, ok := r.stages[id]
 		if ok && stage.Status == "running" {
 			return id
 		}
 	}
-	for _, baseID := range []string{"proxy-resolve", "dns-target", "dns-proxy", "tcp-connect", "proxy-tunnel", "tls", "http-request", "websocket-handshake", "http-response", "rtsp-options", "rtsp-auth", "rtsp-describe", "udp-send", "udp-response", "ntp-request", "ntp-response"} {
+	for _, baseID := range []string{"proxy-resolve", "dns-target", "dns-proxy", "tcp-connect", "ssh-connect", "ssh-forward", "proxy-tunnel", "tls", "http-request", "websocket-handshake", "http-response", "rtsp-options", "rtsp-auth", "rtsp-describe", "udp-send", "udp-response", "ntp-request", "ntp-response"} {
 		id := stageID(baseID)
 		stage, ok := r.stages[id]
 		if ok && (stage.Status == "error" || stage.Status == "timeout" || stage.Status == "canceled") {
@@ -367,7 +410,7 @@ func (r *networkTestRun) explainSilentFailure(route *networkRoute, target networ
 // composeFailureHint 在「本次直连 + 失败属于连接被丢下 + 本机配置了系统代理」时，把提示合成进
 // 同一条本地化结论；阶段错误与页脚结论共用它，因此两处文案完全一致。
 func (r *networkTestRun) composeFailureHint(err error) error {
-	if err == nil || r.secureEndpointReported || strings.TrimSpace(r.request.ProxyType) != "" || !isConnectionLevelFailure(err) {
+	if err == nil || r.source.Kind == "ssh" || r.secureEndpointReported || strings.TrimSpace(r.request.ProxyType) != "" || !isConnectionLevelFailure(err) {
 		return err
 	}
 	if !r.proxyHintLoaded {
@@ -420,21 +463,29 @@ func (s *NetworkTestService) RunNetworkTest(request NetworkTestRequest) NetworkT
 	run := &networkTestRun{service: s, runID: request.RunID, ctx: ctx, request: request, stages: make(map[string]NetworkTestStage), starts: make(map[string]time.Time)}
 	result := NetworkTestResult{RunID: request.RunID, Protocol: request.Protocol, Target: strings.TrimSpace(request.Target), StartedAt: started.UnixMilli()}
 	var err error
-	switch strings.ToLower(strings.TrimSpace(request.Protocol)) {
-	case "http":
-		err = run.runHTTP(request)
-	case "tcp":
-		err = run.runTCP(request)
-	case "websocket":
-		err = run.runWebSocket(request)
-	case "udp":
-		err = run.runUDP(request)
-	case "ntp":
-		err = run.runNTP(request)
-	case "rtsp":
-		err = run.runRTSP(request)
-	default:
-		err = networkTestError("networkTestTool.backend.unsupportedProtocol")
+	run.source, run.profile, err = s.resolveNetworkTestSource(request.SourceID)
+	if err != nil {
+		run.stage("validate", "error", NetworkTestStage{Error: err.Error()})
+	} else if run.source.Kind == "ssh" && !strings.EqualFold(strings.TrimSpace(request.Protocol), "http") {
+		err = networkTestError("networkTestTool.backend.sshProtocolUnsupported")
+		run.stage("validate", "error", NetworkTestStage{Error: err.Error()})
+	} else {
+		switch strings.ToLower(strings.TrimSpace(request.Protocol)) {
+		case "http":
+			err = run.runHTTP(request)
+		case "tcp":
+			err = run.runTCP(request)
+		case "websocket":
+			err = run.runWebSocket(request)
+		case "udp":
+			err = run.runUDP(request)
+		case "ntp":
+			err = run.runNTP(request)
+		case "rtsp":
+			err = run.runRTSP(request)
+		default:
+			err = networkTestError("networkTestTool.backend.unsupportedProtocol")
+		}
 	}
 	result.FinishedAt = time.Now().UnixMilli()
 	result.DurationMillis = max(0, result.FinishedAt-result.StartedAt)
@@ -594,6 +645,8 @@ type networkRoute struct {
 	dnsServer    string
 	iface        *net.Interface
 	requestTrace *networkRequestTraceState
+	remoteDial   func(context.Context, string, string) (net.Conn, error)
+	closeRemote  func()
 	// silent 在探测连接期间为 true：探测不是用户请求的链路，不能写链路阶段。
 	silent bool
 }
@@ -645,7 +698,16 @@ func (r *networkRoute) openStream(ctx context.Context, host, port string) (net.C
 	return r.dialContext(ctx, "tcp", net.JoinHostPort(host, port))
 }
 
+func (r *networkRoute) close() {
+	if r.closeRemote != nil {
+		r.closeRemote()
+	}
+}
+
 func newNetworkRoute(run *networkTestRun, request NetworkTestRequest) (*networkRoute, error) {
+	if run.source.Kind == "ssh" {
+		return newSSHNetworkRoute(run, request)
+	}
 	route := &networkRoute{run: run, request: request, proxyType: strings.ToLower(strings.TrimSpace(request.ProxyType))}
 	if (strings.EqualFold(strings.TrimSpace(request.Protocol), "udp") || strings.EqualFold(strings.TrimSpace(request.Protocol), "ntp")) && route.proxyType == "http" {
 		return nil, networkTestError("networkTestTool.backend.udpProxyUnsupported")
@@ -710,6 +772,55 @@ func newNetworkRoute(run *networkTestRun, request NetworkTestRequest) (*networkR
 			return nil, networkTestErrorParamsCause("networkTestTool.backend.interfaceUnavailable", map[string]any{"interface": name}, err)
 		}
 		route.iface = item
+	}
+	return route, nil
+}
+
+func newSSHNetworkRoute(run *networkTestRun, request NetworkTestRequest) (*networkRoute, error) {
+	if run.profile == nil {
+		return nil, networkTestError("networkTestTool.backend.sourceProfileMissing")
+	}
+	route := &networkRoute{run: run, request: request}
+	meta := map[string]string{"source": run.source.Name, "host": run.profile.Host, "outbound": "ssh"}
+	route.stage("ssh-connect", "running", NetworkTestStage{Meta: meta})
+	language := "zh-CN"
+	if run.service != nil && run.service.config != nil {
+		language = run.service.config.Get().Language
+	}
+	client, err := dialSSHProfileClient(run.ctx, *run.profile, language)
+	if err != nil {
+		failure := userErrorCause("networkTestTool.backend.sshConnectFailed", err)
+		route.fail("ssh-connect", failure)
+		return nil, failure
+	}
+	route.stage("ssh-connect", "success", NetworkTestStage{Meta: meta})
+	route.closeRemote = func() { closeSSHClient(client) }
+	route.remoteDial = func(ctx context.Context, network, address string) (net.Conn, error) {
+		resolver := "ssh-remote"
+		if host, _, err := net.SplitHostPort(address); err == nil && net.ParseIP(strings.Trim(host, "[]")) != nil {
+			resolver = "literal"
+		}
+		stageMeta := map[string]string{
+			"target":             address,
+			"source":             run.source.Name,
+			"resolver":           resolver,
+			"resolverType":       resolver,
+			"targetResolution":   "ssh-remote",
+			"outbound":           "ssh",
+			"reachability":       "unverified",
+			"remoteSSHHost":      run.profile.Host,
+			"remoteRouteAddress": address,
+		}
+		route.stage("ssh-forward", "running", NetworkTestStage{Request: network + " " + address, Meta: stageMeta})
+		conn, err := client.DialContext(ctx, network, address)
+		if err != nil {
+			failure := networkTestErrorParamsCause("networkTestTool.backend.sshForwardFailed", map[string]any{"target": address}, err)
+			route.fail("ssh-forward", failure)
+			return nil, failure
+		}
+		stageMeta["remoteAddress"] = conn.RemoteAddr().String()
+		route.stage("ssh-forward", "success", NetworkTestStage{Request: network + " " + address, Meta: stageMeta})
+		return conn, nil
 	}
 	return route, nil
 }
@@ -882,6 +993,9 @@ func (r *networkRoute) interfaceName() string {
 }
 
 func (r *networkRoute) dialContext(ctx context.Context, network, address string) (net.Conn, error) {
+	if r.remoteDial != nil {
+		return r.remoteDial(ctx, network, address)
+	}
 	host, port, err := net.SplitHostPort(address)
 	if err != nil {
 		return nil, err
@@ -1330,6 +1444,9 @@ func readSOCKS5Endpoint(reader io.Reader, atyp byte) (string, int, error) {
 }
 
 func (r *networkRoute) targetResolution() string {
+	if r.remoteDial != nil {
+		return "ssh-remote"
+	}
 	if r.proxyType == "http" || (r.proxyType == "socks5" && strings.EqualFold(r.request.DNSMode, "proxy")) {
 		return "proxy"
 	}
@@ -1343,8 +1460,119 @@ func (r *networkRoute) proxyFunc(*http.Request) (*url.URL, error) {
 	return nil, nil
 }
 
+func normalizeNetworkHTTPMethod(method string) (string, error) {
+	method = strings.TrimSpace(method)
+	if method == "" {
+		return http.MethodGet, nil
+	}
+	if len(method) > 128 || !validHTTPToken(method) {
+		return "", networkTestError("networkTestTool.backend.httpMethodInvalid")
+	}
+	return method, nil
+}
+
+func parseNetworkHTTPHeaders(raw string) (http.Header, string, error) {
+	if len(raw) > 64<<10 {
+		return nil, "", networkTestError("networkTestTool.backend.httpHeadersTooLarge")
+	}
+	lines := strings.Split(strings.ReplaceAll(raw, "\r\n", "\n"), "\n")
+	if strings.Contains(raw, "\r") {
+		return nil, "", networkTestError("networkTestTool.backend.httpHeaderInvalid")
+	}
+	headers := make(http.Header)
+	host := ""
+	hostSet := false
+	for index, line := range lines {
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		name, value, ok := strings.Cut(line, ":")
+		name = strings.TrimSpace(name)
+		value = strings.TrimSpace(value)
+		if !ok || !validHTTPToken(name) || !validHTTPHeaderValue(value) {
+			return nil, "", networkTestErrorf("networkTestTool.backend.httpHeaderInvalidAt", "line", index+1)
+		}
+		if strings.EqualFold(name, "Host") {
+			if hostSet || strings.ContainsAny(value, "/\\?#@ ") {
+				return nil, "", networkTestErrorf("networkTestTool.backend.httpHeaderInvalidAt", "line", index+1)
+			}
+			host, hostSet = value, true
+			continue
+		}
+		switch strings.ToLower(name) {
+		case "content-length", "transfer-encoding", "connection", "proxy-connection", "keep-alive", "upgrade", "trailer":
+			return nil, "", networkTestErrorf("networkTestTool.backend.httpHeaderManagedByClient", "line", index+1)
+		}
+		headers.Add(name, value)
+	}
+	return headers, host, nil
+}
+
+func validHTTPToken(value string) bool {
+	if value == "" {
+		return false
+	}
+	for _, character := range []byte(value) {
+		if (character >= '0' && character <= '9') || (character >= 'A' && character <= 'Z') || (character >= 'a' && character <= 'z') {
+			continue
+		}
+		if strings.ContainsRune("!#$%&'*+-.^_`|~", rune(character)) {
+			continue
+		}
+		return false
+	}
+	return true
+}
+
+func validHTTPHeaderValue(value string) bool {
+	for _, character := range []byte(value) {
+		if character == '\t' || (character >= 0x20 && character != 0x7f) {
+			continue
+		}
+		return false
+	}
+	return true
+}
+
+func cloneNetworkHTTPHeaders(headers http.Header) http.Header {
+	cloned := make(http.Header, len(headers))
+	for key, values := range headers {
+		cloned[key] = append([]string(nil), values...)
+	}
+	return cloned
+}
+
+func sameNetworkHTTPOrigin(left, right *url.URL) bool {
+	if left == nil || right == nil || !strings.EqualFold(left.Scheme, right.Scheme) || !strings.EqualFold(left.Hostname(), right.Hostname()) {
+		return false
+	}
+	leftPort, rightPort := left.Port(), right.Port()
+	if leftPort == "" {
+		leftPort = defaultPortForScheme(left.Scheme)
+	}
+	if rightPort == "" {
+		rightPort = defaultPortForScheme(right.Scheme)
+	}
+	return leftPort == rightPort
+}
+
 func (r *networkTestRun) runHTTP(request NetworkTestRequest) error {
 	target, err := parseNetworkTarget("http", request.Target)
+	if err != nil {
+		r.stage("validate", "error", NetworkTestStage{Error: err.Error()})
+		return err
+	}
+	method, err := normalizeNetworkHTTPMethod(request.Method)
+	if err != nil {
+		r.stage("validate", "error", NetworkTestStage{Error: err.Error()})
+		return err
+	}
+	if len(request.Body) > 1<<20 {
+		err := networkTestError("networkTestTool.backend.httpBodyTooLarge")
+		r.stage("validate", "error", NetworkTestStage{Error: err.Error()})
+		return err
+	}
+	headers, hostHeader, err := parseNetworkHTTPHeaders(request.Headers)
 	if err != nil {
 		r.stage("validate", "error", NetworkTestStage{Error: err.Error()})
 		return err
@@ -1355,9 +1583,12 @@ func (r *networkTestRun) runHTTP(request NetworkTestRequest) error {
 	}
 	route, err := newNetworkRoute(r, request)
 	if err != nil {
-		r.stage("validate", "error", NetworkTestStage{Error: err.Error()})
+		if r.source.Kind != "ssh" {
+			r.stage("validate", "error", NetworkTestStage{Error: err.Error()})
+		}
 		return err
 	}
+	defer route.close()
 	if err := route.resolveSystemProxy(target); err != nil {
 		return err
 	}
@@ -1377,17 +1608,30 @@ func (r *networkTestRun) runHTTP(request NetworkTestRequest) error {
 		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
 	}
 	currentURL := target.URL
+	currentMethod := method
+	currentBody := request.Body
+	currentHasBody := request.HasBody || request.Body != ""
+	currentHeaders := cloneNetworkHTTPHeaders(headers)
+	currentHostHeader := hostHeader
 	// User-Agent 在整条重定向链上保持不变：它标识的是本次测试使用的客户端身份。
 	userAgent := r.userAgent()
 	for redirectCount := 0; ; redirectCount++ {
 		requestID := networkRedirectStageID("http-request", redirectCount)
 		responseID := networkRedirectStageID("http-response", redirectCount)
-		req, err := http.NewRequest(http.MethodGet, currentURL.String(), nil)
+		var requestBody io.Reader
+		if currentHasBody {
+			requestBody = strings.NewReader(currentBody)
+		}
+		req, err := http.NewRequest(currentMethod, currentURL.String(), requestBody)
 		if err != nil {
 			r.stage(requestID, "error", NetworkTestStage{Error: err.Error(), Meta: redirectMeta(redirectCount)})
 			return err
 		}
-		req.Header.Set("User-Agent", userAgent)
+		req.Header = cloneNetworkHTTPHeaders(currentHeaders)
+		req.Host = currentHostHeader
+		if req.Header.Get("User-Agent") == "" {
+			req.Header.Set("User-Agent", userAgent)
+		}
 		requestTrace.set(requestID, req, route.targetResolution(), redirectCount)
 
 		requestURL := *currentURL
@@ -1494,6 +1738,22 @@ func (r *networkTestRun) runHTTP(request NetworkTestRequest) error {
 			nextRequestID := networkRedirectStageID("http-request", redirectCount+1)
 			r.stage(nextRequestID, "error", NetworkTestStage{Error: fmt.Sprintf("invalid redirect target %q: %v", location, err), Meta: redirectMeta(redirectCount + 1)})
 			return err
+		}
+		if response.StatusCode == http.StatusMovedPermanently || response.StatusCode == http.StatusFound || response.StatusCode == http.StatusSeeOther {
+			if currentMethod != http.MethodGet && currentMethod != http.MethodHead {
+				currentMethod = http.MethodGet
+				currentBody = ""
+				currentHasBody = false
+				for _, key := range []string{"Content-Type", "Content-Length", "Transfer-Encoding"} {
+					currentHeaders.Del(key)
+				}
+			}
+		}
+		if !sameNetworkHTTPOrigin(currentURL, nextURL) {
+			for _, key := range []string{"Authorization", "Proxy-Authorization", "Cookie"} {
+				currentHeaders.Del(key)
+			}
+			currentHostHeader = ""
 		}
 		currentURL = nextURL
 	}
@@ -2943,7 +3203,11 @@ func httpRequestSummary(request *http.Request) (string, error) {
 	var builder strings.Builder
 	if clone.URL != nil {
 		builder.WriteString(clone.Method + " " + clone.URL.RequestURI() + " HTTP/1.1\r\n")
-		builder.WriteString("Host: " + clone.URL.Host + "\r\n")
+		host := clone.Host
+		if host == "" {
+			host = clone.URL.Host
+		}
+		builder.WriteString("Host: " + host + "\r\n")
 	}
 	keys := make([]string, 0, len(clone.Header))
 	for key := range clone.Header {
@@ -2953,11 +3217,20 @@ func httpRequestSummary(request *http.Request) (string, error) {
 	for _, key := range keys {
 		values := clone.Header[key]
 		for _, value := range values {
+			if sensitiveNetworkHTTPHeader(key) {
+				value = "[redacted]"
+			}
 			builder.WriteString(key + ": " + value + "\r\n")
 		}
 	}
 	builder.WriteString("\r\n")
 	return builder.String(), nil
+}
+
+func sensitiveNetworkHTTPHeader(name string) bool {
+	name = strings.ToLower(strings.TrimSpace(name))
+	return name == "authorization" || name == "proxy-authorization" || name == "cookie" ||
+		strings.Contains(name, "token") || strings.Contains(name, "secret") || strings.Contains(name, "api-key")
 }
 
 func httpResponseSummary(response *http.Response, body []byte) (string, error) {
