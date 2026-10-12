@@ -110,13 +110,22 @@ func NewPortService(config *ConfigService) *PortService {
 func (s *PortService) ServiceName() string { return "PortService" }
 
 func normalizePortSources(sources []PortSource, profileNames map[string]string) []PortSource {
-	result := defaultPortSources()
-	seen := map[string]bool{"local": true}
+	result := make([]PortSource, 0, len(sources)+1)
+	seen := make(map[string]bool, len(sources)+1)
+	hasLocal := false
 	for _, source := range sources {
 		id := strings.TrimSpace(source.ID)
 		kind := strings.ToLower(strings.TrimSpace(source.Kind))
 		profileID := strings.TrimSpace(source.SSHProfileID)
-		if id == "" || id == "local" || seen[id] || kind != "ssh" || profileID == "" {
+		if id == "local" || kind == "local" {
+			if !hasLocal {
+				result = append(result, defaultPortSources()[0])
+				seen["local"] = true
+				hasLocal = true
+			}
+			continue
+		}
+		if id == "" || seen[id] || kind != "ssh" || profileID == "" {
 			continue
 		}
 		name := strings.TrimSpace(source.Name)
@@ -128,6 +137,9 @@ func normalizePortSources(sources []PortSource, profileNames map[string]string) 
 		}
 		seen[id] = true
 		result = append(result, PortSource{ID: id, Name: name, Kind: "ssh", SSHProfileID: profileID})
+	}
+	if !hasLocal {
+		result = append([]PortSource{defaultPortSources()[0]}, result...)
 	}
 	return result
 }
@@ -148,10 +160,16 @@ func (s *PortService) SavePortSources(sources []PortSource) error {
 		for _, profile := range cfg.SSHProfiles {
 			profiles[profile.ID] = profile.Name
 		}
-		normalized := defaultPortSources()
-		seen := map[string]bool{"local": true}
+		normalized := make([]PortSource, 0, len(sources)+1)
+		seen := make(map[string]bool, len(sources)+1)
+		hasLocal := false
 		for index, source := range sources {
-			if source.ID == "local" || source.Kind == "local" {
+			if strings.TrimSpace(source.ID) == "local" || strings.EqualFold(strings.TrimSpace(source.Kind), "local") {
+				if !hasLocal {
+					normalized = append(normalized, defaultPortSources()[0])
+					seen["local"] = true
+					hasLocal = true
+				}
 				continue
 			}
 			id := strings.TrimSpace(source.ID)
@@ -165,6 +183,9 @@ func (s *PortService) SavePortSources(sources []PortSource) error {
 			}
 			seen[id] = true
 			normalized = append(normalized, PortSource{ID: id, Name: name, Kind: "ssh", SSHProfileID: profileID})
+		}
+		if !hasLocal {
+			normalized = append([]PortSource{defaultPortSources()[0]}, normalized...)
 		}
 		cfg.PortSources = normalized
 		return nil

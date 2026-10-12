@@ -8,6 +8,8 @@ user-invocable: false
 
 新增工具必须完成完整接线，不能只新增一个组件并把导航或历史逻辑留在旧代码中。工具组件使用 `ToolLayout`、`ToolActionBar` 和共享类型，遵循现有工具的数据流。
 
+新工具支持本机与 SSH 来源切换时，遵循 [layout-guidance](../layout-guidance/SKILL.md) 的来源 UI 约定和 [wails-integration](../wails-integration/SKILL.md) 的来源模型及持久化约定；不要直接把全局 SSH profile 列表当作工具来源。
+
 调查发现变更跨越 `ToolId`、注册、导航、常驻挂载、命令、历史或托盘识别时，再升级到完整接线清单。编解码类工具（例如 JWT）的产品特例见 [examples.md](./examples.md)，仅在新增同类工具时读取。
 
 在**已有工具内部**新增协议、算法或数据格式分支（例如网络测试工具新增协议）不属于本清单，见 [network-test-protocol](../network-test-protocol/SKILL.md)。

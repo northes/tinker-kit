@@ -96,7 +96,7 @@ import { openTaskCenter } from './TaskCenter';
 import { SSHProfileFormField } from './SSHProfileFormField';
 import { useSSHProfiles } from './SSHProfileManagerDialog';
 import { ConfirmDialog } from './ConfirmDialog';
-import { TargetHostManagerDialog } from './TargetHostManagerDialog';
+import { TargetHostManagerDialog, upsertManagerItem } from './TargetHostManagerDialog';
 import { formatBackendError } from '../lib/backend-error';
 
 const LOCAL_SOURCE_ID = 'local';
@@ -108,7 +108,6 @@ const LOCAL_SOURCE = {
 } as unknown as ImageSource;
 const IMAGE_TASK_RETENTION_MS = 24 * 60 * 60 * 1000;
 
-type SourceKind = 'local' | 'ssh' | 'registry';
 type ManagedImageSource = Omit<
   ImageSource,
   'sshProfileID' | 'registryURL' | 'registryUsername' | 'registryPassword'
@@ -149,19 +148,16 @@ type WatchDockerImagesEvent = {
   error?: string;
 };
 
-type ConfirmState =
-  | {
-      type: 'delete';
-      ids: string[];
-      targets: DockerDeleteTarget[];
-      name: string;
-      sourceId: string;
-      sourceKind: string;
-      sourceConfigKey: string;
-      deleteManifest: boolean;
-    }
-  | { type: 'removeSource'; id: string; name: string }
-  | null;
+type ConfirmState = {
+  type: 'delete';
+  ids: string[];
+  targets: DockerDeleteTarget[];
+  name: string;
+  sourceId: string;
+  sourceKind: string;
+  sourceConfigKey: string;
+  deleteManifest: boolean;
+} | null;
 
 type ImageRenameScope = 'tag' | 'name';
 type ImageRenameMode = 'prefix' | 'suffix' | 'replace' | 'custom';
@@ -1077,12 +1073,7 @@ export default function ImageManagerTool({
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState<'push' | 'tag' | 'delete' | null>(null);
   const [manageOpen, setManageOpen] = useState(false);
-  const [manageTab, setManageTab] = useState<'ssh' | 'registry'>('ssh');
-  const [editingSource, setEditingSource] = useState<SourceDraft | null>(null);
-  const [draftSources, setDraftSources] = useState<ImageSource[]>([]);
   const [savingSources, setSavingSources] = useState(false);
-  const [sourceSaveError, setSourceSaveError] = useState('');
-  const [sourceDraftError, setSourceDraftError] = useState('');
   const [testingSource, setTestingSource] = useState(false);
   const [confirm, setConfirm] = useState<ConfirmState>(null);
   const [operationDialog, setOperationDialog] = useState<ImageOperationDialogState>(null);
@@ -1218,8 +1209,7 @@ export default function ImageManagerTool({
   }, [tasks, taskClock]);
 
   useEffect(() => {
-    if (!sources.some((item) => item.id === sourceId))
-      setSourceId(sources[0]?.id ?? LOCAL_SOURCE_ID);
+    if (!sources.some((item) => item.id === sourceId)) setSourceId(LOCAL_SOURCE_ID);
   }, [sourceId, sources]);
 
   // 列表组件在详情页仍保持挂载；watcher 不随 active 切换重启，返回列表复用现有快照，按后台定时轮次更新。
@@ -1558,32 +1548,7 @@ export default function ImageManagerTool({
     );
   };
 
-  const openManage = () => {
-    setManageTab('ssh');
-    setEditingSource(null);
-    setManageOpen(true);
-    setDraftSources(sources);
-    setSourceSaveError('');
-    setSourceDraftError('');
-  };
-
-  const newSource = (kind: 'ssh' | 'registry') => {
-    setManageTab(kind);
-    setSourceDraftError('');
-    setEditingSource({ id: '', name: '', kind, sshProfileID: '' });
-  };
-
-  const editSource = (item: ImageSource) => {
-    const kind = (item.kind === 'registry' ? 'registry' : 'ssh') as 'ssh' | 'registry';
-    setManageTab(kind);
-    setSourceDraftError('');
-    setEditingSource({ ...(item as ManagedImageSource), kind });
-  };
-
-  const updateDraft = (patch: Partial<SourceDraft>) => {
-    setSourceDraftError('');
-    setEditingSource((current) => (current ? { ...current, ...patch } : current));
-  };
+  const openManage = () => setManageOpen(true);
 
   const sourceCandidate = (draft: SourceDraft, id?: string) => {
     const kind = draft.kind as 'ssh' | 'registry';
@@ -1594,213 +1559,6 @@ export default function ImageManagerTool({
       name: draft.name?.trim() ?? '',
       sshProfileID: draft.sshProfileID?.trim() ?? '',
     } as ManagedImageSource);
-  };
-
-  const saveSource = async () => {
-    if (!editingSource) return;
-    const kind = editingSource.kind as SourceKind;
-    if (kind === 'ssh' && !editingSource.sshProfileID?.trim()) {
-      setSourceDraftError(t('imageManagerTool.sshProfileRequired'));
-      return;
-    }
-    const id = editingSource.id?.trim() || `${kind}:${crypto.randomUUID()}`;
-    try {
-      const next = await ValidateImageSource(sourceCandidate(editingSource, id));
-      setDraftSources((current) => [
-        ...current.filter((item) => !isLocalSource(item) && item.id !== editingSource.id),
-        next,
-      ]);
-      setSourceDraftError('');
-      setEditingSource(null);
-    } catch (error) {
-      setSourceDraftError(errorMessage(error) || t('imageManagerTool.sourceInvalid'));
-    }
-  };
-
-  const testSourceConnection = async () => {
-    if (!editingSource) return;
-    setTestingSource(true);
-    try {
-      await TestImageSourceConnection(sourceCandidate(editingSource));
-      setSourceDraftError('');
-      toast.add({ title: t('imageManagerTool.connectionSucceeded'), type: 'success' });
-    } catch (error) {
-      setSourceDraftError(errorMessage(error) || t('imageManagerTool.connectionFailed'));
-    } finally {
-      setTestingSource(false);
-    }
-  };
-
-  const removeSource = (id: string) => {
-    if (id === LOCAL_SOURCE_ID) return;
-    setDraftSources((current) => current.filter((item) => isLocalSource(item) || item.id !== id));
-    if (sourceId === id) setSourceId(LOCAL_SOURCE_ID);
-  };
-
-  const renderEditForm = () => {
-    if (!editingSource) return null;
-    return (
-      <form
-        className="flex flex-col gap-3 border-t border-border pt-3"
-        id="image-source-form"
-        onSubmit={(event) => {
-          event.preventDefault();
-          void saveSource();
-        }}
-      >
-        <h3 className="m-0 text-sm font-medium text-foreground">
-          {editingSource.id ? t('imageManagerTool.editSource') : t('imageManagerTool.addSource')}
-        </h3>
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <div className="flex flex-col gap-1 sm:col-span-2">
-            <Label htmlFor="source-edit-name">{t('imageManagerTool.sourceName')}</Label>
-            <Input
-              id="source-edit-name"
-              value={editingSource.name ?? ''}
-              placeholder={
-                editingSource.kind === 'ssh'
-                  ? profiles.find((item) => item.id === editingSource.sshProfileID)?.name
-                  : undefined
-              }
-              onChange={(e) => updateDraft({ name: e.target.value })}
-            />
-          </div>
-          {editingSource.kind === 'ssh' ? (
-            <>
-              <div className="flex flex-col gap-2 sm:col-span-2">
-                <Label htmlFor="source-edit-ssh-profile">{t('imageManagerTool.sshProfile')}</Label>
-                <SSHProfileFormField
-                  id="source-edit-ssh-profile"
-                  value={editingSource.sshProfileID ?? ''}
-                  onSelect={(profile) =>
-                    updateDraft({
-                      sshProfileID: profile?.id ?? '',
-                      name: editingSource.name?.trim() || profile?.name || editingSource.name,
-                    })
-                  }
-                  placeholder={t('imageManagerTool.selectSSHProfile')}
-                />
-                {editingSource.sshProfileID &&
-                !profiles.some((item) => item.id === editingSource.sshProfileID) ? (
-                  <p className="m-0 text-[10px] leading-4 text-destructive" role="alert">
-                    {t('imageManagerTool.sshProfileMissingHint')}
-                  </p>
-                ) : null}
-              </div>
-            </>
-          ) : (
-            <>
-              <div className="flex flex-col gap-1 sm:col-span-2">
-                <Label htmlFor="source-edit-registry-url">
-                  {t('imageManagerTool.registryURL')}
-                </Label>
-                <Input
-                  id="source-edit-registry-url"
-                  value={editingSource.registryURL ?? ''}
-                  onChange={(e) => updateDraft({ registryURL: e.target.value })}
-                  placeholder={t('imageManagerTool.registryURLPlaceholder')}
-                />
-              </div>
-              <div className="flex flex-col gap-1">
-                <Label htmlFor="source-edit-registry-username">
-                  {t('imageManagerTool.registryUsername')}
-                </Label>
-                <Input
-                  id="source-edit-registry-username"
-                  value={editingSource.registryUsername ?? ''}
-                  onChange={(e) => updateDraft({ registryUsername: e.target.value })}
-                />
-              </div>
-              <div className="flex flex-col gap-1">
-                <Label htmlFor="source-edit-registry-password">
-                  {t('imageManagerTool.registryPassword')}
-                </Label>
-                <Input
-                  id="source-edit-registry-password"
-                  type="password"
-                  value={editingSource.registryPassword ?? ''}
-                  onChange={(e) => updateDraft({ registryPassword: e.target.value })}
-                />
-              </div>
-            </>
-          )}
-        </div>
-        {sourceDraftError ? (
-          <p className="m-0 text-sm text-destructive" role="alert">
-            {sourceDraftError}
-          </p>
-        ) : null}
-        <div className="flex justify-end gap-2 pt-1">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => {
-              setEditingSource(null);
-              setSourceDraftError('');
-            }}
-          >
-            {t('imageManagerTool.cancel')}
-          </Button>
-          {editingSource.kind === 'registry' ? (
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={testingSource}
-              onClick={() => void testSourceConnection()}
-            >
-              {testingSource ? <Spinner data-icon="inline-start" /> : null}
-              {t('imageManagerTool.testConnection')}
-            </Button>
-          ) : null}
-          <Button type="submit" size="sm" disabled={testingSource}>
-            {t('imageManagerTool.saveSource')}
-          </Button>
-        </div>
-      </form>
-    );
-  };
-
-  const saveSources = async () => {
-    const local = draftSources.find(isLocalSource) ?? LOCAL_SOURCE;
-    const existing = draftSources.filter((item) => !isLocalSource(item));
-    const nextSources: ImageSource[] = [
-      bindingSource({ ...local, id: LOCAL_SOURCE_ID, kind: 'local' } as ManagedImageSource),
-      ...existing.map((item) => {
-        const source = item as ManagedImageSource;
-        if (source.kind === 'ssh' && !source.name.trim()) {
-          const profile = profiles.find((entry) => entry.id === source.sshProfileID?.trim());
-          if (profile) return bindingSource({ ...source, name: profile.name });
-        }
-        return bindingSource(source);
-      }),
-    ];
-    const invalid = nextSources.find((item) =>
-      item.kind === 'ssh'
-        ? !item.sshProfileID.trim() || !profiles.some((profile) => profile.id === item.sshProfileID)
-        : item.kind === 'registry'
-          ? !item.registryURL.trim()
-          : false,
-    );
-    if (invalid) {
-      setSourceSaveError(
-        t(
-          invalid.kind === 'ssh'
-            ? 'imageManagerTool.sshProfileRequired'
-            : 'imageManagerTool.registryURLRequired',
-        ),
-      );
-      return;
-    }
-    setSavingSources(true);
-    setSourceSaveError('');
-    try {
-      await onSettingsChange({ dockerCLIPath: cliPath, imageSources: nextSources });
-      setManageOpen(false);
-    } catch (error) {
-      setSourceSaveError(errorMessage(error) || t('imageManagerTool.sourceSaveFailed'));
-    } finally {
-      setSavingSources(false);
-    }
   };
 
   const saveManagedSources = async (managed: ImageSource[]) => {
@@ -1835,12 +1593,6 @@ export default function ImageManagerTool({
       setSavingSources(false);
     }
   };
-  void manageTab;
-  void sourceSaveError;
-  void newSource;
-  void editSource;
-  void renderEditForm;
-  void saveSources;
 
   const toggleAll = (checked: boolean) => {
     setSelected(checked ? new Set(filteredRows.map((row) => row.key)) : new Set());
@@ -2191,11 +1943,6 @@ export default function ImageManagerTool({
 
   const confirmAction = () => {
     if (!confirm || busy) return;
-    if (confirm.type === 'removeSource') {
-      removeSource(confirm.id);
-      setConfirm(null);
-      return;
-    }
     if (confirm.sourceConfigKey !== sourceConfigKey) {
       toast.add({ title: t('imageManagerTool.sourceChangedRefresh'), type: 'warning' });
       setConfirm(null);
@@ -3156,30 +2903,36 @@ export default function ImageManagerTool({
           try {
             const id = draft.id?.trim() || `${kind}:${crypto.randomUUID()}`;
             const next = await ValidateImageSource(sourceCandidate(draft, id));
-            return [
-              ...previous.filter((item) => item.id !== draft.id && item.id !== next.id),
+            return upsertManagerItem(
+              previous,
               next,
-            ];
+              (item) => item.id,
+              draft.id?.trim() || undefined,
+            );
           } catch (error) {
             return errorMessage(error) || t('imageManagerTool.sourceInvalid');
           }
         }}
         saveItems={saveManagedSources}
         saving={savingSources}
-        renderMeta={(item) => (
-          <>
-            <span>
-              {item.kind === 'registry'
-                ? t('imageManagerTool.kindRegistry')
-                : t('imageManagerTool.kindSsh')}
-            </span>
-            {sourceMissingSSHProfile(item, profiles) ? (
-              <Badge variant="destructive" className="h-4 text-[9px]">
-                {t('imageManagerTool.sshProfileMissing')}
-              </Badge>
-            ) : null}
-          </>
-        )}
+        renderMeta={(item) =>
+          isLocalSource(item) ? (
+            <span>{t('imageManagerTool.localSource')}</span>
+          ) : (
+            <>
+              <span>
+                {item.kind === 'registry'
+                  ? t('imageManagerTool.kindRegistry')
+                  : t('imageManagerTool.kindSsh')}
+              </span>
+              {sourceMissingSSHProfile(item, profiles) ? (
+                <Badge variant="destructive" className="h-4 text-[9px]">
+                  {t('imageManagerTool.sshProfileMissing')}
+                </Badge>
+              ) : null}
+            </>
+          )
+        }
         renderForm={({ draft, setDraft }) => (
           <>
             <div className="grid gap-1.5">
@@ -3299,7 +3052,6 @@ export default function ImageManagerTool({
         }
         strings={{
           title: t('imageManagerTool.manageSourcesTitle'),
-          add: t('common.add'),
           edit: t('imageManagerTool.editTargetHost'),
           remove: t('imageManagerTool.removeTargetHost'),
           dragItem: (name) => t('sidebar.dragTool', { name }),
@@ -3321,26 +3073,14 @@ export default function ImageManagerTool({
         onOpenChange={(open) => {
           if (!open) setConfirm(null);
         }}
-        title={
-          confirm?.type === 'removeSource'
-            ? t('imageManagerTool.removeSourceConfirmTitle')
-            : t('imageManagerTool.deleteConfirmTitle')
-        }
-        confirmLabel={
-          confirm?.type === 'removeSource'
-            ? t('imageManagerTool.removeSource')
-            : t('imageManagerTool.confirm')
-        }
+        title={t('imageManagerTool.deleteConfirmTitle')}
+        confirmLabel={t('imageManagerTool.confirm')}
         cancelLabel={t('imageManagerTool.cancel')}
         destructive
         busy={busy !== null}
         onConfirm={confirmAction}
       >
-        {confirm?.type === 'removeSource' ? (
-          <p className="m-0">
-            {t('imageManagerTool.removeSourceConfirmBody', { name: confirm.name })}
-          </p>
-        ) : confirm?.type === 'delete' ? (
+        {confirm?.type === 'delete' ? (
           confirm.sourceKind === 'registry' ? (
             <div className="flex min-w-0 flex-col gap-3">
               <div className="grid gap-1.5">

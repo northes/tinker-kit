@@ -123,7 +123,7 @@ import { Popover, PopoverContent, PopoverTitle, PopoverTrigger } from './ui/popo
 import { toast } from './ui/toast';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
 import { ToggleGroup, ToggleGroupItem } from './ui/toggle-group';
-import { TargetHostManagerDialog } from './TargetHostManagerDialog';
+import { TargetHostManagerDialog, upsertManagerItem } from './TargetHostManagerDialog';
 import { backendErrorKey, formatBackendError } from '../lib/backend-error';
 import { formatBytes } from './ServiceMetricChart';
 import { ServiceResourcePerformance } from './ServiceResourcePerformance';
@@ -132,7 +132,7 @@ import { ServicePickedPerformance } from './ServicePickedPerformance';
 const MANAGE_TARGETS_VALUE = '__manage-targets__';
 const VISIBLE_LOG_LIMIT = 5000;
 const LOG_LIMIT_ERROR_KEY = 'errors.service.logMonitorLimitReached';
-const LOCAL_TARGET: ServiceTarget = { id: 'local', name: 'local', kind: 'local' };
+const LOCAL_TARGET: ServiceTarget = { id: 'local', name: '本机', kind: 'local' };
 
 type Runtime = 'docker' | 'pm2' | 'systemd';
 type Selection = {
@@ -301,12 +301,7 @@ export default function ServiceManagerTool({
   const [lines, setLines] = useState<ServiceLogLine[]>([]);
   const [truncated, setTruncated] = useState(false);
   const [manageOpen, setManageOpen] = useState(false);
-  const [editingTarget, setEditingTarget] = useState<ServiceTarget | null>(null);
-  const [draftTargets, setDraftTargets] = useState<ServiceTarget[]>([]);
   const [savingTargets, setSavingTargets] = useState(false);
-  const [targetDraftError, setTargetDraftError] = useState('');
-  const [targetSaveError, setTargetSaveError] = useState('');
-  const [pendingRemove, setPendingRemove] = useState<ServiceTarget | null>(null);
   const [pendingAction, setPendingAction] = useState<{
     resource: ServiceResourceRef;
     action: string;
@@ -878,150 +873,7 @@ export default function ServiceManagerTool({
     !profiles.some((profile) => profile.id === toolbarTarget.sshProfileID);
   const openManage = () => {
     void reload().catch(() => undefined);
-    setEditingTarget(null);
-    setDraftTargets(targets);
-    setTargetDraftError('');
-    setTargetSaveError('');
     setManageOpen(true);
-  };
-  const newTarget = () => {
-    setTargetDraftError('');
-    setEditingTarget({ id: '', name: '', kind: 'ssh', sshProfileID: profiles[0]?.id ?? '' });
-  };
-  const editTarget = (target: ServiceTarget) => {
-    setTargetDraftError('');
-    setEditingTarget({ ...target });
-  };
-  const updateTargetDraft = (patch: Partial<ServiceTarget>) => {
-    setTargetDraftError('');
-    setEditingTarget((current) => (current ? { ...current, ...patch } : current));
-  };
-  const removeTarget = (id: string) => {
-    setDraftTargets((current) => current.filter((item) => item.id !== id));
-  };
-  const confirmRemoveTarget = () => {
-    if (pendingRemove) removeTarget(pendingRemove.id);
-    setPendingRemove(null);
-  };
-  const saveTarget = () => {
-    if (!editingTarget) return;
-    const profileID = editingTarget.sshProfileID?.trim() ?? '';
-    const profile = profiles.find((item) => item.id === profileID);
-    if (!profile) {
-      setTargetDraftError(t('serviceManagerTool.sshProfileRequired'));
-      return;
-    }
-    const next: ServiceTarget = {
-      id: `ssh:${profileID}`,
-      name: editingTarget.name.trim() || profile.name,
-      kind: 'ssh',
-      sshProfileID: profileID,
-    };
-    setDraftTargets((current) => [
-      ...current.filter(
-        (item) => item.kind !== 'ssh' || (item.id !== editingTarget.id && item.id !== next.id),
-      ),
-      next,
-    ]);
-    setTargetDraftError('');
-    setEditingTarget(null);
-  };
-  const saveTargets = async () => {
-    const sshTargets = draftTargets.filter((item) => item.kind === 'ssh');
-    setSavingTargets(true);
-    setTargetSaveError('');
-    try {
-      // 保存前以服务端为准刷新 SSH 配置，避免引用到已失效的列表快照。
-      const latest = await reload().catch(() => profiles);
-      const invalid = sshTargets.find(
-        (item) => !item.sshProfileID || !latest.some((profile) => profile.id === item.sshProfileID),
-      );
-      if (invalid) {
-        setTargetSaveError(t('serviceManagerTool.sshProfileRequired'));
-        return;
-      }
-      await SaveServiceTargets([LOCAL_TARGET, ...sshTargets]);
-      const next = (await GetServiceTargets()) ?? [];
-      syncTargets(next);
-      setManageOpen(false);
-    } catch (error) {
-      setTargetSaveError(formatBackendError(error) || t('serviceManagerTool.targetSaveFailed'));
-    } finally {
-      setSavingTargets(false);
-    }
-  };
-  const renderTargetForm = () => {
-    if (!editingTarget) return null;
-    const profile = profiles.find((item) => item.id === editingTarget.sshProfileID);
-    return (
-      <form
-        className="mt-3 flex flex-col gap-3 border-t border-border pt-3"
-        id="service-target-form"
-        onSubmit={(event) => {
-          event.preventDefault();
-          saveTarget();
-        }}
-      >
-        <h3 className="m-0 text-sm font-medium text-foreground">
-          {editingTarget.id
-            ? t('serviceManagerTool.editTarget')
-            : t('serviceManagerTool.addTarget')}
-        </h3>
-        <div className="grid gap-3">
-          <div className="flex flex-col gap-1">
-            <Label htmlFor="service-target-name">{t('serviceManagerTool.targetName')}</Label>
-            <Input
-              id="service-target-name"
-              value={editingTarget.name}
-              placeholder={profile?.name}
-              onChange={(event) => updateTargetDraft({ name: event.target.value })}
-            />
-          </div>
-          <div className="flex flex-col gap-1">
-            <Label htmlFor="service-target-profile">
-              {t('serviceManagerTool.targetSSHProfile')}
-            </Label>
-            <SSHProfileFormField
-              id="service-target-profile"
-              value={editingTarget.sshProfileID ?? ''}
-              onSelect={(profile) =>
-                updateTargetDraft({
-                  sshProfileID: profile?.id ?? '',
-                  name: editingTarget.name.trim() || profile?.name || editingTarget.name,
-                })
-              }
-              placeholder={t('serviceManagerTool.selectSSHProfile')}
-            />
-            {editingTarget.sshProfileID && !profile ? (
-              <p className="m-0 text-[10px] leading-4 text-destructive" role="alert">
-                {t('serviceManagerTool.sshProfileMissingHint')}
-              </p>
-            ) : null}
-          </div>
-        </div>
-        {targetDraftError ? (
-          <p className="m-0 text-sm text-destructive" role="alert">
-            {targetDraftError}
-          </p>
-        ) : null}
-        <div className="flex justify-end gap-2 pt-1">
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={() => {
-              setEditingTarget(null);
-              setTargetDraftError('');
-            }}
-          >
-            {t('common.cancel')}
-          </Button>
-          <Button type="submit" size="sm">
-            {t('common.save')}
-          </Button>
-        </div>
-      </form>
-    );
   };
   const toggleStatus = (runtime: Runtime, status: string, checked: boolean) => {
     const key = statusKey(runtime, status);
@@ -1032,12 +884,6 @@ export default function ServiceManagerTool({
       return next;
     });
   };
-  void targetSaveError;
-  void newTarget;
-  void editTarget;
-  void confirmRemoveTarget;
-  void saveTargets;
-  void renderTargetForm;
   const clearStatusFilter = () => setStatusFilter(new Set());
 
   return (
@@ -1424,9 +1270,14 @@ export default function ServiceManagerTool({
       <TargetHostManagerDialog<ServiceTarget, ServiceTarget>
         open={manageOpen}
         onOpenChange={setManageOpen}
-        items={targets.filter((item) => item.kind === 'ssh')}
+        items={targets.length ? targets : [LOCAL_TARGET]}
         itemKey={(item) => item.id}
-        itemName={(item) => item.name}
+        itemName={(item) =>
+          item.id === 'local' || item.kind === 'local'
+            ? t('serviceManagerTool.localTarget')
+            : item.name
+        }
+        itemDisabled={(item) => item.id === 'local' || item.kind === 'local'}
         createDraft={() =>
           ({ id: '', name: '', kind: 'ssh', sshProfileID: profiles[0]?.id ?? '' }) as ServiceTarget
         }
@@ -1435,33 +1286,37 @@ export default function ServiceManagerTool({
           const profile = profiles.find((item) => item.id === draft.sshProfileID);
           if (!profile) return t('serviceManagerTool.sshProfileRequired');
           const next = {
-            id: draft.id || `ssh:${profile.id}`,
+            id: `ssh:${profile.id}`,
             name: draft.name.trim() || profile.name,
             kind: 'ssh',
             sshProfileID: profile.id,
           } as ServiceTarget;
-          return [...previous.filter((item) => item.id !== draft.id && item.id !== next.id), next];
+          return upsertManagerItem(previous, next, (item) => item.id, draft.id || undefined);
         }}
-        saveItems={async (managed) => {
+        saveItems={async (nextTargets) => {
           setSavingTargets(true);
           try {
-            await SaveServiceTargets([LOCAL_TARGET, ...managed]);
+            await SaveServiceTargets(nextTargets);
             syncTargets((await GetServiceTargets()) ?? []);
           } finally {
             setSavingTargets(false);
           }
         }}
         saving={savingTargets}
-        renderMeta={(item) => (
-          <>
-            <span>{t('serviceManagerTool.targetKindSsh')}</span>
-            {!profiles.some((profile) => profile.id === item.sshProfileID) ? (
-              <Badge variant="destructive" className="h-4 text-[9px]">
-                {t('serviceManagerTool.sshProfileMissing')}
-              </Badge>
-            ) : null}
-          </>
-        )}
+        renderMeta={(item) =>
+          item.id === 'local' || item.kind === 'local' ? (
+            <span>{t('serviceManagerTool.localTarget')}</span>
+          ) : (
+            <>
+              <span>{t('serviceManagerTool.targetKindSsh')}</span>
+              {!profiles.some((profile) => profile.id === item.sshProfileID) ? (
+                <Badge variant="destructive" className="h-4 text-[9px]">
+                  {t('serviceManagerTool.sshProfileMissing')}
+                </Badge>
+              ) : null}
+            </>
+          )
+        }
         renderForm={({ draft, setDraft }) => (
           <>
             <div className="grid gap-1.5">
@@ -1489,7 +1344,6 @@ export default function ServiceManagerTool({
         )}
         strings={{
           title: t('serviceManagerTool.manageTargetsTitle'),
-          add: t('serviceManagerTool.addTarget'),
           edit: t('serviceManagerTool.editTarget'),
           remove: t('serviceManagerTool.removeTarget'),
           dragItem: (name) => t('sidebar.dragTool', { name }),

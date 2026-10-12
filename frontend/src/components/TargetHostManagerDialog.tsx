@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   DndContext,
   closestCenter,
@@ -69,7 +70,6 @@ function SortableManagerItem({
 
 type Strings = {
   title: ReactNode;
-  add: ReactNode;
   edit: string;
   remove: string;
   dragItem: (name: string) => string;
@@ -84,6 +84,24 @@ type Strings = {
   removeDescription: (name: string) => ReactNode;
   formTitle: (editing: boolean) => ReactNode;
 };
+
+export function upsertManagerItem<TItem>(
+  items: TItem[],
+  item: TItem,
+  itemKey: (item: TItem) => string,
+  previousKey?: string,
+) {
+  const originalIndex = previousKey
+    ? items.findIndex((candidate) => itemKey(candidate) === previousKey)
+    : -1;
+  const nextKey = itemKey(item);
+  const remaining = items.filter(
+    (candidate) => itemKey(candidate) !== previousKey && itemKey(candidate) !== nextKey,
+  );
+  const insertIndex =
+    originalIndex < 0 ? remaining.length : Math.min(originalIndex, remaining.length);
+  return [...remaining.slice(0, insertIndex), item, ...remaining.slice(insertIndex)];
+}
 
 export function TargetHostManagerDialog<TItem, TDraft>({
   open,
@@ -108,6 +126,7 @@ export function TargetHostManagerDialog<TItem, TDraft>({
   items: TItem[];
   itemKey: (item: TItem) => string;
   itemName: (item: TItem) => string;
+  /** Disables edit and remove controls while keeping the row sortable. */
   itemDisabled?: (item: TItem) => boolean;
   createDraft: () => TDraft;
   toDraft: (item: TItem) => TDraft;
@@ -120,6 +139,7 @@ export function TargetHostManagerDialog<TItem, TDraft>({
   saving?: boolean;
   strings: Strings;
 }) {
+  const { t } = useTranslation();
   const [baseline, setBaseline] = useState<TItem[]>([]);
   const [draftItems, setDraftItems] = useState<TItem[]>([]);
   const [formDraft, setFormDraft] = useState<TDraft | null>(null);
@@ -312,7 +332,9 @@ export function TargetHostManagerDialog<TItem, TDraft>({
               </form>
             </ScrollArea>
           )}
-          <DialogFooter className="mx-0 mb-0 flex-none rounded-b-xl px-6 py-4">
+          <DialogFooter
+            className={`mx-0 mb-0 flex-none rounded-b-xl px-6 py-4 ${formDraft === null ? 'sm:justify-between' : ''}`}
+          >
             {formDraft === null ? (
               <>
                 <Button
@@ -321,7 +343,7 @@ export function TargetHostManagerDialog<TItem, TDraft>({
                   onClick={() => startForm(createDraft())}
                 >
                   <Plus data-icon="inline-start" weight="duotone" />
-                  {strings.add}
+                  {t('common.add')}
                 </Button>
                 <Button disabled={saving || !collectionDirty} onClick={() => void persist()}>
                   {saving ? <Spinner data-icon="inline-start" /> : null}

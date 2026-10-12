@@ -285,11 +285,20 @@ func (s *ServiceManagerService) SaveServiceTargets(targets []ServiceTarget) erro
 		for _, profile := range cfg.SSHProfiles {
 			names[profile.ID] = profile.Name
 		}
-		normalized := defaultServiceTargets()
-		seen := map[string]bool{"local": true}
+		normalized := make([]ServiceTarget, 0, len(targets)+1)
+		seen := make(map[string]bool, len(targets)+1)
+		hasLocal := false
 		for index, target := range targets {
 			kind := strings.TrimSpace(strings.ToLower(target.Kind))
-			if kind == "" || kind == "local" {
+			if strings.TrimSpace(target.ID) == "local" || kind == "local" {
+				if !hasLocal {
+					normalized = append(normalized, defaultServiceTargets()[0])
+					seen["local"] = true
+					hasLocal = true
+				}
+				continue
+			}
+			if kind == "" {
 				continue
 			}
 			if kind != "ssh" {
@@ -326,6 +335,9 @@ func (s *ServiceManagerService) SaveServiceTargets(targets []ServiceTarget) erro
 				return userErrorParams("errors.service.targetNameInvalid", map[string]any{"index": index + 1})
 			}
 			normalized = append(normalized, ServiceTarget{ID: id, Name: name, Kind: "ssh", SSHProfileID: profileID})
+		}
+		if !hasLocal {
+			normalized = append([]ServiceTarget{defaultServiceTargets()[0]}, normalized...)
 		}
 		cfg.ServiceTargets = normalized
 		return nil

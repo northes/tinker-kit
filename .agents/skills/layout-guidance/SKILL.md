@@ -95,6 +95,10 @@ user-invocable: false
 - Base UI `Select`：受控值使用内部 key 时，根组件必须同时提供 `items={[{ value, label }]}` 映射（动态/本地化选项按当前文案构建），仅渲染带文字的 `SelectItem` 不足以保证关闭后的 trigger 显示 label。验收时要实际选择并关闭下拉框，确认 trigger 显示本地化 label 而不是内部 key。
 - 保持 `SelectContent` 的 `alignItemWithTrigger` 默认值（原生对齐：选中项与 trigger 对齐）；不要为了“展开在下方”而设为 `false`，也不要在各处混用两种定位。
 - 允许切换来源或主机的 `Select` 必须在列表底部固定提供“管理”项，左侧带语义匹配的 phosphor icon；该项不随来源/主机数据排序或滚动，选中后打开对应的管理界面，不写入业务选中值。
+- 选择全局 SSH 配置时复用 `SSHProfileSelect`；表单需要完整 profile 对象时用 `SSHProfileFormField`，不要重造 profile 下拉框或旁边的管理按钮。工具来源切换仍使用工具自己的来源选择器和 `TargetHostManagerDialog`，不要把全局 SSH profile 当作工具来源。
+- SSH 来源表单选中 profile 时立即写入 `sshProfileID`；来源名称为空或仅含空白时同步填入 `profile.name`，已有手工名称保持不变。使用 `SSHProfileFormField` 的完整 profile 回调处理，不能只在提交时补名称，否则表单里不会即时显示来源名称。
+- 来源管理弹窗只保留标题，不加副标题或重复说明。列表页 footer 的添加按钮使用 `common.add`（中文“添加”），放在左侧，保存放在右侧；编辑表单页沿用现有返回、操作和保存布局。
+- 来源模型包含“本机”时，管理列表必须显示该项，并禁用编辑和删除；拖动排序仍可用。若列表项使用 `itemDisabled`，只禁用编辑/删除操作，不要把该状态传给 sortable/DnD。新条目追加到末尾，编辑条目保留原位置。删除当前来源后，有本机的工具回退到本机；没有本机的工具选择首项或清空。保存时提交完整有序列表，后端规范化只能在缺少“本机”时补到首位，不能覆盖用户排好的位置。
 - 工具页 header 中的字段 label 与控件纵向排列时，复用 `shared.tsx` 的 `ToolHeaderField`；需要通过 `aria-labelledby` 关联控件时传入 `labelId`。尺寸、字重、颜色和间距以镜像管理 header 的 label 为基准；不要在各工具内重复拼接 label 样式，也不要把标签的 muted 颜色放在包住控件的容器上。
 - 浮层在暗色下“没有阴影”通常是主题 token 问题：`--shadow-*` 明暗同值（10% 黑），在深色背景上不可见；要改的是暗色 token，不要改组件或加局部阴影覆盖。
 - 图标默认使用 phosphor 的 `weight="duotone"`（按钮、下拉项等装饰性图标）；表格排序图标例外使用 Regular 的 `CaretUpDown` / `CaretDown` / `CaretUp`。新增或调整控件时不要遗漏个别图标。

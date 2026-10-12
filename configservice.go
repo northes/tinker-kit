@@ -510,21 +510,27 @@ func normalizeImageSources(
 	return result
 }
 
-// normalizeServiceTargets 保证本机目标始终存在，并清理重复或非法的目标；已失效的
-// SSH 引用会被保留，交由界面展示并修复（与镜像/文件来源一致）。
+// normalizeServiceTargets 保证本机目标唯一且始终存在，保留来源顺序并清理重复或非法的目标；
+// 已失效的 SSH 引用会被保留，交由界面展示并修复（与镜像/文件来源一致）。
 func normalizeServiceTargets(
 	targets []ServiceTarget,
 	sshProfileNames map[string]string,
 ) []ServiceTarget {
-	result := defaultServiceTargets()
-	seen := map[string]bool{"local": true}
+	result := make([]ServiceTarget, 0, len(targets)+1)
+	seen := make(map[string]bool, len(targets)+1)
+	hasLocal := false
 	for _, target := range targets {
 		target.ID = strings.TrimSpace(target.ID)
 		target.Name = strings.TrimSpace(target.Name)
 		target.Kind = strings.TrimSpace(strings.ToLower(target.Kind))
 		target.SSHProfileID = strings.TrimSpace(target.SSHProfileID)
-		if target.Kind == "" && target.ID == "local" {
-			target.Kind = "local"
+		if target.ID == "local" || target.Kind == "local" {
+			if !hasLocal {
+				result = append(result, defaultServiceTargets()[0])
+				seen["local"] = true
+				hasLocal = true
+			}
+			continue
 		}
 		if target.Kind != "ssh" {
 			continue
@@ -545,6 +551,9 @@ func normalizeServiceTargets(
 			target.Name = target.SSHProfileID
 		}
 		result = append(result, target)
+	}
+	if !hasLocal {
+		result = append([]ServiceTarget{defaultServiceTargets()[0]}, result...)
 	}
 	return result
 }

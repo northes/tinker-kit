@@ -32,7 +32,7 @@ import { formatBackendError } from '../lib/backend-error';
 import { useSSHProfiles } from './SSHProfileManagerDialog';
 import { SSHProfileFormField } from './SSHProfileFormField';
 import { ConfirmDialog } from './ConfirmDialog';
-import { TargetHostManagerDialog } from './TargetHostManagerDialog';
+import { TargetHostManagerDialog, upsertManagerItem } from './TargetHostManagerDialog';
 import {
   ToolActionBar,
   ToolHeaderField,
@@ -315,12 +315,13 @@ export default function PortTool({ active }: { active: boolean }) {
       setSources(next);
       const initialLoad = !sourcesLoadedRef.current;
       sourcesLoadedRef.current = true;
+      const fallback = next.find((item) => item.id === 'local' || item.kind === 'local')?.id;
       setSource((current) =>
         initialLoad
-          ? (next[0]?.id ?? 'local')
+          ? (fallback ?? next[0]?.id ?? 'local')
           : next.some((item) => item.id === current)
             ? current
-            : (next[0]?.id ?? 'local'),
+            : (fallback ?? next[0]?.id ?? 'local'),
       );
     } catch (cause) {
       setError(formatBackendError(cause));
@@ -1180,7 +1181,9 @@ export default function PortTool({ active }: { active: boolean }) {
         onOpenChange={setManageOpen}
         items={sources}
         itemKey={(item) => item.id}
-        itemName={(item) => item.name}
+        itemName={(item) =>
+          item.id === 'local' || item.kind === 'local' ? t('portTool.localMachine') : item.name
+        }
         itemDisabled={(item) => item.id === 'local' || item.kind === 'local'}
         createDraft={() => ({
           id: '',
@@ -1198,7 +1201,7 @@ export default function PortTool({ active }: { active: boolean }) {
             kind: 'ssh',
             sshProfileID: profile.id,
           };
-          return [...previous.filter((item) => item.id !== draft.id && item.id !== next.id), next];
+          return upsertManagerItem(previous, next, (item) => item.id, draft.id || undefined);
         }}
         saveItems={saveSources}
         saving={savingSources}
@@ -1243,7 +1246,6 @@ export default function PortTool({ active }: { active: boolean }) {
         )}
         strings={{
           title: t('portTool.manageSourcesTitle'),
-          add: t('portTool.addSource'),
           edit: t('portTool.editSource'),
           remove: t('portTool.removeSource'),
           dragItem: (name) => t('sidebar.dragTool', { name }),
