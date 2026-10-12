@@ -2456,7 +2456,11 @@
         "rtspStatus": "RTSP {{method}} 返回 {{status}}",
         "rtspStatusWithNotice": "RTSP {{method}} 返回 {{status}}；{{notice}}",
         "rtspStoppedWhileWaiting": "等待 RTSP {{method}} 响应期间测试已停止：{{detail}}",
+        "secureEndpointAbsent": "未能在这个端口完成 TLS 握手：没有证据说明本次失败来自加密前缀",
+        "secureEndpointProbe": "该端口只接受加密连接：TLS 之上返回了 {{statusLine}}，请改用 {{scheme}}://",
+        "secureEndpointRequired": "该端口只接受加密连接：{{plain}}:// 明文请求没有收到任何响应（{{detail}}），而 {{secure}}:// 返回了 {{statusLine}}；请把目标改成 {{target}}",
         "targetCredentials": "该协议的目标必须是有效 URL，且不能内嵌凭据",
+        "tlsCertificateUntrusted": "证书校验失败：{{detail}}；设备使用自签名证书时可在高级选项里启用「跳过 TLS 证书校验」",
         "targetInvalidChars": "目标地址包含非法字符",
         "targetInvalidURL": "目标必须是有效 URL",
         "targetRequired": "必须填写目标地址",
@@ -2525,7 +2529,8 @@
       "ntp-response": "校验 NTP 响应",
       "rtsp-options": "发送 RTSP OPTIONS",
       "rtsp-auth": "RTSP 认证",
-      "rtsp-describe": "发送 RTSP DESCRIBE"
+      "rtsp-describe": "发送 RTSP DESCRIBE",
+      "tls-probe": "加密端点探测"
     },
     "runFailed": "测试未能执行：{{error}}",
     "recordAction": "网络测试",

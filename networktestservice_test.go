@@ -3,13 +3,20 @@ package main
 import (
 	"bufio"
 	"context"
+	"crypto/ecdsa"
+	"crypto/elliptic"
 	"crypto/md5"
+	"crypto/rand"
+	"crypto/tls"
+	"crypto/x509"
+	"crypto/x509/pkix"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"math/big"
 	"net"
 	"net/http"
 	"net/url"
@@ -202,6 +209,11 @@ func serveTestRTSP(listener net.Listener) {
 		return
 	}
 	defer conn.Close()
+	serveTestRTSPConn(conn)
+}
+
+// serveTestRTSPConn 在一条连接上完成 OPTIONS 与 DESCRIBE 的往返；明文与 TLS 之上都复用它。
+func serveTestRTSPConn(conn net.Conn) {
 	reader := bufio.NewReader(conn)
 	method, cseq, err := readTestRTSPRequest(reader)
 	if err != nil || method != "OPTIONS" {
@@ -1935,4 +1947,295 @@ func TestFailureHintComposesLocalizedMessage(t *testing.T) {
 	if got := withProxy.composeFailureHint(io.EOF); got.Error() != io.EOF.Error() {
 		t.Fatalf("已指定代理时不应合成提示：%v", got)
 	}
+}
+
+// stageByID 取结果中的一个阶段，缺失时直接失败。
+func stageByID(t *testing.T, stages []NetworkTestStage, id string) NetworkTestStage {
+	t.Helper()
+	for _, stage := range stages {
+		if stage.ID == id {
+			return stage
+		}
+	}
+	t.Fatalf("阶段 %q 缺失：%+v", id, stages)
+	return NetworkTestStage{}
+}
+
+// testTLSCertificate 生成一份自签名证书：只提供 TLS 的设备（摄像头、NVR）普遍使用自签名证书。
+func testTLSCertificate(t *testing.T) tls.Certificate {
+	t.Helper()
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatalf("生成测试密钥：%v", err)
+	}
+	template := x509.Certificate{
+		SerialNumber: big.NewInt(1),
+		Subject:      pkix.Name{CommonName: "127.0.0.1"},
+		NotBefore:    time.Now().Add(-time.Hour),
+		NotAfter:     time.Now().Add(time.Hour),
+		IPAddresses:  []net.IP{net.ParseIP("127.0.0.1")},
+	}
+	der, err := x509.CreateCertificate(rand.Reader, &template, &template, &key.PublicKey, key)
+	if err != nil {
+		t.Fatalf("生成测试证书：%v", err)
+	}
+	return tls.Certificate{Certificate: [][]byte{der}, PrivateKey: key}
+}
+
+// acceptTLSOnlyConnection 模拟只提供 TLS 的服务端入口：首个字节不是 TLS 握手记录时关闭连接
+// （真实设备就是这样丢下明文请求的，客户端因此只读到 EOF）；hangPlaintext 为 true 时改为保持
+// 沉默，用于覆盖「明文等待超时」这条路径。
+func acceptTLSOnlyConnection(conn net.Conn, certificate tls.Certificate, hangPlaintext bool) (net.Conn, error) {
+	first := make([]byte, 1)
+	if _, err := io.ReadFull(conn, first); err != nil {
+		return nil, err
+	}
+	if first[0] != 22 { // 22 是 TLS 握手记录类型；其余数据只提供 TLS 的服务端无法解析。
+		if hangPlaintext {
+			_, _ = io.Copy(io.Discard, conn)
+		}
+		return nil, errors.New("明文请求无法完成 TLS 握手")
+	}
+	secured := tls.Server(&prefixedConn{Conn: conn, prefix: first}, &tls.Config{Certificates: []tls.Certificate{certificate}})
+	if err := secured.Handshake(); err != nil {
+		return nil, err
+	}
+	return secured, nil
+}
+
+// prefixedConn 把已经读出的字节放回连接，供 TLS 层继续读取。
+type prefixedConn struct {
+	net.Conn
+	prefix []byte
+}
+
+func (c *prefixedConn) Read(buffer []byte) (int, error) {
+	if len(c.prefix) == 0 {
+		return c.Conn.Read(buffer)
+	}
+	n := copy(buffer, c.prefix)
+	c.prefix = c.prefix[n:]
+	return n, nil
+}
+
+// serveTLSOnlyTestRTSP 模拟只提供 TLS 的 RTSP 设备：明文请求会被丢弃，TLS 之上才处理 RTSP。
+func serveTLSOnlyTestRTSP(listener net.Listener, certificate tls.Certificate, hangPlaintext bool) {
+	for {
+		conn, err := listener.Accept()
+		if err != nil {
+			return
+		}
+		go func() {
+			defer conn.Close()
+			secured, err := acceptTLSOnlyConnection(conn, certificate, hangPlaintext)
+			if err != nil {
+				return
+			}
+			serveTestRTSPConn(secured)
+		}()
+	}
+}
+
+// serveTLSOnlyTestHTTP 模拟只提供 TLS 的 HTTP 服务端：TLS 之上返回一个固定响应。
+func serveTLSOnlyTestHTTP(listener net.Listener, certificate tls.Certificate) {
+	for {
+		conn, err := listener.Accept()
+		if err != nil {
+			return
+		}
+		go func() {
+			defer conn.Close()
+			secured, err := acceptTLSOnlyConnection(conn, certificate, false)
+			if err != nil {
+				return
+			}
+			request, err := http.ReadRequest(bufio.NewReader(secured))
+			if err != nil {
+				return
+			}
+			_, _ = io.WriteString(secured, "HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n")
+			_ = request.Body.Close()
+		}()
+	}
+}
+
+func newTLSOnlyListener(t *testing.T) net.Listener {
+	t.Helper()
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	t.Cleanup(func() { _ = listener.Close() })
+	return listener
+}
+
+// 只提供 TLS 的 RTSP 设备：明文请求收不到任何响应，结论必须说明端口只接受加密连接，并给出可直接
+// 使用的加密目标，而不是把原因留给对端。真实案例：摄像头把 rtsps 绑在 554，明文 OPTIONS 被丢弃。
+func TestRTSPExplainsTLSOnlyEndpoint(t *testing.T) {
+	listener := newTLSOnlyListener(t)
+	go serveTLSOnlyTestRTSP(listener, testTLSCertificate(t), false)
+	address := listener.Addr().String()
+	service := NewNetworkTestService()
+
+	result := service.RunNetworkTest(NetworkTestRequest{
+		Protocol:      "rtsp",
+		Target:        "rtsp://admin:secret@" + address + "/stream",
+		TimeoutMillis: 5000,
+		DNSMode:       "system",
+	})
+	if result.Status != "error" {
+		t.Fatalf("result = %+v", result)
+	}
+	chain := localizedMessageChain(t, result.Error)
+	if !chainContainsKey(chain, "networkTestTool.backend.secureEndpointRequired") {
+		t.Fatalf("结论应说明端口只接受加密连接：%q", result.Error)
+	}
+	params, _ := chain[0]["params"].(map[string]any)
+	if params["target"] != "rtsps://admin:password@"+address+"/stream" {
+		t.Fatalf("建议的目标 = %v", params)
+	}
+	if params["secure"] != "rtsps" || params["plain"] != "rtsp" {
+		t.Fatalf("结论参数 = %v", params)
+	}
+	// 结论引用的证据必须能在时间线上核对：探测阶段带重放的加密请求与 TLS 之上的状态行。
+	probe := stageByID(t, result.Stages, tlsProbeStageID)
+	if probe.Status != "success" || !strings.Contains(probe.Meta["statusLine"], "RTSP/1.0 200 OK") {
+		t.Fatalf("探测阶段 = %+v", probe)
+	}
+	if !strings.HasPrefix(probe.Request, "OPTIONS rtsps://") || !strings.Contains(probe.Meta["version"], "TLS") {
+		t.Fatalf("探测阶段缺少证据：%+v", probe)
+	}
+	failure := stageByID(t, result.Stages, "rtsp-options")
+	if failure.Status != "error" || !strings.Contains(failure.Error, "secureEndpointRequired") {
+		t.Fatalf("失败阶段 = %+v", failure)
+	}
+	assertStageTimeline(t, result.Stages)
+
+	// 建议必须真的可用：换成加密前缀后同一台设备应当探测成功。自签名证书会先撞上证书校验，结论
+	// 要指出可以用「跳过证书校验」解决，而不是把 x509 的原始文本直接抛给用户。
+	untrusted := service.RunNetworkTest(NetworkTestRequest{
+		Protocol:      "rtsp",
+		Target:        "rtsps://admin:secret@" + address + "/stream",
+		TimeoutMillis: 5000,
+		DNSMode:       "system",
+	})
+	if untrusted.Status != "error" || !strings.Contains(untrusted.Error, "networkTestTool.backend.tlsCertificateUntrusted") {
+		t.Fatalf("证书校验失败应给出可操作结论：%+v", untrusted)
+	}
+	secured := service.RunNetworkTest(NetworkTestRequest{
+		Protocol:      "rtsp",
+		Target:        "rtsps://admin:secret@" + address + "/stream",
+		TimeoutMillis: 5000,
+		SkipTLSVerify: true,
+		DNSMode:       "system",
+	})
+	if secured.Status != "success" {
+		t.Fatalf("跳过证书校验后加密目标应当成功：%+v", secured)
+	}
+}
+
+// 对端在明文请求上保持沉默、一直等到运行期限用完时，不再追加加密探测：探测不能走到运行期限
+// 之外，也不能把「超时」这个已经成立的结论改写成别的结论，更不该把运行状态改成「失败」。
+func TestRTSPDoesNotProbeAfterRunDeadline(t *testing.T) {
+	listener := newTLSOnlyListener(t)
+	go serveTLSOnlyTestRTSP(listener, testTLSCertificate(t), true)
+	address := listener.Addr().String()
+
+	result := NewNetworkTestService().RunNetworkTest(NetworkTestRequest{
+		Protocol:      "rtsp",
+		Target:        "rtsp://" + address + "/stream",
+		TimeoutMillis: 1000,
+		DNSMode:       "system",
+	})
+	if result.Status != "timeout" {
+		t.Fatalf("result = %+v", result)
+	}
+	if !chainContainsKey(localizedMessageChain(t, result.Error), "networkTestTool.backend.rtspNoResponse") {
+		t.Fatalf("超时结论应保持不变：%q", result.Error)
+	}
+	for _, stage := range result.Stages {
+		if stage.ID == tlsProbeStageID {
+			t.Fatalf("运行期限已用完时不应产生探测阶段：%+v", stage)
+		}
+	}
+	assertStageTimeline(t, result.Stages)
+}
+
+// HTTP 与 WebSocket 的明文请求同样会撞上只提供 TLS 的端口，结论也必须落到加密前缀上。
+func TestHTTPAndWebSocketExplainTLSOnlyEndpoint(t *testing.T) {
+	for _, testCase := range []struct {
+		protocol string
+		target   string
+		secured  string
+	}{
+		{protocol: "http", target: "http://%s/", secured: "https://%s/"},
+		{protocol: "websocket", target: "ws://%s/socket", secured: "wss://%s/socket"},
+	} {
+		t.Run(testCase.protocol, func(t *testing.T) {
+			listener := newTLSOnlyListener(t)
+			go serveTLSOnlyTestHTTP(listener, testTLSCertificate(t))
+			address := listener.Addr().String()
+
+			result := NewNetworkTestService().RunNetworkTest(NetworkTestRequest{
+				Protocol:      testCase.protocol,
+				Target:        fmt.Sprintf(testCase.target, address),
+				TimeoutMillis: 5000,
+				DNSMode:       "system",
+			})
+			if result.Status != "error" {
+				t.Fatalf("result = %+v", result)
+			}
+			chain := localizedMessageChain(t, result.Error)
+			if !chainContainsKey(chain, "networkTestTool.backend.secureEndpointRequired") {
+				t.Fatalf("结论应说明端口只接受加密连接：%q", result.Error)
+			}
+			params, _ := chain[0]["params"].(map[string]any)
+			if params["target"] != fmt.Sprintf(testCase.secured, address) {
+				t.Fatalf("建议的目标 = %v", params)
+			}
+			probe := stageByID(t, result.Stages, tlsProbeStageID)
+			if probe.Status != "success" || !strings.Contains(probe.Meta["statusLine"], "HTTP/1.1 200 OK") {
+				t.Fatalf("探测阶段 = %+v", probe)
+			}
+			assertStageTimeline(t, result.Stages)
+		})
+	}
+}
+
+// 不接受 TLS 的对端关闭连接时不能凭空断言「只接受加密连接」：结论保持原样，探测阶段只记录
+// 「拿不到证据」，不能停在进行中。
+func TestSilentPeerWithoutTLSKeepsOriginalConclusion(t *testing.T) {
+	listener := newTLSOnlyListener(t)
+	go func() {
+		for {
+			conn, err := listener.Accept()
+			if err != nil {
+				return
+			}
+			_ = conn.Close()
+		}
+	}()
+
+	result := NewNetworkTestService().RunNetworkTest(NetworkTestRequest{
+		Protocol:      "rtsp",
+		Target:        "rtsp://" + listener.Addr().String() + "/movie",
+		TimeoutMillis: 3000,
+		DNSMode:       "system",
+	})
+	if result.Status != "error" || !strings.Contains(result.Error, "networkTestTool.backend.rtspClosedWithoutResponse") {
+		t.Fatalf("结论 = %+v", result)
+	}
+	probe := stageByID(t, result.Stages, tlsProbeStageID)
+	if probe.Status != "success" || !strings.Contains(probe.Response, "networkTestTool.backend.secureEndpointAbsent") {
+		t.Fatalf("探测阶段应记录「未取得证据」：%+v", probe)
+	}
+	if probe.Meta["handshakeError"] == "" {
+		t.Fatalf("探测阶段应保留原始失败文本：%+v", probe.Meta)
+	}
+	for _, stage := range result.Stages {
+		if stage.Status == "running" {
+			t.Fatalf("阶段不能停在进行中：%+v", stage)
+		}
+	}
+	assertStageTimeline(t, result.Stages)
 }

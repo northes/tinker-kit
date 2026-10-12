@@ -8,6 +8,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"crypto/tls"
+	"crypto/x509"
 	"encoding/base64"
 	"encoding/binary"
 	"encoding/hex"
@@ -168,6 +169,9 @@ type networkTestRun struct {
 	// proxyHint 缓存「直连失败时用于提示的系统代理地址」，每次运行最多查询一次。
 	proxyHint       string
 	proxyHintLoaded bool
+	// secureEndpointReported 记录是否已给出「该端口只接受加密连接」的结论：原因确定后不再把
+	// 「可改用系统代理」这类通用建议叠加到同一句话里。
+	secureEndpointReported bool
 }
 
 type networkRequestTraceState struct {
@@ -334,10 +338,32 @@ func (r *networkTestRun) currentStageForHop(fallback string, redirectCount int) 
 	return fallback
 }
 
+// explainSilentFailure 在「请求已发出、响应一个字节都没收到」时探测该端口是否只接受加密连接。
+// 确认后返回「该端口只接受加密连接」的结论与 true；明文 scheme 没有加密版本、或探测拿不到证据
+// 时返回 false，由调用方沿用原结论。
+func (r *networkTestRun) explainSilentFailure(route *networkRoute, target networkTarget, cause error) (error, bool) {
+	// 运行期限已经用完或用户已经取消时不再探测：探测只补充结论，不能让失败结论继续等待，也不能
+	// 把运行状态从「失败」改成「超时」。
+	if r.ctx.Err() != nil {
+		return cause, false
+	}
+	// 剩余时间不足时同样跳过：连接加握手需要一个往返，抢在期限前沿用最后几毫秒拿不到证据。
+	// （等待类失败正好落在期限上，这一步同时避免了「期限与读超时几乎同时到期」的边界抖动。）
+	if deadline, ok := r.ctx.Deadline(); ok && time.Until(deadline) < minimalSecureEndpointProbeBudget {
+		return cause, false
+	}
+	probe, found := route.probeSecureEndpoint(r.ctx, target.URL, target.Port)
+	if !found {
+		return cause, false
+	}
+	r.secureEndpointReported = true
+	return secureEndpointError(target, probe, cause), true
+}
+
 // composeFailureHint 在「本次直连 + 失败属于连接被丢下 + 本机配置了系统代理」时，把提示合成进
 // 同一条本地化结论；阶段错误与页脚结论共用它，因此两处文案完全一致。
 func (r *networkTestRun) composeFailureHint(err error) error {
-	if err == nil || strings.TrimSpace(r.request.ProxyType) != "" || !isConnectionLevelFailure(err) {
+	if err == nil || r.secureEndpointReported || strings.TrimSpace(r.request.ProxyType) != "" || !isConnectionLevelFailure(err) {
 		return err
 	}
 	if !r.proxyHintLoaded {
@@ -520,18 +546,36 @@ func parseNetworkTarget(protocol, raw string) (networkTarget, error) {
 	}
 	port := u.Port()
 	if port == "" {
-		switch u.Scheme {
-		case "https", "wss":
-			port = "443"
-		case "rtsp":
-			port = "554"
-		case "rtsps":
-			port = "322"
-		default:
-			port = "80"
-		}
+		port = defaultPortForScheme(u.Scheme)
 	}
 	return networkTarget{URL: u, Host: u.Hostname(), Port: port, creds: credentials}, nil
+}
+
+// defaultPortForScheme 返回 scheme 的默认端口，供解析目标与重定向后的地址共用。
+func defaultPortForScheme(scheme string) string {
+	switch strings.ToLower(strings.TrimSpace(scheme)) {
+	case "https", "wss":
+		return "443"
+	case "rtsp":
+		return "554"
+	case "rtsps":
+		return "322"
+	default:
+		return "80"
+	}
+}
+
+// targetFromURL 把当前生效的 URL 还原成探测与结论需要的目标：端口显式化，结论里给出的可替换
+// 地址才不会丢掉设备实际监听的端口。
+func targetFromURL(u *url.URL) networkTarget {
+	target := networkTarget{Host: u.Hostname(), Port: u.Port()}
+	if target.Port == "" {
+		target.Port = defaultPortForScheme(u.Scheme)
+	}
+	clean := *u
+	clean.User = nil
+	target.URL = &clean
+	return target
 }
 
 type networkRoute struct {
@@ -546,9 +590,14 @@ type networkRoute struct {
 	dnsServer    string
 	iface        *net.Interface
 	requestTrace *networkRequestTraceState
+	// silent 在探测连接期间为 true：探测不是用户请求的链路，不能写链路阶段。
+	silent bool
 }
 
 func (r *networkRoute) stage(id, status string, fields NetworkTestStage) {
+	if r.silent {
+		return
+	}
 	redirectCount := r.hop
 	if r.requestTrace != nil {
 		redirectCount = r.requestTrace.redirectCount()
@@ -564,7 +613,7 @@ func (r *networkRoute) stage(id, status string, fields NetworkTestStage) {
 }
 
 func (r *networkRoute) fail(id string, err error) {
-	if err == nil {
+	if err == nil || r.silent {
 		return
 	}
 	redirectCount := r.hop
@@ -573,6 +622,23 @@ func (r *networkRoute) fail(id string, err error) {
 	}
 	id = networkRedirectStageID(id, redirectCount)
 	r.run.fail(id, err)
+}
+
+// quietly 在探测期间暂停链路阶段上报：探测连接与用户请求不是同一条链路，写进去会覆盖真实链路
+// 的 tcp-connect、tunnel-route 与 proxy-tunnel 阶段。
+func (r *networkRoute) quietly(action func() error) error {
+	previous := r.silent
+	r.silent = true
+	defer func() { r.silent = previous }()
+	return action()
+}
+
+// openStream 建立到目标的明文连接：HTTP 代理走 CONNECT 隧道，直连与 SOCKS5 走 dialContext。
+func (r *networkRoute) openStream(ctx context.Context, host, port string) (net.Conn, error) {
+	if r.proxyType == "http" {
+		return r.openHTTPCONNECTTunnel(ctx, host, port)
+	}
+	return r.dialContext(ctx, "tcp", net.JoinHostPort(host, port))
 }
 
 func newNetworkRoute(run *networkTestRun, request NetworkTestRequest) (*networkRoute, error) {
@@ -1322,12 +1388,12 @@ func (r *networkTestRun) runHTTP(request NetworkTestRequest) error {
 		requestHost := requestURL.Hostname()
 		requestPort := requestURL.Port()
 		if requestPort == "" {
-			if requestURL.Scheme == "https" {
-				requestPort = "443"
-			} else {
-				requestPort = "80"
-			}
+			requestPort = defaultPortForScheme(requestURL.Scheme)
 		}
+		// 请求是否真的发出去了、响应是否有过一个字节：判断「对端没有任何反应」要用这两个事实，
+		// 而不是从错误文本里推测。
+		requestWritten := false
+		responseByteSeen := false
 		trace := &httptrace.ClientTrace{
 			TLSHandshakeStart: func() {
 				if route.proxyType == "http" && requestURL.Scheme == "https" {
@@ -1338,7 +1404,7 @@ func (r *networkTestRun) runHTTP(request NetworkTestRequest) error {
 			TLSHandshakeDone: func(state tls.ConnectionState, err error) {
 				stageID := networkRedirectStageID("tls", redirectCount)
 				if err != nil {
-					r.fail(stageID, err)
+					r.fail(stageID, tlsHandshakeFailure(err))
 					return
 				}
 				r.stage(stageID, "success", NetworkTestStage{Meta: mergeStageMeta(redirectMeta(redirectCount), map[string]string{"serverName": requestHost, "version": tls.VersionName(state.Version), "cipher": tls.CipherSuiteName(state.CipherSuite), "alpn": state.NegotiatedProtocol})})
@@ -1353,6 +1419,7 @@ func (r *networkTestRun) runHTTP(request NetworkTestRequest) error {
 					r.fail(stageID, info.Err)
 					return
 				}
+				requestWritten = true
 				r.stage(stageID, "success", NetworkTestStage{Request: requestDump, Meta: meta})
 				// 请求写完即进入等待响应：response 阶段必须从这里开始计时，否则等待期
 				// 没有任何阶段覆盖（失败时只在末尾补出一个 0 毫秒的错误项），时间线会
@@ -1360,6 +1427,7 @@ func (r *networkTestRun) runHTTP(request NetworkTestRequest) error {
 				r.stage(responseID, "running", NetworkTestStage{Meta: mergeStageMeta(redirectMeta(redirectCount), map[string]string{"phase": networkTestText("networkTestTool.backend.phaseWaitingForResponse", nil)})})
 			},
 			GotFirstResponseByte: func() {
+				responseByteSeen = true
 				r.stage(responseID, "running", NetworkTestStage{Meta: mergeStageMeta(redirectMeta(redirectCount), map[string]string{"firstByteAt": strconv.FormatInt(time.Now().UnixMilli(), 10)})})
 			},
 		}
@@ -1381,6 +1449,14 @@ func (r *networkTestRun) runHTTP(request NetworkTestRequest) error {
 			current := r.currentStageForHop(requestID, redirectCount)
 			if strings.Contains(strings.ToLower(err.Error()), "tls") {
 				current = networkRedirectStageID("tls", redirectCount)
+			}
+			err = tlsHandshakeFailure(err)
+			if requestWritten && !responseByteSeen {
+				// 请求已发出、响应一个字节都没回来：先确认该端口是否只接受加密连接，
+				// 再把结论交给通用失败处理。
+				if verdict, found := r.explainSilentFailure(route, targetFromURL(currentURL), err); found {
+					err = verdict
+				}
 			}
 			r.fail(current, err)
 			return err
@@ -1433,6 +1509,19 @@ func isNetworkRedirectStatus(statusCode int) bool {
 	}
 }
 
+// websocketURL 把 WebSocket 拨号使用的 http(s) URL 还原成用户实际使用的 ws(s) URL：WebSocket
+// 的结论要建议的是 wss://，而不是拨号器内部的 http:// 形式。
+func websocketURL(u *url.URL) *url.URL {
+	restored := *u
+	switch strings.ToLower(u.Scheme) {
+	case "http":
+		restored.Scheme = "ws"
+	case "https":
+		restored.Scheme = "wss"
+	}
+	return &restored
+}
+
 func (r *networkTestRun) runWebSocket(request NetworkTestRequest) error {
 	target, err := parseNetworkTarget("websocket", request.Target)
 	if err != nil {
@@ -1466,6 +1555,9 @@ func (r *networkTestRun) runWebSocket(request NetworkTestRequest) error {
 			r.stage(stageID, "running", NetworkTestStage{Request: requestDump, Meta: meta})
 		}),
 	}
+	// 请求是否真的发出去了、响应是否有过一个字节：判断「对端没有任何反应」要用这两个事实。
+	requestWritten := false
+	responseByteSeen := false
 	trace := &httptrace.ClientTrace{
 		TLSHandshakeStart: func() {
 			_, _, meta := requestTrace.snapshot()
@@ -1476,7 +1568,7 @@ func (r *networkTestRun) runWebSocket(request NetworkTestRequest) error {
 			if route.proxyType == "http" && (requestURL.Scheme == "https" || requestURL.Scheme == "wss") {
 				port := requestURL.Port()
 				if port == "" {
-					port = "443"
+					port = defaultPortForScheme(requestURL.Scheme)
 				}
 				route.stage("proxy-tunnel", "success", NetworkTestStage{Request: "CONNECT " + net.JoinHostPort(requestURL.Hostname(), port), Response: networkTestText("networkTestTool.backend.connectTunnelEstablished", nil), Meta: map[string]string{"proxy": route.proxyURL.Host, "targetResolution": "proxy"}})
 			}
@@ -1484,7 +1576,7 @@ func (r *networkTestRun) runWebSocket(request NetworkTestRequest) error {
 		},
 		TLSHandshakeDone: func(state tls.ConnectionState, err error) {
 			if err != nil {
-				route.fail("tls", err)
+				route.fail("tls", tlsHandshakeFailure(err))
 			} else {
 				_, _, meta := requestTrace.snapshot()
 				requestURL, _ := url.Parse(meta["url"])
@@ -1496,7 +1588,11 @@ func (r *networkTestRun) runWebSocket(request NetworkTestRequest) error {
 		},
 		WroteHeaders: func() {
 			stageID, requestDump, meta := requestTrace.snapshot()
+			requestWritten = true
 			r.stage(stageID, "running", NetworkTestStage{Request: requestDump, Meta: meta})
+		},
+		GotFirstResponseByte: func() {
+			responseByteSeen = true
 		},
 	}
 	ctx := httptrace.WithClientTrace(r.ctx, trace)
@@ -1505,7 +1601,7 @@ func (r *networkTestRun) runWebSocket(request NetworkTestRequest) error {
 		requestHost := target.URL.Hostname()
 		requestPort := target.URL.Port()
 		if requestPort == "" {
-			requestPort = "443"
+			requestPort = defaultPortForScheme(target.URL.Scheme)
 		}
 		route.stage("proxy-tunnel", "running", NetworkTestStage{
 			Request: "CONNECT " + net.JoinHostPort(requestHost, requestPort) + " HTTP/1.1\r\nHost: " + net.JoinHostPort(requestHost, requestPort) + "\r\n\r\n",
@@ -1547,6 +1643,17 @@ func (r *networkTestRun) runWebSocket(request NetworkTestRequest) error {
 		stageID, _, meta := requestTrace.snapshot()
 		redirectCount, _ := strconv.Atoi(meta["redirectCount"])
 		current := r.currentStageForHop(stageID, redirectCount)
+		err = tlsHandshakeFailure(err)
+		if response == nil && requestWritten && !responseByteSeen {
+			// 握手请求已发出、响应一个字节都没回来：先确认该端口是否只接受加密连接。
+			requestURL, _ := url.Parse(meta["url"])
+			if requestURL == nil {
+				requestURL = target.URL
+			}
+			if verdict, found := r.explainSilentFailure(route, targetFromURL(websocketURL(requestURL)), err); found {
+				err = verdict
+			}
+		}
 		r.fail(current, err)
 		return err
 	}
@@ -1587,6 +1694,39 @@ func networkTLSConfig(skipVerification bool) *tls.Config {
 		MinVersion:         tls.VersionTLS12,
 		InsecureSkipVerify: skipVerification, // 用户明确启用时，跳过证书链与主机名校验。
 	}
+}
+
+// tlsHandshakeFailure 把 TLS 握手失败翻译成结论。证书校验失败是可操作的：设备自签名证书可以在
+// 高级选项里跳过校验；其余握手失败保留原始文本（协议层没有更多可说的）。
+func tlsHandshakeFailure(err error) error {
+	if !isCertificateVerificationFailure(err) || localizedErrorKey(err) == tlsCertificateUntrustedKey {
+		return err
+	}
+	return networkTestErrorCause(tlsCertificateUntrustedKey, err)
+}
+
+// tlsCertificateUntrustedKey 是证书校验失败的结论 key；同一次握手可能在阶段上报与最终结论里各
+// 经过一次翻译，tlsHandshakeFailure 据此保持幂等。
+const tlsCertificateUntrustedKey = "networkTestTool.backend.tlsCertificateUntrusted"
+
+// isCertificateVerificationFailure 判断握手失败是否由证书校验引起：自签名、主机名不匹配、链不完整
+// 都会走到这里，它们的共同点是都可以由用户决定是否跳过校验。
+func isCertificateVerificationFailure(err error) bool {
+	var verificationError *tls.CertificateVerificationError
+	if errors.As(err, &verificationError) {
+		return true
+	}
+	var unknownAuthority x509.UnknownAuthorityError
+	return errors.As(err, &unknownAuthority)
+}
+
+// clientTLSConfig 返回带 serverName 的 TLS 配置。http.Transport 会自己补 ServerName，而直接用
+// tls.Client 的路径（rtsps、加密端点探测）必须显式给出：缺少它时启用证书校验会直接失败
+// （tls: either ServerName or InsecureSkipVerify must be specified）。
+func clientTLSConfig(serverName string, skipVerification bool) *tls.Config {
+	config := networkTLSConfig(skipVerification)
+	config.ServerName = serverName
+	return config
 }
 
 type captureNetworkRoundTripper struct {
@@ -1798,7 +1938,7 @@ func (c *rtspClient) request(baseStageID, method string, cseq int, headers map[s
 func (c *rtspClient) exchange(method, uri string, headers map[string]string, cseq int) (*rtspResponse, int, error) {
 	response, err := c.session.exchange(method, uri, headers, cseq)
 	if err != nil {
-		return nil, cseq + 1, rtspExchangeError(c.run.ctx, method, err)
+		return nil, cseq + 1, c.classifyFailure(method, err)
 	}
 	if response.statusCode != http.StatusUnauthorized {
 		return response, cseq + 1, nil
@@ -1825,9 +1965,9 @@ func (c *rtspClient) exchange(method, uri string, headers map[string]string, cse
 	})
 	retry, retryErr := c.session.exchange(method, uri, authenticated, cseq+1)
 	if retryErr != nil {
-		wrapped := rtspExchangeError(c.run.ctx, method, retryErr)
-		c.route.fail("rtsp-auth", wrapped)
-		return nil, cseq + 2, wrapped
+		failure := c.classifyFailure(method, retryErr)
+		c.route.fail("rtsp-auth", failure)
+		return nil, cseq + 2, failure
 	}
 	if err := rtspStatusError(method, retry); err != nil {
 		c.route.stage("rtsp-auth", "error", NetworkTestStage{
@@ -1872,31 +2012,56 @@ func resolveRTSPRedirect(current networkTarget, location string) (networkTarget,
 	return target, false, nil
 }
 
-// rtspExchangeError 把网络层错误翻译成可读结论。TCP 连接成功但服务端不回一个字节是
+// rtspExchangeFailure 是一次 RTSP 收发失败的可读结论。noResponse 表示一个字节的响应都没收到：
+// 只有这种情况才值得继续探测该端口是否只接受加密连接——收到过字节说明对端在按 RTSP 说话。
+type rtspExchangeFailure struct {
+	message    error
+	raw        error
+	noResponse bool
+}
+
+// classifyRTSPExchangeFailure 把网络层错误翻译成可读结论。TCP 连接成功但服务端不回一个字节是
 // 这类设备与中间盒最常见的表现：设备、VPN 或防火墙可能对任意端口都接受连接，而原始
 // 的 "i/o timeout" 无法说明这一点。
-func rtspExchangeError(ctx context.Context, method string, err error) error {
+func classifyRTSPExchangeFailure(ctx context.Context, method string, err error) rtspExchangeFailure {
+	failure := rtspExchangeFailure{raw: err}
+	var responseError *rtspResponseError
+	received := errors.As(err, &responseError) && responseError.received
 	var timeoutError interface{ Timeout() bool }
 	switch {
 	case errors.Is(ctx.Err(), context.DeadlineExceeded),
 		errors.Is(err, context.DeadlineExceeded),
 		errors.As(err, &timeoutError) && timeoutError.Timeout():
-		return networkTestErrorParamsCause("networkTestTool.backend.rtspNoResponse", map[string]any{"method": method}, err)
+		failure.message = networkTestErrorParamsCause("networkTestTool.backend.rtspNoResponse", map[string]any{"method": method}, err)
+		// 收到过字节说明对端确实在按 RTSP 说话，只是响应没读完，无需再探测加密端点。
+		failure.noResponse = !received
 	case errors.Is(ctx.Err(), context.Canceled):
 		// 超时或取消时运行上下文会主动关闭连接，读操作可能返回 net.ErrClosed
 		// （use of closed network connection）；结论应取自上下文而不是错误文本。
-		return networkTestErrorParamsCause("networkTestTool.backend.rtspStoppedWhileWaiting", map[string]any{"method": method}, err)
+		failure.message = networkTestErrorParamsCause("networkTestTool.backend.rtspStoppedWhileWaiting", map[string]any{"method": method}, err)
+	case errors.As(err, &responseError) && !responseError.received:
+		failure.message = networkTestErrorParamsCause("networkTestTool.backend.rtspClosedWithoutResponse", map[string]any{"method": method}, err)
+		failure.noResponse = true
+	case received && (errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF)):
+		failure.message = networkTestErrorParamsCause("networkTestTool.backend.rtspClosedMidResponse", map[string]any{"method": method}, err)
 	}
-	var responseError *rtspResponseError
-	if errors.As(err, &responseError) {
-		if !responseError.received {
-			return networkTestErrorParamsCause("networkTestTool.backend.rtspClosedWithoutResponse", map[string]any{"method": method}, err)
-		}
-		if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
-			return networkTestErrorParamsCause("networkTestTool.backend.rtspClosedMidResponse", map[string]any{"method": method}, err)
-		}
+	if failure.message == nil {
+		failure.message = err
 	}
-	return err
+	return failure
+}
+
+// classifyFailure 给出一次收发失败的结论。明文请求一个字节的响应都没收到时，先探测该端口是否
+// 只接受加密连接：能证明时原因就是协议前缀（rtsp 应为 rtsps），而不是对端是否响应。
+func (c *rtspClient) classifyFailure(method string, err error) error {
+	failure := classifyRTSPExchangeFailure(c.run.ctx, method, err)
+	if !failure.noResponse || c.target.URL == nil {
+		return failure.message
+	}
+	if verdict, found := c.run.explainSilentFailure(c.route, c.target, failure.raw); found {
+		return verdict
+	}
+	return failure.message
 }
 
 func rtspAuthMeta(response *rtspResponse, pictureURL string, sent bool) map[string]string {
@@ -2336,13 +2501,7 @@ func redactURLUserinfo(target *url.URL) string {
 // openRTSPStream 建立可以直接读写 RTSP 报文的连接：目标为 rtsps:// 时，在直连或 HTTP
 // CONNECT 隧道之上再完成 TLS 握手。
 func (r *networkRoute) openRTSPStream(ctx context.Context, target networkTarget) (net.Conn, error) {
-	var conn net.Conn
-	var err error
-	if r.proxyType == "http" {
-		conn, err = r.openHTTPCONNECTTunnel(ctx, target.Host, target.Port)
-	} else {
-		conn, err = r.dialContext(ctx, "tcp", net.JoinHostPort(target.Host, target.Port))
-	}
+	conn, err := r.openStream(ctx, target.Host, target.Port)
 	if err != nil {
 		return nil, err
 	}
@@ -2360,10 +2519,11 @@ func (r *networkRoute) openRTSPStream(ctx context.Context, target networkTarget)
 	defer stopOnCancel()
 	serverName := target.Host
 	r.stage("tls", "running", NetworkTestStage{Meta: map[string]string{"serverName": serverName}})
-	tlsConn := tls.Client(conn, networkTLSConfig(r.request.SkipTLSVerify))
+	tlsConn := tls.Client(conn, clientTLSConfig(serverName, r.request.SkipTLSVerify))
 	if err := tlsConn.HandshakeContext(ctx); err != nil {
-		r.fail("tls", err)
-		return nil, err
+		failure := tlsHandshakeFailure(err)
+		r.fail("tls", failure)
+		return nil, failure
 	}
 	state := tlsConn.ConnectionState()
 	r.stage("tls", "success", NetworkTestStage{Meta: map[string]string{"serverName": serverName, "version": tls.VersionName(state.Version), "cipher": tls.CipherSuiteName(state.CipherSuite), "alpn": state.NegotiatedProtocol}})
@@ -2425,12 +2585,7 @@ func (r *networkTestRun) runTCP(request NetworkTestRequest) error {
 	if err := route.resolveSystemProxy(target); err != nil {
 		return err
 	}
-	var conn net.Conn
-	if route.proxyType == "http" {
-		conn, err = route.openHTTPCONNECTTunnel(r.ctx, target.Host, target.Port)
-	} else {
-		conn, err = route.dialContext(r.ctx, "tcp", net.JoinHostPort(target.Host, target.Port))
-	}
+	conn, err := route.openStream(r.ctx, target.Host, target.Port)
 	if err != nil {
 		return err
 	}

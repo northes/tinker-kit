@@ -2456,7 +2456,11 @@
         "rtspStatus": "RTSP {{method}} returned {{status}}",
         "rtspStatusWithNotice": "RTSP {{method}} returned {{status}}; {{notice}}",
         "rtspStoppedWhileWaiting": "The test stopped while waiting for the RTSP {{method}} response: {{detail}}",
+        "secureEndpointAbsent": "No TLS handshake completed on this endpoint: nothing indicates the failure comes from an encryption requirement",
+        "secureEndpointProbe": "This endpoint only accepts encrypted connections: {{statusLine}} came back over TLS, use {{scheme}}://",
+        "secureEndpointRequired": "This endpoint only accepts encrypted connections: the plain {{plain}}:// request got no response ({{detail}}), while {{secure}}:// returned {{statusLine}}; use {{target}} instead",
         "targetCredentials": "Target must be a valid URL without embedded credentials for this protocol",
+        "tlsCertificateUntrusted": "Certificate verification failed: {{detail}}; enable \"Skip TLS certificate verification\" in the advanced options for self-signed device certificates",
         "targetInvalidChars": "Target address contains invalid characters",
         "targetInvalidURL": "Target must be a valid URL",
         "targetRequired": "Target address is required",
@@ -2525,7 +2529,8 @@
       "ntp-response": "Validate NTP response",
       "rtsp-options": "Send RTSP OPTIONS",
       "rtsp-auth": "RTSP authentication",
-      "rtsp-describe": "Send RTSP DESCRIBE"
+      "rtsp-describe": "Send RTSP DESCRIBE",
+      "tls-probe": "TLS endpoint probe"
     },
     "runFailed": "The test could not run: {{error}}",
     "recordAction": "Network test",

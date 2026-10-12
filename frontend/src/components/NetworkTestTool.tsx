@@ -107,6 +107,7 @@ const stageOrder = [
   'http-request',
   'websocket-handshake',
   'http-response',
+  'tls-probe',
 ];
 const NO_PROXY = '__network-test-no-proxy__';
 const AUTOMATIC_INTERFACE = '__network-test-automatic-interface__';
