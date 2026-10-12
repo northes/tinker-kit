@@ -240,12 +240,20 @@ export function TaskCenter({
           const toolName = t(
             task.tool === 'image-manager' ? 'tools.image-manager.name' : 'tools.ssh-files.name',
           );
-          const status = t(
-            task.status === 'success' ? 'taskCenter.completed' : 'taskCenter.failed',
+          const taskName = taskTitle(task, t);
+          const status = t(task.status === 'success' ? 'taskCenter.completed' : 'taskCenter.failed');
+          const notificationTitle = t(
+            task.status === 'success'
+              ? 'taskCenter.notificationCompleted'
+              : 'taskCenter.notificationFailed',
           );
+          const notificationBody = t('taskCenter.notificationBody', {
+            task: taskName,
+            tool: toolName,
+          });
           const title = t('taskCenter.result', {
             status,
-            task: taskTitle(task, t),
+            task: taskName,
             tool: toolName,
           });
           toast.add({
@@ -268,7 +276,7 @@ export function TaskCenter({
                 return;
               }
             }
-            await Send(`task-${task.id}`, title, title);
+            await Send(`task-${task.id}`, notificationTitle, notificationBody);
           })().catch(() => showTaskNotificationPermissionDialog());
         }
         statuses.current.set(task.id, task.status);

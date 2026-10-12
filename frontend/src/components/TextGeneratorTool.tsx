@@ -164,11 +164,14 @@ export default function TextGeneratorTool({
       setItems([]);
       setRestoredOutput(null);
     } else if (pending.action === 'copy' && output) {
-      void navigator.clipboard
-        .writeText(output)
-        .then(() =>
-          toast.add({ title: t('toast.copied', { value: t('textGeneratorTool.output') }) }),
-        );
+      void (async () => {
+        try {
+          await navigator.clipboard.writeText(output);
+          toast.add({ title: t('toast.copied', { value: t('textGeneratorTool.output') }) });
+        } catch {
+          toast.add({ title: t('toast.copyFailed'), type: 'error' });
+        }
+      })();
     } else if (pending.action === 'restore') {
       setItems([]);
       setRestoredOutput(pending.output ?? '');
@@ -392,11 +395,16 @@ export default function TextGeneratorTool({
                 variant: 'secondary',
                 disabled: !output,
                 onPress: () =>
-                  void navigator.clipboard.writeText(output).then(() =>
-                    toast.add({
-                      title: t('toast.copied', { value: t('textGeneratorTool.output') }),
-                    }),
-                  ),
+                  void (async () => {
+                    try {
+                      await navigator.clipboard.writeText(output);
+                      toast.add({
+                        title: t('toast.copied', { value: t('textGeneratorTool.output') }),
+                      });
+                    } catch {
+                      toast.add({ title: t('toast.copyFailed'), type: 'error' });
+                    }
+                  })(),
               },
               {
                 key: 'generate',

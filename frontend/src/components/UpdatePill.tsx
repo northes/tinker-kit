@@ -65,7 +65,7 @@ export default function UpdatePill() {
         setState('restarting');
         void RestartApp().catch(() => {
           if (!errorHandled.current) {
-            toast.add({ title: t('updatePill.error'), type: 'error' });
+            toast.add({ title: t('updatePill.restartFailed'), type: 'error' });
             setState('available');
           }
         });

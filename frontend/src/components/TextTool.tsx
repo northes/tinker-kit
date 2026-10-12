@@ -237,12 +237,16 @@ export default function TextTool({
     setValue(next);
     record('text', action, `${[...next].length} ${t('textTool.characters')}`, next);
   };
-  const copy = () => {
-    navigator.clipboard?.writeText(value).catch(() => {});
-    toast.add({
-      title: t('toast.copied', { value: `${[...value].length} ${t('textTool.characters')}` }),
-    });
-    record('text', t('textTool.copy'), `${[...value].length} ${t('textTool.characters')}`, value);
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(value);
+      toast.add({
+        title: t('toast.copied', { value: `${[...value].length} ${t('textTool.characters')}` }),
+      });
+      record('text', t('textTool.copy'), `${[...value].length} ${t('textTool.characters')}`, value);
+    } catch {
+      toast.add({ title: t('toast.copyFailed'), type: 'error' });
+    }
   };
   useEffect(() => {
     if (!pending || pending.tool !== 'text' || consumed.current === pending) return;
@@ -266,7 +270,14 @@ export default function TextTool({
     }
     if (pending.action === 'copy') {
       const next = value.trim() || pending.input;
-      if (next) navigator.clipboard?.writeText(next).catch(() => {});
+      if (next)
+        void (async () => {
+          try {
+            await navigator.clipboard.writeText(next);
+          } catch {
+            toast.add({ title: t('toast.copyFailed'), type: 'error' });
+          }
+        })();
       return;
     }
     if (transforms[pending.action]) {
@@ -274,7 +285,7 @@ export default function TextTool({
       return;
     }
     setValue(pending.input);
-  }, [pending, value]);
+  }, [pending, value, t]);
   // 勾选后打开搜索栏并保持常驻；用户按 Esc 或点关闭时关闭面板并同步取消勾选。
   useEffect(() => {
     const view = inputView.current;

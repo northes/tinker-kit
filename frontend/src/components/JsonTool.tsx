@@ -972,7 +972,12 @@ export default function JsonTool({
   };
   const copyPane = async (pane: 'input' | 'result') => {
     const value = pane === 'input' ? input : result;
-    await navigator.clipboard?.writeText(value).catch(() => {});
+    try {
+      await navigator.clipboard.writeText(value);
+    } catch {
+      toast.add({ title: t('toast.copyFailed'), type: 'error' });
+      return;
+    }
     const bytes = new TextEncoder().encode(value).length;
     toast.add({ title: t('toast.copied', { value: `${bytes} ${t('jsonTool.bytes')}` }) });
   };
@@ -1176,10 +1181,16 @@ export default function JsonTool({
         });
         return;
       }
-      void navigator.clipboard?.writeText(toCopy).catch(() => {});
-      const bytes = new TextEncoder().encode(toCopy).length;
-      toast.add({ title: t('toast.copied', { value: `${bytes} ${t('jsonTool.bytes')}` }) });
-      record('json', t('jsonTool.copied'), `${bytes} ${t('jsonTool.bytes')}`, toCopy);
+      void (async () => {
+        try {
+          await navigator.clipboard.writeText(toCopy);
+          const bytes = new TextEncoder().encode(toCopy).length;
+          toast.add({ title: t('toast.copied', { value: `${bytes} ${t('jsonTool.bytes')}` }) });
+          record('json', t('jsonTool.copied'), `${bytes} ${t('jsonTool.bytes')}`, toCopy);
+        } catch {
+          toast.add({ title: t('toast.copyFailed'), type: 'error' });
+        }
+      })();
       return;
     }
     if (pending.action === 'restore') {

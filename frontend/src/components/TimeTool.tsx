@@ -311,12 +311,16 @@ export default function TimeTool({
     if (pending.action !== 'restore')
       record('time', t('timeTool.converted'), pending.input.trim().slice(0, 40), pending.input);
   }, [pending]);
-  const copyResult = (id: TimeResultId) => {
+  const copyResult = async (id: TimeResultId) => {
     const label = t(`timeTool.${id}`),
       value = values[id];
-    navigator.clipboard?.writeText(value).catch(() => {});
-    toast.add({ title: t('toast.copied', { value }) });
-    record('time', t('timeTool.converted'), label, input);
+    try {
+      await navigator.clipboard.writeText(value);
+      toast.add({ title: t('toast.copied', { value }) });
+      record('time', t('timeTool.converted'), label, input);
+    } catch {
+      toast.add({ title: t('toast.copyFailed'), type: 'error' });
+    }
   };
   const startEditing = () => {
     const next = normalizeOrder(resultOrder),

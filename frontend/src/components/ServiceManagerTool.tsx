@@ -590,6 +590,8 @@ export default function ServiceManagerTool({
   };
   const performAction = async (target: string, resource: ServiceResourceRef, action: string) => {
     const key = `${target}|${resourceKey(resource)}:${action}`;
+    const actionLabel = t(`serviceManagerTool.actions.${action}`);
+    const resourceLabel = resource.name || resource.id;
     setBusy(key);
     try {
       const result = await PerformServiceAction({
@@ -607,13 +609,31 @@ export default function ServiceManagerTool({
           '',
           failed.map((item) => formatBackendError(item.error)).join('\n'),
         );
-      if (failed.length)
+      if (failed.length) {
+        const partial = succeeded.length > 0;
         toast.add({
-          title: t('serviceManagerTool.actionFailed'),
+          title: partial
+            ? t('serviceManagerTool.actionPartialFailed', {
+                action: actionLabel,
+                resource: resourceLabel,
+                successTotal: succeeded.length,
+                failedTotal: failed.length,
+              })
+            : t('serviceManagerTool.actionFailed', {
+                action: actionLabel,
+                resource: resourceLabel,
+              }),
           description: failed.map((item) => formatBackendError(item.error)).join('；'),
-          type: 'error',
+          type: partial ? 'warning' : 'error',
         });
-      else toast.add({ title: t('serviceManagerTool.actionSucceeded'), type: 'success' });
+      } else
+        toast.add({
+          title: t('serviceManagerTool.actionSucceeded', {
+            action: actionLabel,
+            resource: resourceLabel,
+          }),
+          type: 'success',
+        });
       if (target === targetID) await load(target, view !== 'picked');
       if (view === 'picked') {
         const updated = await GetServiceInventory(target);
@@ -622,7 +642,10 @@ export default function ServiceManagerTool({
       }
     } catch (error) {
       toast.add({
-        title: t('serviceManagerTool.actionFailed'),
+        title: t('serviceManagerTool.actionFailed', {
+          action: actionLabel,
+          resource: resourceLabel,
+        }),
         description: formatBackendError(error),
         type: 'error',
       });
@@ -1548,13 +1571,19 @@ function ResourceList({
       </div>
     );
   const match = (name: string) => !search || name.toLowerCase().includes(search);
-  const copyText = async (value: string) => {
+  const copyText = async (
+    value: string,
+    failureKey:
+      | 'serviceManagerTool.copyIdFailed'
+      | 'serviceManagerTool.copyNameFailed'
+      | 'serviceManagerTool.copyImageFailed',
+  ) => {
     try {
       if (!navigator.clipboard) throw new Error('clipboard unavailable');
       await navigator.clipboard.writeText(value);
       toast.add({ title: t('serviceManagerTool.copiedToClipboard'), type: 'success' });
     } catch {
-      toast.add({ title: t('serviceManagerTool.copyFailed'), type: 'error' });
+      toast.add({ title: t(failureKey), type: 'error' });
     }
   };
   const row = (
@@ -1635,15 +1664,24 @@ function ResourceList({
             <>
               <ContextMenuSeparator />
               <ContextMenuGroup>
-                <ContextMenuItem onClick={() => void copyText(resource.id)}>
+                <ContextMenuItem
+                  onClick={() => void copyText(resource.id, 'serviceManagerTool.copyIdFailed')}
+                >
                   <Copy size={14} weight="duotone" />
                   {t('serviceManagerTool.copyId')}
                 </ContextMenuItem>
-                <ContextMenuItem onClick={() => void copyText(resource.name || resource.id)}>
+                <ContextMenuItem
+                  onClick={() =>
+                    void copyText(resource.name || resource.id, 'serviceManagerTool.copyNameFailed')
+                  }
+                >
                   <Copy size={14} weight="duotone" />
                   {t('serviceManagerTool.copyName')}
                 </ContextMenuItem>
-                <ContextMenuItem disabled={!image} onClick={() => void copyText(image)}>
+                <ContextMenuItem
+                  disabled={!image}
+                  onClick={() => void copyText(image, 'serviceManagerTool.copyImageFailed')}
+                >
                   <Copy size={14} weight="duotone" />
                   {t('serviceManagerTool.copyImage')}
                 </ContextMenuItem>

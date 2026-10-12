@@ -20,6 +20,7 @@ import {
   type ToolId,
 } from './shared';
 import { toast } from './ui/toast';
+import { backendErrorKey } from '../lib/backend-error';
 import FileDropEmpty, {
   fileToDataUrl,
   readLocalFile,
@@ -217,8 +218,12 @@ export default function QrCodeTool({
       try {
         const data = await readLocalFile(path, MAX_BYTES);
         await applyDecodedImage(data.dataURL, data.name, data.mimeType, data.size);
-      } catch {
-        toast.add({ title: t('qrTool.decodeFailed'), type: 'error' });
+      } catch (error) {
+        const tooLarge = backendErrorKey(error) === 'errors.file.tooLarge';
+        toast.add({
+          title: t(tooLarge ? 'qrTool.tooLarge' : 'qrTool.imageReadFailed'),
+          type: tooLarge ? 'warning' : 'error',
+        });
       }
     },
     [applyDecodedImage, t],
@@ -238,7 +243,7 @@ export default function QrCodeTool({
       const path = paths[0];
       if (path) void decodeImagePath(path);
     },
-    onError: () => toast.add({ title: t('qrTool.decodeFailed'), type: 'error' }),
+    onError: () => toast.add({ title: t('qrTool.imagePickerFailed'), type: 'error' }),
   });
 
   // 粘贴图片自动解析；粘贴文本仍交给编辑器默认行为。
@@ -256,17 +261,21 @@ export default function QrCodeTool({
             await applyDecodedImage(dataUrl, file.name, file.type, file.size);
             return;
           }
-          toast.add({ title: t('qrTool.decodeFailed'), type: 'error' });
+          toast.add({ title: t('qrTool.imageReadFailed'), type: 'error' });
         })
-        .catch(() => toast.add({ title: t('qrTool.decodeFailed'), type: 'error' }));
+        .catch(() => toast.add({ title: t('qrTool.imageReadFailed'), type: 'error' }));
     },
   });
 
   const copy = async () => {
     if (!text) return;
-    await navigator.clipboard?.writeText(text).catch(() => {});
-    toast.add({ title: t('toast.copied', { value: bytesLabel(textBytes) }) });
-    record('qrcode', t('qrTool.copy'), bytesLabel(textBytes), text);
+    try {
+      await navigator.clipboard.writeText(text);
+      toast.add({ title: t('toast.copied', { value: bytesLabel(textBytes) }) });
+      record('qrcode', t('qrTool.copy'), bytesLabel(textBytes), text);
+    } catch {
+      toast.add({ title: t('toast.copyFailed'), type: 'error' });
+    }
   };
 
   const exportImage = async () => {

@@ -1616,7 +1616,7 @@ export default function ImageManagerTool({
       await navigator.clipboard.writeText(name);
       toast.add({ title: t('imageManagerTool.copied') });
     } catch {
-      toast.add({ title: t('imageManagerTool.copyFailed'), type: 'error' });
+      toast.add({ title: t('imageManagerTool.copyNameFailed'), type: 'error' });
     }
   };
 
@@ -1625,7 +1625,7 @@ export default function ImageManagerTool({
       await navigator.clipboard.writeText(id);
       toast.add({ title: t('imageManagerTool.idCopied') });
     } catch {
-      toast.add({ title: t('imageManagerTool.copyFailed'), type: 'error' });
+      toast.add({ title: t('imageManagerTool.copyIdFailed'), type: 'error' });
     }
   };
 
@@ -1648,7 +1648,7 @@ export default function ImageManagerTool({
       await navigator.clipboard.writeText(digest);
       toast.add({ title: t('imageManagerTool.digestCopied') });
     } catch {
-      toast.add({ title: t('imageManagerTool.copyFailed'), type: 'error' });
+      toast.add({ title: t('imageManagerTool.copyDigestFailed'), type: 'error' });
     }
   };
 
@@ -1657,7 +1657,7 @@ export default function ImageManagerTool({
       await navigator.clipboard.writeText(tag);
       toast.add({ title: t('imageManagerTool.tagCopied') });
     } catch {
-      toast.add({ title: t('imageManagerTool.copyFailed'), type: 'error' });
+      toast.add({ title: t('imageManagerTool.copyTagFailed'), type: 'error' });
     }
   };
 
@@ -1666,7 +1666,7 @@ export default function ImageManagerTool({
     const failures = result.failed ?? [];
     if (failures.length > 0) {
       toast.add({
-        title: t('imageManagerTool.operationPartial', {
+        title: t('imageManagerTool.pushPartial', {
           succeeded: succeeded.length,
           failed: failures.length,
         }),
@@ -1703,7 +1703,7 @@ export default function ImageManagerTool({
       );
     } catch (error) {
       toast.add({
-        title: t('imageManagerTool.actionFailed'),
+        title: t('imageManagerTool.pushFailed'),
         description: errorMessage(error) || undefined,
         type: 'error',
       });
@@ -1734,7 +1734,7 @@ export default function ImageManagerTool({
       }
     } catch (error) {
       toast.add({
-        title: t('imageManagerTool.actionFailed'),
+        title: t('imageManagerTool.tagChangeFailed'),
         description: errorMessage(error) || undefined,
         type: 'error',
       });
@@ -1931,7 +1931,7 @@ export default function ImageManagerTool({
       requestWatchReload();
     } catch (error) {
       toast.add({
-        title: t('imageManagerTool.actionFailed'),
+        title: t('imageManagerTool.deleteFailed'),
         description: errorMessage(error) || undefined,
         type: 'error',
       });

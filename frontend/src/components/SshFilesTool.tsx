@@ -160,7 +160,7 @@ import { SSHProfileFormField } from './SSHProfileFormField';
 import { openTaskCenter } from './TaskCenter';
 import { ConfirmDialog } from './ConfirmDialog';
 import { useSSHProfiles } from './SSHProfileManagerDialog';
-import { TargetHostManagerDialog } from './TargetHostManagerDialog';
+import { TargetHostManagerDialog, upsertManagerItem } from './TargetHostManagerDialog';
 import { toast } from './ui/toast';
 import { backendErrorKey, formatBackendError, rawErrorMessage } from '../lib/backend-error';
 
@@ -3150,9 +3150,7 @@ export default function SshFilesTool({ active }: Props) {
             id: draft.id || crypto.randomUUID(),
             name: draft.name.trim() || profile.name,
           };
-          return previous.some((item) => item.id === next.id)
-            ? previous.map((item) => (item.id === next.id ? next : item))
-            : [...previous, next];
+          return upsertManagerItem(previous, next, (item) => item.id, draft.id || undefined);
         }}
         saveItems={saveManagedSources}
         saving={savingManage}
@@ -3234,7 +3232,6 @@ export default function SshFilesTool({ active }: Props) {
         }}
         strings={{
           title: t('sshFilesTool.manageTitle'),
-          add: t('sshFilesTool.addSource'),
           edit: t('sshFilesTool.editSource'),
           remove: t('sshFilesTool.removeSourceAction'),
           dragItem: (name) => t('sidebar.dragTool', { name }),

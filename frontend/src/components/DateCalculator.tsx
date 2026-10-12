@@ -293,10 +293,19 @@ export default function DateCalculator({
   const calculatedDate =
     parsedBaseDate && duration ? calculateDateTime(parsedBaseDate, duration, operation) : null;
   const calculatedDateText = calculatedDate ? formatDateTimeDisplay(calculatedDate) : '';
-  const copyResult = (value: string, action: string, input: string, mode: DateCalculatorMode) => {
-    void navigator.clipboard?.writeText(value).catch(() => {});
-    toast.add({ title: t('toast.copied', { value }) });
-    record('time', action, value, input, value, { mode });
+  const copyResult = async (
+    value: string,
+    action: string,
+    input: string,
+    mode: DateCalculatorMode,
+  ) => {
+    try {
+      await navigator.clipboard.writeText(value);
+      toast.add({ title: t('toast.copied', { value }) });
+      record('time', action, value, input, value, { mode });
+    } catch {
+      toast.add({ title: t('toast.copyFailed'), type: 'error' });
+    }
   };
   const differenceMessage =
     !differenceStart.trim() || !differenceEnd.trim()

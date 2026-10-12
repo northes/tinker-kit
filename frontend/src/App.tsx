@@ -1786,7 +1786,7 @@ function AppShell() {
       bytes: meta?.bytes ?? new TextEncoder().encode(input).length,
       input,
       output,
-    }).catch(() => toast.add({ title: t('toast.historyFailed'), type: 'error' }));
+    }).catch(() => toast.add({ title: t('toast.historyAppendFailed'), type: 'error' }));
   };
   const openHistory = async (item: HistoryItem) => {
     if (!enabledToolSet.has(item.tool)) return;
@@ -1801,11 +1801,11 @@ function AppShell() {
       });
       navigate(item.tool);
     } catch {
-      toast.add({ title: t('toast.historyFailed'), type: 'error' });
+      toast.add({ title: t('toast.historyReadFailed'), type: 'error' });
     }
   };
   const clearHistory = () => {
-    void ClearHistory().catch(() => toast.add({ title: t('toast.historyFailed'), type: 'error' }));
+    void ClearHistory().catch(() => toast.add({ title: t('toast.historyClearFailed'), type: 'error' }));
   };
   const cycleSidebar = () => {
     if (sidebarManaging) return;

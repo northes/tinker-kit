@@ -166,7 +166,12 @@ export default function JwtTool({
   const copy = async (kind: 'header' | 'payload' | 'signature') => {
     if (!decoded) return;
     const value = decoded[kind];
-    await navigator.clipboard?.writeText(value).catch(() => {});
+    try {
+      await navigator.clipboard.writeText(value);
+    } catch {
+      toast.add({ title: t('toast.copyFailed'), type: 'error' });
+      return;
+    }
     const bytes = new TextEncoder().encode(value).length;
     toast.add({ title: t('toast.copied', { value: `${bytes} B` }) });
     record(

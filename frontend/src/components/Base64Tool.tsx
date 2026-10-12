@@ -20,6 +20,7 @@ import {
   type ToolId,
 } from './shared';
 import { toast } from './ui/toast';
+import { backendErrorKey } from '../lib/backend-error';
 import FileDropEmpty, {
   fileToDataUrl,
   readLocalFile,
@@ -214,7 +215,7 @@ export default function Base64Tool({
         setOutputKind('text');
         setOutputFile(null);
         setOutput('');
-        toast.add({ title: t('base64Tool.invalid'), type: 'warning' });
+        toast.add({ title: t('base64Tool.conversionFailed'), type: 'warning' });
       }
     }
   };
@@ -233,8 +234,12 @@ export default function Base64Tool({
     setOutputFile(null);
   };
   const copy = async () => {
-    await navigator.clipboard?.writeText(output).catch(() => {});
-    toast.add({ title: t('toast.copied', { value: bytesLabel(output.length) }) });
+    try {
+      await navigator.clipboard.writeText(output);
+      toast.add({ title: t('toast.copied', { value: bytesLabel(output.length) }) });
+    } catch {
+      toast.add({ title: t('toast.copyFailed'), type: 'error' });
+    }
   };
   const applyFile = useCallback(
     (info: FileInfo) => {
@@ -268,8 +273,14 @@ export default function Base64Tool({
           data: data.dataURL,
           image: data.mimeType.startsWith('image/'),
         });
-      } catch {
-        toast.add({ title: t('base64Tool.invalid'), type: 'error' });
+      } catch (error) {
+        const tooLarge = backendErrorKey(error) === 'errors.file.tooLarge';
+        toast.add({
+          title: tooLarge
+            ? t('base64Tool.tooLarge', { size: bytesLabel(MAX_BYTES) })
+            : t('base64Tool.fileReadFailed'),
+          type: tooLarge ? 'warning' : 'error',
+        });
       }
     },
     [applyFile, t],
@@ -286,7 +297,7 @@ export default function Base64Tool({
       const path = paths[0];
       if (path) void loadPath(path);
     },
-    onError: () => toast.add({ title: t('base64Tool.invalid'), type: 'error' }),
+    onError: () => toast.add({ title: t('base64Tool.filePickerFailed'), type: 'error' }),
   });
 
   useClipboardFilePaste({
@@ -309,7 +320,7 @@ export default function Base64Tool({
             image: file.type.startsWith('image/'),
           }),
         )
-        .catch(() => toast.add({ title: t('base64Tool.invalid'), type: 'error' }));
+        .catch(() => toast.add({ title: t('base64Tool.fileReadFailed'), type: 'error' }));
     },
   });
   useEffect(() => {

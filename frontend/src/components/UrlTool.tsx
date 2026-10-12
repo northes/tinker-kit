@@ -136,12 +136,18 @@ export default function UrlTool({
     };
   }, [parts, input, output, record, t]);
   const copyValue = async (value: string, label: string) => {
-    await navigator.clipboard?.writeText(value).catch(() => {});
-    toast.add({ title: t('toast.copied', { value: label }) });
+    try {
+      await navigator.clipboard.writeText(value);
+      toast.add({ title: t('toast.copied', { value: label }) });
+      return true;
+    } catch {
+      toast.add({ title: t('toast.copyFailed'), type: 'error' });
+      return false;
+    }
   };
   const copy = async () => {
     if (!parts) return;
-    await copyValue(output, t('urlTool.copied'));
+    if (!(await copyValue(output, t('urlTool.copied')))) return;
     record(
       'url',
       t('urlTool.copy'),
@@ -164,7 +170,7 @@ export default function UrlTool({
     try {
       next = run(input);
     } catch {
-      toast.add({ title: t('urlTool.decodeFailed'), type: 'warning' });
+      toast.add({ title: t('urlTool.conversionFailed'), type: 'warning' });
       return;
     }
     if (next === input) return;
