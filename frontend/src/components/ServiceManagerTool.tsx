@@ -127,7 +127,7 @@ import { TargetHostManagerDialog } from './TargetHostManagerDialog';
 import { backendErrorKey, formatBackendError } from '../lib/backend-error';
 import { formatBytes } from './ServiceMetricChart';
 import { ServiceResourcePerformance } from './ServiceResourcePerformance';
-import { ServiceWorkspacePerformance } from './ServiceWorkspacePerformance';
+import { ServicePickedPerformance } from './ServicePickedPerformance';
 
 const MANAGE_TARGETS_VALUE = '__manage-targets__';
 const VISIBLE_LOG_LIMIT = 5000;
@@ -138,14 +138,14 @@ type Runtime = 'docker' | 'pm2' | 'systemd';
 type Selection = {
   targetID: string;
   resource: ServiceResourceRef;
-  kind: 'container' | 'group' | 'pm2' | 'systemd' | 'host' | 'workspace';
+  kind: 'container' | 'group' | 'pm2' | 'systemd' | 'host' | 'picked';
 };
-// 工作台成员：用户显式加入的容器或服务，与自动采集的日志监控相互独立。
-type WorkspaceMember = { targetID: string; resource: ServiceResourceRef };
-const WORKSPACE_SELECTION: Selection = {
+// 已挑选成员：用户显式挑选的容器或服务，与自动采集的日志监控相互独立。
+type PickedMember = { targetID: string; resource: ServiceResourceRef };
+const PICKED_SELECTION: Selection = {
   targetID: '',
-  resource: { runtime: 'workspace', id: 'workspace' },
-  kind: 'workspace',
+  resource: { runtime: 'picked', id: 'picked' },
+  kind: 'picked',
 };
 type LogEvent = { lines?: ServiceLogLine[] };
 
@@ -181,7 +181,7 @@ function runtimeFiltered(statuses: Set<string>, runtime: Runtime) {
 function resourceKey(resource: ServiceResourceRef) {
   return `${resource.runtime}|${resource.scope ?? ''}|${resource.id}`;
 }
-function workspaceMemberKey(member: WorkspaceMember) {
+function pickedMemberKey(member: PickedMember) {
   return `${member.targetID}|${resourceKey(member.resource)}`;
 }
 function monitorResourceKey(monitor: LogMonitor) {
@@ -280,22 +280,20 @@ export default function ServiceManagerTool({
   const [selection, setSelection] = useState<Selection | null>(null);
   const [busy, setBusy] = useState('');
   const [monitors, setMonitors] = useState<LogMonitor[]>([]);
-  const [workspaceMembers, setWorkspaceMembers] = useState<WorkspaceMember[]>([]);
-  const [view, setView] = useState<'resource' | 'workspace'>('resource');
+  const [pickedMembers, setPickedMembers] = useState<PickedMember[]>([]);
+  const [view, setView] = useState<'resource' | 'picked'>('resource');
   const [detailTab, setDetailTab] = useState('info');
   const [panelOrientation, setPanelOrientation] = useState<'horizontal' | 'vertical'>(() =>
     window.matchMedia('(max-width: 800px)').matches ? 'vertical' : 'horizontal',
   );
-  const [workspaceInventories, setWorkspaceInventories] = useState<
-    Record<string, ServiceInventory>
-  >({});
-  const [workspaceErrors, setWorkspaceErrors] = useState<Record<string, string>>({});
-  const [pendingWorkspaceRemove, setPendingWorkspaceRemove] = useState<{
-    members: WorkspaceMember[];
+  const [pickedInventories, setPickedInventories] = useState<Record<string, ServiceInventory>>({});
+  const [pickedErrors, setPickedErrors] = useState<Record<string, string>>({});
+  const [pendingUnpick, setPendingUnpick] = useState<{
+    members: PickedMember[];
     name: string;
     all: boolean;
   } | null>(null);
-  const [workspaceRemoving, setWorkspaceRemoving] = useState(false);
+  const [unpicking, setUnpicking] = useState(false);
   const [logDraft, setLogDraft] = useState('');
   const [logQuery, setLogQuery] = useState('');
   const [regex, setRegex] = useState(false);
@@ -318,12 +316,12 @@ export default function ServiceManagerTool({
     resource: ServiceResourceRef;
     targetID: string;
   } | null>(null);
-  const [monitorDialog, setMonitorDialog] = useState<{
+  const [pickDialog, setPickDialog] = useState<{
     resource: ServiceResourceRef;
     targetID: string;
     containers: DockerContainer[];
   } | null>(null);
-  const [monitorSelection, setMonitorSelection] = useState<Set<string>>(new Set());
+  const [pickSelection, setPickSelection] = useState<Set<string>>(new Set());
   const monitorLoadVersion = useRef(0);
 
   useEffect(() => {
@@ -366,11 +364,11 @@ export default function ServiceManagerTool({
   };
 
   const selectedTargetID =
-    view === 'workspace' && selection?.kind !== 'workspace'
+    view === 'picked' && selection?.kind !== 'picked'
       ? (selection?.targetID ?? targetID)
       : targetID;
   const selectedInventory =
-    selectedTargetID === targetID ? inventory : workspaceInventories[selectedTargetID];
+    selectedTargetID === targetID ? inventory : pickedInventories[selectedTargetID];
   const currentTargetMonitors = useMemo(
     () => monitors.filter((item) => item.targetID === selectedTargetID),
     [monitors, selectedTargetID],
@@ -379,27 +377,27 @@ export default function ServiceManagerTool({
     () => new Map(monitors.map((item) => [`${item.targetID}|${monitorResourceKey(item)}`, item])),
     [monitors],
   );
-  const workspaceMemberKeys = useMemo(
-    () => new Set(workspaceMembers.map(workspaceMemberKey)),
-    [workspaceMembers],
+  const pickedMemberKeys = useMemo(
+    () => new Set(pickedMembers.map(pickedMemberKey)),
+    [pickedMembers],
   );
-  const workspaceTargetIDs = useMemo(
-    () => [...new Set(workspaceMembers.map((member) => member.targetID))],
-    [workspaceMembers],
+  const pickedTargetIDs = useMemo(
+    () => [...new Set(pickedMembers.map((member) => member.targetID))],
+    [pickedMembers],
   );
-  // 仅工作台成员的日志监控；自动采集但未加入工作台的资源不在其中。
+  // 仅已挑选成员的日志监控；自动采集但未被挑选的资源不在其中。
   const memberMonitors = useMemo(
     () =>
       monitors.filter((item) =>
-        workspaceMemberKeys.has(`${item.targetID}|${resourceKey(item.resource)}`),
+        pickedMemberKeys.has(`${item.targetID}|${resourceKey(item.resource)}`),
       ),
-    [monitors, workspaceMemberKeys],
+    [monitors, pickedMemberKeys],
   );
   // Compose 组选中时聚合其所有容器的监控；单资源沿用资源键匹配。
   const selectedMonitors = useMemo(() => {
     if (!selection) return [] as LogMonitor[];
-    if (view === 'workspace' && selection.kind === 'workspace') return memberMonitors;
-    if (view === 'workspace' && selection.kind === 'host')
+    if (view === 'picked' && selection.kind === 'picked') return memberMonitors;
+    if (view === 'picked' && selection.kind === 'host')
       return memberMonitors.filter((item) => item.targetID === selection.targetID);
     if (selection.kind === 'group') {
       const group = selectedInventory?.dockerGroups?.find(
@@ -452,21 +450,21 @@ export default function ServiceManagerTool({
     return () => window.clearInterval(timer);
   }, [active, targetID]);
   useEffect(() => {
-    if (view !== 'workspace') return;
-    const hostIDs = workspaceTargetIDs;
+    if (view !== 'picked') return;
+    const hostIDs = pickedTargetIDs;
     if (!hostIDs.length) return;
     let cancelled = false;
     const refresh = async () => {
       const results = await Promise.allSettled(hostIDs.map((id) => GetServiceInventory(id)));
       if (cancelled) return;
-      setWorkspaceInventories((current) => {
+      setPickedInventories((current) => {
         const next = { ...current };
         results.forEach((result, index) => {
           if (result.status === 'fulfilled') next[hostIDs[index]] = result.value;
         });
         return next;
       });
-      setWorkspaceErrors((current) => {
+      setPickedErrors((current) => {
         const next = { ...current };
         results.forEach((result, index) => {
           if (result.status === 'rejected')
@@ -486,7 +484,7 @@ export default function ServiceManagerTool({
       cancelled = true;
       window.clearInterval(timer);
     };
-  }, [view, active, workspaceTargetIDs.join('|')]);
+  }, [view, active, pickedTargetIDs.join('|')]);
   useEffect(() => {
     const off = Events.On('service-manager:logs', (event) => {
       const data = event.data as LogEvent;
@@ -564,14 +562,14 @@ export default function ServiceManagerTool({
     setInventory(null);
     setTargetID(next);
   };
-  const openWorkspace = () => {
-    setView('workspace');
-    setSelection(WORKSPACE_SELECTION);
+  const openPicked = () => {
+    setView('picked');
+    setSelection(PICKED_SELECTION);
   };
   const showResources = () => {
     setView('resource');
     if (
-      selection?.kind === 'workspace' ||
+      selection?.kind === 'picked' ||
       selection?.kind === 'host' ||
       selection?.targetID !== targetID
     ) {
@@ -621,10 +619,10 @@ export default function ServiceManagerTool({
           type: 'error',
         });
       else toast.add({ title: t('serviceManagerTool.actionSucceeded'), type: 'success' });
-      if (target === targetID) await load(target, view !== 'workspace');
-      if (view === 'workspace') {
+      if (target === targetID) await load(target, view !== 'picked');
+      if (view === 'picked') {
         const updated = await GetServiceInventory(target);
-        setWorkspaceInventories((current) => ({ ...current, [target]: updated }));
+        setPickedInventories((current) => ({ ...current, [target]: updated }));
         setDetailRefreshVersion((value) => value + 1);
       }
     } catch (error) {
@@ -672,26 +670,26 @@ export default function ServiceManagerTool({
       return [];
     }
   };
-  const toggleMonitorContainer = (id: string, checked: boolean) =>
-    setMonitorSelection((current) => {
+  const togglePickContainer = (id: string, checked: boolean) =>
+    setPickSelection((current) => {
       const next = new Set(current);
       if (checked) next.add(id);
       else next.delete(id);
       return next;
     });
-  // 加入工作台只更新成员集合；日志监控由成员同步 effect 启动，已存在的直接复用。
-  const addWorkspaceMembers = (members: WorkspaceMember[]) => {
-    setWorkspaceMembers((current) => {
-      const all = new Map(current.map((member) => [workspaceMemberKey(member), member]));
-      members.forEach((member) => all.set(workspaceMemberKey(member), member));
+  // 挑选只更新成员集合；日志监控由成员同步 effect 启动，已存在的直接复用。
+  const addPickedMembers = (members: PickedMember[]) => {
+    setPickedMembers((current) => {
+      const all = new Map(current.map((member) => [pickedMemberKey(member), member]));
+      members.forEach((member) => all.set(pickedMemberKey(member), member));
       return [...all.values()];
     });
   };
-  const confirmMonitorSelection = () => {
-    const dialog = monitorDialog;
+  const confirmPickSelection = () => {
+    const dialog = pickDialog;
     if (!dialog) return;
     const refs = dialog.containers
-      .filter((item) => monitorSelection.has(item.id))
+      .filter((item) => pickSelection.has(item.id))
       .map(
         (item) =>
           ({
@@ -701,13 +699,13 @@ export default function ServiceManagerTool({
             group: dialog.resource.name,
           }) as ServiceResourceRef,
       );
-    setMonitorDialog(null);
-    addWorkspaceMembers(refs.map((resource) => ({ targetID: dialog.targetID, resource })));
+    setPickDialog(null);
+    addPickedMembers(refs.map((resource) => ({ targetID: dialog.targetID, resource })));
   };
   // 自动启动所选资源/Compose 组的日志监控并保留在后台；达到并发上限时淘汰最久未查看的一路后重试。
   const autoMonitorsRef = useRef(new Map<string, number>());
   const autoSequenceRef = useRef(0);
-  // 达到并发上限时，淘汰最久未查看、且不属于工作台的自动采集监控，为新的监控让位。
+  // 达到并发上限时，淘汰最久未查看、且不属于已挑选成员的自动采集监控，为新的监控让位。
   const evictAutoMonitor = async (exclude: Set<string>) => {
     const tracked = autoMonitorsRef.current;
     const oldest = [...tracked.keys()].find((id) => {
@@ -716,7 +714,7 @@ export default function ServiceManagerTool({
       const key = `${item.targetID}|${resourceKey(item.resource)}`;
       return (
         !exclude.has(key) &&
-        !workspaceMemberKeys.has(key) &&
+        !pickedMemberKeys.has(key) &&
         (item.state === 'monitoring' || item.state === 'stopping')
       );
     });
@@ -726,8 +724,7 @@ export default function ServiceManagerTool({
     return true;
   };
   const ensureSelectionMonitors = async (sel: Selection) => {
-    const sourceInventory =
-      sel.targetID === targetID ? inventory : workspaceInventories[sel.targetID];
+    const sourceInventory = sel.targetID === targetID ? inventory : pickedInventories[sel.targetID];
     const resources = resourceRefsFor(sel.resource, sourceInventory);
     if (!resources.length) return;
     const sequence = ++autoSequenceRef.current;
@@ -736,7 +733,7 @@ export default function ServiceManagerTool({
       monitoredByResource.get(`${sel.targetID}|${resourceKey(resource)}`);
     resources.forEach((resource) => {
       const existing = monitorOf(resource);
-      // 浏览过的资源记为自动采集，可在达到并发上限时淘汰；工作台成员另行保护。
+      // 浏览过的资源记为自动采集，可在达到并发上限时淘汰；已挑选成员另行保护。
       if (!existing) return;
       tracked.delete(existing.id);
       tracked.set(existing.id, sequence);
@@ -768,15 +765,15 @@ export default function ServiceManagerTool({
   // 浏览资源时自动开始采集日志，无需手动启动；选择变化即触发一次，不随监控列表刷新重复触发。
   useEffect(() => {
     if (!active || view !== 'resource' || !selection) return;
-    if (selection.kind === 'workspace' || selection.kind === 'host') return;
+    if (selection.kind === 'picked' || selection.kind === 'host') return;
     void ensureSelectionMonitors(selection);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active, view, selection]);
-  // 工作台成员始终保留日志监控；与浏览自动采集复用同一路监控。
+  // 已挑选成员始终保留日志监控；与浏览自动采集复用同一路监控。
   useEffect(() => {
     if (!active) return;
     const byTarget = new Map<string, ServiceResourceRef[]>();
-    workspaceMembers.forEach((member) => {
+    pickedMembers.forEach((member) => {
       const list = byTarget.get(member.targetID) ?? [];
       list.push(member.resource);
       byTarget.set(member.targetID, list);
@@ -799,43 +796,43 @@ export default function ServiceManagerTool({
       }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [active, workspaceMembers]);
+  }, [active, pickedMembers]);
   const clear = async () => {
     await Promise.all(activeMonitorIDs.map((id) => ClearLogBuffer(id).catch(() => undefined)));
     setLines([]);
     setTruncated(false);
     await loadMonitors();
   };
-  const changeWorkspace = (target: string, resource: ServiceResourceRef) => {
-    const sourceInventory = target === targetID ? inventory : workspaceInventories[target];
+  const changePick = (target: string, resource: ServiceResourceRef) => {
+    const sourceInventory = target === targetID ? inventory : pickedInventories[target];
     const refs = resourceRefsFor(resource, sourceInventory);
     const keys = new Set(refs.map((ref) => `${target}|${resourceKey(ref)}`));
-    const existing = workspaceMembers.filter((member) => keys.has(workspaceMemberKey(member)));
+    const existing = pickedMembers.filter((member) => keys.has(pickedMemberKey(member)));
     if (existing.length) {
-      setPendingWorkspaceRemove({
+      setPendingUnpick({
         members: existing,
         name: resource.name || resource.id,
         all: false,
       });
       return;
     }
-    // Compose 组多容器时先让用户选择要加入的容器，默认全选。
+    // Compose 组多容器时先让用户选择要挑选的容器，默认全选。
     if (resource.runtime === 'docker-compose' && refs.length > 1) {
-      setMonitorSelection(new Set(refs.map((ref) => ref.id)));
-      setMonitorDialog({
+      setPickSelection(new Set(refs.map((ref) => ref.id)));
+      setPickDialog({
         resource,
         targetID: target,
         containers: composeGroupContainers(resource, sourceInventory),
       });
       return;
     }
-    addWorkspaceMembers(refs.map((ref) => ({ targetID: target, resource: ref })));
+    addPickedMembers(refs.map((ref) => ({ targetID: target, resource: ref })));
   };
-  const confirmWorkspaceRemove = async () => {
-    if (!pendingWorkspaceRemove || workspaceRemoving) return;
-    setWorkspaceRemoving(true);
-    const removed = pendingWorkspaceRemove.members;
-    const removedKeys = new Set(removed.map(workspaceMemberKey));
+  const confirmUnpick = async () => {
+    if (!pendingUnpick || unpicking) return;
+    setUnpicking(true);
+    const removed = pendingUnpick.members;
+    const removedKeys = new Set(removed.map(pickedMemberKey));
     try {
       // 仅停止不再被自动采集复用的日志监控；浏览中的监控保留。
       const results = await Promise.allSettled(
@@ -848,32 +845,32 @@ export default function ServiceManagerTool({
         }),
       );
       ++monitorLoadVersion.current;
-      setWorkspaceMembers((current) =>
-        current.filter((member) => !removedKeys.has(workspaceMemberKey(member))),
+      setPickedMembers((current) =>
+        current.filter((member) => !removedKeys.has(pickedMemberKey(member))),
       );
       const failed = results.find((result) => result.status === 'rejected');
       if (failed?.status === 'rejected')
         toast.add({
-          title: t('serviceManagerTool.workspaceRemoveFailed'),
+          title: t('serviceManagerTool.unpickFailed'),
           description: formatBackendError(failed.reason),
           type: 'error',
         });
-      if (view === 'workspace') {
-        if (workspaceMembers.every((member) => removedKeys.has(workspaceMemberKey(member))))
+      if (view === 'picked') {
+        if (pickedMembers.every((member) => removedKeys.has(pickedMemberKey(member))))
           showResources();
         else if (
-          selection?.kind !== 'workspace' &&
+          selection?.kind !== 'picked' &&
           selectedMonitors.length > 0 &&
           selectedMonitors.every((monitor) =>
             removedKeys.has(`${monitor.targetID}|${resourceKey(monitor.resource)}`),
           )
         ) {
-          setSelection(WORKSPACE_SELECTION);
+          setSelection(PICKED_SELECTION);
         }
       }
-      setPendingWorkspaceRemove(null);
+      setPendingUnpick(null);
     } finally {
-      setWorkspaceRemoving(false);
+      setUnpicking(false);
     }
   };
   const selectedTargetMissing =
@@ -1056,7 +1053,7 @@ export default function ServiceManagerTool({
                 className="max-[700px]:w-full"
               >
                 <Select
-                  disabled={view === 'workspace'}
+                  disabled={view === 'picked'}
                   items={targets.map((item) => ({
                     value: item.id,
                     label: targetLabel(item, t),
@@ -1173,14 +1170,14 @@ export default function ServiceManagerTool({
                 {t('serviceManagerTool.hosts')}
               </Button>
               <Button
-                variant={view === 'workspace' ? 'secondary' : 'outline'}
+                variant={view === 'picked' ? 'secondary' : 'outline'}
                 size="sm"
-                onClick={openWorkspace}
+                onClick={openPicked}
               >
                 <Queue weight="duotone" />
-                {t('serviceManagerTool.workspace')}
-                <Badge variant={workspaceMembers.length > 0 ? 'success' : 'secondary'}>
-                  {workspaceMembers.length}
+                {t('serviceManagerTool.picked')}
+                <Badge variant={pickedMembers.length > 0 ? 'success' : 'secondary'}>
+                  {pickedMembers.length}
                 </Badge>
               </Button>
               <Button
@@ -1188,19 +1185,19 @@ export default function ServiceManagerTool({
                 size="sm"
                 onClick={() =>
                   void (
-                    view === 'workspace'
+                    view === 'picked'
                       ? Promise.allSettled(
-                          workspaceTargetIDs.map(async (id) => {
+                          pickedTargetIDs.map(async (id) => {
                             try {
                               const next = await GetServiceInventory(id);
-                              setWorkspaceInventories((current) => ({ ...current, [id]: next }));
-                              setWorkspaceErrors((current) => {
+                              setPickedInventories((current) => ({ ...current, [id]: next }));
+                              setPickedErrors((current) => {
                                 const nextErrors = { ...current };
                                 delete nextErrors[id];
                                 return nextErrors;
                               });
                             } catch (error) {
-                              setWorkspaceErrors((current) => ({
+                              setPickedErrors((current) => ({
                                 ...current,
                                 [id]: formatBackendError(error),
                               }));
@@ -1209,7 +1206,7 @@ export default function ServiceManagerTool({
                         )
                       : load(targetID, true)
                   ).then(() => {
-                    if (view === 'workspace') setDetailRefreshVersion((value) => value + 1);
+                    if (view === 'picked') setDetailRefreshVersion((value) => value + 1);
                   })
                 }
                 disabled={loading}
@@ -1230,35 +1227,35 @@ export default function ServiceManagerTool({
               collapsedSize={0}
               className="min-h-0 min-w-0"
             >
-              {view === 'workspace' ? (
+              {view === 'picked' ? (
                 <div className="flex h-full min-h-0 flex-col">
                   <div
-                    className={`flex h-10 flex-none items-center justify-between gap-2 border-b px-3 hover:bg-muted/50 ${selection?.kind === 'workspace' ? 'bg-muted' : ''}`}
+                    className={`flex h-10 flex-none items-center justify-between gap-2 border-b px-3 hover:bg-muted/50 ${selection?.kind === 'picked' ? 'bg-muted' : ''}`}
                   >
                     <button
                       type="button"
-                      aria-pressed={selection?.kind === 'workspace'}
+                      aria-pressed={selection?.kind === 'picked'}
                       className="-ml-3 flex h-10 min-w-0 flex-1 items-center gap-2 px-3 text-left text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                      onClick={() => setSelection(WORKSPACE_SELECTION)}
+                      onClick={() => setSelection(PICKED_SELECTION)}
                     >
                       <Queue className="size-4 flex-none text-muted-foreground" weight="duotone" />
-                      <span className="font-medium">{t('serviceManagerTool.workspace')}</span>
+                      <span className="font-medium">{t('serviceManagerTool.picked')}</span>
                       <span className="truncate text-[10px] text-muted-foreground">
-                        {t('serviceManagerTool.workspaceMembers', {
-                          total: workspaceMembers.length,
+                        {t('serviceManagerTool.pickedCount', {
+                          total: pickedMembers.length,
                         })}
                       </span>
                     </button>
-                    {workspaceMembers.length ? (
+                    {pickedMembers.length ? (
                       <Button
                         variant="ghost"
                         size="icon-xs"
                         className="flex-none text-muted-foreground hover:text-destructive"
-                        aria-label={t('serviceManagerTool.removeAllFromWorkspace')}
-                        title={t('serviceManagerTool.removeAllFromWorkspace')}
+                        aria-label={t('serviceManagerTool.unpickAll')}
+                        title={t('serviceManagerTool.unpickAll')}
                         onClick={() => {
-                          setPendingWorkspaceRemove({
-                            members: [...workspaceMembers],
+                          setPendingUnpick({
+                            members: [...pickedMembers],
                             name: '',
                             all: true,
                           });
@@ -1269,8 +1266,8 @@ export default function ServiceManagerTool({
                     ) : null}
                   </div>
                   <ScrollArea className="min-h-0 flex-1">
-                    {workspaceMembers.length ? (
-                      workspaceTargetIDs.map((hostID) => (
+                    {pickedMembers.length ? (
+                      pickedTargetIDs.map((hostID) => (
                         <div key={hostID}>
                           <button
                             type="button"
@@ -1306,25 +1303,23 @@ export default function ServiceManagerTool({
                                 : t('serviceManagerTool.targetUnavailable')}
                             </span>
                           </button>
-                          {workspaceErrors[hostID] ? (
+                          {pickedErrors[hostID] ? (
                             <RuntimeError
                               name={t('serviceManagerTool.target')}
-                              error={workspaceErrors[hostID]}
+                              error={pickedErrors[hostID]}
                             />
                           ) : null}
                           <ResourceList
                             targetID={hostID}
                             inventory={
-                              workspaceErrors[hostID]
-                                ? null
-                                : (workspaceInventories[hostID] ?? null)
+                              pickedErrors[hostID] ? null : (pickedInventories[hostID] ?? null)
                             }
-                            workspaceResources={workspaceMembers
+                            pickedResources={pickedMembers
                               .filter((member) => member.targetID === hostID)
                               .map((member) => member.resource)}
                             allowed={
                               new Set(
-                                workspaceMembers
+                                pickedMembers
                                   .filter((member) => member.targetID === hostID)
                                   .map((member) => resourceKey(member.resource)),
                               )
@@ -1336,9 +1331,9 @@ export default function ServiceManagerTool({
                             onSelect={(next) => {
                               setSelection(next);
                             }}
-                            workspaceKeys={workspaceMemberKeys}
+                            pickedKeys={pickedMemberKeys}
                             onAction={act}
-                            onWorkspaceChange={changeWorkspace}
+                            onPickChange={changePick}
                             busy={busy}
                             t={t}
                           />
@@ -1346,7 +1341,7 @@ export default function ServiceManagerTool({
                       ))
                     ) : (
                       <p className="px-4 py-5 text-center text-xs text-muted-foreground">
-                        {t('serviceManagerTool.workspaceEmpty')}
+                        {t('serviceManagerTool.pickedEmpty')}
                       </p>
                     )}
                   </ScrollArea>
@@ -1361,9 +1356,9 @@ export default function ServiceManagerTool({
                   onSelect={(next) => {
                     setSelection(next);
                   }}
-                  workspaceKeys={workspaceMemberKeys}
+                  pickedKeys={pickedMemberKeys}
                   onAction={act}
-                  onWorkspaceChange={changeWorkspace}
+                  onPickChange={changePick}
                   busy={busy}
                   t={t}
                 />
@@ -1378,7 +1373,7 @@ export default function ServiceManagerTool({
               <section className="h-full min-h-0 overflow-hidden">
                 {selection &&
                 (view === 'resource' ||
-                  selection.kind === 'workspace' ||
+                  selection.kind === 'picked' ||
                   selectedMonitors.length > 0) ? (
                   <ResourcePanel
                     selection={selection}
@@ -1535,32 +1530,30 @@ export default function ServiceManagerTool({
         onConfirm={() => void confirmPendingAction()}
       />
       <ConfirmDialog
-        open={pendingWorkspaceRemove !== null}
+        open={pendingUnpick !== null}
         onOpenChange={(open) => {
-          if (!open) setPendingWorkspaceRemove(null);
+          if (!open) setPendingUnpick(null);
         }}
         title={t(
-          pendingWorkspaceRemove?.all
-            ? 'serviceManagerTool.removeAllFromWorkspaceTitle'
-            : 'serviceManagerTool.removeFromWorkspaceTitle',
+          pendingUnpick?.all
+            ? 'serviceManagerTool.unpickAllTitle'
+            : 'serviceManagerTool.unpickTitle',
         )}
         description={
-          pendingWorkspaceRemove?.all
-            ? t('serviceManagerTool.removeAllFromWorkspaceConfirm', {
-                total: pendingWorkspaceRemove.members.length,
+          pendingUnpick?.all
+            ? t('serviceManagerTool.unpickAllConfirm', {
+                total: pendingUnpick.members.length,
               })
-            : t('serviceManagerTool.removeFromWorkspaceConfirm', {
-                name: pendingWorkspaceRemove?.name ?? '',
+            : t('serviceManagerTool.unpickConfirm', {
+                name: pendingUnpick?.name ?? '',
               })
         }
         confirmLabel={t(
-          pendingWorkspaceRemove?.all
-            ? 'serviceManagerTool.removeAllFromWorkspace'
-            : 'serviceManagerTool.removeFromWorkspace',
+          pendingUnpick?.all ? 'serviceManagerTool.unpickAll' : 'serviceManagerTool.unpick',
         )}
         destructive
-        busy={workspaceRemoving}
-        onConfirm={() => void confirmWorkspaceRemove()}
+        busy={unpicking}
+        onConfirm={() => void confirmUnpick()}
       />
       <Dialog open={updateDialog !== null} onOpenChange={(open) => !open && setUpdateDialog(null)}>
         <DialogContent className="sm:max-w-md">
@@ -1601,35 +1594,35 @@ export default function ServiceManagerTool({
         </DialogContent>
       </Dialog>
       <Dialog
-        open={monitorDialog !== null}
+        open={pickDialog !== null}
         onOpenChange={(open) => {
-          if (!open) setMonitorDialog(null);
+          if (!open) setPickDialog(null);
         }}
       >
         <DialogContent className="flex max-h-[calc(100dvh-2rem)] min-h-0 flex-col sm:max-w-md">
           <DialogHeader className="flex-none">
-            <DialogTitle>{t('serviceManagerTool.monitorSelectTitle')}</DialogTitle>
+            <DialogTitle>{t('serviceManagerTool.pickSelectTitle')}</DialogTitle>
             <DialogDescription>
-              {monitorDialog
-                ? t('serviceManagerTool.monitorSelectDesc', {
-                    name: monitorDialog.resource.name || monitorDialog.resource.id,
+              {pickDialog
+                ? t('serviceManagerTool.pickSelectDesc', {
+                    name: pickDialog.resource.name || pickDialog.resource.id,
                   })
                 : ''}
             </DialogDescription>
           </DialogHeader>
           <ScrollArea className="min-h-0 flex-1 overscroll-contain [padding-inline-end:var(--overlay-scrollbar-size)]">
             <div className="divide-y divide-border">
-              {(monitorDialog?.containers ?? []).map((container) => (
+              {(pickDialog?.containers ?? []).map((container) => (
                 <Label
                   key={container.id}
-                  htmlFor={`monitor-container-${container.id}`}
+                  htmlFor={`pick-container-${container.id}`}
                   className="cursor-pointer gap-2 py-2 font-normal"
                 >
                   <Checkbox
-                    id={`monitor-container-${container.id}`}
-                    checked={monitorSelection.has(container.id)}
+                    id={`pick-container-${container.id}`}
+                    checked={pickSelection.has(container.id)}
                     onCheckedChange={(checked) =>
-                      toggleMonitorContainer(container.id, checked === true)
+                      togglePickContainer(container.id, checked === true)
                     }
                   />
                   <span className="min-w-0 flex-1 truncate">{container.name || container.id}</span>
@@ -1639,14 +1632,11 @@ export default function ServiceManagerTool({
             </div>
           </ScrollArea>
           <DialogFooter className="flex-none">
-            <Button variant="outline" onClick={() => setMonitorDialog(null)}>
+            <Button variant="outline" onClick={() => setPickDialog(null)}>
               {t('common.cancel')}
             </Button>
-            <Button
-              disabled={monitorSelection.size === 0}
-              onClick={() => confirmMonitorSelection()}
-            >
-              {t('serviceManagerTool.addToWorkspace')}
+            <Button disabled={pickSelection.size === 0} onClick={() => confirmPickSelection()}>
+              {t('serviceManagerTool.pick')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1658,31 +1648,31 @@ export default function ServiceManagerTool({
 function ResourceList({
   targetID,
   inventory,
-  workspaceResources,
+  pickedResources,
   allowed,
   embedded = false,
   statuses,
   search,
   selection,
   onSelect,
-  workspaceKeys,
+  pickedKeys,
   onAction,
-  onWorkspaceChange,
+  onPickChange,
   busy,
   t,
 }: {
   targetID: string;
   inventory: ServiceInventory | null;
-  workspaceResources?: ServiceResourceRef[];
+  pickedResources?: ServiceResourceRef[];
   allowed?: Set<string>;
   embedded?: boolean;
   statuses: Set<string>;
   search: string;
   selection: Selection | null;
   onSelect: (next: Selection) => void;
-  workspaceKeys: Set<string>;
+  pickedKeys: Set<string>;
   onAction: (targetID: string, resource: ServiceResourceRef, action: string) => void;
-  onWorkspaceChange: (targetID: string, resource: ServiceResourceRef) => void;
+  onPickChange: (targetID: string, resource: ServiceResourceRef) => void;
   busy: string;
   t: ReturnType<typeof useTranslation>['t'];
 }) {
@@ -1694,7 +1684,7 @@ function ResourceList({
       else next.add(id);
       return next;
     });
-  if (!inventory && !workspaceResources)
+  if (!inventory && !pickedResources)
     return (
       <div className="grid h-full place-items-center">
         <div className="flex flex-col items-center gap-2 text-center">
@@ -1727,7 +1717,7 @@ function ResourceList({
       selection &&
       selection.targetID === targetID &&
       resourceKey(selection.resource) === resourceKey(resource);
-    const member = workspaceKeys.has(`${targetID}|${resourceKey(resource)}`);
+    const member = pickedKeys.has(`${targetID}|${resourceKey(resource)}`);
     const running = ['running', 'online', 'active'].includes(status.toLowerCase());
     const nested = resource.runtime === 'docker' && Boolean(resource.group);
     const failed = /failed|dead|exited|errored/i.test(status);
@@ -1781,14 +1771,10 @@ function ResourceList({
             ))}
             <ContextMenuItem
               disabled={busy.startsWith(`${targetID}|${resourceKey(resource)}:`)}
-              onClick={() => onWorkspaceChange(targetID, resource)}
+              onClick={() => onPickChange(targetID, resource)}
             >
               {member ? <Trash size={14} weight="duotone" /> : <Plus size={14} weight="duotone" />}
-              {t(
-                member
-                  ? 'serviceManagerTool.removeFromWorkspace'
-                  : 'serviceManagerTool.addToWorkspace',
-              )}
+              {t(member ? 'serviceManagerTool.unpick' : 'serviceManagerTool.pick')}
             </ContextMenuItem>
           </ContextMenuGroup>
           {resource.runtime === 'docker' ? (
@@ -1894,9 +1880,9 @@ function ResourceList({
                   {t(`serviceManagerTool.actions.${action}`)}
                 </ContextMenuItem>
               ))}
-              <ContextMenuItem onClick={() => onWorkspaceChange(targetID, resource)}>
+              <ContextMenuItem onClick={() => onPickChange(targetID, resource)}>
                 {visibleContainers.some((container) =>
-                  workspaceKeys.has(
+                  pickedKeys.has(
                     `${targetID}|${resourceKey({ runtime: 'docker', id: container.id })}`,
                   ),
                 ) ? (
@@ -1906,12 +1892,12 @@ function ResourceList({
                 )}
                 {t(
                   visibleContainers.some((container) =>
-                    workspaceKeys.has(
+                    pickedKeys.has(
                       `${targetID}|${resourceKey({ runtime: 'docker', id: container.id })}`,
                     ),
                   )
-                    ? 'serviceManagerTool.removeFromWorkspace'
-                    : 'serviceManagerTool.addToWorkspace',
+                    ? 'serviceManagerTool.unpick'
+                    : 'serviceManagerTool.pick',
                 )}
               </ContextMenuItem>
             </ContextMenuGroup>
@@ -1955,7 +1941,7 @@ function ResourceList({
         allowed.has(resourceKey({ runtime: 'systemd', id: unit.id, scope: unit.scope }))) &&
       match(unit.name || unit.id),
   );
-  const hasWorkspaceRuntime = (runtime: Runtime) =>
+  const hasPickedRuntime = (runtime: Runtime) =>
     !allowed || [...allowed].some((key) => key.startsWith(`${runtime}|`));
   const showRuntimeSection = (visibleItems: number) => visibleItems > 0 || (!allowed && !search);
   const content = (
@@ -1983,7 +1969,7 @@ function ResourceList({
                 </>
               ) : null}
             </>
-          ) : !search && hasWorkspaceRuntime('docker') ? (
+          ) : !search && hasPickedRuntime('docker') ? (
             <RuntimeError name="Docker" error={inventory.docker.error} />
           ) : null}
         </>
@@ -2006,7 +1992,7 @@ function ResourceList({
                 )}
               </>
             ) : null
-          ) : !search && hasWorkspaceRuntime('pm2') ? (
+          ) : !search && hasPickedRuntime('pm2') ? (
             <RuntimeError name="PM2" error={inventory.pm2.error} />
           ) : null}
         </>
@@ -2029,12 +2015,12 @@ function ResourceList({
                 )}
               </>
             ) : null
-          ) : !search && hasWorkspaceRuntime('systemd') ? (
+          ) : !search && hasPickedRuntime('systemd') ? (
             <RuntimeError name="Systemd" error={inventory.systemd.error} />
           ) : null}
         </>
       ) : null}
-      {workspaceResources
+      {pickedResources
         ?.filter((resource) => {
           if (!inventory) return true;
           if (resource.runtime === 'docker')
@@ -2123,7 +2109,7 @@ function ResourcePanel({
   t: ReturnType<typeof useTranslation>['t'];
 }) {
   const resource = selection.resource;
-  const scope = selection.kind === 'workspace' || selection.kind === 'host';
+  const scope = selection.kind === 'picked' || selection.kind === 'host';
   const sourceLabels = useMemo(() => {
     if (!scope) return undefined;
     const targetNames = new Map(targets.map((item) => [item.id, targetLabel(item, t)]));
@@ -2131,7 +2117,7 @@ function ResourcePanel({
       monitors.map((item) => [
         item.id,
         [
-          selection.kind === 'workspace'
+          selection.kind === 'picked'
             ? (targetNames.get(item.targetID) ?? t('serviceManagerTool.targetUnavailable'))
             : '',
           item.resource.group,
@@ -2176,8 +2162,8 @@ function ResourcePanel({
           )}
         </TabsContent>
         <TabsContent value="performance" className="flex min-h-0 flex-col overflow-hidden">
-          {selection.kind === 'workspace' ? (
-            <ServiceWorkspacePerformance
+          {selection.kind === 'picked' ? (
+            <ServicePickedPerformance
               enabled={metricsActive}
               monitors={monitors}
               targets={targets}
@@ -2480,7 +2466,7 @@ function ScopeInfoTab({
       <InfoSection>
         <InfoFields>
           <InfoField label={t('serviceManagerTool.target')}>
-            {selection.kind === 'workspace' ? hostIDs.length : selection.resource.name}
+            {selection.kind === 'picked' ? hostIDs.length : selection.resource.name}
           </InfoField>
           <InfoField label={t('serviceManagerTool.scopeInfo.members')}>{monitors.length}</InfoField>
           {STATUS_GROUPS.map(({ runtime }) => (
@@ -2490,7 +2476,7 @@ function ScopeInfoTab({
           ))}
         </InfoFields>
       </InfoSection>
-      {selection.kind === 'workspace' && hostIDs.length ? (
+      {selection.kind === 'picked' && hostIDs.length ? (
         <InfoSection title={t('serviceManagerTool.target')}>
           <InfoFields>
             {hostIDs.map((id) => {
@@ -2502,7 +2488,7 @@ function ScopeInfoTab({
                     target ? targetLabel(target, t) : t('serviceManagerTool.targetUnavailable')
                   }
                 >
-                  {t('serviceManagerTool.workspaceMembers', {
+                  {t('serviceManagerTool.pickedCount', {
                     total: monitors.filter((item) => item.targetID === id).length,
                   })}
                 </InfoField>

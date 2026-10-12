@@ -14,7 +14,7 @@ function metricKey(monitor: LogMonitor) {
   return `${monitor.targetID}|resource|${monitor.resource.runtime}|${monitor.resource.id}`;
 }
 
-export function ServiceWorkspacePerformance({
+export function ServicePickedPerformance({
   enabled,
   monitors,
   targets,
@@ -59,7 +59,7 @@ export function ServiceWorkspacePerformance({
       <ScrollArea className="min-h-0 flex-1">
         {!monitors.length ? (
           <p className="px-4 py-5 text-center text-xs text-muted-foreground">
-            {t('serviceManagerTool.workspaceEmpty')}
+            {t('serviceManagerTool.pickedEmpty')}
           </p>
         ) : null}
         {monitors.map((monitor) => {
