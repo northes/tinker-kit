@@ -2357,6 +2357,20 @@
         "rtsp": "rtsp://用户名:密码@example.com:554/stream"
       }
     },
+    "userAgent": {
+      "label": "User-Agent",
+      "option": {
+        "default": "TinkerKit 默认",
+        "chromeMac": "Chrome {{version}} · macOS",
+        "chromeWindows": "Chrome {{version}} · Windows 10",
+        "firefoxMac": "Firefox {{version}} · macOS",
+        "firefoxWindows": "Firefox {{version}} · Windows 10",
+        "custom": "自定义"
+      },
+      "customLabel": "自定义 User-Agent",
+      "customPlaceholder": "Mozilla/5.0 …",
+      "note": "HTTP、WebSocket 与 RTSP 请求会带上它（加密探测的重放一致）；TCP、UDP、NTP 不发送 User-Agent。留空时使用 TinkerKit 默认标识。"
+    },
     "udp": {
       "payload": "发送内容（UTF-8）",
       "payloadPlaceholder": "例如：ping",

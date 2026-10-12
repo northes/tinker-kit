@@ -40,6 +40,11 @@ tasks:
     cmds:
       - node --experimental-strip-types --test frontend/src/lib/network-target.test.mjs
 
+  test:network-user-agent:
+    summary: Checks network test user agent presets
+    cmds:
+      - node --experimental-strip-types --test frontend/src/lib/network-test-user-agent.test.mjs
+
   test:json-repair:
     summary: Checks JSON repair handling
     cmds:

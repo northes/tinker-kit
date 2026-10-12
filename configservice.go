@@ -62,6 +62,7 @@ type NetworkTestSettings struct {
 	TimeoutSeconds int    `json:"timeoutSeconds"`
 	SkipTLSVerify  bool   `json:"skipTLSVerify"`
 	MaxRedirects   int    `json:"maxRedirects"`
+	UserAgent      string `json:"userAgent"`
 	ProxyType      string `json:"proxyType"`
 	ProxyAddress   string `json:"proxyAddress"`
 	DNSMode        string `json:"dnsMode"`
@@ -74,7 +75,9 @@ func defaultNetworkTestSettings() NetworkTestSettings {
 		Payload:        "ping",
 		TimeoutSeconds: 30,
 		MaxRedirects:   10,
-		DNSMode:        "system",
+		// UserAgent 留空表示使用工具默认的标识（defaultNetworkTestUserAgent）：不把默认值复制进
+		// 配置，将来默认值变化时已保存的设置不会把它固定住。
+		DNSMode: "system",
 	}
 }
 
@@ -776,6 +779,8 @@ func normalizeNetworkTestSettings(settings NetworkTestSettings) NetworkTestSetti
 	if settings.MaxRedirects < 0 || settings.MaxRedirects > 10 {
 		settings.MaxRedirects = 10
 	}
+	// User-Agent 会原样写进请求报文：去掉首尾空白与 CR/LF，其余按用户输入保留。
+	settings.UserAgent = sanitizeHeaderValue(strings.TrimSpace(settings.UserAgent))
 	switch settings.ProxyType {
 	case "", "system", "http", "socks5":
 	default:

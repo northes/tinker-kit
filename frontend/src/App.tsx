@@ -281,6 +281,8 @@ const defaultSettings: Settings = {
     timeoutSeconds: 30,
     skipTLSVerify: false,
     maxRedirects: 10,
+    // 空值表示使用工具默认的 User-Agent（TinkerKit Network Test）。
+    userAgent: '',
     proxyType: '',
     proxyAddress: '',
     dnsMode: 'system',

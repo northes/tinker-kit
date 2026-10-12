@@ -50,6 +50,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from './ui/select';
+import {
+  presetUserAgent,
+  selectedUserAgent,
+  userAgentPresets,
+  userAgentSelectionFor,
+  USER_AGENT_CUSTOM_SELECTION as USER_AGENT_CUSTOM,
+  USER_AGENT_DEFAULT_SELECTION as USER_AGENT_DEFAULT,
+} from '../lib/network-test-user-agent';
 
 type Protocol = NetworkTestProtocol;
 type ProtocolSelection = Protocol | 'auto';
@@ -68,6 +76,8 @@ const defaultNetworkTestSettings: NetworkTestSettings = {
   timeoutSeconds: 30,
   skipTLSVerify: false,
   maxRedirects: 10,
+  // 空值表示使用工具默认的 User-Agent（TinkerKit Network Test）；见后端 userAgent()。
+  userAgent: '',
   proxyType: '',
   proxyAddress: '',
   dnsMode: 'system',
@@ -128,6 +138,7 @@ function toPersistedNetworkTestSettings(
     timeoutSeconds: validIntegerInput(options.timeoutSeconds, 1, 300) ?? fallback.timeoutSeconds,
     skipTLSVerify: options.skipTLSVerify,
     maxRedirects: validIntegerInput(options.maxRedirects, 0, 10) ?? fallback.maxRedirects,
+    userAgent: options.userAgent.trim(),
     proxyType: options.proxyType,
     proxyAddress: options.proxyAddress,
     dnsMode: options.dnsMode,
@@ -242,6 +253,9 @@ export default function NetworkTestTool({
   const { t } = useTranslation();
   const [protocolSelection, setProtocolSelection] = useState<ProtocolSelection>('auto');
   const [target, setTarget] = useState('');
+  // User-Agent 下拉的当前选项：它不由保存值推导（「自定义」且内容为空时无法与默认区分），
+  // 而是在加载设置与恢复历史时用 userAgentSelectionFor 同步一次。
+  const [userAgentSelection, setUserAgentSelection] = useState<string>(USER_AGENT_DEFAULT);
   const [networkSettings, setNetworkSettings] =
     useState<NetworkTestOptions>(defaultNetworkTestOptions);
   const [interfaces, setInterfaces] = useState<NetworkInterface[]>([]);
@@ -296,6 +310,7 @@ export default function NetworkTestTool({
     timeoutSeconds,
     skipTLSVerify,
     maxRedirects,
+    userAgent,
     proxyType,
     proxyAddress,
     dnsMode,
@@ -331,6 +346,17 @@ export default function NetworkTestTool({
     ],
     [t],
   );
+  const userAgentItems = useMemo(
+    () => [
+      { value: USER_AGENT_DEFAULT, label: t('networkTestTool.userAgent.option.default') },
+      ...userAgentPresets.map((preset) => ({
+        value: preset.id,
+        label: t(preset.labelKey, { version: preset.version }),
+      })),
+      { value: USER_AGENT_CUSTOM, label: t('networkTestTool.userAgent.option.custom') },
+    ],
+    [t],
+  );
   const dnsItems = useMemo(
     () => [
       { value: 'system', label: t('networkTestTool.dns.system') },
@@ -343,12 +369,14 @@ export default function NetworkTestTool({
   );
   const detectedProtocol = detectTargetProtocol(target);
   const effectiveProtocol = protocolSelection === 'auto' ? detectedProtocol : protocolSelection;
-  const supportsHTTPSettings = effectiveProtocol === 'http' || effectiveProtocol === 'websocket';
-  const supportsRedirectSettings = supportsHTTPSettings || effectiveProtocol === 'rtsp';
-  const resolvedTarget = target.trim() ? automaticTarget(target, effectiveProtocol ?? 'http') : '';
-  const supportsTLSSettings =
-    supportsHTTPSettings || (effectiveProtocol === 'rtsp' && resolvedTarget.startsWith('rtsps://'));
+  // 高级选项全部展示、不按协议过滤：字段是否生效只影响校验，不影响可见性。
+  const supportsRedirectSettings =
+    effectiveProtocol === 'http' ||
+    effectiveProtocol === 'websocket' ||
+    effectiveProtocol === 'rtsp';
   const redirectLimit = Number(maxRedirects);
+  // 实际发送的 User-Agent：预设用生成的串，「自定义」用输入框文本，空值表示工具默认（后端填）。
+  const effectiveUserAgent = selectedUserAgent(userAgentSelection, userAgent);
   const invalidRedirectLimit =
     supportsRedirectSettings &&
     (!maxRedirects.trim() ||
@@ -387,6 +415,7 @@ export default function NetworkTestTool({
           };
           settingsRef.current = loadedOptions;
           setNetworkSettings(loadedOptions);
+          setUserAgentSelection(userAgentSelectionFor(loadedOptions.userAgent));
         } else if (settingsNeedSave.current) {
           const latest = toPersistedNetworkTestSettings(settingsRef.current, saved);
           persistedSettingsRef.current = latest;
@@ -432,12 +461,14 @@ export default function NetworkTestTool({
     if (restoredRequest) {
       setProtocolSelection(restoredRequest.protocol as Protocol);
       setTarget(restoredRequest.target);
+      setUserAgentSelection(userAgentSelectionFor(restoredRequest.userAgent ?? ''));
       updateNetworkSettings(
         {
           payload: restoredRequest.payload || 'ping',
           timeoutSeconds: String(Math.max(1, Math.round(restoredRequest.timeoutMillis / 1000))),
           skipTLSVerify: restoredRequest.skipTLSVerify ?? false,
           maxRedirects: String(restoredRequest.maxRedirects ?? 10),
+          userAgent: restoredRequest.userAgent ?? '',
           proxyType: (restoredRequest.proxyType || '') as ProxyType,
           proxyAddress: restoredRequest.proxyAddress,
           dnsMode: (restoredRequest.dnsMode || 'system') as DNSMode,
@@ -480,6 +511,7 @@ export default function NetworkTestTool({
       target:
         protocolSelection === 'auto' ? automaticTarget(target, effectiveProtocol) : target.trim(),
       payload,
+      userAgent: effectiveUserAgent,
       timeoutMillis: Math.round(duration * 1000),
       skipTLSVerify,
       maxRedirects: redirectLimit,
@@ -1035,82 +1067,131 @@ export default function NetworkTestTool({
                 />
               </ToolHeaderField>
             ) : null}
-            {supportsTLSSettings ? (
-              <ToolHeaderField
-                label={t('networkTestTool.tls.skipVerification')}
-                labelId="network-test-skip-tls-verify-label"
-              >
-                <div className="flex min-h-8 items-center justify-between gap-3">
-                  <span
-                    id="network-test-skip-tls-verify-description"
-                    className="text-[10px] leading-relaxed text-muted-foreground"
-                  >
-                    {t('networkTestTool.tls.skipVerificationNote')}
-                  </span>
-                  <Switch
-                    checked={skipTLSVerify}
-                    onCheckedChange={(checked) =>
-                      updateNetworkSettings({ skipTLSVerify: checked === true })
-                    }
-                    disabled={running}
-                    size="sm"
-                    aria-labelledby="network-test-skip-tls-verify-label"
-                    aria-describedby="network-test-skip-tls-verify-description"
-                  />
-                </div>
-              </ToolHeaderField>
-            ) : null}
-            {supportsRedirectSettings ? (
-              <ToolHeaderField
-                label={t('networkTestTool.redirects.label')}
-                htmlFor="network-test-max-redirects"
-              >
-                <Input
-                  id="network-test-max-redirects"
-                  type="number"
-                  min={0}
-                  max={10}
-                  step={1}
-                  value={maxRedirects}
-                  onChange={(event) => updateNetworkSettings({ maxRedirects: event.target.value })}
-                  onKeyDown={submitOnEnter}
+            <ToolHeaderField
+              label={t('networkTestTool.tls.skipVerification')}
+              labelId="network-test-skip-tls-verify-label"
+            >
+              <div className="flex min-h-8 items-center justify-between gap-3">
+                <span
+                  id="network-test-skip-tls-verify-description"
+                  className="text-[10px] leading-relaxed text-muted-foreground"
+                >
+                  {t('networkTestTool.tls.skipVerificationNote')}
+                </span>
+                <Switch
+                  checked={skipTLSVerify}
+                  onCheckedChange={(checked) =>
+                    updateNetworkSettings({ skipTLSVerify: checked === true })
+                  }
                   disabled={running}
-                  aria-describedby="network-test-max-redirects-note"
-                  className="font-mono text-xs"
+                  size="sm"
+                  aria-labelledby="network-test-skip-tls-verify-label"
+                  aria-describedby="network-test-skip-tls-verify-description"
                 />
-                <p
-                  id="network-test-max-redirects-note"
-                  className="m-0 text-[10px] leading-relaxed text-muted-foreground"
+              </div>
+            </ToolHeaderField>
+            <ToolHeaderField
+              label={t('networkTestTool.redirects.label')}
+              htmlFor="network-test-max-redirects"
+            >
+              <Input
+                id="network-test-max-redirects"
+                type="number"
+                min={0}
+                max={10}
+                step={1}
+                value={maxRedirects}
+                onChange={(event) => updateNetworkSettings({ maxRedirects: event.target.value })}
+                onKeyDown={submitOnEnter}
+                disabled={running}
+                aria-describedby="network-test-max-redirects-note"
+                className="font-mono text-xs"
+              />
+              <p
+                id="network-test-max-redirects-note"
+                className="m-0 text-[10px] leading-relaxed text-muted-foreground"
+              >
+                {t('networkTestTool.redirects.note')}
+              </p>
+            </ToolHeaderField>
+            <ToolHeaderField
+              label={t('networkTestTool.userAgent.label')}
+              labelId="network-test-user-agent-label"
+              className="col-span-2 max-[450px]:col-span-1"
+            >
+              <div className="grid gap-2">
+                <Select
+                  value={userAgentSelection}
+                  onValueChange={(value) => {
+                    if (!value) return;
+                    setUserAgentSelection(value);
+                    const preset = userAgentPresets.find((item) => item.id === value);
+                    if (preset) {
+                      updateNetworkSettings({ userAgent: presetUserAgent(preset) });
+                    } else if (value === USER_AGENT_DEFAULT) {
+                      updateNetworkSettings({ userAgent: '' });
+                    }
+                  }}
+                  items={userAgentItems}
                 >
-                  {t('networkTestTool.redirects.note')}
-                </p>
-              </ToolHeaderField>
-            ) : null}
-            {effectiveProtocol === 'udp' ? (
-              <>
-                <ToolHeaderField
-                  label={t('networkTestTool.udp.payload')}
-                  htmlFor="network-test-udp-payload"
-                  className="col-span-2 max-[450px]:col-span-1"
-                >
+                  <SelectTrigger
+                    disabled={running}
+                    aria-labelledby="network-test-user-agent-label"
+                    className="w-full"
+                  >
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectGroup>
+                      {userAgentItems.map((item) => (
+                        <SelectItem key={item.value} value={item.value}>
+                          {item.label}
+                        </SelectItem>
+                      ))}
+                    </SelectGroup>
+                  </SelectContent>
+                </Select>
+                {userAgentSelection === USER_AGENT_CUSTOM ? (
                   <Input
-                    id="network-test-udp-payload"
-                    value={payload}
-                    onChange={(event) => updateNetworkSettings({ payload: event.target.value })}
+                    id="network-test-user-agent"
+                    aria-label={t('networkTestTool.userAgent.customLabel')}
+                    value={userAgent}
+                    onChange={(event) => updateNetworkSettings({ userAgent: event.target.value })}
                     onKeyDown={submitOnEnter}
                     disabled={running}
-                    placeholder={t('networkTestTool.udp.payloadPlaceholder')}
+                    placeholder={t('networkTestTool.userAgent.customPlaceholder')}
                     autoCapitalize="none"
                     autoCorrect="off"
                     spellCheck={false}
                     className="font-mono text-xs"
                   />
-                </ToolHeaderField>
-                <p className="col-span-2 m-0 text-[10px] leading-relaxed text-muted-foreground max-[450px]:col-span-1">
-                  {t('networkTestTool.udp.payloadNote')}
-                </p>
-              </>
-            ) : null}
+                ) : null}
+              </div>
+            </ToolHeaderField>
+            <p className="col-span-2 m-0 text-[10px] leading-relaxed text-muted-foreground max-[450px]:col-span-1">
+              {t('networkTestTool.userAgent.note')}
+            </p>
+            <ToolHeaderField
+              label={t('networkTestTool.udp.payload')}
+              htmlFor="network-test-udp-payload"
+              className="col-span-2 max-[450px]:col-span-1"
+            >
+              <Input
+                id="network-test-udp-payload"
+                value={payload}
+                onChange={(event) => updateNetworkSettings({ payload: event.target.value })}
+                onKeyDown={submitOnEnter}
+                disabled={running}
+                placeholder={t('networkTestTool.udp.payloadPlaceholder')}
+                autoCapitalize="none"
+                autoCorrect="off"
+                spellCheck={false}
+                className="font-mono text-xs"
+              />
+            </ToolHeaderField>
+            <p className="col-span-2 m-0 text-[10px] leading-relaxed text-muted-foreground max-[450px]:col-span-1">
+              {t('networkTestTool.udp.payloadNote')}
+            </p>
             <ToolHeaderField
               label={t('networkTestTool.interface.label')}
               labelId="network-test-interface-label"

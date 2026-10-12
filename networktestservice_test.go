@@ -19,6 +19,7 @@ import (
 	"math/big"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"strconv"
 	"strings"
@@ -2059,7 +2060,8 @@ func serveTLSOnlyTestHTTP(listener net.Listener, certificate tls.Certificate) {
 	}
 }
 
-func newTLSOnlyListener(t *testing.T) net.Listener {
+// newTestListener 在随机端口上监听并负责收尾。
+func newTestListener(t *testing.T) net.Listener {
 	t.Helper()
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -2072,7 +2074,7 @@ func newTLSOnlyListener(t *testing.T) net.Listener {
 // 只提供 TLS 的 RTSP 设备：明文请求收不到任何响应，结论必须说明端口只接受加密连接，并给出可直接
 // 使用的加密目标，而不是把原因留给对端。真实案例：摄像头把 rtsps 绑在 554，明文 OPTIONS 被丢弃。
 func TestRTSPExplainsTLSOnlyEndpoint(t *testing.T) {
-	listener := newTLSOnlyListener(t)
+	listener := newTestListener(t)
 	go serveTLSOnlyTestRTSP(listener, testTLSCertificate(t), false)
 	address := listener.Addr().String()
 	service := NewNetworkTestService()
@@ -2137,7 +2139,7 @@ func TestRTSPExplainsTLSOnlyEndpoint(t *testing.T) {
 // 对端在明文请求上保持沉默、一直等到运行期限用完时，不再追加加密探测：探测不能走到运行期限
 // 之外，也不能把「超时」这个已经成立的结论改写成别的结论，更不该把运行状态改成「失败」。
 func TestRTSPDoesNotProbeAfterRunDeadline(t *testing.T) {
-	listener := newTLSOnlyListener(t)
+	listener := newTestListener(t)
 	go serveTLSOnlyTestRTSP(listener, testTLSCertificate(t), true)
 	address := listener.Addr().String()
 
@@ -2172,7 +2174,7 @@ func TestHTTPAndWebSocketExplainTLSOnlyEndpoint(t *testing.T) {
 		{protocol: "websocket", target: "ws://%s/socket", secured: "wss://%s/socket"},
 	} {
 		t.Run(testCase.protocol, func(t *testing.T) {
-			listener := newTLSOnlyListener(t)
+			listener := newTestListener(t)
 			go serveTLSOnlyTestHTTP(listener, testTLSCertificate(t))
 			address := listener.Addr().String()
 
@@ -2205,7 +2207,7 @@ func TestHTTPAndWebSocketExplainTLSOnlyEndpoint(t *testing.T) {
 // 不接受 TLS 的对端关闭连接时不能凭空断言「只接受加密连接」：结论保持原样，探测阶段只记录
 // 「拿不到证据」，不能停在进行中。
 func TestSilentPeerWithoutTLSKeepsOriginalConclusion(t *testing.T) {
-	listener := newTLSOnlyListener(t)
+	listener := newTestListener(t)
 	go func() {
 		for {
 			conn, err := listener.Accept()
@@ -2238,4 +2240,123 @@ func TestSilentPeerWithoutTLSKeepsOriginalConclusion(t *testing.T) {
 		}
 	}
 	assertStageTimeline(t, result.Stages)
+}
+
+// startUserAgentServer 启动一个记录请求头的 HTTP 服务端：「实际发出的 User-Agent」只有服务端看得到，
+// 断言要用这个值，而不是我们打算发送的值。WebSocket 握手同样以 HTTP 请求发出，所以两种协议共用一个
+// 服务端（握手请求会因缺少 Upgrade 被拒，但头已经发出去了）。
+func startUserAgentServer(t *testing.T) (*httptest.Server, func() string) {
+	t.Helper()
+	var mu sync.Mutex
+	agents := []string{}
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		mu.Lock()
+		agents = append(agents, request.Header.Get("User-Agent"))
+		mu.Unlock()
+		http.Error(writer, "no websocket upgrade here", http.StatusBadRequest)
+	}))
+	t.Cleanup(server.Close)
+	return server, func() string {
+		mu.Lock()
+		defer mu.Unlock()
+		if len(agents) == 0 {
+			return ""
+		}
+		return agents[len(agents)-1]
+	}
+}
+
+// User-Agent 按用户设置发送：默认是工具标识，自定义值原样发给 HTTP、WebSocket 与 RTSP；值里的
+// CR/LF 必须被去掉，不能用来插入新的头部行。
+func TestNetworkTestUserAgent(t *testing.T) {
+	const customAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36"
+	service := NewNetworkTestService()
+	server, agentAtServer := startUserAgentServer(t)
+	hostPort := strings.TrimPrefix(server.URL, "http://")
+
+	t.Run("default", func(t *testing.T) {
+		result := service.RunNetworkTest(NetworkTestRequest{
+			Protocol:      "http",
+			Target:        server.URL + "/",
+			TimeoutMillis: 5000,
+			DNSMode:       "system",
+		})
+		if result.Status != "success" {
+			t.Fatalf("result = %+v", result)
+		}
+		if got := agentAtServer(); got != defaultNetworkTestUserAgent {
+			t.Fatalf("默认 User-Agent = %q，期望 %q", got, defaultNetworkTestUserAgent)
+		}
+	})
+
+	t.Run("http", func(t *testing.T) {
+		result := service.RunNetworkTest(NetworkTestRequest{
+			Protocol:      "http",
+			Target:        server.URL + "/",
+			UserAgent:     customAgent,
+			TimeoutMillis: 5000,
+			DNSMode:       "system",
+		})
+		if result.Status != "success" {
+			t.Fatalf("result = %+v", result)
+		}
+		if got := agentAtServer(); got != customAgent {
+			t.Fatalf("HTTP User-Agent = %q", got)
+		}
+	})
+
+	t.Run("websocket", func(t *testing.T) {
+		result := service.RunNetworkTest(NetworkTestRequest{
+			Protocol:      "websocket",
+			Target:        "ws://" + hostPort + "/socket",
+			UserAgent:     customAgent,
+			TimeoutMillis: 5000,
+			DNSMode:       "system",
+		})
+		if got := agentAtServer(); got != customAgent {
+			t.Fatalf("WebSocket User-Agent = %q", got)
+		}
+		handshake := stageByID(t, result.Stages, "websocket-handshake")
+		if !strings.Contains(handshake.Request, "User-Agent: "+customAgent) {
+			t.Fatalf("握手请求缺少 User-Agent：%q", handshake.Request)
+		}
+	})
+
+	t.Run("rtsp", func(t *testing.T) {
+		listener := newTestListener(t)
+		go serveTestRTSP(listener)
+		result := service.RunNetworkTest(NetworkTestRequest{
+			Protocol:      "rtsp",
+			Target:        "rtsp://" + listener.Addr().String() + "/stream",
+			UserAgent:     customAgent,
+			TimeoutMillis: 5000,
+			DNSMode:       "system",
+		})
+		if result.Status != "success" {
+			t.Fatalf("result = %+v", result)
+		}
+		if request := stageByID(t, result.Stages, "rtsp-options").Request; !strings.Contains(request, "User-Agent: "+customAgent) {
+			t.Fatalf("RTSP 请求缺少 User-Agent：%q", request)
+		}
+	})
+
+	// CR/LF 只能留在同一行里，不能切断报文或插入新的头部行。
+	t.Run("sanitized", func(t *testing.T) {
+		listener := newTestListener(t)
+		go serveTestRTSP(listener)
+		result := service.RunNetworkTest(NetworkTestRequest{
+			Protocol:      "rtsp",
+			Target:        "rtsp://" + listener.Addr().String() + "/stream",
+			UserAgent:     "evil\r\nInjected: 1",
+			TimeoutMillis: 5000,
+			DNSMode:       "system",
+		})
+		request := stageByID(t, result.Stages, "rtsp-options").Request
+		if strings.Contains(request, "\r\nInjected:") {
+			t.Fatalf("User-Agent 插入了新的头部行：%q", request)
+		}
+		if !strings.Contains(request, "User-Agent: evilInjected: 1\r\n") {
+			t.Fatalf("User-Agent 未被去掉换行：%q", request)
+		}
+	})
 }

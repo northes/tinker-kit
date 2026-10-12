@@ -735,3 +735,15 @@ func TestNormalizeTaskCenterSettingsDefaultsAndBounds(t *testing.T) {
 		t.Fatalf("valid task settings changed: %d/%d/%q", cfg.TaskConcurrency, cfg.TaskChunkConcurrency, cfg.TaskNotificationMode)
 	}
 }
+
+// User-Agent 会被原样写进请求报文：规范化只去掉首尾空白与 CR/LF，空值表示使用工具默认标识。
+func TestNormalizeNetworkTestUserAgent(t *testing.T) {
+	settings := normalizeNetworkTestSettings(NetworkTestSettings{UserAgent: "  Mozilla/5.0\r\nInjected: 1  "})
+	if settings.UserAgent != "Mozilla/5.0Injected: 1" {
+		t.Fatalf("规范化后的 User-Agent = %q", settings.UserAgent)
+	}
+	empty := normalizeNetworkTestSettings(NetworkTestSettings{UserAgent: "   "})
+	if empty.UserAgent != "" {
+		t.Fatalf("空白 User-Agent 应保持为空（表示默认）：%q", empty.UserAgent)
+	}
+}

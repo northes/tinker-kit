@@ -28,7 +28,8 @@ user-invocable: false
 6. `Protocol`、`protocolItems`；
 7. `stageOrder`：新阶段必须登记，否则会排到时间线末尾；
 8. `detectTargetProtocol`（scheme + 端口启发式）与 `automaticTarget`（补全默认 scheme/端口）；
-9. 高级选项的显隐与校验（TLS、重定向、payload 按协议能力分别判断）；
+9. 高级选项**全部展示**，不按协议过滤（协议用不到不等于要藏起来：用户常常先配好再切协议）；
+   校验只针对当前协议真正会用的项（TLS 跳过校验、重定向次数、UDP payload）；
 10. locale：`protocol.*`、`target.placeholder.*`、`stages.*`（zh-CN 与 en-US 同步）。
 
 ## 协议实现规则（每条含真实原因）
@@ -164,6 +165,19 @@ TLS 握手并重放同一份请求，**只有读到该协议自己的状态行�
   结论里各经过一次。
 
 `tls-probe` 只承载诊断，永远不是本次运行失败的原因，因此不进 `currentStageForHop` 的两个列表。
+
+### 13. 请求身份头（User-Agent）由用户决定，按协议发出
+
+原因：设备与中间盒常按 User-Agent 分流（同一个地址用浏览器可以、用工具不行就是这个原因）；工具的
+默认标识（`TinkerKit Network Test`）必须可替换，否则这类差异无法复现或对照。
+
+做法：高级选项里的 User-Agent 有「工具默认 / Chrome 与 Firefox 预设（macOS、Windows 各一份）/
+自定义」三种来源，空值表示默认；HTTP、WebSocket 与 RTSP 都按设置发送，**加密探测的重放也用同一个
+值**，否则重放的不是同一份请求。预设放在 `frontend/src/lib/network-test-user-agent.ts`：版本号只
+写在预设的 `version` 字段里，UA 串与下拉标签（locale 里的 `{{version}}`）都由它生成，避免标签与串
+版本不一致；纯函数的往返与格式由 `wails3 task test:user-agent` 覆盖。WebSocket 握手默认带 Go 的
+User-Agent，要显式覆盖。值里的 CR/LF 一律去掉（`sanitizeHeaderValue`，配置规范化与请求构造两处都
+要）：它直接写进手写的 RTSP 请求文本，不能让它切断报文或插入头部行。
 
 ## 呈现规则
 

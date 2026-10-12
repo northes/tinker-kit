@@ -48,8 +48,8 @@ type secureEndpointProbe struct {
 }
 
 // secureEndpointReplay 在已完成的 TLS 连接上重放用户的请求，并读回该协议自己的状态行。
-// 返回重放的请求文本与状态行。
-type secureEndpointReplay func(secured net.Conn, secureURL *url.URL) (string, string, error)
+// 返回重放的请求文本与状态行。userAgent 与用户请求一致，否则重放的不是同一份请求。
+type secureEndpointReplay func(secured net.Conn, secureURL *url.URL, userAgent string) (string, string, error)
 
 // secureEndpointReplayFor 按目标 scheme 选择重放方式，并给出对应的加密 scheme。
 func secureEndpointReplayFor(target *url.URL) (secureEndpointReplay, string) {
@@ -76,7 +76,7 @@ func secureEndpointReplayFor(target *url.URL) (secureEndpointReplay, string) {
 // 探测固定跳过证书校验：自签名证书正是摄像头、NVR 这类设备最常见的情况，而这一步要判断的只是
 // 「端口是否提供 TLS」，不是信任关系。探测不发送凭据，重放的请求与用户刚以明文发往同一地址的请求
 // 完全相同；真正访问目标时仍按用户的证书校验设置执行。
-func (r *networkRoute) probeSecureEndpoint(ctx context.Context, target *url.URL, port string) (secureEndpointProbe, bool) {
+func (r *networkRoute) probeSecureEndpoint(ctx context.Context, target *url.URL, port, userAgent string) (secureEndpointProbe, bool) {
 	replay, secure := secureEndpointReplayFor(target)
 	if replay == nil {
 		return secureEndpointProbe{}, false
@@ -110,7 +110,7 @@ func (r *networkRoute) probeSecureEndpoint(ctx context.Context, target *url.URL,
 			return err
 		}
 		state := secured.ConnectionState()
-		request, statusLine, err := replay(secured, &secureURL)
+		request, statusLine, err := replay(secured, &secureURL, userAgent)
 		if err != nil {
 			return err
 		}
@@ -144,8 +144,8 @@ func (r *networkRoute) probeSecureEndpoint(ctx context.Context, target *url.URL,
 
 // replayRTSPOverTLS 在 TLS 连接上重放一个未认证的 OPTIONS。凭据只在服务端要求认证时才发送，
 // 而这里只需要状态行就可以确认对端说的是 RTSP。
-func replayRTSPOverTLS(secured net.Conn, secureURL *url.URL) (string, string, error) {
-	request := formatRTSPRequest("OPTIONS", rtspRequestURI(secureURL), nil, 1)
+func replayRTSPOverTLS(secured net.Conn, secureURL *url.URL, userAgent string) (string, string, error) {
+	request := formatRTSPRequest("OPTIONS", rtspRequestURI(secureURL), userAgent, nil, 1)
 	if _, err := io.WriteString(secured, request); err != nil {
 		return "", "", err
 	}
@@ -158,7 +158,7 @@ func replayRTSPOverTLS(secured net.Conn, secureURL *url.URL) (string, string, er
 
 // replayHTTPOverTLS 在 TLS 连接上重放一次 GET：HTTP 与 WebSocket 都以 HTTP 状态行作为证据，
 // WebSocket 只需要确认该端点提供 HTTP（不发送 Upgrade，也就不建立会话）。
-func replayHTTPOverTLS(secured net.Conn, secureURL *url.URL) (string, string, error) {
+func replayHTTPOverTLS(secured net.Conn, secureURL *url.URL, userAgent string) (string, string, error) {
 	target := *secureURL
 	if target.Path == "" {
 		target.Path = "/"
@@ -167,7 +167,7 @@ func replayHTTPOverTLS(secured net.Conn, secureURL *url.URL) (string, string, er
 	if err != nil {
 		return "", "", err
 	}
-	request.Header.Set("User-Agent", "TinkerKit Network Test")
+	request.Header.Set("User-Agent", userAgent)
 	request.Header.Set("Connection", "close")
 	var dump strings.Builder
 	if err := request.Write(&dump); err != nil {

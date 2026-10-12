@@ -436,6 +436,7 @@ export interface NetworkTestRequest {
     "protocol": string;
     "target": string;
     "payload": string;
+    "userAgent": string;
     "timeoutMillis": number;
     "skipTLSVerify": boolean;
     "maxRedirects": number;
@@ -466,6 +467,7 @@ export interface NetworkTestSettings {
     "timeoutSeconds": number;
     "skipTLSVerify": boolean;
     "maxRedirects": number;
+    "userAgent": string;
     "proxyType": string;
     "proxyAddress": string;
     "dnsMode": string;

@@ -37,11 +37,15 @@ type NetworkInterface struct {
 	Addresses []string `json:"addresses"`
 }
 
+// defaultNetworkTestUserAgent 是用户没有自定义 User-Agent 时发送的标识。
+const defaultNetworkTestUserAgent = "TinkerKit Network Test"
+
 type NetworkTestRequest struct {
 	RunID         string `json:"runID"`
 	Protocol      string `json:"protocol"`
 	Target        string `json:"target"`
 	Payload       string `json:"payload"`
+	UserAgent     string `json:"userAgent"`
 	TimeoutMillis int    `json:"timeoutMillis"`
 	SkipTLSVerify bool   `json:"skipTLSVerify"`
 	MaxRedirects  int    `json:"maxRedirects"`
@@ -352,7 +356,7 @@ func (r *networkTestRun) explainSilentFailure(route *networkRoute, target networ
 	if deadline, ok := r.ctx.Deadline(); ok && time.Until(deadline) < minimalSecureEndpointProbeBudget {
 		return cause, false
 	}
-	probe, found := route.probeSecureEndpoint(r.ctx, target.URL, target.Port)
+	probe, found := route.probeSecureEndpoint(r.ctx, target.URL, target.Port, r.userAgent())
 	if !found {
 		return cause, false
 	}
@@ -1373,6 +1377,8 @@ func (r *networkTestRun) runHTTP(request NetworkTestRequest) error {
 		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
 	}
 	currentURL := target.URL
+	// User-Agent 在整条重定向链上保持不变：它标识的是本次测试使用的客户端身份。
+	userAgent := r.userAgent()
 	for redirectCount := 0; ; redirectCount++ {
 		requestID := networkRedirectStageID("http-request", redirectCount)
 		responseID := networkRedirectStageID("http-response", redirectCount)
@@ -1381,7 +1387,7 @@ func (r *networkTestRun) runHTTP(request NetworkTestRequest) error {
 			r.stage(requestID, "error", NetworkTestStage{Error: err.Error(), Meta: redirectMeta(redirectCount)})
 			return err
 		}
-		req.Header.Set("User-Agent", "TinkerKit Network Test")
+		req.Header.Set("User-Agent", userAgent)
 		requestTrace.set(requestID, req, route.targetResolution(), redirectCount)
 
 		requestURL := *currentURL
@@ -1608,7 +1614,10 @@ func (r *networkTestRun) runWebSocket(request NetworkTestRequest) error {
 			Meta:    mergeStageMeta(redirectMeta(requestTrace.redirectCount()), map[string]string{"proxy": route.proxyURL.Host, "targetResolution": "proxy"}),
 		})
 	}
-	conn, response, err := websocket.Dial(ctx, target.URL.String(), &websocket.DialOptions{HTTPClient: client})
+	conn, response, err := websocket.Dial(ctx, target.URL.String(), &websocket.DialOptions{
+		HTTPClient: client,
+		HTTPHeader: http.Header{"User-Agent": []string{r.userAgent()}},
+	})
 	if response != nil {
 		var body []byte
 		if response.Body != nil {
@@ -1798,7 +1807,7 @@ func (r *networkTestRun) runRTSP(request NetworkTestRequest) error {
 	}
 	// 重定向后请求实际发往新地址：这里取最终生效的流地址与序号。
 	describeURI := rtspRequestURI(client.target.URL)
-	describeRequest := formatRTSPRequest("DESCRIBE", describeURI, describeHeaders, describe.nextSeq-1)
+	describeRequest := formatRTSPRequest("DESCRIBE", describeURI, r.userAgent(), describeHeaders, describe.nextSeq-1)
 	describeMeta := mergeStageMeta(redirectMeta(describe.hops), rtspResponseMeta(describe.response, route.targetResolution()))
 	describeMeta["requestURI"] = describeURI
 	describeMeta["cseq"] = strconv.Itoa(describe.nextSeq - 1)
@@ -1890,7 +1899,7 @@ func (c *rtspClient) request(baseStageID, method string, cseq int, headers map[s
 			"cseq":             strconv.Itoa(cseq),
 			"targetResolution": c.route.targetResolution(),
 		}
-		c.route.stage(baseStageID, "running", NetworkTestStage{Request: formatRTSPRequest(method, uri, headers, cseq), Meta: meta})
+		c.route.stage(baseStageID, "running", NetworkTestStage{Request: formatRTSPRequest(method, uri, c.run.userAgent(), headers, cseq), Meta: meta})
 		response, nextSeq, err := c.exchange(method, uri, headers, cseq)
 		if err != nil {
 			return rtspRequestOutcome{nextSeq: nextSeq, stageID: stageID, hops: hops, err: err}
@@ -1936,7 +1945,7 @@ func (c *rtspClient) request(baseStageID, method string, cseq int, headers map[s
 // exchange 发送一次请求；服务端用 401 要求认证时，用当前地址的凭据应答挑战并重试一次，
 // 认证过程单独记在 rtsp-auth 阶段。返回响应与下一个可用 CSeq。
 func (c *rtspClient) exchange(method, uri string, headers map[string]string, cseq int) (*rtspResponse, int, error) {
-	response, err := c.session.exchange(method, uri, headers, cseq)
+	response, err := c.session.exchange(method, uri, c.run.userAgent(), headers, cseq)
 	if err != nil {
 		return nil, cseq + 1, c.classifyFailure(method, err)
 	}
@@ -1960,10 +1969,10 @@ func (c *rtspClient) exchange(method, uri string, headers map[string]string, cse
 	authenticated := cloneStringMap(headers)
 	authenticated["Authorization"] = c.target.creds.authorizationHeader(challenge, method, uri, cseq)
 	c.route.stage("rtsp-auth", "running", NetworkTestStage{
-		Request: formatRTSPRequest(method, uri, map[string]string{"Authorization": "<credentials withheld>"}, cseq+1),
+		Request: formatRTSPRequest(method, uri, c.run.userAgent(), map[string]string{"Authorization": "<credentials withheld>"}, cseq+1),
 		Meta:    rtspAuthMeta(response, pictureURL, true),
 	})
-	retry, retryErr := c.session.exchange(method, uri, authenticated, cseq+1)
+	retry, retryErr := c.session.exchange(method, uri, c.run.userAgent(), authenticated, cseq+1)
 	if retryErr != nil {
 		failure := c.classifyFailure(method, retryErr)
 		c.route.fail("rtsp-auth", failure)
@@ -2115,29 +2124,45 @@ type rtspResponse struct {
 }
 
 // exchange 写入一个 RTSP 请求并读取对应响应；请求语法固定为 RTSP/1.0，不需要额外协商。
-func (s *rtspSession) exchange(method, uri string, extraHeaders map[string]string, cseq int) (*rtspResponse, error) {
+func (s *rtspSession) exchange(method, uri, userAgent string, extraHeaders map[string]string, cseq int) (*rtspResponse, error) {
 	if s.reader == nil {
 		s.reader = bufio.NewReader(s.conn)
 	}
-	if _, err := io.WriteString(s.conn, formatRTSPRequest(method, uri, extraHeaders, cseq)); err != nil {
+	if _, err := io.WriteString(s.conn, formatRTSPRequest(method, uri, userAgent, extraHeaders, cseq)); err != nil {
 		return nil, err
 	}
 	return readRTSPResponse(s.reader)
 }
 
-// formatRTSPRequest 生成 RTSP 请求文本。URI 中的 CR/LF 会被移除，避免请求拆分。
-func formatRTSPRequest(method, uri string, extraHeaders map[string]string, cseq int) string {
+// userAgent 返回本次运行使用的 User-Agent：用户没设置时用 TinkerKit 默认值。HTTP、WebSocket 与
+// RTSP 都用它；TCP、UDP、NTP 不发送这个头部。
+func (r *networkTestRun) userAgent() string {
+	agent := sanitizeHeaderValue(strings.TrimSpace(r.request.UserAgent))
+	if agent == "" {
+		return defaultNetworkTestUserAgent
+	}
+	return agent
+}
+
+// sanitizeHeaderValue 去掉头部值里的 CR/LF：这些值会直接写进（手写的）请求文本，不能让它切断报文
+// 或插入新的头部行。
+func sanitizeHeaderValue(value string) string {
+	return strings.NewReplacer("\r", "", "\n", "").Replace(value)
+}
+
+// formatRTSPRequest 生成 RTSP 请求文本。URI 与头部值里的 CR/LF 会被移除，避免请求拆分。
+func formatRTSPRequest(method, uri, userAgent string, extraHeaders map[string]string, cseq int) string {
 	var builder strings.Builder
-	builder.WriteString(method + " " + strings.NewReplacer("\r", "", "\n", "").Replace(uri) + " RTSP/1.0\r\n")
+	builder.WriteString(method + " " + sanitizeHeaderValue(uri) + " RTSP/1.0\r\n")
 	builder.WriteString("CSeq: " + strconv.Itoa(cseq) + "\r\n")
-	builder.WriteString("User-Agent: TinkerKit Network Test\r\n")
+	builder.WriteString("User-Agent: " + sanitizeHeaderValue(userAgent) + "\r\n")
 	keys := make([]string, 0, len(extraHeaders))
 	for key := range extraHeaders {
 		keys = append(keys, key)
 	}
 	sort.Strings(keys)
 	for _, key := range keys {
-		builder.WriteString(key + ": " + strings.NewReplacer("\r", "", "\n", "").Replace(extraHeaders[key]) + "\r\n")
+		builder.WriteString(key + ": " + sanitizeHeaderValue(extraHeaders[key]) + "\r\n")
 	}
 	builder.WriteString("\r\n")
 	return builder.String()

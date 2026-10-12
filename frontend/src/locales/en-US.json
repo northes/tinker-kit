@@ -2357,6 +2357,20 @@
         "rtsp": "rtsp://user:password@example.com:554/stream"
       }
     },
+    "userAgent": {
+      "label": "User-Agent",
+      "option": {
+        "default": "TinkerKit default",
+        "chromeMac": "Chrome {{version}} · macOS",
+        "chromeWindows": "Chrome {{version}} · Windows 10",
+        "firefoxMac": "Firefox {{version}} · macOS",
+        "firefoxWindows": "Firefox {{version}} · Windows 10",
+        "custom": "Custom"
+      },
+      "customLabel": "Custom User-Agent",
+      "customPlaceholder": "Mozilla/5.0 …",
+      "note": "Sent with HTTP, WebSocket, and RTSP requests (the TLS probe replays it too); TCP, UDP, and NTP send no User-Agent. Empty uses the TinkerKit default identity."
+    },
     "udp": {
       "payload": "Payload (UTF-8)",
       "payloadPlaceholder": "For example: ping",
