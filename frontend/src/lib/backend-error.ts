@@ -10,6 +10,21 @@ interface LocalizedErrorPayload {
   detail?: string;
 }
 
+const networkTestBackendPrefix = 'networkTestTool.backend.';
+
+function translationKey(key: string): string | undefined {
+  if (i18n.exists(key)) return key;
+  if (
+    !key.startsWith(networkTestBackendPrefix) ||
+    key.startsWith(`${networkTestBackendPrefix}messages.`)
+  ) {
+    return undefined;
+  }
+
+  const messageKey = `${networkTestBackendPrefix}messages.${key.slice(networkTestBackendPrefix.length)}`;
+  return i18n.exists(messageKey) ? messageKey : undefined;
+}
+
 function parseLocalizedError(message: string): LocalizedErrorPayload | null {
   const trimmed = message.trim();
   if (!trimmed.startsWith('{') || !trimmed.endsWith('}')) return null;
@@ -55,8 +70,9 @@ export function backendErrorKey(error: unknown): string | null {
 function renderDetail(detail: string | undefined): string | undefined {
   if (!detail) return undefined;
   const nested = parseLocalizedError(detail);
-  if (nested && i18n.exists(nested.key)) {
-    return i18n.t(nested.key, { ...nested.params, detail: renderDetail(nested.detail) });
+  const key = nested ? translationKey(nested.key) : undefined;
+  if (nested && key) {
+    return i18n.t(key, { ...nested.params, detail: renderDetail(nested.detail) });
   }
   return detail;
 }
@@ -67,8 +83,9 @@ export function formatBackendError(error: unknown): string {
   if (!message) return '';
 
   const payload = parseLocalizedError(message);
-  if (payload && i18n.exists(payload.key)) {
-    return i18n.t(payload.key, { ...payload.params, detail: renderDetail(payload.detail) });
+  const key = payload ? translationKey(payload.key) : undefined;
+  if (payload && key) {
+    return i18n.t(key, { ...payload.params, detail: renderDetail(payload.detail) });
   }
   if (i18n.exists(message)) return i18n.t(message);
   return message;
