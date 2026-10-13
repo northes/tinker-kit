@@ -34,7 +34,6 @@ import {
   OpenImageTaskFolder,
   RetryImageTask,
 } from '../../bindings/changeme/imageservice';
-import { Get as GetConfig } from '../../bindings/changeme/configservice';
 import { GetFileSources } from '../../bindings/changeme/fileservice';
 import {
   IsAvailable,
@@ -85,7 +84,7 @@ import { Popover, PopoverContent, PopoverHeader, PopoverTitle, PopoverTrigger } 
 import { Empty, EmptyHeader, EmptyMedia, EmptyTitle } from './ui/empty';
 type TaskSettings = Pick<
   Config,
-  'taskConcurrency' | 'taskChunkConcurrency' | 'taskNotificationMode'
+  'taskConcurrency' | 'taskChunkConcurrency' | 'taskNotificationMode' | 'imageSources'
 >;
 
 type ToolFilter = 'all' | 'image-manager' | 'ssh-files';
@@ -123,9 +122,9 @@ export function useTaskCenter() {
 const terminal = (status: string) => ['success', 'failed', 'canceled'].includes(status);
 const active = (status: string) => ['queued', 'running', 'scanning', 'conflict'].includes(status);
 const hasByteSpeed = (task: UnifiedTask) =>
-  Boolean(task.file || task.image?.type === 'export' || task.image?.type === 'load');
+  Boolean(task.file || task.image?.progressUnit === 'bytes');
 const imageValue = (task: ImageTask) =>
-  task.type === 'export' || task.type === 'load' ? task.bytes : task.completed;
+  task.progressUnit === 'bytes' ? task.bytes : task.completed;
 const fileValue = (task: FileTask) => task.completed;
 
 function fileName(task: FileTask) {
@@ -202,7 +201,14 @@ export function TaskCenter({
   const [statusFilter, setStatusFilter] = useState<StatusFilter[]>([]);
   const [images, setImages] = useState<ImageTask[]>([]);
   const [files, setFiles] = useState<FileTask[]>([]);
-  const [sourceDisplayNames, setSourceDisplayNames] = useState<Record<string, string>>({});
+  const [fileSourceNames, setFileSourceNames] = useState<Record<string, string>>({});
+  const imageSourceNames = useMemo(() => {
+    const names: Record<string, string> = {};
+    for (const source of settings.imageSources ?? [])
+      names[source.id] =
+        source.name || (source.kind === 'local' ? t('taskCenter.localSource') : '');
+    return names;
+  }, [settings.imageSources, t]);
   const [now, setNow] = useState(Date.now());
   const [concurrencyDraft, setConcurrencyDraft] = useState({
     taskConcurrency: settings.taskConcurrency ?? 4,
@@ -241,7 +247,9 @@ export function TaskCenter({
             task.tool === 'image-manager' ? 'tools.image-manager.name' : 'tools.ssh-files.name',
           );
           const taskName = taskTitle(task, t);
-          const status = t(task.status === 'success' ? 'taskCenter.completed' : 'taskCenter.failed');
+          const status = t(
+            task.status === 'success' ? 'taskCenter.completed' : 'taskCenter.failed',
+          );
           const notificationTitle = t(
             task.status === 'success'
               ? 'taskCenter.notificationCompleted'
@@ -320,15 +328,11 @@ export function TaskCenter({
       if (!ready) buffered.current.push({ kind: 'file', data });
       else processSnapshot('file', data, true);
     });
-    void Promise.all([GetImageTasks(), GetFileTasks(), GetConfig(), GetFileSources()])
-      .then(([imageSnapshot, fileSnapshot, currentConfig, sources]) => {
-        const names: Record<string, string> = Object.fromEntries(
-          (sources ?? []).map((source) => [source.id, source.name]),
+    void Promise.all([GetImageTasks(), GetFileTasks(), GetFileSources()])
+      .then(([imageSnapshot, fileSnapshot, sources]) => {
+        setFileSourceNames(
+          Object.fromEntries((sources ?? []).map((source) => [source.id, source.name])),
         );
-        for (const source of currentConfig.imageSources ?? [])
-          names[source.id] =
-            source.name || (source.kind === 'local' ? t('taskCenter.localSource') : '');
-        setSourceDisplayNames(names);
         processSnapshot('image', imageSnapshot, false);
         processSnapshot('file', fileSnapshot, false);
         ready = true;
@@ -344,7 +348,7 @@ export function TaskCenter({
       offImage();
       offFile();
     };
-  }, [processSnapshot, commitSnapshots, t]);
+  }, [processSnapshot, commitSnapshots]);
 
   useEffect(() => {
     const openCenter = (event: Event) => {
@@ -448,8 +452,12 @@ export function TaskCenter({
   const activeTasks = visibleTasks.filter((task) => active(task.status));
   const hasCancelableTasks = allTasks.some((task) => active(task.status));
   const hasFinishedTasks = allTasks.some((task) => !active(task.status));
-  const known = activeTasks.filter((task) => task.total > 0 && task.image?.type !== 'pull');
-  const hasUnknown = activeTasks.some((task) => task.total <= 0 || task.image?.type === 'pull');
+  const known = activeTasks.filter(
+    (task) => task.total > 0 && task.image?.type !== 'pull' && !task.image?.totalEstimated,
+  );
+  const hasUnknown = activeTasks.some(
+    (task) => task.total <= 0 || task.image?.type === 'pull' || Boolean(task.image?.totalEstimated),
+  );
   const total = known.reduce((sum, task) => sum + task.total, 0);
   const completed = known.reduce((sum, task) => sum + Math.min(task.completed, task.total), 0);
   const totalProgress = total > 0 ? (completed / total) * 100 : 0;
@@ -537,15 +545,13 @@ export function TaskCenter({
   const progressPercent = (task: UnifiedTask) =>
     task.status === 'success'
       ? 100
-      : task.image?.type === 'pull'
+      : task.image?.type === 'pull' || task.image?.totalEstimated
         ? null
         : task.total > 0
           ? Math.min(100, (task.completed / task.total) * 100)
           : null;
-  const countImageTask = (type?: string) =>
-    type === 'pull' || type === 'tagCopy' || type === 'tagRename';
   const progressText = (task: UnifiedTask) =>
-    task.image && countImageTask(task.image.type)
+    task.image?.progressUnit === 'items'
       ? t('imageManagerTool.taskProgressCount', {
           completed: task.image.completed,
           total: task.image.total,
@@ -763,7 +769,10 @@ export function TaskCenter({
                       ? `${formatTaskBytes(task.speed ?? 0)}/s`
                       : '—';
                   const remainingTaskSeconds =
-                    isActive && task.total > 0 && task.image?.type !== 'pull'
+                    isActive &&
+                    task.total > 0 &&
+                    task.image?.type !== 'pull' &&
+                    !task.image?.totalEstimated
                       ? estimateTaskRemainingSeconds(
                           Math.max(0, task.total - task.completed),
                           task.speed ?? 0,
@@ -815,11 +824,15 @@ export function TaskCenter({
                                 <span
                                   className="min-w-0 truncate"
                                   title={
-                                    sourceDisplayNames[task.sourceID] ||
+                                    (task.tool === 'image-manager'
+                                      ? imageSourceNames[task.sourceID]
+                                      : fileSourceNames[task.sourceID]) ||
                                     t('taskCenter.unknownSource')
                                   }
                                 >
-                                  {sourceDisplayNames[task.sourceID] ||
+                                  {(task.tool === 'image-manager'
+                                    ? imageSourceNames[task.sourceID]
+                                    : fileSourceNames[task.sourceID]) ||
                                     t('taskCenter.unknownSource')}
                                 </span>
                               </div>
