@@ -13,7 +13,7 @@ transforming, and record gaps in the report.
 
 ## 范围判定与单组件快速路径
 
-- 全量迁移，或用户明确要求干净工作区、创建分支、每组件独立 commit、全量基线构建或安装依赖时，执行严格的完整 Preflight 和全量验证；下方这些要求不得省略。
+- 全量迁移执行完整依赖/API 调查和全量验证；干净工作区、创建分支和提交仅在用户要求时执行，保留已有无关修改。
 - 单组件迁移默认只检查目标组件、直接消费者和实际变更边界；不主动要求干净工作区、创建分支、独立 commit 或全量基线构建/安装依赖。沿用现有工作区和依赖，按需要执行针对性检查。
 - 只有发现依赖/API 变化、共享 wrapper 或其他跨组件证据时，才扩展检查范围并升级到相应的完整清单。不得因快速路径跳过映射核对、行为差异记录或非 Radix 库隔离。
 
@@ -25,7 +25,7 @@ transforming, and record gaps in the report.
 2. Detect the package manager (packageManager field / lockfile:
    pnpm-lock.yaml, bun.lock, yarn.lock, package-lock.json) and use IT for
    every install. Never leave a stale lockfile.
-3. 全量迁移或用户明确要求时，要求 clean git tree、在分支上工作并每个组件一个 commit；单组件快速路径不启用这些重型要求。
+3. 读取工作区状态并保留无关修改；仅在用户明确要求时创建分支或提交，不将 clean git tree 作为默认前置条件。
 4. 全量迁移或用户明确要求时，在触碰依赖前运行项目的 typecheck/build，避免把已有失败归因于本次修改；单组件默认按实际变更边界做针对性检查。
 5. 全量迁移或用户明确要求时，将 `@base-ui/react` 与 radix 并存安装；单组件仅在当前变更实际缺少该依赖时，使用项目包管理器安装必要依赖。Radix 包仅在 LAST component 迁移完成后移除（两者可以共存）。
 
@@ -121,63 +121,10 @@ full build.
 - Honest reporting: skipped/reverted files are listed as flagged, never as
   migrated. Pre-existing failures are named as pre-existing.
 
-## Verify and report
+## 验证与报告
 
-For a single component or migration batch, run one targeted leftover sweep and
-typecheck for the target, direct consumers, and actual changed boundary; build
-once per batch when the change requires it, not once per consumer. For a whole
-project, an explicitly requested full validation, or a targeted sweep that
-finds a Radix import, run the full sweep. Run the full build against the
-baseline only for a whole project or explicitly requested full validation.
-
-Reports live in a `.migration/` directory at the project root, ONE FILE PER
-COMPONENT: `.migration/<component>.md` (e.g. `.migration/accordion.md`).
-Rules:
-- Each run writes (or fully overwrites) the file for each component it
-  migrated. Re-running a component replaces its report; never touch other
-  components' files.
-- A multi-component run ("migrate alert-dialog and dropdown-menu") writes one
-  file per component, each self-contained; shared consumer-sweep results may be
-  referenced in each affected file, but the sweep and typecheck run only once
-  per batch.
-- Whole-project mode writes the per-component files plus
-  `.migration/project.md` (dependency swap, app-code sweep summary, final
-  build result).
-- There is NO index file. Migration status is derived from disk, not
-  maintained: scan the project's ui directory (the `ui` alias from shadcn
-  info, e.g. components/ui or src/components/ui) for remaining radix imports
-  when asked "what's left". End every run's summary with that derived count
-  ("N wrappers remain on Radix").
-
-Each `.migration/<component>.md` uses EXACTLY this structure (it is
-documented publicly; reports must match it):
-
-```md
-# <component>
-
-<date, strategy used (golden pair via CLI / merge / engine), one-line verdict>
-
-## Changed
-
-<every file touched, with what changed and why; include file:line for
-anything notable. Confirm the targeted leftover scan for this component or
-batch is clean:
-grep -n "radix-ui\|@radix-ui\|IconPlaceholder" on the changed files and
-direct consumers>
-
-## Left alone
-
-<files that look related but were intentionally not touched, with the reason
-(cmdk/vaul/sonner are not radix; unrelated drift; etc.)>
-
-## Behavior changes
-
-<differences that compile fine but act differently; flagged, never patched
-(tabs activation, menu close-on-click, delays...). Empty section if none>
-
-## Verify by hand
-
-<short manual QA checklist for this primitive family: focus return on
-dialogs, keyboard nav + typeahead on menus/select, tooltip delay feel,
-slider commit events. Concrete steps, one minute of clicking>
-```
+- 单组件或迁移批次只扫描目标 wrapper、直接消费者和实际变更边界的残留 Radix 引用；发现跨组件依赖后再扩展范围。全量迁移才扫描全项目。
+- 实现完成后的命令验证统一由 `project-validation` 按 diff 执行；不按消费者或组件重复构建。全量迁移或依赖变化需要区分基线失败时，可先运行必要的基线验证。
+- 最终回复说明实际迁移范围、行为差异、跳过项、验证结果和具体人工验收步骤。不能把未验证的行为当作已通过。
+- 只有用户要求落盘报告时，才写 `.migration/<component>.md`；全量迁移可增加 `.migration/project.md`。报告用中文，包含变更、行为差异、验证和待人工验收项，不强制固定模板。
+- 仅在全量迁移或用户询问剩余进度时统计剩余 Radix wrappers，不为单组件迁移附加全仓扫描。

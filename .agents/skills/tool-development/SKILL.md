@@ -8,7 +8,7 @@ user-invocable: false
 
 新增工具必须完成完整接线，不能只新增一个组件并把导航或历史逻辑留在旧代码中。工具组件使用 `ToolLayout`、`ToolActionBar` 和共享类型，遵循现有工具的数据流。
 
-新工具支持本机与 SSH 来源切换时，遵循 [layout-guidance](../layout-guidance/SKILL.md) 的来源 UI 约定和 [wails-integration](../wails-integration/SKILL.md) 的来源模型及持久化约定；不要直接把全局 SSH profile 列表当作工具来源。
+新工具支持本机与 SSH 来源切换时，按 [forms-and-controls.md](../layout-guidance/forms-and-controls.md) 接入来源 UI，按 [wails-integration 的服务与配置](../wails-integration/SKILL.md#服务与配置) 接入来源模型与持久化。
 
 调查发现变更跨越 `ToolId`、注册、导航、常驻挂载、命令、历史或托盘识别时，再升级到完整接线清单。编解码类工具（例如 JWT）的产品特例见 [examples.md](./examples.md)，仅在新增同类工具时读取。
 
@@ -26,7 +26,7 @@ user-invocable: false
    - 编辑器工具使用 `ToolLayout`；CodeMirror 工具通常使用 `contentMode="fixed"`。
    - pending effect 必须校验 `pending.tool === '<id>'`。
    - 工具动作使用 `ToolActionBar`，不要自行拼装 `.tool-actions` 或 footer。
-   - 工具专属 CSS 放在组件旁并由组件引入；`.cm-*` 覆盖必须收敛在工具根类作用域下。
+   - 仅确需工具专属样式时放在组件旁并由组件引入；不得为单个控件新增 CSS 覆盖（见 `AGENTS.md`）；`.cm-*` 覆盖必须收敛在工具根类作用域下。
 3. `frontend/src/App.tsx`
    - `tools` 数组加入侧栏和路由定义。
    - 加入常驻 `tool-slot` 渲染，切页只隐藏不卸载。
@@ -48,10 +48,6 @@ user-invocable: false
 - 排序优先级为当前工具命令、工具命令、导航命令、设置命令，组内再按匹配分数。
 - 不消费输入的切换命令必须在 pending effect 中先处理并 `return`，不能先把空输入写回编辑器。
 
-## 工具文案
-
-- 工具页只显示工具标题，不添加副标题或重复说明。新增工具的 locale 文案只提供标题；确有必要的操作提示放在工具内容区，并保持简短。
-
 ## 文件拖入与打开
 
 工具需要接收本地文件时，统一使用 `frontend/src/components/fileDrop.tsx`，不要各自实现 HTML5 drop、隐藏 `<input type=file>` 或 window 级监听：
@@ -68,9 +64,7 @@ user-invocable: false
 
 支持打开文件的工具，空态提示文案统一为「粘贴、打开或拖入文件」，其中「打开」必须是可点击的链接，点击调用同一个 `fileDrop.pick`，不要只写成纯文本。文案走 i18n（如 `jsonTool.placeholder` 用 `<open>…</open>` 标记链接），通过 react-i18next 的 `<Trans components={{ open: <button … /> }} />` 渲染。
 
-- 与行号共存：CodeMirror 自带的 `placeholder` 强制 `pointer-events: none` 且带 `aria-hidden`，无法直接放可点击链接；改用绝对定位浮层渲染提示。
-- 浮层必须避开行号槽/内容内边距/滚动：不要写固定内边距，用 `view.coordsAtPos(0)` 实测坐标相对编辑器容器定位，并在编辑器创建、内容变空、容器尺寸变化时重新测量。参考 `JsonTool.tsx` 的 `measureHint`。
-- 浮层整体 `pointer-events-none`，仅链接按钮 `pointer-events-auto`，保证点击空白区域仍能聚焦编辑器；链接是真实 `<button>`，保留键盘可访问性。
+CodeMirror 可点击空态的坐标测量、指针和可访问性规则见 [editor.md](../layout-guidance/editor.md)，仅在实现编辑器空态时读取。
 
 ## 托盘和剪贴板匹配
 
@@ -82,8 +76,6 @@ user-invocable: false
 
 三处工具 ID 必须一致。新支持的工具默认开启；已有用户配置通过一次性迁移加入，之后用户手动关闭必须持久化，不能每次启动重新开启。
 
-## 静态检查
+## 验收
 
-- 工具 ID 在侧栏、路由、常驻挂载、命令面板、历史记录和 locale 中完整出现。
-- pending action 不会被其他常驻工具消费，切页后编辑器状态和撤销历史仍保留。
-- 若支持托盘识别：开关、默认值、迁移和用户关闭状态一致。
+按上方必需接线和托盘清单核对实际变更；编辑器状态保留见 [editor.md](../layout-guidance/editor.md)，命令验证交给 `project-validation`。

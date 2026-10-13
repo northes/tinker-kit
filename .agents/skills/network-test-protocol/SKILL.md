@@ -100,7 +100,7 @@ Basic 仅在服务端只提供 Basic 时使用；同时下发两者时不回退�
 做法：先看 `ctx.Err()`（超时/取消各给对应结论），再用「是否已收到过字节」区分「对端未响应即关闭」与
 「响应中途关闭」，不要依赖平台错误码。
 
-### 7. 「连接成功」不等于「设备可达」
+### 8. 「连接成功」不等于「设备可达」
 
 原因：VPN/代理 TUN 会在本机应答 SYN——同网段不存在的地址也能「连上」；`connect` 成功只证明本机内核
 完成了握手，用户会把「建立 TCP 连接 成功」读成设备可达。
@@ -175,7 +175,7 @@ TLS 握手并重放同一份请求，**只有读到该协议自己的状态行�
 自定义」三种来源，空值表示默认；HTTP、WebSocket 与 RTSP 都按设置发送，**加密探测的重放也用同一个
 值**，否则重放的不是同一份请求。预设放在 `frontend/src/lib/network-test-user-agent.ts`：版本号只
 写在预设的 `version` 字段里，UA 串与下拉标签（locale 里的 `{{version}}`）都由它生成，避免标签与串
-版本不一致；纯函数的往返与格式由 `wails3 task test:user-agent` 覆盖。WebSocket 握手默认带 Go 的
+版本不一致；纯函数的往返与格式由 `wails3 task test:network-user-agent` 覆盖。WebSocket 握手默认带 Go 的
 User-Agent，要显式覆盖。值里的 CR/LF 一律去掉（`sanitizeHeaderValue`，配置规范化与请求构造两处都
 要）：它直接写进手写的 RTSP 请求文本，不能让它切断报文或插入头部行。
 
@@ -190,7 +190,7 @@ User-Agent，要显式覆盖。值里的 CR/LF 一律去掉（`sanitizeHeaderVal
   元素展示，两端按实际溢出量渐隐（`.no-scrollbar` + `.scroll-fade-x`，照 `StageHintLine` 自更新
   `--scroll-area-overflow-x-*`），不要截断成省略号。**不要在这里套 `ScrollArea`**：它固定给内容加 4px
   内边距（为焦点环预留），用负 margin 抵消会把文字压到裁切边缘，并在左端留下假渐隐（左端应完全可见）。
-- 工具页文案只用标题；操作提示放在内容区或高级选项，保持简短（见 `i18n-guidance`）。
+- 工具页标题与提示位置沿用 [layout-guidance 的工具页布局](../layout-guidance/SKILL.md#工具页布局)。
 
 ## 验证
 
@@ -199,7 +199,7 @@ User-Agent，要显式覆盖。值里的 CR/LF 一律去掉（`sanitizeHeaderVal
    对端立即关闭、取消、重定向（含跨主机与超限）、时间线不变量。
 2. 真实服务端/设备交叉验证：临时脚本放在 scratch 目录，验证后删除；**不要把仅测试用的依赖写进
    `go.mod`**（例如临时 module 里跑 gortsplib 做对照）。
-3. 前端：`npx tsc --noEmit`、`npm run build`、`npx prettier --check`；协议识别与补全属纯函数，放
+3. 命令验证在实现完成后由 `project-validation` 按 diff 统一执行，不在此处另跑构建或格式检查。协议识别与补全属纯函数，放
    `frontend/src/lib/network-target.ts`，用 `wails3 task test:network-target` 覆盖。
 4. 每个协议都要留一条时间线用例，并用 `assertStageTimeline`（`networktestservice_test.go`）复核
    「耗时 == finishedAt - startedAt」：这条不变量一旦被破坏，界面就会出现假时间条。

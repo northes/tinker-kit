@@ -6,46 +6,41 @@ user-invocable: false
 
 # 项目验证
 
-本 skill 是项目命令验证的唯一入口。按本轮 `git diff` 和实际变更边界选择一次命令集并执行；同一轮已执行的命令不得重复。在验证结果中记录实际执行的命令。
+本 skill 是实现完成后的项目命令验证入口。按本轮实际修改及相关边界选择命令集；已通过且相关代码未再改变的检查不重复，修复失败或新增相关改动后允许重跑。记录实际命令及结果，区分本次失败、基线失败和未验证项。
 
-## 命令
+## 命令入口
 
-- 前端依赖只在 `frontend/` 内安装。npm 项目使用 `npm install`，不要在仓库根目录寻找或创建 `package.json`。
-- `frontend/.npmrc` 的 `minimum-release-age=10080` 是供应链策略；安装依赖时不要删除或绕过它。
-- 前端脚本在 `frontend/` 执行：
+开发、依赖安装、bindings、构建和测试通过根目录 `Taskfile.yml` 及其 includes 的 `wails3 task <name>` 执行，不另列绕过任务的 npm、Go 命令。
 
-  ```sh
-  npx tsc --noEmit
-  npm run build
-  npm run format:check
-  ```
+- 前端生产构建（包含 TypeScript 检查）：`wails3 task common:frontend:run SCRIPT=build`。
+- 前端格式检查（必要时）：`wails3 task common:frontend:run SCRIPT=format:check`。
+- Go 测试：`wails3 task test:go`；针对性测试通过 `GO_TEST_FLAGS` 传递，例如 `GO_TEST_FLAGS='-run TestRepairJSON'`。
+- bindings：`wails3 task common:generate:bindings`。实现阶段仅在导出服务或绑定类型变化时生成，验证时不无条件再次生成。
+- 完整前端产物及 bindings 构建：`wails3 task common:build:frontend`；应用构建使用 `wails3 task build` 或用户指定目标。
+- 已有前端行为测试：`test:image-tasks`、`test:image-architectures`、`test:ansi`、`test:network-target`、`test:network-user-agent`，按变更使用 `wails3 task <name>` 执行。
+- JSON 修复测试：`wails3 task test:json-repair`。
+- 差异检查：`git diff --check`，同时检查新增未跟踪文件的内容及引用。
 
-  不要用 `npx tsc --no-emit`，正确参数是 `--noEmit`。
+任务和脚本以当前 `Taskfile.yml`、`build/Taskfile.yml`、`frontend/package.json` 为准；需要独立检查而现有任务无法表达时，先补最小任务再执行，不假设不存在的任务可用。前端依赖只在 `frontend/` 内安装，保留 `.npmrc` 的 `minimum-release-age` 策略。
 
-- Go 验证在仓库根目录执行：
-
-  ```sh
-  go test ./...
-  git diff --check
-  ```
-
-- 当前没有独立的前端测试套件；Go 至少有 `configservice_test.go` 和 `updateservice_test.go`。不要把“没有前端测试”写成“项目没有测试”。
+Go 测试前确保 `frontend/dist` 存在；需要更新产物时先完成前端构建，再串行运行 Go 测试，避免构建清空嵌入目录时测试失败。
 
 ## 验证矩阵
 
-- 只改 Markdown 或 skill：运行 `git diff --check`，并检查路径、命令、文件名和现有架构描述一致。
-- 改 React 组件、locale、样式或现有工具内部行为：运行前端类型检查、生产构建，必要时格式检查。
-- 新增或修改用户触发的删除、移除操作：静态核对按钮、菜单项及快捷键均先打开 `ConfirmDialog`，确认前不会调用删除；批量操作的确认内容要说明对象范围。
-- 新增工具或改变 `ToolId`、注册、导航、常驻挂载、命令、历史或托盘识别：在前端验证之外，静态核对工具 ID 出现在侧栏、路由、常驻挂载、命令面板、历史记录和 locale；pending 不被其他常驻工具抢消费。
-- 改工具页高度链、CodeMirror 尺寸、浮层滚动或 `ScrollArea` 滚动容器：静态核对受影响页面的尺寸链和常驻挂载不卸载。若改 `ScrollArea` 或 `ToolLayoutScrollableContent`，确认宿主不残留 `overflow-*`、原 `overflow-x: hidden` 的容器传了 `overflow.x: 'hidden'`，且未在全局隐藏原生滚动条。
-- 改 Go 服务、配置、窗口、托盘或事件：运行 Go 测试和前端类型检查/构建；若导出类型改变，先确认已重新生成 bindings，再检查生成文件和调用方。
-- 把 WebView 主线程长任务迁移到 Go：除上述 Go/Wails 验证外，静态搜索并确认旧前端算法、Web Worker 和专用依赖已删除；测试覆盖原始大输入、连续请求的过期结果保护、取消后的状态稳定性，以及 Go 返回的文本和统计字段。不得以 Worker 测试或仅有类型检查替代 Go 行为测试。
+- 只改 Markdown 或 skill：运行差异检查；检查 frontmatter、相对链接、任务名和架构描述，不运行应用构建。
+- 改 React 组件、locale、样式或现有工具内部行为：运行前端生产构建（含类型检查），命中现有行为测试时执行对应任务，必要时格式检查。
+- 删除或移除操作：按 [forms-and-controls.md](../layout-guidance/forms-and-controls.md) 核对确认边界。
+- 工具注册、导航、命令、历史或托盘识别：前端验证，并按 [tool-development](../tool-development/SKILL.md) 的接线清单验收。
+- 布局、编辑器、浮层或滚动容器：前端验证，并按 [layout-guidance](../layout-guidance/SKILL.md) 路由到实际命中的参考验收。
+- Go 服务、配置、窗口、托盘或事件：Go 测试与前端构建；按 [wails-integration](../wails-integration/SKILL.md) 核对配置、生命周期和绑定同步。
+- WebView 重计算迁移到 Go：按 wails-integration 的后台任务规则核对实现；Go 行为测试覆盖原始大输入、取消、过期结果保护、返回文本和统计字段，不以类型检查替代行为测试。
+- 网络协议：按 [network-test-protocol](../network-test-protocol/SKILL.md#验证) 选择协议行为与时间线测试；目标识别或 UA 变化时执行对应前端测试任务。
 - 改 `build/config.yml` 的资源元数据：先运行 `wails3 task common:update:build-assets`，检查生成资源，再执行对应的构建验证。
 - 改 `main.go` 的嵌入资源、构建流程或分发配置：确认 `frontend/dist` 已生成，再运行 `wails3 task build` 或用户要求的目标任务。
 
 ## 失败处理
 
 - 验证失败时先确认失败属于本次修改还是基线问题，继续追到数据流、生命周期、类型或构建配置的根因。
-- 基线已有未格式化文件：`fileservice.go`（gofmt）、`App.tsx`/`HistoryPage.tsx`/`ImageTool.tsx`/`ui/color-picker.tsx` 等（Prettier）。它们本就失败，不要当成本次引入，也不要顺手格式化无关文件制造噪声。
-- 不通过额外 CSS 覆盖、特殊判断、异常吞掉、隐式重试或延迟执行来让命令表面通过。
+- 基线问题现场核对，不维护永久失败文件名单，不把旧问题当成本次引入，也不顺手格式化无关文件。
 - 代码改动完成后，验证应覆盖原始复现和相关边界；文档改动则检查是否留下过时的文件路径、API 名称、底层 primitive 或命令。
+- 动态交互需要人工验收时列出具体步骤，区分已通过检查与待人工验收；遵守 `AGENTS.md`，不使用 Playwright、Computer Use 或浏览器自动化。

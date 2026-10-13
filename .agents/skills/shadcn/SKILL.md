@@ -1,6 +1,6 @@
 ---
 name: shadcn
-description: Manages shadcn components and projects — adding, searching, fixing, debugging, styling, and composing UI, including chat interfaces. Provides project context, component docs, and usage examples. Applies when working with shadcn/ui, component registries, presets, --preset codes, or any project with a components.json file. Also triggers for "shadcn init", "create an app with --preset", or "switch to --preset".
+description: 仅在安装、更新、添加 shadcn 组件，修改 components.json，或用户明确调用 shadcn CLI、registry、preset 工作流时使用。普通布局、className、现有控件行为或文案修改不要使用本 skill。
 user-invocable: false
 allowed-tools: Bash(npx shadcn@latest *), Bash(pnpm dlx shadcn@latest *), Bash(bunx --bun shadcn@latest *)
 ---
@@ -11,13 +11,17 @@ A framework for building ui, components and design systems. Components are added
 
 > **IMPORTANT:** Run all CLI commands using the project's package runner: `npx shadcn@latest`, `pnpm dlx shadcn@latest`, or `bunx --bun shadcn@latest` — based on the project's `packageManager`. Examples below use `npx shadcn@latest` but substitute the correct runner for the project.
 
+## 项目边界
+
+先遵守根目录 `AGENTS.md`：沿用现有共享组件和页面结构，不因本文的通用示例重建布局。仅查询本次组件相关文档；命令在 `frontend/` 中执行，并保留 `.npmrc` 的供应链策略。
+
 ## Current Project Context
 
 ```json
 !`npx shadcn@latest info --json`
 ```
 
-The JSON above contains the project config and installed components. Use `npx shadcn@latest docs <component>` to get documentation and example URLs for any component.
+上方是 CLI 命令示例，不是已经执行的项目快照；需要时实际运行并读取结果。 Use `npx shadcn@latest docs <component>` to get documentation and example URLs for any component.
 
 ## Principles
 

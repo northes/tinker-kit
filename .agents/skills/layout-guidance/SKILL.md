@@ -6,16 +6,17 @@ user-invocable: false
 
 # 布局指导
 
-布局优先保证数据流、尺寸链、滚动责任和状态保留，再处理视觉细节。工具页面必须遵循现有 `ToolLayout` 与 `Reveal` 结构，不创建平行布局系统。本项目滚动条统一使用 OverlayScrollbars 的 `ScrollArea`，以本节和 [overlay-scrollbar.md](./overlay-scrollbar.md) 为准。
+布局优先保证数据流、尺寸链、滚动责任和状态保留，再处理视觉细节。工具页面必须遵循现有 `ToolLayout` 与 `Reveal` 结构，不创建平行布局系统。本项目滚动条统一使用 OverlayScrollbars 的 `ScrollArea`，仅在修改滚动容器时读取 [overlay-scrollbar.md](./overlay-scrollbar.md)。
 
-## 设置页信息层级
+## 按变更读取
 
-- 统一称为「一级分类 → 二级分组 → 设置项 → 选项」；例如「自动化与通知 → 后台任务通知 → 通知时机 → 关闭 / 始终 / 未专注时」。
-- 一级分类负责导航；二级分组是分类面板内的小节标题；设置项是具体控件或操作的名称；选项是单选、选择器等控件中的可选值。
-- 二级分组标题放在设置内容的左侧标题列，设置项控件放在右侧列。设置项标签与选项应在同一行呈现，选项靠右对齐；窄屏切为纵向排列后改为靠左。
-- 只有一个设置项的分组仍保留二级分组标题位置，但标题应使用该设置项的名称，避免出现重复路径（如「关于 → 关于 → 项目主页」）。当标题已表达设置项名称时，不在右侧重复显示同名标签。
-- 多个相关设置项共用一个二级分组标题时，各设置项仍保留各自标签；不要为了减少标题而隐藏不同设置项的名称。
-- 设置项标签应直接、易懂地说明控制对象或操作；能通过标签和控件本身理解的内容不添加描述。只有确有必要补充影响或条件时才加简短描述，且不得重复标签、分组标题或选项含义。
+只读取直接命中的参考，不默认加载全部文件：
+
+- CodeMirror、编辑器快捷键、空态定位或可调整分栏：[editor.md](./editor.md)。
+- 设置页层级、Select、来源管理、复制反馈、删除确认或弹窗表单：[forms-and-controls.md](./forms-and-controls.md)。
+- 虚拟列表、搜索、排序、右键和拖选批量操作：[lists.md](./lists.md)。
+- 浮层定位、命令面板结构或 WebView 旋转图标诊断：[overlays-and-motion.md](./overlays-and-motion.md)。
+- `ScrollArea` 或其他滚动容器：[overlay-scrollbar.md](./overlay-scrollbar.md)。
 
 ## 工具页布局
 
@@ -29,56 +30,6 @@ user-invocable: false
 - 响应式切换分栏方向时同步调整 grid rows；宽屏左右分栏共用一行，窄屏上下分栏平分可用高度。
 - 工具内容直接落在页面背景上，用 1px 分隔线表达层次，不使用带边框、圆角和独立背景的工具卡片。
 - 页面切换使用常驻挂载：隐藏工具使用 `position:absolute; inset:0; visibility:hidden; pointer-events:none`，不要用 `display:none` 卸载编辑器。
-- 工具页不要为了分组套用圆角卡片；需要表达层级时使用现有语义 token 和 1px 分隔线，按视觉密度删除多余的标题、编辑区和 footer 边线。
-
-## 编辑器与状态
-
-- CodeMirror 实例不因切页、Schema 开关或工具状态切换而重建；实例保留撤销历史、滚动位置和尺寸状态。
-- 大文本解析、修复、格式化、Schema/路径求值、批量转换等可能持续占用 WebView 主线程的计算，不得通过前端 Web Worker 实现。先确认真正的同步调用链，再把重计算迁移到 Go 服务，通过 Wails binding 异步调用；前端只管理输入、加载态、取消请求和过期结果保护。
-- 切换工具或模式时，不挂载不可见的昂贵预览，不解析不可见结果；常驻 CodeMirror 可以保留实例，但隐藏时暂停可取消的后台预解析。迁移到 Go 后仍要避免在 React `useMemo`、render 或 effect 中对同一大文本做第二次完整解析。
-- 全局快捷键执行编辑器命令时（如打开搜索替换），在窗口捕获阶段监听 `keydown`，并按可见性选择实例：焦点在编辑器内优先该实例，否则取当前可见的第一个；用 `visibility` 和布局排除常驻挂载的隐藏页，不要假设第一个 `.cm-editor` 可用。
-- 模态弹窗打开时，把查找范围限制在 `[role="dialog"][data-open]`、`[role="alertdialog"][data-open]` 内，避免快捷键落到弹窗背后的编辑器。
-- 监听用 `ViewPlugin` 跟随实例生命周期注册/卸载（引用计数），没有可见编辑器时不抢占按键；DOM 到实例的查找用 `EditorView.findFromDOM`，不要自建映射表。
-- 打开面板后需要设置面板内部状态（如展开替换行）时，在面板构造函数用模块级 `WeakMap<EditorView, Panel>` 记录实例并调用其方法；不要打开后再查询面板 DOM 或模拟点击。
-- 编辑器工具的主输入统一使用共享 CodeMirror 配置，不额外实现 textarea 历史或撤销拦截。
-- 在 CodeMirror 上叠加提示或可点击内容（如空态「打开」链接）时，不要用固定内边距定位：自带 `placeholder` 强制 `pointer-events: none` 且带 `aria-hidden`，不可交互。改用绝对定位浮层，并用 `view.coordsAtPos(0)` 实测正文坐标，自动避开行号槽、内容内边距和滚动；浮层 `pointer-events-none`，仅可点击元素 `pointer-events-auto`。
-- 纯 input/textarea 的程序化变更使用共享 `useHistory`；键盘撤销需要处理 `Mod/Ctrl+Z`、重做快捷键和 IME composing 状态。
-- pending action 必须先校验所属 `tool`，避免常驻挂载后多个工具抢消费同一操作。
-- 切页滚动复位使用 `useLayoutEffect`；workspace 滚动容器增加 `overflow-x: hidden`。
-- flex 中的图标按钮必须显式设置相等的 `width`/`min-width` 和 `flex: none`（或 `flex-shrink: 0`），必要时清除横向 padding，避免窄窗口或长输入压扁按钮。
-- Wails 标题栏拖拽使用 CSS 的 `--wails-draggable: drag/no-drag` 和 `data-wails-drag`，不要用 JavaScript 监听鼠标模拟拖拽。
-
-## 可调整分栏
-
-- `react-resizable-panels` 会按一组 panel `id` 缓存布局；同一组面板在单栏、左右分栏、上下分栏或不同业务模式下有不同约束时，各状态必须使用独立的 `id` 组合，避免关闭模式后复用旧尺寸。React `key` 保持稳定，使 CodeMirror 等子组件不因布局状态变化而重建。
-- 隐藏面板用 `defaultSize={0}`、`minSize={0}`、`maxSize={0}` 表达布局约束；显示时恢复对应模式的默认值、最小值和最大值。显示中的内容面板不要设置 `collapsible`，两侧都必须受 `minSize` 约束，避免某一侧能被拖到 0。
-- 不要在面板约束随模式变化时再通过 `groupRef.setLayout()` 强制同步尺寸。面板注册、约束重算和 effect 的执行顺序会互相覆盖，容易留下空白区域或恢复错误布局。让模式专属 `id` 负责隔离和恢复布局。
-- 面板尺寸为 0 不等于内容一定不可见：panel 外壳可能允许内容溢出。隐藏宿主还要设置 `visibility:hidden`、`pointer-events:none`、`inert` 和 `aria-hidden`；需要保留编辑器状态时不要用条件渲染或 `display:none` 卸载实例。
-- 布局标识和 React 生命周期标识分开设计：`id` 表示当前模式下的布局身份，`key` 表示组件实例身份。不要为了清空布局缓存而改变 `key`，否则会同时丢失编辑器撤销记录、滚动位置和内部状态。
-- 验证至少覆盖：每种模式分别开启和关闭、模式之间直接切换、宽窄屏方向切换、反复往返、分隔条向两端拖到极限，以及重新打开后恢复该模式上次比例。类型检查和构建不能证明这些状态转换正确。
-
-## 动画与浮层
-
-- `translateY(+12px)` 的入场动画会造成底部瞬时溢出和滚动条闪烁；使用 `.tool-slot` 的 `overflow: hidden` 裁切，或改为向上移动。
-- 浮层滚动分为外壳和真实滚动层：外壳负责背景、边框、圆角和 `overflow: hidden`，内部负责尺寸收缩、`overflow: auto`、滚动条和内容。
-- `scrollbar-gutter` 只作用于真实滚动层；外壳和内部滚动层需要时都显式使用 `scrollbar-gutter: auto !important`。
-- Popover/Select 会 Portal 到 `body`，局部父级选择器不能可靠定位；通过组件 `className` 或实际 `data-state`/`data-side` 定位。
-- 浮层背景统一使用 `bg-popover`；搜索框需要覆盖组件默认暗色输入背景时显式使用 `dark:bg-transparent`。
-- `AlertDialogHeader` 是 `grid place-items-center`，子项会收缩为内容宽度；描述里的块级预览要占满整行时给描述容器加 `w-full`，块级内容放进 `render={<div />}` 的描述里，避免块级元素嵌套在 `<p>` 中。
-- 剪贴板或长文本预览用固定高度 + 自动换行 + 垂直滚动（如 `h-24 whitespace-pre-wrap break-all overflow-y-auto`），不要按字符截断成不可滚动，也不要只靠 `max-h` 裁切。
-- 圆角统一使用 shadcn 的 `--radius` 和既有组件圆角，不新增全局圆角覆盖层。
-
-### 命令面板
-
-- `CommandDialog` 内按 `Command` → `CommandInput` + `CommandList` → `CommandEmpty` + `CommandGroup` → `CommandItem` 组织；每个 `CommandItem` 都必须放在 `CommandGroup` 中。`CommandGroup` 提供列表内边距，避免选中高亮贴住列表边缘。
-- 键盘上下移动、首尾循环、鼠标移动高亮、列表变化后选中第一项及将高亮项滚入视口，统一由 `frontend/src/components/ui/command.tsx` 的共享 `Command` 实现。各面板不要单独维护高亮状态、指针移动处理或重复设置这些行为属性。
-
-### WebView 小尺寸旋转图标
-
-- Wails WebView 中，小尺寸 SVG 即使是正方形且 `transform-origin` 正确，落在半物理像素位置时仍可能因逐帧栅格化出现约 1px 的视觉跳动，看起来像旋转中心偏移。先检查静态外框坐标乘以 `devicePixelRatio` 是否为整数，再判断是否属于此问题。
-- 不要仅凭旋转后的 `getBoundingClientRect()` 或 `getScreenCTM()` 判断中心漂移：旋转会改变轴对齐包围盒，变换矩阵也会反映正在执行的动画。用未旋转的固定尺寸外层记录布局位置，并以原生 WebView 的连续截图或像素重心对比验证实际绘制结果。
-- 只有确认是设备像素对齐问题后，才在具体调用处增加固定尺寸、非旋转的外层，并在 `useLayoutEffect` 中按 `round(position * dpr) / dpr - position` 平移承载原 Spinner 的内层。窗口缩放、滚动、分栏拖动可能只改变位置而不改变图标尺寸，因此通过 `ResizeObserver`、`resize` 和捕获阶段 `scroll` 重新对齐。
-- 保留共享 `Spinner` 的官方实现和动画；不要用 `transform-box`、额外 `transform-origin`、文字基线调整或写死 `0.25px` 掩盖问题。修复后在目标 WebView 连续采样，确认中心波动消失，并移除诊断代码。
 
 ## footer band 与共享分割线
 
@@ -87,70 +38,8 @@ user-invocable: false
 - `ToolLayout` 的底部内边距是页面级留白，收紧它会同时影响所有工具页和设置页，不要只按单个页面调整。
 - 底部留白只由 `ToolLayout` 的页面 `pb` 决定，不要给 footer 内容加负 margin 或第二层 padding 来“挤出”对齐。
 
-## 组件与交互细节
-
-- `DialogFooter` 自带 `border-t`；dialog 主体不要再加 `border-b`，否则相邻两条 1px 边框叠成 2px，分割线看起来比官方粗。
-- 焦点环（Base UI 控件默认的 `focus-visible:ring-*`）是画在边框盒外的 box-shadow，会被最近的 `overflow: auto/hidden/scroll` 容器裁掉。凡是承担滚动的容器（对话框内作为滚动层的 `<form>`、`ScrollArea` 视口等），都必须为边缘控件的焦点环预留空间：给滚动层加内边距，至少覆盖 `ring-3` 的 3px（默认取 4px）；要保持与相邻内容对齐时用等量负 margin 抵消，如 `-m-1 p-1`。不要用删除焦点环、叠加阴影/描边或给单个输入写局部覆盖来回避裁切。
-- Base UI `Select`：条目必须包在 `SelectGroup` 内；浮层内边距来自 `SelectGroup` 的 `p-1`，不要给 Popup 另加 padding 覆盖官方样式。
-- Base UI `Select`：受控值使用内部 key 时，根组件必须同时提供 `items={[{ value, label }]}` 映射（动态/本地化选项按当前文案构建），仅渲染带文字的 `SelectItem` 不足以保证关闭后的 trigger 显示 label。验收时要实际选择并关闭下拉框，确认 trigger 显示本地化 label 而不是内部 key。
-- 保持 `SelectContent` 的 `alignItemWithTrigger` 默认值（原生对齐：选中项与 trigger 对齐）；不要为了“展开在下方”而设为 `false`，也不要在各处混用两种定位。
-- 允许切换来源或主机的 `Select` 必须在列表底部固定提供“管理”项，左侧带语义匹配的 phosphor icon；该项不随来源/主机数据排序或滚动，选中后打开对应的管理界面，不写入业务选中值。
-- 选择全局 SSH 配置时复用 `SSHProfileSelect`；表单需要完整 profile 对象时用 `SSHProfileFormField`，不要重造 profile 下拉框或旁边的管理按钮。工具来源切换仍使用工具自己的来源选择器和 `TargetHostManagerDialog`，不要把全局 SSH profile 当作工具来源。
-- SSH 来源表单选中 profile 时立即写入 `sshProfileID`；来源名称为空或仅含空白时同步填入 `profile.name`，已有手工名称保持不变。使用 `SSHProfileFormField` 的完整 profile 回调处理，不能只在提交时补名称，否则表单里不会即时显示来源名称。
-- 来源管理弹窗只保留标题，不加副标题或重复说明。列表页 footer 的添加按钮使用 `common.add`（中文“添加”），放在左侧，保存放在右侧；编辑表单页沿用现有返回、操作和保存布局。
-- 来源模型包含“本机”时，管理列表必须显示该项，并禁用编辑和删除；拖动排序仍可用。若列表项使用 `itemDisabled`，只禁用编辑/删除操作，不要把该状态传给 sortable/DnD。新条目追加到末尾，编辑条目保留原位置。删除当前来源后，有本机的工具回退到本机；没有本机的工具选择首项或清空。保存时提交完整有序列表，后端规范化只能在缺少“本机”时补到首位，不能覆盖用户排好的位置。
-- 工具页 header 中的字段 label 与控件纵向排列时，复用 `shared.tsx` 的 `ToolHeaderField`；需要通过 `aria-labelledby` 关联控件时传入 `labelId`。尺寸、字重、颜色和间距以镜像管理 header 的 label 为基准；不要在各工具内重复拼接 label 样式，也不要把标签的 muted 颜色放在包住控件的容器上。
-- 浮层在暗色下“没有阴影”通常是主题 token 问题：`--shadow-*` 明暗同值（10% 黑），在深色背景上不可见；要改的是暗色 token，不要改组件或加局部阴影覆盖。
-- 图标默认使用 phosphor 的 `weight="duotone"`（按钮、下拉项等装饰性图标）；表格排序图标例外使用 Regular 的 `CaretUpDown` / `CaretDown` / `CaretUp`。新增或调整控件时不要遗漏个别图标。
-- 工具页操作栏中的清空按钮统一使用 phosphor `Trash`，复制按钮统一使用 `Copy`，由 `ToolActionBar` 以 `weight="duotone"` 渲染；同类操作跨工具保持图标一致，不使用 `X` 或 `ClipboardText` 替代。
-- 复制成功只通过 toast 反馈；按钮文案、`aria-label`、`title` 始终保持复制操作名称，图标保持 `Copy`，不要切换成“已复制”等成功态文案、对勾图标或延时复原状态。既有复制入口若缺少成功 toast，应补上。
-- 表格/列表右键不应改变选中项；右键菜单操作在目标行未被选中时回退到该行，已选中时作用于整个选择集，不要靠右键来建立选中。
-- 批量复制多项内容用「1. 值 / 2. 值 / … / 共 N 个」的编号格式（每项一行、末行汇总数量）；单选取原始值。
-- 搜索输入默认回车才触发（本地 `draft` + `onKeyDown` Enter），不要实时过滤，也不要引入防抖或 `useDeferredValue`。
-- 搜索输入在内部靠右放置 phosphor `XCircle` 清空按钮，使用 `weight="duotone"`；仅在有输入时可用，需有可访问名称，且清空后按搜索的触发语义同步更新结果。
-- 多个工具重复的同类字段抽为共享组件（如来源或配置选择字段），由各工具共同使用，不要在工具内各写一套 Select + 管理入口。
-- 与下拉框相关的管理入口放进该下拉框（如来源下拉框底部的「管理」项，内部哨兵值触发实际动作），不再额外放独立管理按钮；空列表时也不渲染多余的分隔线。
-- 所有用户触发的删除或移除数据、资源的操作（包括单项和批量、持久化数据和本次会话数据）都必须先显示确认框；按钮、菜单项和快捷键只打开确认框，不直接执行删除。确认内容应明确对象及影响，用户确认后才执行。
-- 删除确认统一使用共享组件 `ConfirmDialog`（`frontend/src/components/ConfirmDialog.tsx`），不要在工具或设置页内重复拼 `AlertDialog`；标题、描述、确认文案、危险态、busy、错误和额外正文通过 props 传入，组件在 `busy` 时阻止关闭，调用方在操作完成后自行关闭。
-
-## 原生表单与弹窗提交
-
-- 弹窗表单优先用原生 `<form onSubmit>` 承载字段，回车提交、Tab 顺序和 `disabled` 语义交给浏览器；不要只给主按钮挂 `onClick`，再给每个输入补 Enter 监听。
-- 主按钮在 `DialogFooter`（字段区之外）时，把字段容器直接改成带唯一 `id` 的 `<form>`，页脚按钮设 `type="submit" form="<id>"` 关联；Base UI `Button` 默认 `type="button"`，非提交按钮保持默认，避免包进表单后误提交。
-- 同一弹窗按模式或类型切换字段时，各分支渲染同一个 `id` 的 form（同一时刻只渲染一个）；对话框打开期间必须始终存在该 form，否则外部 submit 按钮会失效。
-- `onSubmit` 里先 `preventDefault()`，提交动作复用已有的 busy/禁用守卫；禁用态的默认提交按钮会阻止隐式提交，不必为 Enter 写额外分支；Textarea 回车换行是原生行为，不要拦截。
-
-## 长列表虚拟化
-
-- 主内容为列表时统一用 `@tanstack/react-virtual`，不以当前数据量少为理由改用全量 DOM 渲染。滚动容器加 `ref`，`useVirtualizer` 只渲染 `getVirtualItems()` 的可视行；`<table>` 用上下占位 `<tr><td colSpan={n} style={{ height }} />` 撑出滚动高度。
-- 列表表头固定，各列使用明确的固定宽度。单元格内容超出时不换行、不截断，保留水平滚动能力；支持滚轮的水平滚动，但单元格内不显示水平或垂直滚动条。
-- 所有业务上可排序的列都必须提供排序交互：未激活使用 Regular `CaretUpDown`，升序使用 Regular `CaretUp`，降序使用 Regular `CaretDown`；不用空白代替未激活状态。
-- 主列表工具的 footer 左侧放置当前统计；统计基于搜索和筛选后的可见结果，条件变化时立即同步，不显示未过滤的总数冒充当前结果数。
-- 占位行用普通 `<tr>/<td>`，不要复用 `TableRow`/`TableCell`，否则会带上 hover 和边框样式。
-- 行高不固定时（例如搜索态文件名下多一行父路径）用 `measureElement` 测量：把 `ref={virtualizer.measureElement}` 和 `data-index` 挂到行元素上，否则按 `estimateSize` 布局会产生错位。
-- Base UI 组件通过 `render` 接收元素时会与该元素自身的 `ref` 合并，测量 ref 可直接写在 `render={<TableRow ref={...} data-index={...} />}` 上，不必改组件。
-- 任务进度分母会随发现新项回退，或命令不提供细粒度进度时，用不确定进度（脉动）而不是会跳动的百分比，成功后再置 100%；不要用会先冲到 100% 再掉回来的 `completed/total`。
-
-## 列表勾选与批量操作
-
-- 勾选框列支持按住滑动多选时：在勾选框列按下即切换起始行，指针滑过的行按各自当前状态各切换一次；用本次拖选的 `handled` 集合去重，回滑不重复切换，不要用统一目标状态覆盖所有经过的行。
-- 切换由前端接管：在窗口捕获阶段吞掉按下后浏览器补发的 `click`，用标志位 + 常驻捕获监听，并在下一次 `pointerdown`/`keydown` 重置；不要用 `setTimeout` 摘监听或引入激活阈值，否则切换会被反向改回，表现为只能取消、不能选中。
-- 拖选范围限定在勾选框列：用 `document.elementFromPoint` 加首列 `getBoundingClientRect` 判断指针是否仍在列内，行 key 从行元素的 `data-row-key` 读取，兼容虚拟化列表；仅响应鼠标主键，避免与触摸滚动冲突，窗口外丢失 `pointerup` 时由下一次 `pointerdown` 清理状态。
-- 勾选框列保持默认箭头光标（`cursor-default`），不要出现手型或文本光标。
-- 多选后右键菜单作用于整个选择集时，操作项使用批量文案；批量入口放在该右键菜单，不要再在 footer 增加“批量操作”下拉。
-
-## 滚动条
-
-仅在新增或修改滚动容器（`ScrollArea`、`ToolLayoutScrollableContent`、浮层滚动层等）时读取 [overlay-scrollbar.md](./overlay-scrollbar.md)。
-
 ## 静态检查
 
-按变更类型分层；跨多个边界时组合对应层级，不扩大到无关工具页：
-
-- **普通布局**：直接尺寸链、响应式切换和受影响页面。
-- **滚动容器**：按 [overlay-scrollbar.md](./overlay-scrollbar.md) 检查。
-- **浮层**：Portal 挂载位置、实际滚动层、Dialog 内浮层的滚动与定位关系，以及滚动层边缘控件的焦点环未被裁切。
-- **CodeMirror/常驻工具页**：隐藏页面不卸载、撤销历史和滚动位置保留、尺寸链，以及编辑器自身滚动责任。
-- **大文本或重计算工具**：确认计算位于 Go 后端而非 WebView/前端 Worker；前端具备请求取消、修订号或等价的过期结果保护，隐藏状态不继续产生无用计算，结果回传后不在主线程重复完整解析。
-- **可调整分栏**：模式专属 panel `id`、稳定 React `key`、隐藏面板 `0/0/0` 约束、可见面板最小尺寸、隐藏宿主不可见，以及各模式开关往返和极限拖拽。
-- **弹窗表单**：字段处于原生 `<form>` 内，页脚提交按钮通过 `form` 关联且为 `type="submit"`，禁用态能阻止回车提交，非提交按钮未被误设为 submit。
+- 核对直接尺寸链、响应式布局、滚动责任和受影响页面。
+- 按所读参考核对对应交互边界；命令验证统一交给 `project-validation`。
+- 动态交互需要人工验收时给出具体步骤，区分已验证和待人工验收；遵守 `AGENTS.md` 的自动化限制。
