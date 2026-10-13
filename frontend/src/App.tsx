@@ -1407,6 +1407,19 @@ function AppShell() {
   const manageEntered = useRef(false);
   const manageFocusRestoreRef = useRef<HTMLElement | null>(null);
   const lastFocusedRef = useRef<Element | null>(null);
+  const themeTransitionRef = useRef<{
+    transition: ViewTransition;
+    restore: () => void;
+  } | null>(null);
+  useEffect(
+    () => () => {
+      const active = themeTransitionRef.current;
+      themeTransitionRef.current = null;
+      active?.transition.skipTransition();
+      active?.restore();
+    },
+    [],
+  );
   const theme = resolveTheme(
     settings.themeMode,
     settings.lightTheme,
@@ -1417,19 +1430,50 @@ function AppShell() {
     const current = settingsRef.current;
     const next = typeof update === 'function' ? update(current) : update;
     const nextTheme = resolveTheme(next.themeMode, next.lightTheme, next.darkTheme, systemDark);
-    if (nextTheme === theme) {
+    const currentTheme = resolveTheme(
+      current.themeMode,
+      current.lightTheme,
+      current.darkTheme,
+      systemDark,
+    );
+    const active = themeTransitionRef.current;
+    themeTransitionRef.current = null;
+    active?.transition.skipTransition();
+    active?.restore();
+    if (nextTheme === currentTheme) {
       setSettings(next);
       return;
     }
     const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     const viewTransitionDocument = document as Document & {
-      startViewTransition?: (updateCallback: () => void) => unknown;
+      startViewTransition?: (updateCallback: () => void) => ViewTransition;
     };
     if (!viewTransitionDocument.startViewTransition || reducedMotion) {
       setSettings(next);
       return;
     }
-    viewTransitionDocument.startViewTransition(() => flushSync(() => setSettings(next)));
+    const root = document.documentElement;
+    const previousName = root.style.viewTransitionName;
+    const restore = () => {
+      root.style.viewTransitionName = previousName;
+    };
+    // 只捕获旧页面；新页面保持真实渲染和点击能力。
+    root.style.viewTransitionName = 'root';
+    const transition = viewTransitionDocument.startViewTransition(() => {
+      if (themeTransitionRef.current?.transition !== transition) return;
+      root.style.viewTransitionName = 'none';
+      flushSync(() => setSettings(next));
+    });
+    themeTransitionRef.current = { transition, restore };
+    const finish = () => {
+      if (themeTransitionRef.current?.transition !== transition) return;
+      themeTransitionRef.current = null;
+      restore();
+    };
+    void transition.finished.then(finish, (error: unknown) => {
+      finish();
+      console.error('[theme] transition update failed', error);
+    });
   };
   const currentHistoryIndex = historyIndex();
   const [maxHistoryIndex, setMaxHistoryIndex] = useState(currentHistoryIndex);
