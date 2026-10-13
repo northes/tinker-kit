@@ -73,6 +73,7 @@ const (
 )
 
 type imageTaskState struct {
+	pullOptions ImagePullOptions
 	ImageTask
 	cancel          context.CancelFunc
 	exclusiveTarget bool
@@ -310,6 +311,7 @@ func (s *ImageService) RetryImageTask(id string) (ImageExportResult, error) {
 	taskType, sourceID, imageID, target := task.Type, task.SourceID, task.ImageID, task.Path
 	importEntries := append([]ImageImportEntry(nil), task.importEntries...)
 	published := cloneImportPublished(task.importPublished)
+	pullOptions := task.pullOptions
 	s.taskMu.Unlock()
 
 	if taskType == imageTaskTypeExport {
@@ -322,9 +324,9 @@ func (s *ImageService) RetryImageTask(id string) (ImageExportResult, error) {
 	switch taskType {
 	case imageTaskTypePull:
 		if source.Kind == "registry" {
-			return s.StartRegistryImagePulls(sourceID, []DockerImageReferenceChange{{Source: imageID, Target: target}})
+			return s.StartRegistryImagePulls(sourceID, []DockerImageReferenceChange{{Source: imageID, Target: target}}, pullOptions)
 		}
-		s.enqueueImagePullWithSnapshot(sourceID, imageID, source, cliPath)
+		s.enqueueImagePullWithSnapshot(sourceID, imageID, source, cliPath, pullOptions)
 	case imageTaskTypeLoad:
 		if target == "" {
 			return ImageExportResult{}, userError("errors.imageExport.exportTaskIncomplete")
@@ -1049,10 +1051,14 @@ func (p *pullProgress) lastError() string {
 }
 
 // streamDockerPull 运行 docker pull，并把 stdout/stderr 按行回调用于进度统计。
-func (s *ImageService) streamDockerPull(ctx context.Context, source ImageSource, cliPath, imageRef string, onLine func(string)) error {
+func (s *ImageService) streamDockerPull(ctx context.Context, source ImageSource, cliPath, imageRef, platform string, onLine func(string)) error {
 	writer := &lineWriter{onLine: onLine}
 	defer writer.Flush()
-	args := []string{"image", "pull", imageRef}
+	args := []string{"image", "pull"}
+	if platform != "" {
+		args = append(args, "--platform", platform)
+	}
+	args = append(args, imageRef)
 	if source.Kind == "ssh" && (source.SSHPassword != "" || source.SSHPrivateKey != "" || source.SSHPrivateKeyPath != "") {
 		return runAuthenticatedSSHCombined(ctx, source, cliPath, s.sshLanguage(), writer, args...)
 	}
@@ -1070,7 +1076,7 @@ func (s *ImageService) streamDockerPull(ctx context.Context, source ImageSource,
 }
 
 // StartImagePulls 为每个镜像名创建独立的拉取任务；镜像名即拉取来源。
-func (s *ImageService) StartImagePulls(sourceID string, images []string) (ImageExportResult, error) {
+func (s *ImageService) StartImagePulls(sourceID string, images []string, options ImagePullOptions) (ImageExportResult, error) {
 	refs := make([]string, 0, len(images))
 	seen := make(map[string]bool, len(images))
 	for _, image := range images {
@@ -1095,25 +1101,26 @@ func (s *ImageService) StartImagePulls(sourceID string, images []string) (ImageE
 		return ImageExportResult{}, userError("errors.imageExport.registryPullUnsupported")
 	}
 	for _, reference := range refs {
-		s.enqueueImagePullWithSnapshot(sourceID, reference, source, cliPath)
+		s.enqueueImagePullWithSnapshot(sourceID, reference, source, cliPath, options)
 	}
 	return ImageExportResult{Started: len(refs), Snapshot: s.GetImageTasks()}, nil
 }
 
-func (s *ImageService) enqueueImagePullWithSnapshot(sourceID, imageRef string, source ImageSource, cliPath string) {
+func (s *ImageService) enqueueImagePullWithSnapshot(sourceID, imageRef string, source ImageSource, cliPath string, options ImagePullOptions) {
 	ctx, cancel := context.WithCancel(s.serviceContext())
 	taskID := s.createImageTask(imageTaskState{
-		ImageTask: ImageTask{Type: imageTaskTypePull, SourceID: sourceID, ImageID: imageRef},
-		cancel:    cancel,
+		ImageTask:   ImageTask{Type: imageTaskTypePull, SourceID: sourceID, ImageID: imageRef},
+		pullOptions: options,
+		cancel:      cancel,
 	})
 	s.exportWG.Add(1)
 	go func() {
 		defer s.exportWG.Done()
-		s.runImagePull(ctx, taskID, imageRef, source, cliPath)
+		s.runImagePull(ctx, taskID, imageRef, source, cliPath, options)
 	}()
 }
 
-func (s *ImageService) runImagePull(ctx context.Context, taskID, imageRef string, source ImageSource, cliPath string) {
+func (s *ImageService) runImagePull(ctx context.Context, taskID, imageRef string, source ImageSource, cliPath string, options ImagePullOptions) {
 	if !s.acquireTaskSlot(ctx, taskID) {
 		return
 	}
@@ -1125,16 +1132,27 @@ func (s *ImageService) runImagePull(ctx context.Context, taskID, imageRef string
 		task.Stage = "pulling"
 	})
 	tracker := newPullProgress()
-	err := s.streamDockerPull(ctx, source, cliPath, imageRef, func(line string) {
-		if tracker.observe(line) {
-			completed, total, stage := tracker.snapshot()
-			s.updateTask(taskID, func(task *imageTaskState) {
-				task.Completed = completed
-				task.Total = total
-				task.Stage = stage
-			})
+	platforms := []string{options.Platform}
+	var err error
+	if options.Platform == "all" {
+		platforms, err = s.resolveImagePullPlatforms(ctx, source, cliPath, imageRef, options)
+	}
+	for _, platform := range platforms {
+		if err != nil {
+			break
 		}
-	})
+		tracker = newPullProgress()
+		err = s.streamDockerPull(ctx, source, cliPath, imageRef, platform, func(line string) {
+			if tracker.observe(line) {
+				completed, total, stage := tracker.snapshot()
+				s.updateTask(taskID, func(task *imageTaskState) {
+					task.Completed = completed
+					task.Total = total
+					task.Stage = stage
+				})
+			}
+		})
+	}
 	switch {
 	case errors.Is(err, context.Canceled):
 		s.updateTask(taskID, func(task *imageTaskState) {

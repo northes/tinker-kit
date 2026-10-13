@@ -316,6 +316,15 @@ export interface ImageImportEntry {
     "conflict": boolean;
 }
 
+/**
+ * 拉取凭据仅用于当前任务，不写入来源配置或任务快照。
+ */
+export interface ImagePullOptions {
+    "username": string;
+    "password": string;
+    "platform": string;
+}
+
 export interface ImageSource {
     "id": string;
     "name": string;

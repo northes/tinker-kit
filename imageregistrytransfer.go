@@ -2,7 +2,12 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
+	"sort"
+	"time"
+
+	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"strings"
 
 	"github.com/google/go-containerregistry/pkg/name"
@@ -51,8 +56,8 @@ func (s *ImageService) registryPullSource(reference name.Reference, target Image
 	return ImageSource{Kind: "registry", RegistryURL: "https://" + reference.Context().RegistryStr()}
 }
 
-// StartRegistryImagePulls 将远程镜像完整复制到当前 Registry，Source 可以是 tag 或 digest。
-func (s *ImageService) StartRegistryImagePulls(sourceID string, changes []DockerImageReferenceChange) (ImageExportResult, error) {
+// StartRegistryImagePulls 按所选平台复制镜像到当前 Registry，Source 可以是 tag 或 digest。
+func (s *ImageService) StartRegistryImagePulls(sourceID string, changes []DockerImageReferenceChange, options ImagePullOptions) (ImageExportResult, error) {
 	source, _, _, err := s.sourceSnapshot(sourceID)
 	if err != nil {
 		return ImageExportResult{}, err
@@ -75,21 +80,21 @@ func (s *ImageService) StartRegistryImagePulls(sourceID string, changes []Docker
 		return ImageExportResult{}, err
 	}
 	for _, change := range changes {
-		s.enqueueRegistryImagePull(source, change)
+		s.enqueueRegistryImagePull(source, change, options)
 	}
 	return ImageExportResult{Started: len(changes), Snapshot: s.GetImageTasks()}, nil
 }
 
-func (s *ImageService) enqueueRegistryImagePull(source ImageSource, change DockerImageReferenceChange) {
+func (s *ImageService) enqueueRegistryImagePull(source ImageSource, change DockerImageReferenceChange, options ImagePullOptions) {
 	ctx, cancel := context.WithCancel(s.serviceContext())
 	reference, _ := name.ParseReference(change.Source)
-	origin := s.registryPullSource(reference, source)
-	id := s.createImageTask(imageTaskState{ImageTask: ImageTask{Type: imageTaskTypePull, SourceID: source.ID, ImageID: change.Source, Path: change.Target, ProgressUnit: "bytes"}, cancel: cancel})
+	origin := s.pullOrigin(reference, source, options)
+	id := s.createImageTask(imageTaskState{ImageTask: ImageTask{Type: imageTaskTypePull, SourceID: source.ID, ImageID: change.Source, Path: change.Target, ProgressUnit: "bytes"}, pullOptions: options, cancel: cancel})
 	s.exportWG.Add(1)
-	go func() { defer s.exportWG.Done(); s.runRegistryImagePull(ctx, id, source, origin, change) }()
+	go func() { defer s.exportWG.Done(); s.runRegistryImagePull(ctx, id, source, origin, change, options) }()
 }
 
-func (s *ImageService) runRegistryImagePull(ctx context.Context, taskID string, source, origin ImageSource, change DockerImageReferenceChange) {
+func (s *ImageService) runRegistryImagePull(ctx context.Context, taskID string, source, origin ImageSource, change DockerImageReferenceChange, options ImagePullOptions) {
 	if !s.acquireTaskSlot(ctx, taskID) {
 		return
 	}
@@ -97,14 +102,14 @@ func (s *ImageService) runRegistryImagePull(ctx context.Context, taskID string, 
 		defer s.taskScheduler.Release()
 	}
 	s.updateTask(taskID, func(task *imageTaskState) { task.Status, task.Stage = imageTaskRunning, "pulling" })
-	err := s.copyRegistryImage(ctx, taskID, source, origin, change)
+	err := s.copyRegistryImage(ctx, taskID, source, origin, change, options)
 	if err != nil {
 		err = userErrorCause("errors.imageExport.registryTransferFailed", redactRegistryError(redactRegistryError(err, origin), source))
 	}
 	s.finishImageTransfer(taskID, source, ctx, err)
 }
 
-func (s *ImageService) copyRegistryImage(ctx context.Context, taskID string, source, origin ImageSource, change DockerImageReferenceChange) error {
+func (s *ImageService) copyRegistryImage(ctx context.Context, taskID string, source, origin ImageSource, change DockerImageReferenceChange, options ImagePullOptions) error {
 	release, err := s.registryPermit(ctx)
 	if err != nil {
 		return err
@@ -114,7 +119,15 @@ func (s *ImageService) copyRegistryImage(ctx context.Context, taskID string, sou
 	if err != nil {
 		return err
 	}
-	descriptor, err := remote.Get(reference, s.registryTransferOptions(ctx, origin)...)
+	remoteOptions := s.registryTransferOptions(ctx, origin)
+	if options.Platform != "" && options.Platform != "all" {
+		platform, err := v1.ParsePlatform(options.Platform)
+		if err != nil {
+			return err
+		}
+		remoteOptions = append(remoteOptions, remote.WithPlatform(*platform))
+	}
+	descriptor, err := remote.Get(reference, remoteOptions...)
 	if err != nil {
 		return err
 	}
@@ -130,7 +143,7 @@ func (s *ImageService) copyRegistryImage(ctx context.Context, taskID string, sou
 	if err := s.checkImportTargets(ctx, source, "", []ImageImportEntry{{Target: change.Target}}); err != nil {
 		return err
 	}
-	if descriptor.MediaType.IsIndex() {
+	if descriptor.MediaType.IsIndex() && (options.Platform == "" || options.Platform == "all") {
 		index, err := descriptor.ImageIndex()
 		if err != nil {
 			return err
@@ -141,5 +154,119 @@ func (s *ImageService) copyRegistryImage(ctx context.Context, taskID string, sou
 	if err != nil {
 		return err
 	}
+	if !descriptor.MediaType.IsIndex() && options.Platform != "" && options.Platform != "all" {
+		requested, err := v1.ParsePlatform(options.Platform)
+		if err != nil {
+			return err
+		}
+		config, err := image.ConfigFile()
+		if err != nil {
+			return err
+		}
+		actual := v1.Platform{OS: config.OS, Architecture: config.Architecture, Variant: config.Variant}
+		if !actual.Satisfies(*requested) {
+			return userErrorParams("errors.imageExport.pullPlatformUnavailable", map[string]any{"platform": options.Platform})
+		}
+	}
 	return s.withRegistryTransferProgress(ctx, taskID, source, func(options []remote.Option) error { return remote.Write(target, image, options...) })
+}
+
+// 拉取凭据仅用于当前任务，不写入来源配置或任务快照。
+type ImagePullOptions struct {
+	Username string `json:"username"`
+	Password string `json:"password"`
+	Platform string `json:"platform"`
+}
+
+func (s *ImageService) pullOrigin(reference name.Reference, target ImageSource, options ImagePullOptions) ImageSource {
+	origin := s.registryPullSource(reference, target)
+	if options.Username != "" || options.Password != "" {
+		origin.RegistryUsername, origin.RegistryPassword = options.Username, options.Password
+	}
+	return origin
+}
+
+// ResolveImagePullPlatforms 仅由显式操作调用；SSH 使用远端 CLI 的认证配置。
+func (s *ImageService) ResolveImagePullPlatforms(ctx context.Context, sourceID, image string, options ImagePullOptions) ([]string, error) {
+	source, cliPath, _, err := s.sourceSnapshot(sourceID)
+	if err != nil {
+		return nil, err
+	}
+	return s.resolveImagePullPlatforms(ctx, source, cliPath, image, options)
+}
+
+func (s *ImageService) resolveImagePullPlatforms(ctx context.Context, source ImageSource, cliPath, image string, options ImagePullOptions) ([]string, error) {
+	reference, err := name.ParseReference(strings.TrimSpace(image))
+	if err != nil || !validImageReference(strings.TrimSpace(image)) {
+		return nil, userError("errors.imageExport.invalidImageReference")
+	}
+	ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
+	defer cancel()
+	var platforms []RegistryPlatform
+	if source.Kind == "registry" {
+		origin := s.pullOrigin(reference, source, options)
+		release, err := s.registryPermit(ctx)
+		if err != nil {
+			return nil, err
+		}
+		defer release()
+		descriptor, err := remote.Get(reference, s.registryOptions(ctx, origin)...)
+		if err != nil {
+			return nil, redactRegistryError(err, origin)
+		}
+		platforms, err = registryImagePlatforms(ctx, descriptor)
+		if err != nil {
+			return nil, redactRegistryError(err, origin)
+		}
+	} else {
+		data, err := s.runDockerSnapshotContext(ctx, source, cliPath, []string{"manifest", "inspect", "--verbose", strings.TrimSpace(image)})
+		if err != nil {
+			return nil, err
+		}
+		return cliManifestPlatforms(data)
+	}
+	values := map[string]bool{}
+	for _, platform := range platforms {
+		if platform.OS != "" && platform.Architecture != "" {
+			values[platform.OS+"/"+platform.Architecture+platformVariant(platform.Variant)] = true
+		}
+	}
+	return sortedPullPlatforms(values)
+}
+
+func sortedPullPlatforms(values map[string]bool) ([]string, error) {
+	result := make([]string, 0, len(values))
+	for value := range values {
+		result = append(result, value)
+	}
+	sort.Strings(result)
+	if len(result) == 0 {
+		return nil, userError("errors.imageExport.pullPlatformsEmpty")
+	}
+	return result, nil
+}
+
+func cliManifestPlatforms(data []byte) ([]string, error) {
+	type manifest struct {
+		Descriptor struct {
+			Platform    *v1.Platform      `json:"platform"`
+			Annotations map[string]string `json:"annotations"`
+		} `json:"Descriptor"`
+	}
+	var entries []manifest
+	if err := json.Unmarshal(data, &entries); err != nil {
+		var entry manifest
+		if err := json.Unmarshal(data, &entry); err != nil {
+			return nil, err
+		}
+		entries = []manifest{entry}
+	}
+	values := map[string]bool{}
+	for _, entry := range entries {
+		platform := entry.Descriptor.Platform
+		if platform != nil && platform.OS != "" && normalizeImageArchitecture(platform.Architecture) != "" && entry.Descriptor.Annotations["vnd.docker.reference.type"] != "attestation-manifest" {
+			values[platform.OS+"/"+normalizeImageArchitecture(platform.Architecture)+platformVariant(platform.Variant)] = true
+		}
+	}
+	return sortedPullPlatforms(values)
 }

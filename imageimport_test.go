@@ -460,7 +460,7 @@ func TestRegistryPullPreservesAllPlatformsLargeLayersAndCredentials(t *testing.T
 		t.Fatal(err)
 	}
 	change := DockerImageReferenceChange{Source: ref.Name(), Target: "destination/image:amd64-and-arm64"}
-	if _, err := s.StartRegistryImagePulls(target.ID, []DockerImageReferenceChange{change}); err != nil {
+	if _, err := s.StartRegistryImagePulls(target.ID, []DockerImageReferenceChange{change}, ImagePullOptions{}); err != nil {
 		t.Fatal(err)
 	}
 	s.exportWG.Wait()
@@ -504,12 +504,12 @@ func TestRegistryPullPreservesAllPlatformsLargeLayersAndCredentials(t *testing.T
 			t.Fatalf("大镜像层未完整复制: %d, %v", length, err)
 		}
 	}
-	if _, err := s.StartRegistryImagePulls(target.ID, []DockerImageReferenceChange{change}); localizedErrorKey(err) != "errors.imageExport.importTargetExists" {
+	if _, err := s.StartRegistryImagePulls(target.ID, []DockerImageReferenceChange{change}, ImagePullOptions{}); localizedErrorKey(err) != "errors.imageExport.importTargetExists" {
 		t.Fatalf("允许覆盖已有 Registry 引用: %v", err)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	if err := s.copyRegistryImage(ctx, "unused", target, origin, DockerImageReferenceChange{Source: ref.Name(), Target: "repo:canceled"}); err == nil {
+	if err := s.copyRegistryImage(ctx, "unused", target, origin, DockerImageReferenceChange{Source: ref.Name(), Target: "repo:canceled"}, ImagePullOptions{}); err == nil {
 		t.Fatal("Registry 拉取没有响应取消")
 	}
 }
