@@ -1345,6 +1345,66 @@ func serveDescribeOnlyTestRTSP(listener net.Listener) {
 	_, _ = io.WriteString(conn, "RTSP/1.0 200 OK\r\nCSeq: "+cseq+"\r\nContent-Type: application/sdp\r\nContent-Length: "+strconv.Itoa(len(body))+"\r\n\r\n"+body)
 }
 
+// HTTP 收到首字节后等待提示必须消失，首字节时间仍保留到完成阶段。
+func TestHTTPResponsePhaseEndsAtFirstByte(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		writer.Header().Set("Content-Type", "text/plain")
+		_, _ = io.WriteString(writer, "ok")
+	}))
+	defer server.Close()
+
+	service := NewNetworkTestService()
+	var mu sync.Mutex
+	var updates []NetworkTestStage
+	service.setEventEmitter(func(_ string, payload any) {
+		update, ok := payload.(NetworkTestUpdate)
+		if !ok {
+			return
+		}
+		mu.Lock()
+		updates = append(updates, update.Stage)
+		mu.Unlock()
+	})
+	result := service.RunNetworkTest(NetworkTestRequest{
+		Protocol:      "http",
+		Target:        server.URL,
+		TimeoutMillis: 5000,
+		DNSMode:       "system",
+	})
+	if result.Status != "success" {
+		t.Fatalf("result = %+v", result)
+	}
+
+	mu.Lock()
+	stageUpdates := append([]NetworkTestStage(nil), updates...)
+	mu.Unlock()
+	waiting, firstByte := false, false
+	for _, stage := range stageUpdates {
+		if stage.ID != "http-response" || stage.Status != "running" {
+			continue
+		}
+		if stage.Meta["phase"] != "" {
+			waiting = true
+		}
+		if stage.Meta["firstByteAt"] != "" {
+			firstByte = true
+			if _, exists := stage.Meta["phase"]; exists {
+				t.Fatalf("首字节到达后仍显示等待提示：%v", stage.Meta)
+			}
+		}
+	}
+	if !waiting || !firstByte {
+		t.Fatalf("缺少等待或首字节阶段更新：%+v", stageUpdates)
+	}
+	completed := stageByID(t, result.Stages, "http-response")
+	if completed.Status != "success" || completed.Meta["firstByteAt"] == "" {
+		t.Fatalf("完成阶段 = %+v", completed)
+	}
+	if _, exists := completed.Meta["phase"]; exists {
+		t.Fatalf("完成阶段仍显示等待提示：%v", completed.Meta)
+	}
+}
+
 // HTTP 的等待响应阶段必须从请求写完就开始计时：否则等待期没有阶段覆盖（失败时只在末尾补出
 // 一个 0 毫秒的错误项），链路时间线会出现无法解释的空白。
 func TestHTTPResponseStageCoversWaitBeforeTimeout(t *testing.T) {
@@ -1430,6 +1490,9 @@ func TestHTTPResponseStageCoversWaitBeforeTimeout(t *testing.T) {
 	}
 	if failure.DurationMillis < 1000 {
 		t.Fatalf("失败阶段时长 %dms 未覆盖等待时间", failure.DurationMillis)
+	}
+	if _, exists := failure.Meta["phase"]; exists {
+		t.Fatalf("超时阶段仍显示等待提示：%v", failure.Meta)
 	}
 	assertStageTimeline(t, result.Stages)
 }

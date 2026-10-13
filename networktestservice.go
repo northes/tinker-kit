@@ -303,7 +303,12 @@ func (r *networkTestRun) stage(id string, status string, fields NetworkTestStage
 	fields.RunID = r.runID
 	fields.ID = id
 	fields.Status = status
+	phase := fields.Meta["phase"]
 	fields.Meta = mergeStageMeta(previous.Meta, fields.Meta)
+	// phase 只描述当前正在进行的操作；后续更新与终态不能继承旧的等待提示。
+	if status != "running" || phase == "" {
+		delete(fields.Meta, "phase")
+	}
 	if fields.Request == "" {
 		fields.Request = previous.Request
 	}

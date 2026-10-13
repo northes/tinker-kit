@@ -166,7 +166,7 @@ function SettingsGroup({
   return (
     <section
       className={cn(
-        'grid grid-cols-[minmax(0,1fr)_minmax(320px,520px)] gap-5 py-3.5 max-[700px]:grid-cols-1 max-[700px]:gap-2',
+        'grid grid-cols-[10rem_minmax(0,1fr)] gap-5 py-3.5 max-[700px]:grid-cols-1 max-[700px]:gap-2',
         divider && 'border-t border-border',
       )}
     >

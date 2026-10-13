@@ -935,6 +935,14 @@ export default function NetworkTestTool({
                           0,
                           stage.startedAt - (testStartedAt || stage.startedAt),
                         );
+                        const firstByteAt = Number(stage.meta?.firstByteAt);
+                        const firstByteDuration =
+                          stageLabelID === 'http-response' &&
+                          stage.meta?.firstByteAt &&
+                          Number.isFinite(firstByteAt) &&
+                          firstByteAt >= stage.startedAt
+                            ? firstByteAt - stage.startedAt
+                            : null;
                         const duration =
                           stage.status === 'running'
                             ? Math.max(40, now - stage.startedAt)
@@ -1060,7 +1068,24 @@ export default function NetworkTestTool({
                                     {formatBackendError(stage.response)}
                                   </pre>
                                 ) : null}
-                                {stage.meta && Object.keys(stage.meta).length ? (
+                                {stageLabelID === 'http-response' &&
+                                stage.status === 'running' &&
+                                !stage.meta?.firstByteAt &&
+                                stage.meta?.phase ? (
+                                  <p className="m-0 text-muted-foreground">
+                                    {formatBackendError(stage.meta.phase)}
+                                  </p>
+                                ) : null}
+                                {firstByteDuration !== null ? (
+                                  <p className="m-0 text-muted-foreground">
+                                    {t('networkTestTool.waterfall.firstByteLatency', {
+                                      duration: durationText(firstByteDuration),
+                                    })}
+                                  </p>
+                                ) : null}
+                                {stageLabelID !== 'http-response' &&
+                                stage.meta &&
+                                Object.keys(stage.meta).length ? (
                                   <pre className="m-0 whitespace-pre-wrap break-all rounded-sm bg-muted/30 p-2 font-mono text-[10px]">
                                     {JSON.stringify(
                                       Object.fromEntries(

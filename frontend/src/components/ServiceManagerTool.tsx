@@ -28,6 +28,7 @@ import {
   Queue,
   Plus,
   TextAa,
+  TextB,
   Trash,
   Stack,
   WarningCircle,
@@ -296,6 +297,8 @@ export default function ServiceManagerTool({
   const [unpicking, setUnpicking] = useState(false);
   const [logDraft, setLogDraft] = useState('');
   const [logQuery, setLogQuery] = useState('');
+  const [wholeWord, setWholeWord] = useState(false);
+  const [highlightLevels, setHighlightLevels] = useState(false);
   const [regex, setRegex] = useState(false);
   const [caseSensitive, setCaseSensitive] = useState(false);
   const [lines, setLines] = useState<ServiceLogLine[]>([]);
@@ -489,7 +492,7 @@ export default function ServiceManagerTool({
         const accepted = incoming.filter(
           (line) =>
             activeMonitorIDs.includes(line.monitorID) &&
-            matchesLog(line, logQuery, regex, caseSensitive),
+            matchesLog(line, logQuery, regex, caseSensitive, wholeWord),
         );
         if (!accepted.length) return current;
         const ids = new Set(current.map((line) => line.sequence));
@@ -503,7 +506,7 @@ export default function ServiceManagerTool({
       off();
       offState();
     };
-  }, [activeMonitorKey, logQuery, regex, caseSensitive, targetID]);
+  }, [activeMonitorKey, logQuery, regex, caseSensitive, wholeWord, targetID]);
   useEffect(() => {
     let cancelled = false;
     const run = async () => {
@@ -515,7 +518,12 @@ export default function ServiceManagerTool({
       try {
         const snapshot = await QueryLogBuffer({
           monitorIDs: activeMonitorIDs,
-          filter: { query: logQuery, regex, caseSensitive, streams: [] },
+          filter: {
+            query: logPattern(logQuery, regex, wholeWord),
+            regex: regex || wholeWord,
+            caseSensitive,
+            streams: [],
+          },
           limit: VISIBLE_LOG_LIMIT,
         });
         if (!cancelled) {
@@ -526,7 +534,7 @@ export default function ServiceManagerTool({
                 (line) =>
                   line.sequence > snapshot.maxSequence &&
                   activeMonitorIDs.includes(line.monitorID) &&
-                  matchesLog(line, logQuery, regex, caseSensitive),
+                  matchesLog(line, logQuery, regex, caseSensitive, wholeWord),
               ),
             ]
               .sort((a, b) => a.sequence - b.sequence)
@@ -547,7 +555,7 @@ export default function ServiceManagerTool({
     return () => {
       cancelled = true;
     };
-  }, [activeMonitorKey, logQuery, regex, caseSensitive]);
+  }, [activeMonitorKey, logQuery, regex, caseSensitive, wholeWord]);
 
   const toolbarTarget = targets.find((target) => target.id === targetID);
 
@@ -1260,6 +1268,10 @@ export default function ServiceManagerTool({
                     applyFilter={() => setLogQuery(logDraft)}
                     query={logQuery}
                     regex={regex}
+                    wholeWord={wholeWord}
+                    setWholeWord={setWholeWord}
+                    highlightLevels={highlightLevels}
+                    setHighlightLevels={setHighlightLevels}
                     setRegex={setRegex}
                     caseSensitive={caseSensitive}
                     setCaseSensitive={setCaseSensitive}
@@ -1571,6 +1583,22 @@ function ResourceList({
       </div>
     );
   const match = (name: string) => !search || name.toLowerCase().includes(search);
+  const containersByID = new Map(
+    [
+      ...(inventory?.containers ?? []),
+      ...(inventory?.dockerGroups ?? []).flatMap((group) => group.containers ?? []),
+    ].map((container) => [container.id, container]),
+  );
+  const matchContainer = (container: DockerContainer) =>
+    match(
+      [
+        container.name,
+        container.id,
+        container.image,
+        container.composeService,
+        ...(container.ports ?? []),
+      ].join(' '),
+    );
   const copyText = async (
     value: string,
     failureKey:
@@ -1594,7 +1622,13 @@ function ResourceList({
     image = '',
   ) => {
     if (allowed && !allowed.has(resourceKey(resource))) return null;
-    if (!match(resource.name || resource.id)) return null;
+    const container = resource.runtime === 'docker' ? containersByID.get(resource.id) : undefined;
+    if (
+      !(container
+        ? matchContainer(container) || match(resource.group ?? '')
+        : match(resource.name || resource.id))
+    )
+      return null;
     if (!matchesStatusFilter(statuses, resource.runtime as Runtime, status)) return null;
     const active =
       selection &&
@@ -1694,13 +1728,13 @@ function ResourceList({
   };
   const group = (item: DockerComposeGroup) => {
     const containers = item.containers ?? [];
-    // 搜索时按 Compose 组名或容器名匹配，未命中的组合整体隐藏。
+    // 搜索组名、容器、服务名与端口，保留命中的组成员。
     const groupMatched = match(item.name || item.id);
     const visibleContainers = containers.filter(
       (container) =>
         matchesStatusFilter(statuses, 'docker', container.status) &&
         (!allowed || allowed.has(resourceKey({ runtime: 'docker', id: container.id }))) &&
-        (groupMatched || match(container.name || container.id)),
+        (groupMatched || matchContainer(container)),
     );
     if (!visibleContainers.length) return null;
     const resource = { runtime: 'docker-compose', id: item.id, name: item.name };
@@ -1708,7 +1742,7 @@ function ResourceList({
       selection?.kind === 'group' &&
       selection.targetID === targetID &&
       resourceKey(selection.resource) === resourceKey(resource);
-    const collapsed = collapsedGroups.has(`${targetID}|${item.id}`);
+    const collapsed = !search && collapsedGroups.has(`${targetID}|${item.id}`);
     const running = containers.some((container) => container.status.toLowerCase() === 'running');
     const groupActions = [running ? 'stop' : 'start', 'restart', 'delete', 'update'];
     return (
@@ -1818,7 +1852,7 @@ function ResourceList({
     (container) =>
       matchesStatusFilter(statuses, 'docker', container.status) &&
       (!allowed || allowed.has(resourceKey({ runtime: 'docker', id: container.id }))) &&
-      match(container.name || container.id),
+      matchContainer(container),
   );
   const pm2Processes = (inventory?.pm2Processes ?? []).filter(
     (process) =>
@@ -1968,6 +2002,10 @@ function ResourcePanel({
   query,
   regex,
   setRegex,
+  wholeWord,
+  setWholeWord,
+  highlightLevels,
+  setHighlightLevels,
   caseSensitive,
   setCaseSensitive,
   onClear,
@@ -1992,6 +2030,10 @@ function ResourcePanel({
   query: string;
   regex: boolean;
   setRegex: (value: boolean) => void;
+  wholeWord: boolean;
+  setWholeWord: (value: boolean) => void;
+  highlightLevels: boolean;
+  setHighlightLevels: (value: boolean) => void;
   caseSensitive: boolean;
   setCaseSensitive: (value: boolean) => void;
   onClear: () => void;
@@ -2025,6 +2067,7 @@ function ResourcePanel({
     [lines, monitorIDs],
   );
   const [confirmingClear, setConfirmingClear] = useState(false);
+  const [advancedOpen, setAdvancedOpen] = useState(false);
   return (
     <>
       <Tabs
@@ -2074,43 +2117,64 @@ function ResourcePanel({
           <div className="grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)]">
             <div className="border-b px-4 py-2">
               <div className="flex items-center gap-2">
-                <Input
-                  className="h-8"
-                  value={logDraft}
-                  onChange={(event) => setLogDraft(event.target.value)}
-                  onKeyDown={(event) => {
-                    if (event.key === 'Enter') applyFilter();
-                  }}
-                  placeholder={t('serviceManagerTool.logFilter')}
-                />
-                <Button variant="outline" size="sm" onClick={applyFilter}>
-                  {t('serviceManagerTool.apply')}
-                </Button>
-                <ToggleGroup
-                  multiple
-                  variant="outline"
-                  size="sm"
-                  value={[regex ? 'regex' : '', caseSensitive ? 'case' : ''].filter(Boolean)}
-                  onValueChange={(value) => {
-                    setRegex(value.includes('regex'));
-                    setCaseSensitive(value.includes('case'));
-                  }}
+                <div className="relative min-w-0 flex-1">
+                  <Input
+                    className="h-8 pr-28"
+                    value={logDraft}
+                    onChange={(event) => setLogDraft(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter' && !event.nativeEvent.isComposing) applyFilter();
+                    }}
+                    placeholder={t('serviceManagerTool.logFilter')}
+                  />
+                  <ToggleGroup
+                    multiple
+                    className="absolute top-1/2 right-1 -translate-y-1/2"
+                    size="sm"
+                    value={[
+                      wholeWord ? 'word' : '',
+                      regex ? 'regex' : '',
+                      caseSensitive ? 'case' : '',
+                    ].filter(Boolean)}
+                    onValueChange={(value) => {
+                      setWholeWord(value.includes('word'));
+                      setRegex(value.includes('regex'));
+                      setCaseSensitive(value.includes('case'));
+                    }}
+                  >
+                    <ToggleGroupItem
+                      value="word"
+                      title={t('serviceManagerTool.wholeWord')}
+                      aria-label={t('serviceManagerTool.wholeWord')}
+                    >
+                      <TextB weight="duotone" />
+                    </ToggleGroupItem>
+                    <ToggleGroupItem
+                      value="regex"
+                      title={t('serviceManagerTool.regex')}
+                      aria-label={t('serviceManagerTool.regex')}
+                    >
+                      <Asterisk weight="duotone" />
+                    </ToggleGroupItem>
+                    <ToggleGroupItem
+                      value="case"
+                      title={t('serviceManagerTool.caseSensitive')}
+                      aria-label={t('serviceManagerTool.caseSensitive')}
+                    >
+                      <TextAa weight="duotone" />
+                    </ToggleGroupItem>
+                  </ToggleGroup>
+                </div>
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  className="flex-none"
+                  title={t('serviceManagerTool.advancedSettings')}
+                  aria-label={t('serviceManagerTool.advancedSettings')}
+                  onClick={() => setAdvancedOpen(true)}
                 >
-                  <ToggleGroupItem
-                    value="regex"
-                    title={t('serviceManagerTool.regex')}
-                    aria-label={t('serviceManagerTool.regex')}
-                  >
-                    <Asterisk weight="duotone" />
-                  </ToggleGroupItem>
-                  <ToggleGroupItem
-                    value="case"
-                    title={t('serviceManagerTool.caseSensitive')}
-                    aria-label={t('serviceManagerTool.caseSensitive')}
-                  >
-                    <TextAa weight="duotone" />
-                  </ToggleGroupItem>
-                </ToggleGroup>
+                  <GearSix weight="duotone" />
+                </Button>
                 {!scope ? (
                   <Button
                     variant="ghost"
@@ -2138,14 +2202,32 @@ function ResourcePanel({
             </div>
             <LogList
               lines={visibleLines}
-              query={query}
-              regex={regex}
+              query={logPattern(query, regex, wholeWord)}
+              regex={regex || wholeWord}
+              highlightLevels={highlightLevels}
               caseSensitive={caseSensitive}
               sourceLabels={sourceLabels}
             />
           </div>
         </TabsContent>
       </Tabs>
+      <Dialog open={advancedOpen} onOpenChange={setAdvancedOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t('serviceManagerTool.advancedSettings')}</DialogTitle>
+          </DialogHeader>
+          <Label className="flex items-center gap-2">
+            <Checkbox
+              checked={highlightLevels}
+              onCheckedChange={(checked) => setHighlightLevels(checked === true)}
+            />
+            {t('serviceManagerTool.highlightLevels')}
+          </Label>
+          <DialogDescription>
+            {t('serviceManagerTool.highlightLevelsDescription')}
+          </DialogDescription>
+        </DialogContent>
+      </Dialog>
       <ConfirmDialog
         open={confirmingClear}
         onOpenChange={setConfirmingClear}
@@ -2735,12 +2817,14 @@ function LogList({
   regex,
   caseSensitive,
   sourceLabels,
+  highlightLevels,
 }: {
   lines: ServiceLogLine[];
   query: string;
   regex: boolean;
   caseSensitive: boolean;
   sourceLabels?: Map<string, string>;
+  highlightLevels: boolean;
 }) {
   const { t } = useTranslation();
   const [viewport, setViewport] = useState<HTMLElement | null>(null);
@@ -2854,7 +2938,7 @@ function LogList({
                   key={row.key}
                   ref={virtualizer.measureElement}
                   data-index={row.index}
-                  className={`w-full border-b py-1 ${LOG_GRID}`}
+                  className={`w-full border-b py-1 ${LOG_GRID} ${highlightLevels ? logLevelBackground(line.text) : ''}`}
                 >
                   <WheelText className="text-muted-foreground">{logTime(line)}</WheelText>
                   <WheelText className="text-primary">
@@ -2967,11 +3051,29 @@ function logMatchRanges(
   }
   return ranges;
 }
-function matchesLog(line: ServiceLogLine, query: string, regex: boolean, caseSensitive: boolean) {
+function logPattern(query: string, regex: boolean, wholeWord: boolean) {
+  if (!wholeWord || !query) return query;
+  const source = regex ? query : query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return `\\b(${source})\\b`;
+}
+function logLevelBackground(text: string) {
+  const plain = ansiPlainText(text);
+  if (/\bERROR\b/i.test(plain)) return 'bg-destructive/15';
+  if (/\bWARN(?:ING)?\b/i.test(plain)) return 'bg-warning/20';
+  return '';
+}
+function matchesLog(
+  line: ServiceLogLine,
+  query: string,
+  regex: boolean,
+  caseSensitive: boolean,
+  wholeWord: boolean,
+) {
   if (!query) return true;
   const text = ansiPlainText(line.text);
   try {
-    if (regex) return new RegExp(query, caseSensitive ? '' : 'i').test(text);
+    if (regex || wholeWord)
+      return new RegExp(logPattern(query, regex, wholeWord), caseSensitive ? '' : 'i').test(text);
     return (caseSensitive ? text : text.toLowerCase()).includes(
       caseSensitive ? query : query.toLowerCase(),
     );
