@@ -201,6 +201,9 @@ func TestGetDockerStatusUsesCLIWithoutDaemon(t *testing.T) {
 		runner: func(_ context.Context, name string, args ...string) ([]byte, error) {
 			commandName = name
 			commandArgs = append([]string(nil), args...)
+			if name == "ssh" {
+				return []byte("x86_64\nDocker version 27.0.0, build deadbeef\n"), nil
+			}
 			return []byte("Docker version 27.0.0, build deadbeef\n"), nil
 		},
 	}
@@ -212,7 +215,7 @@ func TestGetDockerStatusUsesCLIWithoutDaemon(t *testing.T) {
 		t.Fatalf("Docker 状态命令为 %q %#v，期望 docker --version", commandName, commandArgs)
 	}
 	status = service.GetDockerStatus("remote")
-	if !status.Available || commandName != "ssh" || !reflect.DeepEqual(commandArgs, []string{"-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=yes", "--", "dev-box", "'docker' '--version'"}) {
+	if !status.Available || status.Architecture != "amd64" || status.LocalArchitecture == "" || commandName != "ssh" || !reflect.DeepEqual(commandArgs, []string{"-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=yes", "--", "dev-box", shellQuote("sh") + " " + shellQuote("-c") + " " + shellQuote("uname -m && exec "+shellQuote("docker")+" --version")}) {
 		t.Fatalf("远程 Docker 状态命令为 %#v %#v，状态为 %#v", commandName, commandArgs, status)
 	}
 }
@@ -222,10 +225,10 @@ func TestImageSourceConnectionTestsDraftWithoutPersistence(t *testing.T) {
 	service := NewImageService(config)
 	defer service.shutdown()
 	service.runner = func(_ context.Context, name string, args ...string) ([]byte, error) {
-		if name != "ssh" || !reflect.DeepEqual(args, []string{"-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=yes", "--", "dev-box", "'docker' '--version'"}) {
+		if name != "ssh" || !reflect.DeepEqual(args, []string{"-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=yes", "--", "dev-box", shellQuote("sh") + " " + shellQuote("-c") + " " + shellQuote("uname -m && exec "+shellQuote("docker")+" --version")}) {
 			t.Fatalf("SSH 连接测试命令为 %q %#v", name, args)
 		}
-		return []byte("Docker version 27.0.0\n"), nil
+		return []byte("aarch64\nDocker version 27.0.0\n"), nil
 	}
 
 	if err := service.TestImageSourceConnection(ImageSource{ID: "ssh:connection-test", Kind: "ssh", SSHHost: "dev-box"}); err != nil {

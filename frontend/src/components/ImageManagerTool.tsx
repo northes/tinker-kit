@@ -27,6 +27,8 @@ import {
   StartImageExport,
   StartImageExports,
   StartImageImports,
+  PrepareImageImports,
+  StartRegistryImagePulls,
   StartImagePulls,
   StartImageTagChanges,
   TestImageSourceConnection,
@@ -41,11 +43,13 @@ import type {
   DockerDeleteTarget,
   DockerStatus,
   ImageSource,
+  ImageImportEntry,
   ImageTask,
   ImageTaskSnapshot,
   SSHProfile,
 } from '../../bindings/changeme/models';
 import { applyImageTaskSnapshot } from '../lib/image-tasks';
+import { imageArchitectures } from '../lib/image-architectures';
 import {
   Reveal,
   ToolLayout,
@@ -79,6 +83,7 @@ import {
   DialogTitle,
 } from './ui/dialog';
 import { Input } from './ui/input';
+import { ImageImportDialog } from './ImageImportDialog';
 import { Label } from './ui/label';
 import {
   Select,
@@ -199,6 +204,7 @@ type ImageOperationDialogState =
       type: 'pull-image';
       sourceConfigKey: string;
       value: string;
+      target: string;
     }
   | null;
 
@@ -1144,6 +1150,11 @@ export default function ImageManagerTool({
   const [batchExportStarting, setBatchExportStarting] = useState(false);
   const [pullStarting, setPullStarting] = useState(false);
   const [importStarting, setImportStarting] = useState(false);
+  const [importPlan, setImportPlan] = useState<{
+    sourceConfigKey: string;
+    entries: ImageImportEntry[];
+  } | null>(null);
+  const importRequest = useRef<ReturnType<typeof PrepareImageImports> | null>(null);
   const [taskClock, setTaskClock] = useState(Date.now);
   const sourceConfigKey = JSON.stringify({
     source,
@@ -1170,6 +1181,17 @@ export default function ImageManagerTool({
     setLoadError('');
     setReloadNonce((value) => value + 1);
   }, [source.id, sourceProfileMissing, t]);
+  const currentSourceConfigKey = useRef(sourceConfigKey);
+  useEffect(() => {
+    currentSourceConfigKey.current = sourceConfigKey;
+    importRequest.current?.cancel();
+    importRequest.current = null;
+    setImportStarting(false);
+    setImportPlan(null);
+    return () => {
+      importRequest.current?.cancel();
+    };
+  }, [sourceConfigKey, active]);
   const refreshList = useCallback(() => {
     requestWatchReload();
   }, [requestWatchReload]);
@@ -1816,9 +1838,9 @@ export default function ImageManagerTool({
   };
 
   const openPullImageDialog = () => {
-    if (actionBlocked || !sourceSupportsDockerMutations) return;
+    if (actionBlocked) return;
     setOperationError('');
-    setOperationDialog({ type: 'pull-image', sourceConfigKey, value: '' });
+    setOperationDialog({ type: 'pull-image', sourceConfigKey, value: '', target: '' });
   };
 
   // 字段表单按操作类型唯一渲染，页脚确认按钮通过 form 关联，回车即可提交。
@@ -1835,7 +1857,7 @@ export default function ImageManagerTool({
     renamePreview.length > 0 && renamePreview.every((item) => item.status === 'ok');
 
   const submitOperation = () => {
-    if (!operationDialog || busy) return;
+    if (!operationDialog || busy || pullStarting) return;
     if (operationDialog.sourceConfigKey !== sourceConfigKey) {
       toast.add({ title: t('imageManagerTool.sourceChangedRefresh'), type: 'warning' });
       setOperationDialog(null);
@@ -1880,9 +1902,17 @@ export default function ImageManagerTool({
         setOperationError(t('imageManagerTool.operationInputRequired'));
         return;
       }
-      setOperationDialog(null);
-      setOperationError('');
-      void runPullRefs([value]);
+      if (isRegistrySource) {
+        if (!operationDialog.target.trim()) {
+          setOperationError(t('imageManagerTool.operationInputRequired'));
+          return;
+        }
+        void runRegistryPull(value, operationDialog.target.trim());
+      } else {
+        setOperationDialog(null);
+        setOperationError('');
+        void runPullRefs([value]);
+      }
       return;
     }
     if (!value) {
@@ -1966,19 +1996,17 @@ export default function ImageManagerTool({
   const activeTasks = visibleTasks.filter(
     (task) => task.status === 'queued' || task.status === 'running',
   );
-  const taskUsesBytes = (task: ImageTask) => task.type === 'export' || task.type === 'load';
+  const taskUsesBytes = (task: ImageTask) => task.progressUnit === 'bytes';
   const taskDone = (task: ImageTask) => (taskUsesBytes(task) ? task.bytes : task.completed);
   const taskPercent = (task: ImageTask) => {
     if (task.status === 'success') return 100;
     // docker pull 在管道下只输出层状态，层数会随发现新层（含“已存在”的层先报完成）
     // 回退，用 completed/total 会先冲到 100% 再掉回来；拉取改用不确定进度，
     // 进度文本仍显示已完成的层数。
-    if (task.type === 'pull') return null;
+    if (task.type === 'pull' || task.totalEstimated) return null;
     if (task.total <= 0) return null;
     const percent = (taskDone(task) / task.total) * 100;
-    return taskUsesBytes(task) && task.totalEstimated
-      ? Math.min(99, percent)
-      : Math.min(100, percent);
+    return Math.min(100, percent);
   };
   const taskProgress =
     activeTasks.length === 1 && activeTasks[0].total > 0 ? taskPercent(activeTasks[0]) : null;
@@ -2065,29 +2093,62 @@ export default function ImageManagerTool({
   };
   const runPull = (requestedRows: ImageRow[]) =>
     runPullRefs(requestedRows.map((row) => row.reference));
-  const runImport = async () => {
-    if (actionBlocked || !sourceSupportsDockerMutations || importStarting) return;
-    setImportStarting(true);
+  const runRegistryPull = async (reference: string, target: string) => {
+    if (pullStarting) return;
+    setPullStarting(true);
+    setOperationError('');
+    const key = sourceConfigKey;
     try {
-      const result = await StartImageImports(source.id);
-      if (result.started > 0) {
-        applyTasks(result.snapshot);
-        record(
-          'image-manager',
-          t('imageManagerTool.importTar'),
-          t('imageManagerTool.selectedCount', { count: result.started }),
-          source.id,
-        );
-      }
-    } catch (error) {
-      toast.add({
-        title: t('imageManagerTool.importFailed'),
-        description: errorMessage(error) || undefined,
-        type: 'error',
-      });
+      const result = await StartRegistryImagePulls(source.id, [{ source: reference, target }]);
+      applyTasks(result.snapshot);
+      if (currentSourceConfigKey.current === key) setOperationDialog(null);
+      record('image-manager', t('imageManagerTool.pull'), `${reference} → ${target}`, source.id);
+    } catch (reason) {
+      if (currentSourceConfigKey.current === key) setOperationError(errorMessage(reason));
     } finally {
-      setImportStarting(false);
+      setPullStarting(false);
     }
+  };
+  const runImport = async () => {
+    if (actionBlocked || importStarting) return;
+    setImportStarting(true);
+    const key = sourceConfigKey;
+    const request = PrepareImageImports(source.id);
+    importRequest.current = request;
+    try {
+      const entries = (await request) ?? [];
+      if (currentSourceConfigKey.current === key && entries.length > 0) {
+        setImportPlan({ sourceConfigKey: key, entries });
+      }
+    } catch (reason) {
+      if (!(reason instanceof CancelError) && currentSourceConfigKey.current === key) {
+        toast.add({
+          title: t('imageManagerTool.importFailed'),
+          description: errorMessage(reason),
+          type: 'error',
+        });
+      }
+    } finally {
+      if (importRequest.current === request) {
+        importRequest.current = null;
+        setImportStarting(false);
+      }
+    }
+  };
+  const submitImport = async (entries: ImageImportEntry[]) => {
+    if (!importPlan || importPlan.sourceConfigKey !== sourceConfigKey) {
+      throw new Error(t('imageManagerTool.sourceChangedRefresh'));
+    }
+    const key = sourceConfigKey;
+    const result = await StartImageImports(source.id, entries);
+    applyTasks(result.snapshot);
+    record(
+      'image-manager',
+      t('imageManagerTool.importTar'),
+      t('imageManagerTool.importTasksStarted', { total: result.started }),
+      source.id,
+    );
+    if (currentSourceConfigKey.current === key) setImportPlan(null);
   };
 
   return (
@@ -2161,7 +2222,7 @@ export default function ImageManagerTool({
               <Button
                 variant="outline"
                 className="h-[30px] flex-none px-[11px] text-[11px]"
-                disabled={actionBlocked || !sourceSupportsDockerMutations}
+                disabled={actionBlocked || pullStarting}
                 onClick={openPullImageDialog}
               >
                 <CloudArrowDown data-icon="inline-start" weight="duotone" />
@@ -2170,7 +2231,7 @@ export default function ImageManagerTool({
               <Button
                 variant="outline"
                 className="h-[30px] flex-none px-[11px] text-[11px]"
-                disabled={actionBlocked || !sourceSupportsDockerMutations || importStarting}
+                disabled={actionBlocked || importStarting}
                 onClick={() => void runImport()}
               >
                 {importStarting ? (
@@ -2247,7 +2308,7 @@ export default function ImageManagerTool({
               className="min-h-0 flex-1 overscroll-contain [padding-inline-end:var(--overlay-scrollbar-size)]"
               onViewport={setImageListViewport}
             >
-              <Table className="min-w-[640px] table-fixed" containerClassName="overflow-visible">
+              <Table className="min-w-[640px]" containerClassName="overflow-visible">
                 <TableHeader className="sticky top-0 z-10 bg-background">
                   <TableRow>
                     <TableHead className="w-10 whitespace-nowrap">
@@ -2314,6 +2375,7 @@ export default function ImageManagerTool({
                     const dockerOperationAllowed =
                       sourceSupportsDockerMutations && tagOperationAllowed;
                     const rowLabel = imageRowLabel(row, unnamed);
+                    const architectures = imageArchitectures(row.image);
                     return (
                       <ContextMenu key={row.key}>
                         <ContextMenuTrigger
@@ -2350,20 +2412,30 @@ export default function ImageManagerTool({
                             </span>
                           </TableCell>
                           <TableCell className="min-w-40">
-                            <button
-                              type="button"
-                              className="inline-flex min-w-0 max-w-full cursor-pointer truncate text-left text-foreground hover:text-primary hover:underline hover:underline-offset-4 disabled:cursor-not-allowed disabled:opacity-50"
-                              disabled={interactionBlocked}
-                              title={t('imageManagerTool.viewName', {
-                                name: rowLabel,
-                              })}
-                              aria-label={t('imageManagerTool.viewName', {
-                                name: rowLabel,
-                              })}
-                              onClick={() => void viewRow(row)}
-                            >
-                              <span className="truncate">{rowLabel}</span>
-                            </button>
+                            <div className="inline-flex items-center gap-2 whitespace-nowrap">
+                              <button
+                                type="button"
+                                className="cursor-pointer text-left text-foreground hover:text-primary hover:underline hover:underline-offset-4 disabled:cursor-not-allowed disabled:opacity-50"
+                                disabled={interactionBlocked}
+                                title={t('imageManagerTool.viewName', { name: rowLabel })}
+                                aria-label={t('imageManagerTool.viewName', { name: rowLabel })}
+                                onClick={() => void viewRow(row)}
+                              >
+                                {rowLabel}
+                              </button>
+                              {architectures.length > 0 ? (
+                                <Badge
+                                  variant="secondary"
+                                  title={t('imageManagerTool.architectureHint', {
+                                    architectures: architectures.join(', '),
+                                  })}
+                                >
+                                  {architectures.length === 1
+                                    ? architectures[0]
+                                    : t('imageManagerTool.architectureMulti')}
+                                </Badge>
+                              ) : null}
+                            </div>
                           </TableCell>
                           <TableCell className="whitespace-nowrap text-muted-foreground">
                             {formatBytes(imageSizeBytes(row.image), i18n.language) ||
@@ -2549,7 +2621,7 @@ export default function ImageManagerTool({
         <Dialog
           open={operationDialog !== null}
           onOpenChange={(open) => {
-            if (!open && !busy) {
+            if (!open && !busy && !pullStarting) {
               setOperationDialog(null);
               setOperationError('');
             }
@@ -2585,7 +2657,11 @@ export default function ImageManagerTool({
                       ? t('imageManagerTool.copyTagBody', {
                           count: operationDialog.rows.length,
                         })
-                      : t('imageManagerTool.pullImageBody')}
+                      : t(
+                          isRegistrySource
+                            ? 'imageManagerTool.registryPullBody'
+                            : 'imageManagerTool.pullImageBody',
+                        )}
               </DialogDescription>
             </DialogHeader>
             {operationDialog?.type === 'push' && operationDialog.changes.length === 1 ? (
@@ -2827,6 +2903,7 @@ export default function ImageManagerTool({
                 </Label>
                 <Input
                   id="image-operation-reference"
+                  disabled={pullStarting}
                   value={operationDialog.value}
                   placeholder={t('imageManagerTool.imageReferencePlaceholder')}
                   autoFocus
@@ -2840,6 +2917,28 @@ export default function ImageManagerTool({
                     );
                   }}
                 />
+                {isRegistrySource ? (
+                  <>
+                    <Label htmlFor="image-operation-pull-target">
+                      {t('imageManagerTool.importTarget')}
+                    </Label>
+                    <Input
+                      id="image-operation-pull-target"
+                      value={operationDialog.target}
+                      placeholder={t('imageManagerTool.importTargetPlaceholder')}
+                      disabled={pullStarting}
+                      required
+                      onChange={(event) => {
+                        setOperationError('');
+                        setOperationDialog((current) =>
+                          current?.type === 'pull-image'
+                            ? { ...current, target: event.target.value }
+                            : current,
+                        );
+                      }}
+                    />
+                  </>
+                ) : null}
               </form>
             ) : null}
             {operationDialog?.type === 'push' && operationDialog.changes.length > 1 ? (
@@ -2867,7 +2966,7 @@ export default function ImageManagerTool({
             <DialogFooter>
               <Button
                 variant="outline"
-                disabled={busy !== null}
+                disabled={busy !== null || pullStarting}
                 onClick={() => {
                   setOperationDialog(null);
                   setOperationError('');
@@ -2878,15 +2977,26 @@ export default function ImageManagerTool({
               <Button
                 type="submit"
                 form={operationFormID}
-                disabled={busy !== null || (operationDialog?.type === 'rename' && !renameReady)}
+                disabled={
+                  busy !== null ||
+                  pullStarting ||
+                  (operationDialog?.type === 'rename' && !renameReady)
+                }
               >
-                {busy ? <Spinner data-icon="inline-start" /> : null}
+                {busy || pullStarting ? <Spinner data-icon="inline-start" /> : null}
                 {t('imageManagerTool.confirm')}
               </Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
       </ToolLayout>
+      {importPlan && importPlan.sourceConfigKey === sourceConfigKey ? (
+        <ImageImportDialog
+          entries={importPlan.entries}
+          onClose={() => setImportPlan(null)}
+          onSubmit={submitImport}
+        />
+      ) : null}
       <TargetHostManagerDialog<ImageSource, SourceDraft>
         open={manageOpen}
         onOpenChange={setManageOpen}

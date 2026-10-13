@@ -748,6 +748,17 @@ func dockerImageFromDetail(base DockerImage, detail DockerImageDetail) DockerIma
 	if detail.CreatedAt != "" {
 		updated.CreatedAt = detail.CreatedAt
 	}
+	architecture := detail.Metadata.Architecture
+	if architecture == "" {
+		architecture = detail.Architecture
+	}
+	if architecture = normalizeImageArchitecture(architecture); architecture != "" {
+		os := detail.Metadata.OS
+		if os == "" {
+			os = detail.OS
+		}
+		updated.Platforms = []RegistryPlatform{{Architecture: architecture, OS: os, Variant: detail.Metadata.Variant}}
+	}
 	return updated
 }
 
@@ -1034,6 +1045,7 @@ func (s *ImageService) registryDetailWorker(ctx context.Context, worker *watchWo
 		Size:       metadata.Size,
 		SizeBytes:  metadata.SizeBytes,
 		CreatedAt:  metadata.CreatedAt,
+		Platforms:  metadata.Platforms,
 	}
 	var shouldEmit bool
 	func() {
@@ -1075,7 +1087,27 @@ func dockerImagesEqual(a, b DockerImage) bool {
 	if a.ID != b.ID || a.Repository != b.Repository || a.Digest != b.Digest || a.MediaType != b.MediaType || a.SizeType != b.SizeType || a.SizeBytes != b.SizeBytes || a.CreatedAt != b.CreatedAt {
 		return false
 	}
+	if !imagePlatformSetsEqual(a.Platforms, b.Platforms) {
+		return false
+	}
 	return stringSetsEqual(a.Tags, b.Tags)
+}
+
+func imagePlatformSetsEqual(a, b []RegistryPlatform) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	counts := make(map[RegistryPlatform]int, len(a))
+	for _, platform := range a {
+		counts[platform]++
+	}
+	for _, platform := range b {
+		counts[platform]--
+		if counts[platform] < 0 {
+			return false
+		}
+	}
+	return true
 }
 
 func stringSetsEqual(a, b []string) bool {

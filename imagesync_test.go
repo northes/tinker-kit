@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -134,9 +135,9 @@ func registryListServer(t *testing.T) (*httptest.Server, *atomic.Bool, *atomic.B
 	failCatalog := &atomic.Bool{}
 	failTags := &atomic.Bool{}
 	configBlob := []byte(`{"architecture":"amd64","os":"linux","created":"2026-01-01T00:00:00Z","config":{"Labels":{"app":"demo"},"Cmd":["run"],"Entrypoint":["/bin/demo"]}}`)
-	configDigest := fmt.Sprintf("sha256:%064x", 1)
+	configDigest := fmt.Sprintf("sha256:%x", sha256.Sum256(configBlob))
 	manifest := []byte(fmt.Sprintf(`{"schemaVersion":2,"mediaType":"application/vnd.oci.image.manifest.v1+json","config":{"mediaType":"application/vnd.oci.image.config.v1+json","digest":%q,"size":%d},"layers":[]}`, configDigest, len(configBlob)))
-	digest := fmt.Sprintf("sha256:%064x", 2)
+	digest := fmt.Sprintf("sha256:%x", sha256.Sum256(manifest))
 	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		username, password, ok := r.BasicAuth()
 		if !ok || username != "user" || password != "password" {

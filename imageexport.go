@@ -36,6 +36,7 @@ type ImageTask struct {
 	ImageID        string `json:"imageID"`
 	Status         string `json:"status"`
 	Stage          string `json:"stage"`
+	ProgressUnit   string `json:"progressUnit"`
 	Completed      int64  `json:"completed"`
 	Total          int64  `json:"total"`
 	TotalEstimated bool   `json:"totalEstimated"`
@@ -79,6 +80,8 @@ type imageTaskState struct {
 	exportSource      ImageSource
 	exportCLIPath     string
 	hasExportSnapshot bool
+	importEntries     []ImageImportEntry
+	importPublished   map[string]string
 }
 
 func (s *ImageService) initImageTasks() {
@@ -154,6 +157,12 @@ func (s *ImageService) newImageTask(taskType, sourceID, imageID string) string {
 }
 
 func (s *ImageService) createImageTask(task imageTaskState) string {
+	if task.ProgressUnit == "" {
+		task.ProgressUnit = "items"
+		if task.Type == imageTaskTypeExport || task.Type == imageTaskTypeLoad {
+			task.ProgressUnit = "bytes"
+		}
+	}
 	now := time.Now().UTC().Format(time.RFC3339Nano)
 	id := newTaskID()
 	task.ID = id
@@ -299,6 +308,8 @@ func (s *ImageService) RetryImageTask(id string) (ImageExportResult, error) {
 		return ImageExportResult{}, userError("errors.imageExport.taskNotRetryable")
 	}
 	taskType, sourceID, imageID, target := task.Type, task.SourceID, task.ImageID, task.Path
+	importEntries := append([]ImageImportEntry(nil), task.importEntries...)
+	published := cloneImportPublished(task.importPublished)
 	s.taskMu.Unlock()
 
 	if taskType == imageTaskTypeExport {
@@ -311,14 +322,14 @@ func (s *ImageService) RetryImageTask(id string) (ImageExportResult, error) {
 	switch taskType {
 	case imageTaskTypePull:
 		if source.Kind == "registry" {
-			return ImageExportResult{}, userError("errors.imageExport.registryPullUnsupported")
+			return s.StartRegistryImagePulls(sourceID, []DockerImageReferenceChange{{Source: imageID, Target: target}})
 		}
 		s.enqueueImagePullWithSnapshot(sourceID, imageID, source, cliPath)
 	case imageTaskTypeLoad:
 		if target == "" {
 			return ImageExportResult{}, userError("errors.imageExport.exportTaskIncomplete")
 		}
-		s.enqueueImageImportWithSnapshot(sourceID, target, source, cliPath)
+		return s.startImageImports(sourceID, importEntries, published)
 	case imageTaskTypeTagCopy, imageTaskTypeTagRename:
 		if imageID == "" || target == "" {
 			return ImageExportResult{}, userError("errors.imageExport.exportTaskIncomplete")
@@ -1253,139 +1264,6 @@ func (s *ImageService) runImageTagChange(ctx context.Context, taskID string, cha
 		// 换 Tag 成功会改变镜像列表，重扫后前端才能看到结果。
 		s.requestSourceRefresh(source.ID)
 	}
-}
-
-// StartImageImports 选择 tar 包并创建导入任务；每个文件一个 docker image load。
-func (s *ImageService) StartImageImports(sourceID string) (ImageExportResult, error) {
-	source, cliPath, _, err := s.sourceSnapshot(sourceID)
-	if err != nil {
-		return ImageExportResult{}, err
-	}
-	if source.Kind == "registry" {
-		return ImageExportResult{}, userError("errors.imageExport.registryImportUnsupported")
-	}
-	app := application.Get()
-	if app == nil || app.Dialog == nil {
-		return ImageExportResult{}, userError("errors.common.notInitialized")
-	}
-	dialog := app.Dialog.OpenFile().
-		CanChooseDirectories(false).
-		CanChooseFiles(true).
-		AddFilter("Docker tar", "*.tar")
-	if window := app.Window.Current(); window != nil {
-		dialog.AttachToWindow(window)
-	}
-	paths, err := dialog.PromptForMultipleSelection()
-	if err != nil {
-		return ImageExportResult{}, userErrorCause("errors.imageExport.selectImportFiles", err)
-	}
-	if len(paths) == 0 {
-		return ImageExportResult{}, nil
-	}
-	return s.enqueueImageImportsWithSnapshot(sourceID, paths, source, cliPath)
-}
-
-// enqueueImageImportsWithSnapshot 校验导入文件后为每个 tar 创建独立任务；路径去重。
-func (s *ImageService) enqueueImageImportsWithSnapshot(sourceID string, paths []string, source ImageSource, cliPath string) (ImageExportResult, error) {
-	seen := make(map[string]bool, len(paths))
-	unique := make([]string, 0, len(paths))
-	for _, path := range paths {
-		cleaned := strings.TrimSpace(path)
-		if cleaned == "" || seen[cleaned] {
-			continue
-		}
-		info, err := os.Stat(cleaned)
-		if err != nil {
-			return ImageExportResult{}, userErrorCause("errors.imageExport.readImportFile", err)
-		}
-		if !info.Mode().IsRegular() {
-			return ImageExportResult{}, userErrorParams("errors.imageExport.importPathNotRegular", map[string]any{"path": cleaned})
-		}
-		seen[cleaned] = true
-		unique = append(unique, cleaned)
-	}
-	if len(unique) == 0 {
-		return ImageExportResult{}, userError("errors.imageExport.noImportFilesSelected")
-	}
-	for _, path := range unique {
-		s.enqueueImageImportWithSnapshot(sourceID, path, source, cliPath)
-	}
-	return ImageExportResult{Started: len(unique), Snapshot: s.GetImageTasks()}, nil
-}
-
-func (s *ImageService) enqueueImageImportWithSnapshot(sourceID, path string, source ImageSource, cliPath string) {
-	ctx, cancel := context.WithCancel(s.serviceContext())
-	var size int64
-	if info, err := os.Stat(path); err == nil {
-		size = info.Size()
-	}
-	taskID := s.createImageTask(imageTaskState{
-		ImageTask: ImageTask{
-			Type:           imageTaskTypeLoad,
-			SourceID:       sourceID,
-			ImageID:        filepath.Base(path),
-			Path:           path,
-			Total:          max(size, int64(0)),
-			TotalEstimated: size > 0,
-		},
-		cancel: cancel,
-	})
-	s.exportWG.Add(1)
-	go func() {
-		defer s.exportWG.Done()
-		s.runImageImport(ctx, taskID, path, source, cliPath)
-	}()
-}
-
-func (s *ImageService) runImageImport(ctx context.Context, taskID, path string, source ImageSource, cliPath string) {
-	if !s.acquireTaskSlot(ctx, taskID) {
-		return
-	}
-	if s.taskScheduler != nil {
-		defer s.taskScheduler.Release()
-	}
-	s.updateTask(taskID, func(task *imageTaskState) {
-		task.Status = imageTaskRunning
-		task.Stage = "loading"
-	})
-	file, err := os.Open(path)
-	if err != nil {
-		s.failImageImport(taskID, userErrorCause("errors.imageExport.openImportFile", err))
-		return
-	}
-	defer file.Close()
-	err = s.streamDockerLoad(ctx, source, cliPath, &progressReader{reader: file, onRead: s.importProgress(taskID)})
-	switch {
-	case errors.Is(err, context.Canceled):
-		s.updateTask(taskID, func(task *imageTaskState) {
-			task.Status = imageTaskCanceled
-			task.Stage = "canceled"
-			task.Error = ""
-			task.cancel = nil
-		})
-	case err != nil:
-		s.failImageImport(taskID, err)
-	default:
-		s.updateTask(taskID, func(task *imageTaskState) {
-			task.Status = imageTaskSuccess
-			task.Stage = "done"
-			if task.Total > 0 {
-				task.Bytes = task.Total
-			}
-			task.cancel = nil
-		})
-		// 导入成功后可能新增镜像或 tag，必须重扫才能在前端看到变化。
-		s.requestSourceRefresh(source.ID)
-	}
-}
-
-func (s *ImageService) failImageImport(taskID string, err error) {
-	s.updateTask(taskID, func(task *imageTaskState) {
-		task.Status = imageTaskFailed
-		task.Stage = "failed"
-		task.Error = err.Error()
-		task.cancel = nil
-	})
 }
 
 // importProgress 返回读取本地 tar 时的节流进度回调，用已读字节更新任务进度。

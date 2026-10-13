@@ -549,7 +549,11 @@
     "quantity": "Quantity",
     "separator": "Separator",
     "quote": "Quotes",
-    "quotes": { "none": "No quotes", "single": "Single quotes", "double": "Double quotes" },
+    "quotes": {
+      "none": "No quotes",
+      "single": "Single quotes",
+      "double": "Double quotes"
+    },
     "output": "Generated output",
     "outputPlaceholder": "Click Generate to create text",
     "actions": "Text generator actions",
@@ -558,7 +562,10 @@
     "managerTitle": "Manage custom sources",
     "sourceName": "Source name",
     "mode": "Selection mode",
-    "modes": { "character": "By character", "line": "By line" },
+    "modes": {
+      "character": "By character",
+      "line": "By line"
+    },
     "content": "Content",
     "noCustomSources": "No custom sources",
     "deleteTitle": "Delete custom source",
@@ -1037,7 +1044,7 @@
     "emptyValue": "—",
     "inspected": "Inspect image",
     "refreshed": "Refresh image list",
-    "exportTar": "Export tar archive",
+    "exportTar": "Export tar",
     "batchExport": "Export selected as tar",
     "exportFailed": "Failed to export image",
     "pullUpdate": "Pull update",
@@ -1056,7 +1063,7 @@
     "backgroundTasksCount": "Background tasks: {{count}}",
     "cancelTask": "Cancel",
     "retryExport": "Retry",
-    "taskStageExport": "Export tar archive",
+    "taskStageExport": "Export tar",
     "taskStagePull": "Pull image",
     "taskStageLoad": "Import image",
     "taskStageDetail": "Load image details",
@@ -1073,7 +1080,17 @@
     "taskStatusRunning": "Running",
     "taskStatusSuccess": "Completed",
     "taskStatusFailed": "Failed",
-    "taskStatusCanceled": "Canceled"
+    "taskStatusCanceled": "Canceled",
+    "importPreviewTitle": "Confirm image import",
+    "importPreviewBody": "Check the target repository and tag. Rename incoming images when the target already exists.",
+    "importTarget": "Target repository:tag",
+    "importTargetPlaceholder": "e.g. myapp:1.0-amd64",
+    "importRenameRequired": "This reference already exists. Change the target repository or tag.",
+    "importDuplicateTargets": "Incoming images have duplicate target references. Give each a distinct name.",
+    "importTasksStarted": "Created {{total}} image import tasks",
+    "registryPullBody": "Copy the source image to this registry, preserving all platforms. Credentials for private sources come from configured registry sources.",
+    "architectureMulti": "Multi-arch",
+    "architectureHint": "Image architectures: {{architectures}}"
   },
   "serviceManagerTool": {
     "title": "Containers & Services",
@@ -1105,9 +1122,14 @@
     "statusAll": "All statuses",
     "statusSelected": "{{count}} selected",
     "clearStatusFilter": "Clear filter",
-    "runtimes": { "all": "All", "docker": "Docker", "pm2": "PM2", "systemd": "Systemd" },
+    "runtimes": {
+      "all": "All",
+      "docker": "Docker",
+      "pm2": "PM2",
+      "systemd": "Systemd"
+    },
     "search": "Search",
-    "searchPlaceholder": "Type and press Enter to search",
+    "searchPlaceholder": "Search containers, services or ports; press Enter",
     "refresh": "Refresh",
     "refreshFailed": "Unable to refresh services",
     "loading": "Loading services…",
@@ -1115,12 +1137,22 @@
     "hosts": "Host",
     "metrics": {
       "name": "Name",
-      "metric": { "cpu": "CPU", "memory": "Memory", "network": "Network", "disk": "Disk I/O" },
+      "metric": {
+        "cpu": "CPU",
+        "memory": "Memory",
+        "network": "Network",
+        "disk": "Disk I/O"
+      },
       "empty": "No resources are available in this scope",
       "loading": "Collecting performance metrics…",
       "collecting": "Waiting for the next sample",
       "chartLabel": "{{metric}} over time",
-      "legend": { "received": "Received", "sent": "Sent", "read": "Read", "written": "Written" },
+      "legend": {
+        "received": "Received",
+        "sent": "Sent",
+        "read": "Read",
+        "written": "Written"
+      },
       "availability": {
         "unsupported": "Unsupported by this platform or runtime",
         "unavailable": "Temporarily unavailable",
@@ -1129,7 +1161,9 @@
         "accounting-disabled": "Metrics are unavailable or accounting is disabled"
       }
     },
-    "scopeInfo": { "members": "Picked resources" },
+    "scopeInfo": {
+      "members": "Picked resources"
+    },
     "detailTabs": {
       "info": "Info",
       "metrics": "Metrics",
@@ -1206,7 +1240,6 @@
     "logService": "Service",
     "logContent": "Content",
     "scrollToBottom": "Scroll to bottom",
-    "apply": "Apply",
     "regex": "Regex",
     "caseSensitive": "Match case",
     "logsTruncated": "Earlier logs were cleared because the buffer limit was reached.",
@@ -1251,7 +1284,11 @@
       "disable": "Disable",
       "disable-now": "Disable and stop",
       "update": "Update"
-    }
+    },
+    "wholeWord": "Match whole word",
+    "advancedSettings": "Advanced settings",
+    "highlightLevels": "Highlight log levels",
+    "highlightLevelsDescription": "Use a red background for ERROR logs and yellow for WARN logs."
   },
   "colorPicker": {
     "area": "Color area",
@@ -1935,6 +1972,8 @@
       "importTooLarge": "The configuration file exceeds 10 MiB"
     },
     "image": {
+      "sshArchitectureProbeInvalid": "The SSH host architecture probe returned incomplete data",
+      "registryPlatformCycle": "The registry platform index contains a cyclic reference",
       "cliPathInvalid": "Invalid Docker CLI path",
       "deleteLimitExceeded": "Exceeded the image deletion limit",
       "dockerDetailEmpty": "Docker image detail is empty",
@@ -2046,7 +2085,23 @@
       "importPathNotRegular": "Import path {{path}} is not a regular file",
       "noImportFilesSelected": "No import files selected",
       "openImportFile": "Failed to open import file: {{detail}}",
-      "importImageFailed": "Failed to import image: {{detail}}"
+      "importImageFailed": "Failed to import image: {{detail}}",
+      "readImportArchive": "Failed to read image archive: {{detail}}",
+      "importTargetDuplicate": "Duplicate target reference: {{target}}. Rename it.",
+      "importTargetExists": "Image {{target}} already exists. Rename the target and try again.",
+      "importArchiveChanged": "The image archive has changed. Select and inspect it again.",
+      "registryTransferFailed": "Registry image transfer failed: {{detail}}",
+      "registrySourceRequired": "This operation requires a registry source",
+      "importUnsafePath": "The image archive contains an unsafe path: {{path}}",
+      "importUnsupportedMember": "The archive contains an unsupported entry type: {{path}}",
+      "importDuplicateMember": "The archive contains a duplicate entry: {{path}}",
+      "importOCIVersion": "Unsupported OCI layout version",
+      "importMissingMember": "An archive entry is missing or has an incorrect size: {{path}}",
+      "importEmptyArchive": "The archive contains no images",
+      "importInvalidMetadata": "Archive metadata is missing or exceeds the size limit: {{path}}",
+      "importInvalidDescriptor": "Invalid OCI descriptor or cyclic reference",
+      "importDigestMismatch": "Image archive integrity check failed: {{path}}",
+      "importUnsupportedMediaType": "The archive uses an unsupported media type: {{type}}"
     },
     "imageSync": {
       "sourceAndClientRequired": "sourceID and clientID are required",
@@ -2452,7 +2507,9 @@
       "payloadPlaceholder": "For example: ping",
       "payloadNote": "This UDP test succeeds only when a reply arrives; no reply does not prove the target is unreachable. Text is sent as UTF-8, up to 1200 bytes."
     },
-    "timeout": { "label": "Total timeout (seconds)" },
+    "timeout": {
+      "label": "Total timeout (seconds)"
+    },
     "tls": {
       "skipVerification": "Skip TLS certificate verification",
       "skipVerificationNote": "Skips certificate chain and hostname checks. Use for self-signed or internal certificates only."
@@ -2617,6 +2674,7 @@
       "stage": "Stage",
       "timeline": "Route timeline",
       "duration": "Duration",
+      "firstByteLatency": "Time to first byte: {{duration}}",
       "details": "View request, response, and metadata"
     },
     "stages": {

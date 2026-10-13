@@ -549,7 +549,11 @@
     "quantity": "数量",
     "separator": "分隔符",
     "quote": "引号",
-    "quotes": { "none": "不添加引号", "single": "添加单引号", "double": "添加双引号" },
+    "quotes": {
+      "none": "不添加引号",
+      "single": "添加单引号",
+      "double": "添加双引号"
+    },
     "output": "生成结果",
     "outputPlaceholder": "点击生成按钮创建文本",
     "actions": "文本生成操作",
@@ -558,7 +562,10 @@
     "managerTitle": "管理自定义源",
     "sourceName": "源名称",
     "mode": "抽取方式",
-    "modes": { "character": "按字符", "line": "按行" },
+    "modes": {
+      "character": "按字符",
+      "line": "按行"
+    },
     "content": "内容",
     "noCustomSources": "暂无自定义源",
     "deleteTitle": "删除自定义源",
@@ -1037,7 +1044,7 @@
     "emptyValue": "—",
     "inspected": "查看镜像",
     "refreshed": "刷新镜像列表",
-    "exportTar": "导出 tar 包",
+    "exportTar": "导出 tar",
     "batchExport": "批量导出 tar",
     "exportFailed": "镜像导出失败",
     "pullUpdate": "拉取更新",
@@ -1056,7 +1063,7 @@
     "backgroundTasksCount": "后台任务 {{count}}",
     "cancelTask": "取消",
     "retryExport": "重试",
-    "taskStageExport": "导出 tar 包",
+    "taskStageExport": "导出 tar",
     "taskStagePull": "拉取镜像",
     "taskStageLoad": "导入镜像",
     "taskStageDetail": "加载镜像详情",
@@ -1073,7 +1080,17 @@
     "taskStatusRunning": "进行中",
     "taskStatusSuccess": "已完成",
     "taskStatusFailed": "失败",
-    "taskStatusCanceled": "已取消"
+    "taskStatusCanceled": "已取消",
+    "importPreviewTitle": "确认导入镜像",
+    "importPreviewBody": "检查目标仓库名与 Tag。同名镜像已存在时，请为待导入镜像重命名。",
+    "importTarget": "目标仓库名:Tag",
+    "importTargetPlaceholder": "例如 myapp:1.0-amd64",
+    "importRenameRequired": "同名镜像已存在，请修改目标仓库名或 Tag。",
+    "importDuplicateTargets": "待导入镜像的目标名称重复，请分别重命名。",
+    "importTasksStarted": "已创建 {{total}} 个镜像导入任务",
+    "registryPullBody": "将来源镜像完整复制到当前 Registry，保留所有架构。私有来源的认证信息取自已添加的 Registry 来源。",
+    "architectureMulti": "多架构",
+    "architectureHint": "镜像架构：{{architectures}}"
   },
   "serviceManagerTool": {
     "title": "容器与服务",
@@ -1105,9 +1122,14 @@
     "statusAll": "全部状态",
     "statusSelected": "已选 {{count}} 项",
     "clearStatusFilter": "清除筛选",
-    "runtimes": { "all": "全部", "docker": "Docker", "pm2": "PM2", "systemd": "Systemd" },
+    "runtimes": {
+      "all": "全部",
+      "docker": "Docker",
+      "pm2": "PM2",
+      "systemd": "Systemd"
+    },
     "search": "搜索",
-    "searchPlaceholder": "输入后按回车搜索",
+    "searchPlaceholder": "搜索容器、服务或端口，回车应用",
     "refresh": "刷新",
     "refreshFailed": "刷新服务列表失败",
     "loading": "正在加载服务列表…",
@@ -1115,12 +1137,22 @@
     "hosts": "主机",
     "metrics": {
       "name": "名称",
-      "metric": { "cpu": "CPU", "memory": "内存", "network": "网络", "disk": "磁盘 I/O" },
+      "metric": {
+        "cpu": "CPU",
+        "memory": "内存",
+        "network": "网络",
+        "disk": "磁盘 I/O"
+      },
       "empty": "当前范围内没有可显示的资源",
       "loading": "正在采集性能数据…",
       "collecting": "等待下一次采样",
       "chartLabel": "{{metric}} 时间趋势",
-      "legend": { "received": "接收", "sent": "发送", "read": "读取", "written": "写入" },
+      "legend": {
+        "received": "接收",
+        "sent": "发送",
+        "read": "读取",
+        "written": "写入"
+      },
       "availability": {
         "unsupported": "当前平台或运行时不支持",
         "unavailable": "暂时无法取得",
@@ -1129,7 +1161,9 @@
         "accounting-disabled": "系统未提供或未启用计量"
       }
     },
-    "scopeInfo": { "members": "已挑选资源" },
+    "scopeInfo": {
+      "members": "已挑选资源"
+    },
     "detailTabs": {
       "info": "信息",
       "metrics": "指标",
@@ -1206,7 +1240,6 @@
     "logService": "服务",
     "logContent": "内容",
     "scrollToBottom": "滚动到底部",
-    "apply": "应用",
     "regex": "正则",
     "caseSensitive": "区分大小写",
     "logsTruncated": "较早日志已因容量限制被清理。",
@@ -1251,7 +1284,11 @@
       "disable": "禁用",
       "disable-now": "禁用并停止",
       "update": "更新"
-    }
+    },
+    "wholeWord": "单独单词匹配",
+    "advancedSettings": "高级设置",
+    "highlightLevels": "凸显着色",
+    "highlightLevelsDescription": "ERROR 日志使用红色背景，WARN 日志使用黄色背景。"
   },
   "colorPicker": {
     "area": "颜色区域",
@@ -1935,6 +1972,8 @@
       "importTooLarge": "配置文件超过 10 MiB"
     },
     "image": {
+      "sshArchitectureProbeInvalid": "SSH 主机架构探测返回的数据不完整",
+      "registryPlatformCycle": "Registry 镜像平台清单存在循环引用",
       "cliPathInvalid": "Docker CLI 路径无效",
       "deleteLimitExceeded": "超过镜像删除数量限制",
       "dockerDetailEmpty": "Docker 镜像详情为空",
@@ -2046,7 +2085,23 @@
       "importPathNotRegular": "导入路径 {{path}} 不是普通文件",
       "noImportFilesSelected": "未选择导入文件",
       "openImportFile": "打开导入文件失败：{{detail}}",
-      "importImageFailed": "导入镜像失败：{{detail}}"
+      "importImageFailed": "导入镜像失败：{{detail}}",
+      "readImportArchive": "读取镜像包失败：{{detail}}",
+      "importTargetDuplicate": "目标引用重复：{{target}}，请重命名",
+      "importTargetExists": "目标镜像 {{target}} 已存在，请重命名后重试",
+      "importArchiveChanged": "镜像包已发生变化，请重新选择并检查",
+      "registryTransferFailed": "Registry 镜像传输失败：{{detail}}",
+      "registrySourceRequired": "该操作需要 Registry 来源",
+      "importUnsafePath": "镜像包包含不安全的路径：{{path}}",
+      "importUnsupportedMember": "镜像包包含不支持的条目类型：{{path}}",
+      "importDuplicateMember": "镜像包包含重复条目：{{path}}",
+      "importOCIVersion": "不支持此 OCI layout 版本",
+      "importMissingMember": "镜像包条目缺失或大小不符：{{path}}",
+      "importEmptyArchive": "镜像包中没有镜像",
+      "importInvalidMetadata": "镜像包元数据缺失或超过大小限制：{{path}}",
+      "importInvalidDescriptor": "OCI 描述符无效或存在循环引用",
+      "importDigestMismatch": "镜像包内容校验失败：{{path}}",
+      "importUnsupportedMediaType": "镜像包使用了不支持的媒体类型：{{type}}"
     },
     "imageSync": {
       "sourceAndClientRequired": "sourceID 与 clientID 不能为空",
@@ -2452,7 +2507,9 @@
       "payloadPlaceholder": "例如：ping",
       "payloadNote": "收到回包才算本次 UDP 测试成功；没有回包不代表目标一定不可达。文本会按 UTF-8 发送，最多 1200 字节。"
     },
-    "timeout": { "label": "总超时（秒）" },
+    "timeout": {
+      "label": "总超时（秒）"
+    },
     "tls": {
       "skipVerification": "跳过 TLS 证书校验",
       "skipVerificationNote": "跳过证书链和主机名检查，仅建议用于自签名或内部证书。"
@@ -2617,6 +2674,7 @@
       "stage": "阶段",
       "timeline": "链路时间线",
       "duration": "耗时",
+      "firstByteLatency": "首字节耗时：{{duration}}",
       "details": "查看请求、响应与元信息"
     },
     "stages": {

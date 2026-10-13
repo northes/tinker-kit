@@ -125,6 +125,7 @@ export interface DockerImage {
     "size": string;
     "sizeBytes": number;
     "createdAt": string;
+    "platforms": RegistryPlatform[] | null;
 }
 
 export interface DockerImageBatchResult {
@@ -217,6 +218,8 @@ export interface DockerStatus {
     "cliPath": string;
     "version": string;
     "error": string;
+    "localArchitecture": string;
+    "architecture": string;
 }
 
 /**
@@ -300,6 +303,19 @@ export interface ImageExportResult {
     "snapshot": ImageTaskSnapshot;
 }
 
+/**
+ * ImageImportEntry 是包内一条引用；Image 标识 manifest 或 OCI 根描述符的位置。
+ */
+export interface ImageImportEntry {
+    "path": string;
+    "image": number;
+    "reference": string;
+    "target": string;
+    "fingerprint": string;
+    "platforms": string[] | null;
+    "conflict": boolean;
+}
+
 export interface ImageSource {
     "id": string;
     "name": string;
@@ -317,6 +333,7 @@ export interface ImageTask {
     "imageID": string;
     "status": string;
     "stage": string;
+    "progressUnit": string;
     "completed": number;
     "total": number;
     "totalEstimated": boolean;

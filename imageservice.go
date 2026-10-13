@@ -16,6 +16,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -65,23 +66,26 @@ type SSHConfigHost struct {
 }
 
 type DockerStatus struct {
-	Available bool   `json:"available"`
-	CLIPath   string `json:"cliPath"`
-	Version   string `json:"version"`
-	Error     string `json:"error"`
+	Available         bool   `json:"available"`
+	CLIPath           string `json:"cliPath"`
+	Version           string `json:"version"`
+	Error             string `json:"error"`
+	LocalArchitecture string `json:"localArchitecture"`
+	Architecture      string `json:"architecture"`
 }
 
 type DockerImage struct {
-	ID         string   `json:"id"`
-	Name       string   `json:"name"`
-	Tags       []string `json:"tags"`
-	Repository string   `json:"repository"`
-	Digest     string   `json:"digest"`
-	MediaType  string   `json:"mediaType"`
-	SizeType   string   `json:"sizeType"`
-	Size       string   `json:"size"`
-	SizeBytes  int64    `json:"sizeBytes"`
-	CreatedAt  string   `json:"createdAt"`
+	ID         string             `json:"id"`
+	Name       string             `json:"name"`
+	Tags       []string           `json:"tags"`
+	Repository string             `json:"repository"`
+	Digest     string             `json:"digest"`
+	MediaType  string             `json:"mediaType"`
+	SizeType   string             `json:"sizeType"`
+	Size       string             `json:"size"`
+	SizeBytes  int64              `json:"sizeBytes"`
+	CreatedAt  string             `json:"createdAt"`
+	Platforms  []RegistryPlatform `json:"platforms"`
 }
 
 const (
@@ -92,14 +96,15 @@ const (
 )
 
 type registryImageMetadataEvent struct {
-	SourceID  string `json:"sourceID"`
-	ImageID   string `json:"imageID"`
-	Digest    string `json:"digest"`
-	MediaType string `json:"mediaType"`
-	SizeType  string `json:"sizeType"`
-	Size      string `json:"size"`
-	SizeBytes int64  `json:"sizeBytes"`
-	CreatedAt string `json:"createdAt"`
+	SourceID  string             `json:"sourceID"`
+	ImageID   string             `json:"imageID"`
+	Digest    string             `json:"digest"`
+	MediaType string             `json:"mediaType"`
+	SizeType  string             `json:"sizeType"`
+	Size      string             `json:"size"`
+	SizeBytes int64              `json:"sizeBytes"`
+	CreatedAt string             `json:"createdAt"`
+	Platforms []RegistryPlatform `json:"platforms"`
 }
 
 type registryImageMetadataStateEvent struct {
@@ -282,6 +287,7 @@ type ImageService struct {
 	taskRevision          uint64
 	exportWG              sync.WaitGroup
 	exportQueueMu         sync.Mutex
+	importMutationSem     chan struct{}
 }
 
 func (s *ImageService) setTaskScheduler(scheduler *taskScheduler) {
@@ -1132,7 +1138,7 @@ func (s *ImageService) sourceConnectionStatusContext(ctx context.Context, source
 // probeSourceConnection 执行连接探测，并在不可用时保留原始错误，
 // 供需要错误链的调用方直接返回；状态模型字段仍写入序列化后的错误文本。
 func (s *ImageService) probeSourceConnection(ctx context.Context, source ImageSource, cliPath string) (DockerStatus, error) {
-	status := DockerStatus{CLIPath: cliPath}
+	status := DockerStatus{CLIPath: cliPath, LocalArchitecture: normalizeImageArchitecture(runtime.GOARCH)}
 	if source.Kind == "registry" {
 		itemCtx, cancel := context.WithTimeout(ctx, imageCommandTimeout)
 		defer cancel()
@@ -1146,13 +1152,28 @@ func (s *ImageService) probeSourceConnection(ctx context.Context, source ImageSo
 	}
 	itemCtx, cancel := context.WithTimeout(ctx, imageCommandTimeout)
 	defer cancel()
-	output, err := s.runDockerSnapshotContext(itemCtx, source, cliPath, []string{"--version"})
+	command, args := cliPath, []string{"--version"}
+	if source.Kind == "ssh" {
+		// 合并到一次 SSH 调用，避免为架构探测额外建立远程连接。
+		command, args = "sh", []string{"-c", "uname -m && exec " + shellQuote(cliPath) + " --version"}
+	}
+	output, err := s.runDockerSnapshotContext(itemCtx, source, command, args)
 	if err != nil {
 		status.Error = err.Error()
 		return status, err
 	}
+	version := strings.TrimSpace(string(output))
+	if source.Kind == "ssh" {
+		architecture, remainder, ok := strings.Cut(version, "\n")
+		if !ok || strings.TrimSpace(remainder) == "" {
+			err := userError("errors.image.sshArchitectureProbeInvalid")
+			status.Error = err.Error()
+			return status, err
+		}
+		status.Architecture, version = normalizeImageArchitecture(architecture), strings.TrimSpace(remainder)
+	}
 	status.Available = true
-	status.Version = strings.TrimSpace(string(output))
+	status.Version = version
 	return status, nil
 }
 
@@ -1351,7 +1372,8 @@ func (s *ImageService) registryOptions(ctx context.Context, source ImageSource) 
 }
 
 type limitedRegistryTransport struct {
-	base http.RoundTripper
+	base        http.RoundTripper
+	streamBlobs bool
 }
 
 // 仅导出 blob 的请求携带声明大小，其他元数据请求继续使用默认上限。
@@ -1360,6 +1382,9 @@ type registryBlobSizeKey struct{}
 func (t *limitedRegistryTransport) RoundTrip(request *http.Request) (*http.Response, error) {
 	response, err := t.base.RoundTrip(request)
 	if err == nil && response != nil && response.Body != nil {
+		if t.streamBlobs && request.Method == http.MethodGet && response.StatusCode == http.StatusOK && strings.Contains(request.URL.Path, "/blobs/") {
+			return response, nil
+		}
 		limit := int64(maxRegistryBodySize)
 		if size, ok := request.Context().Value(registryBlobSizeKey{}).(int64); ok && size >= limit && request.Method == http.MethodGet && response.StatusCode == http.StatusOK {
 			limit = size + 1
@@ -1664,6 +1689,11 @@ func (s *ImageService) fetchRegistryImageMetadata(ctx context.Context, source Im
 		SizeBytes: registryImageSize(descriptor, image),
 	}
 	metadata.Size = formatRegistrySize(metadata.SizeBytes)
+	platforms, err := registryImagePlatforms(itemCtx, descriptor)
+	if err != nil {
+		return registryImageMetadataEvent{}, redactRegistryError(err, source)
+	}
+	metadata.Platforms = platforms
 	if image != nil {
 		if config, configErr := image.ConfigFile(); configErr == nil && config != nil && !config.Created.Time.IsZero() {
 			metadata.CreatedAt = config.Created.Time.UTC().Format(time.RFC3339Nano)
@@ -2444,6 +2474,7 @@ func (s *ImageService) inspectDockerImage(ctx context.Context, source ImageSourc
 	metadata := DockerImageMetadata{
 		CreatedAt:    item.Created,
 		Architecture: item.Architecture,
+		Variant:      item.Variant,
 		OS:           item.OS,
 		ConfigDigest: item.ID,
 		RootFSType:   item.RootFS.Type,
@@ -2684,6 +2715,7 @@ type dockerImageInspectJSON struct {
 	Size         int64     `json:"Size"`
 	Created      string    `json:"Created"`
 	Architecture string    `json:"Architecture"`
+	Variant      string    `json:"Variant"`
 	OS           string    `json:"Os"`
 	Config       v1.Config `json:"Config"`
 	RootFS       struct {
