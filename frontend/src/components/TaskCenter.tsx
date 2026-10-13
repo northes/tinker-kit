@@ -514,7 +514,21 @@ export function TaskCenter({
     if (clearingFinished) return;
     setClearingFinished(true);
     try {
-      await Promise.all([ClearImageTasks(), ClearFileTasks()]);
+      const [imageResult, fileResult] = await Promise.allSettled([
+        ClearImageTasks(),
+        ClearFileTasks(),
+      ]);
+      if (imageResult.status === 'fulfilled') {
+        processSnapshot('image', imageResult.value, false);
+      }
+      if (fileResult.status === 'fulfilled') {
+        processSnapshot('file', fileResult.value, false);
+      }
+      // 清理结果立即提交，与结束 loading 同批渲染，不等待进度刷新定时器。
+      commitSnapshots();
+      if (imageResult.status === 'rejected' || fileResult.status === 'rejected') {
+        toast.add({ title: t('taskCenter.clearFinishedFailed'), type: 'error' });
+      }
     } catch {
       toast.add({ title: t('taskCenter.clearFinishedFailed'), type: 'error' });
     } finally {
@@ -788,7 +802,13 @@ export function TaskCenter({
                       : 'tools.ssh-files.name',
                   );
                   const canRetry = task.status === 'failed' || task.status === 'canceled';
-                  const canCancel = isActive && (task.file || task.image?.type === 'export');
+                  const canCancel =
+                    isActive &&
+                    (task.file ||
+                      (task.image &&
+                        ['export', 'pull', 'load', 'tagCopy', 'tagRename'].includes(
+                          task.image.type,
+                        )));
                   const canOpenFolder =
                     terminal(task.status) &&
                     ((task.image?.type === 'export' && Boolean(task.image.path)) ||
