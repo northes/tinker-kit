@@ -1052,7 +1052,7 @@
     "pullFailed": "镜像拉取失败",
     "pull": "拉取",
     "pullImage": "拉取镜像",
-    "pullImageBody": "输入镜像名称（如 alpine:3.19），将在当前来源执行 docker pull。",
+    "pullImageBody": "在当前来源通过 Docker CLI 拉取镜像，复用 CLI 的认证配置。",
     "imageReference": "镜像名称",
     "imageReferencePlaceholder": "如 alpine:3.19",
     "importTar": "导入",
@@ -1088,9 +1088,18 @@
     "importRenameRequired": "同名镜像已存在，请修改目标仓库名或 Tag。",
     "importDuplicateTargets": "待导入镜像的目标名称重复，请分别重命名。",
     "importTasksStarted": "已创建 {{total}} 个镜像导入任务",
-    "registryPullBody": "将来源镜像完整复制到当前 Registry，保留所有架构。私有来源的认证信息取自已添加的 Registry 来源。",
+    "registryPullBody": "将来源镜像复制到当前 Registry。可输入来源账号和密码；留空则复用已添加的 Registry 来源凭据。",
     "architectureMulti": "多架构",
-    "architectureHint": "镜像架构：{{architectures}}"
+    "architectureHint": "镜像架构：{{architectures}}",
+    "pullPlatform": "架构",
+    "pullAllPlatforms": "全部架构",
+    "resolvePullPlatforms": "解析支持的架构",
+    "pullPlatformsIdle": "尚未解析，点击右侧按钮获取支持的架构。",
+    "pullPlatformsLoading": "正在解析支持的架构…",
+    "pullPlatformsFailed": "架构解析失败：{{detail}}",
+    "pullPlatformsReady": "已解析 {{total}} 个架构。",
+    "pullUsername": "账号（可选）",
+    "pullPassword": "密码（可选）"
   },
   "serviceManagerTool": {
     "title": "容器与服务",
@@ -2101,7 +2110,9 @@
       "importInvalidMetadata": "镜像包元数据缺失或超过大小限制：{{path}}",
       "importInvalidDescriptor": "OCI 描述符无效或存在循环引用",
       "importDigestMismatch": "镜像包内容校验失败：{{path}}",
-      "importUnsupportedMediaType": "镜像包使用了不支持的媒体类型：{{type}}"
+      "importUnsupportedMediaType": "镜像包使用了不支持的媒体类型：{{type}}",
+      "pullPlatformsEmpty": "未找到镜像支持的架构",
+      "pullPlatformUnavailable": "镜像不支持所选架构：{{platform}}"
     },
     "imageSync": {
       "sourceAndClientRequired": "sourceID 与 clientID 不能为空",

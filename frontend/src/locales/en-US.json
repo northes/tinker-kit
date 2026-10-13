@@ -1052,7 +1052,7 @@
     "pullFailed": "Failed to pull image",
     "pull": "Pull",
     "pullImage": "Pull image",
-    "pullImageBody": "Enter an image reference (e.g. alpine:3.19). docker pull runs on the current source.",
+    "pullImageBody": "Pull an image using Docker CLI on the current source with its existing authentication configuration.",
     "imageReference": "Image reference",
     "imageReferencePlaceholder": "e.g. alpine:3.19",
     "importTar": "Import",
@@ -1088,9 +1088,18 @@
     "importRenameRequired": "This reference already exists. Change the target repository or tag.",
     "importDuplicateTargets": "Incoming images have duplicate target references. Give each a distinct name.",
     "importTasksStarted": "Created {{total}} image import tasks",
-    "registryPullBody": "Copy the source image to this registry, preserving all platforms. Credentials for private sources come from configured registry sources.",
+    "registryPullBody": "Copy an image to the current Registry. Enter optional source credentials, or leave blank to reuse configured Registry credentials.",
     "architectureMulti": "Multi-arch",
-    "architectureHint": "Image architectures: {{architectures}}"
+    "architectureHint": "Image architectures: {{architectures}}",
+    "pullPlatform": "Architecture",
+    "pullAllPlatforms": "All architectures",
+    "resolvePullPlatforms": "Resolve supported architectures",
+    "pullPlatformsIdle": "Not resolved. Click the button to fetch supported architectures.",
+    "pullPlatformsLoading": "Resolving supported architectures…",
+    "pullPlatformsFailed": "Failed to resolve architectures: {{detail}}",
+    "pullPlatformsReady": "Resolved {{total}} architectures.",
+    "pullUsername": "Username (optional)",
+    "pullPassword": "Password (optional)"
   },
   "serviceManagerTool": {
     "title": "Containers & Services",
@@ -2101,7 +2110,9 @@
       "importInvalidMetadata": "Archive metadata is missing or exceeds the size limit: {{path}}",
       "importInvalidDescriptor": "Invalid OCI descriptor or cyclic reference",
       "importDigestMismatch": "Image archive integrity check failed: {{path}}",
-      "importUnsupportedMediaType": "The archive uses an unsupported media type: {{type}}"
+      "importUnsupportedMediaType": "The archive uses an unsupported media type: {{type}}",
+      "pullPlatformsEmpty": "No supported image architectures found",
+      "pullPlatformUnavailable": "Image does not support the selected architecture: {{platform}}"
     },
     "imageSync": {
       "sourceAndClientRequired": "sourceID and clientID are required",

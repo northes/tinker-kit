@@ -28,8 +28,9 @@ import {
   StartImageExports,
   StartImageImports,
   PrepareImageImports,
-  StartRegistryImagePulls,
   StartImagePulls,
+  StartRegistryImagePulls,
+  ResolveImagePullPlatforms,
   StartImageTagChanges,
   TestImageSourceConnection,
   WatchDockerImages,
@@ -205,6 +206,12 @@ type ImageOperationDialogState =
       sourceConfigKey: string;
       value: string;
       target: string;
+      username: string;
+      password: string;
+      platform: string;
+      platforms: string[];
+      platformStatus: 'idle' | 'loading' | 'success' | 'error';
+      platformError: string;
     }
   | null;
 
@@ -425,6 +432,19 @@ function imageRepository(reference: string) {
   const lastSlash = reference.lastIndexOf('/');
   const lastColon = reference.lastIndexOf(':');
   return lastColon > lastSlash ? reference.slice(0, lastColon) : reference;
+}
+
+// 目标是当前 Registry 内的仓库引用，去掉来源域名，保留命名空间和 Tag。
+function suggestedPullTarget(reference: string) {
+  let value = reference.trim().split('@')[0];
+  if (!value) return '';
+  const slash = value.indexOf('/');
+  const first = value.slice(0, slash);
+  if (slash >= 0 && (first.includes('.') || first.includes(':') || first === 'localhost')) {
+    value = value.slice(slash + 1);
+  }
+  if (!value) return '';
+  return imageTag(value) ? value : `${value}:latest`;
 }
 
 function imageWithTag(reference: string, tag: string) {
@@ -1840,7 +1860,102 @@ export default function ImageManagerTool({
   const openPullImageDialog = () => {
     if (actionBlocked) return;
     setOperationError('');
-    setOperationDialog({ type: 'pull-image', sourceConfigKey, value: '', target: '' });
+    setOperationDialog({
+      type: 'pull-image',
+      sourceConfigKey,
+      value: '',
+      target: '',
+      username: '',
+      password: '',
+      platform: 'all',
+      platforms: [],
+      platformStatus: 'idle',
+      platformError: '',
+    });
+  };
+
+  const pullPlatformRequest = useRef<ReturnType<typeof ResolveImagePullPlatforms> | null>(null);
+  const pullRevision = useRef(0);
+  const pullReference = operationDialog?.type === 'pull-image' ? operationDialog.value : null;
+  const pullUsername = operationDialog?.type === 'pull-image' ? operationDialog.username : null;
+  const pullPassword = operationDialog?.type === 'pull-image' ? operationDialog.password : null;
+  useEffect(
+    () => () => {
+      pullRevision.current++;
+      pullPlatformRequest.current?.cancel();
+      pullPlatformRequest.current = null;
+    },
+    [pullReference, pullUsername, pullPassword, sourceConfigKey, active],
+  );
+
+  useEffect(() => {
+    setOperationDialog((current) => (current?.type === 'pull-image' ? null : current));
+  }, [sourceConfigKey, active]);
+
+  const updatePullInput = (
+    patch: Partial<Extract<ImageOperationDialogState, { type: 'pull-image' }>>,
+  ) => {
+    pullRevision.current++;
+    pullPlatformRequest.current?.cancel();
+    setOperationError('');
+    setOperationDialog((current) =>
+      current?.type === 'pull-image'
+        ? {
+            ...current,
+            ...patch,
+            target:
+              isRegistrySource &&
+              patch.value !== undefined &&
+              (!current.target || current.target === suggestedPullTarget(current.value))
+                ? suggestedPullTarget(patch.value)
+                : current.target,
+            platform: 'all',
+            platforms: [],
+            platformStatus: 'idle',
+            platformError: '',
+          }
+        : current,
+    );
+  };
+  const resolvePullPlatforms = async () => {
+    if (operationDialog?.type !== 'pull-image' || !operationDialog.value.trim()) return;
+    pullPlatformRequest.current?.cancel();
+    const revision = ++pullRevision.current;
+    const request = ResolveImagePullPlatforms(source.id, operationDialog.value.trim(), {
+      username: operationDialog.username,
+      password: operationDialog.password,
+      platform: '',
+    });
+    pullPlatformRequest.current = request;
+    setOperationDialog((current) =>
+      current?.type === 'pull-image'
+        ? {
+            ...current,
+            platform: 'all',
+            platforms: [],
+            platformStatus: 'loading',
+            platformError: '',
+          }
+        : current,
+    );
+    try {
+      const platforms = (await request) ?? [];
+      if (revision !== pullRevision.current) return;
+      setOperationDialog((current) =>
+        current?.type === 'pull-image'
+          ? { ...current, platforms, platformStatus: 'success' }
+          : current,
+      );
+    } catch (error) {
+      if (revision !== pullRevision.current || error instanceof CancelError) return;
+      setOperationDialog((current) =>
+        current?.type === 'pull-image'
+          ? { ...current, platformStatus: 'error', platformError: errorMessage(error) }
+          : current,
+      );
+    } finally {
+      if (revision === pullRevision.current) pullPlatformRequest.current = null;
+    }
   };
 
   // 字段表单按操作类型唯一渲染，页脚确认按钮通过 form 关联，回车即可提交。
@@ -1907,11 +2022,11 @@ export default function ImageManagerTool({
           setOperationError(t('imageManagerTool.operationInputRequired'));
           return;
         }
-        void runRegistryPull(value, operationDialog.target.trim());
+        void runRegistryPull(value, operationDialog.target.trim(), operationDialog);
       } else {
         setOperationDialog(null);
         setOperationError('');
-        void runPullRefs([value]);
+        void runPullRefs([value], operationDialog);
       }
       return;
     }
@@ -2064,12 +2179,15 @@ export default function ImageManagerTool({
       });
     }
   };
-  const runPullRefs = async (requestedRefs: string[]) => {
+  const runPullRefs = async (
+    requestedRefs: string[],
+    options = { username: '', password: '', platform: '' },
+  ) => {
     const refs = [...new Set(requestedRefs.map((ref) => ref.trim()).filter(Boolean))];
     if (refs.length === 0 || pullStarting) return;
     setPullStarting(true);
     try {
-      const result = await StartImagePulls(source.id, refs);
+      const result = await StartImagePulls(source.id, refs, options);
       if (result.started > 0) {
         // 只放入后台任务队列，不弹出任务面板；进度由底栏的后台任务入口展示。
         // 拉取在后台异步执行，开始时就刷新只会拿到旧结果；完成后由 Go 侧重扫并推送 diff。
@@ -2093,13 +2211,21 @@ export default function ImageManagerTool({
   };
   const runPull = (requestedRows: ImageRow[]) =>
     runPullRefs(requestedRows.map((row) => row.reference));
-  const runRegistryPull = async (reference: string, target: string) => {
+  const runRegistryPull = async (
+    reference: string,
+    target: string,
+    options: { username: string; password: string; platform: string },
+  ) => {
     if (pullStarting) return;
     setPullStarting(true);
     setOperationError('');
     const key = sourceConfigKey;
     try {
-      const result = await StartRegistryImagePulls(source.id, [{ source: reference, target }]);
+      const result = await StartRegistryImagePulls(
+        source.id,
+        [{ source: reference, target }],
+        options,
+      );
       applyTasks(result.snapshot);
       if (currentSourceConfigKey.current === key) setOperationDialog(null);
       record('image-manager', t('imageManagerTool.pull'), `${reference} → ${target}`, source.id);
@@ -2909,16 +3035,114 @@ export default function ImageManagerTool({
                   autoFocus
                   aria-invalid={Boolean(operationError)}
                   onChange={(event) => {
-                    setOperationError('');
-                    setOperationDialog((current) =>
-                      current?.type === 'pull-image'
-                        ? { ...current, value: event.target.value }
-                        : current,
-                    );
+                    updatePullInput({ value: event.target.value });
                   }}
                 />
+                <Label htmlFor="image-operation-platform">
+                  {t('imageManagerTool.pullPlatform')}
+                </Label>
+                <div className="flex items-center gap-2">
+                  <Select
+                    value={operationDialog.platform}
+                    items={[
+                      { value: 'all', label: t('imageManagerTool.pullAllPlatforms') },
+                      ...operationDialog.platforms.map((value) => ({ value, label: value })),
+                    ]}
+                    disabled={
+                      pullStarting ||
+                      !operationDialog.value.trim() ||
+                      operationDialog.platformStatus === 'loading'
+                    }
+                    onValueChange={(value) =>
+                      setOperationDialog((current) =>
+                        current?.type === 'pull-image'
+                          ? { ...current, platform: value ?? 'all' }
+                          : current,
+                      )
+                    }
+                  >
+                    <SelectTrigger id="image-operation-platform" className="w-full">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectGroup>
+                        <SelectItem value="all">
+                          {t('imageManagerTool.pullAllPlatforms')}
+                        </SelectItem>
+                        {operationDialog.platforms.map((platform) => (
+                          <SelectItem key={platform} value={platform}>
+                            {platform}
+                          </SelectItem>
+                        ))}
+                      </SelectGroup>
+                    </SelectContent>
+                  </Select>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="icon"
+                    className="shrink-0"
+                    aria-label={t('imageManagerTool.resolvePullPlatforms')}
+                    title={t('imageManagerTool.resolvePullPlatforms')}
+                    disabled={
+                      pullStarting ||
+                      !operationDialog.value.trim() ||
+                      operationDialog.platformStatus === 'loading'
+                    }
+                    onClick={() => void resolvePullPlatforms()}
+                  >
+                    {operationDialog.platformStatus === 'loading' ? (
+                      <Spinner />
+                    ) : (
+                      <ArrowsClockwise weight="duotone" />
+                    )}
+                  </Button>
+                </div>
+                <p
+                  className={`m-0 text-xs ${operationDialog.platformStatus === 'error' ? 'text-destructive' : 'text-muted-foreground'}`}
+                  role="status"
+                >
+                  {operationDialog.platformStatus === 'error'
+                    ? t('imageManagerTool.pullPlatformsFailed', {
+                        detail: operationDialog.platformError,
+                      })
+                    : operationDialog.platformStatus === 'loading'
+                      ? t('imageManagerTool.pullPlatformsLoading')
+                      : operationDialog.platformStatus === 'idle'
+                        ? t('imageManagerTool.pullPlatformsIdle')
+                        : t('imageManagerTool.pullPlatformsReady', {
+                            total: operationDialog.platforms.length,
+                          })}
+                </p>
                 {isRegistrySource ? (
                   <>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="grid gap-2">
+                        <Label htmlFor="image-pull-username">
+                          {t('imageManagerTool.pullUsername')}
+                        </Label>
+                        <Input
+                          id="image-pull-username"
+                          autoComplete="username"
+                          disabled={pullStarting}
+                          value={operationDialog.username}
+                          onChange={(event) => updatePullInput({ username: event.target.value })}
+                        />
+                      </div>
+                      <div className="grid gap-2">
+                        <Label htmlFor="image-pull-password">
+                          {t('imageManagerTool.pullPassword')}
+                        </Label>
+                        <Input
+                          id="image-pull-password"
+                          type="password"
+                          autoComplete="current-password"
+                          disabled={pullStarting}
+                          value={operationDialog.password}
+                          onChange={(event) => updatePullInput({ password: event.target.value })}
+                        />
+                      </div>
+                    </div>
                     <Label htmlFor="image-operation-pull-target">
                       {t('imageManagerTool.importTarget')}
                     </Label>
