@@ -10,14 +10,15 @@ import { Button } from './ui/button';
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuCheckboxItem,
   DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from './ui/dropdown-menu';
-import { Popover, PopoverContent, PopoverTrigger } from './ui/popover';
+import { ButtonGroup } from './ui/button-group';
 import { ScrollArea } from './ui/scroll-area';
-import { BracketsCurly, CaretDown, Check } from '@phosphor-icons/react';
+import { BracketsCurly, CaretDown } from '@phosphor-icons/react';
 export { parseJsonLoose, stripJsonComments, stripTrailingCommas } from '../lib/json-parse';
 
 export type ToolId =
@@ -368,7 +369,7 @@ export function ToolActionBar({
             >
               {action.label}
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="min-w-32">
+            <DropdownMenuContent align="end" className="w-max min-w-32 whitespace-nowrap">
               {groupMenuOptions(action.options).map((group, index) => (
                 <Fragment key={group.key || String(index)}>
                   {index > 0 ? <DropdownMenuSeparator /> : null}
@@ -387,57 +388,39 @@ export function ToolActionBar({
             </DropdownMenuContent>
           </DropdownMenu>
         ) : action.type === 'split' ? (
-          <div
-            key={action.key}
-            className="inline-flex h-[30px] flex-none items-stretch"
-            role="group"
-            aria-label={action.label}
-          >
+          <ButtonGroup key={action.key} aria-label={action.label}>
             <Button
               variant={buttonVariant[action.variant]}
               disabled={action.disabled}
               onClick={action.onPress}
-              className="h-[30px] flex-none rounded-r-none px-2.5 text-[11px] focus-visible:z-1 [&_svg]:size-3.5"
+              className="h-[30px] flex-none px-[11px] text-[11px]"
             >
               {action.label}
             </Button>
-            <Popover>
-              <PopoverTrigger
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                disabled={action.disabled}
                 render={
                   <Button
                     variant={buttonVariant[action.variant]}
                     size="icon-sm"
-                    className={`relative h-[30px] w-[30px] min-w-[30px] flex-none rounded-l-none p-0 text-[11px] before:pointer-events-none before:absolute before:top-[6px] before:bottom-[6px] before:left-0 before:w-px before:bg-[color-mix(in_srgb,var(--primary-foreground)_28%,transparent)] focus-visible:z-1 [&_svg]:size-3.5 ${action.disabled ? 'opacity-50' : ''}`}
+                    className="h-[30px] w-[30px] flex-none"
                     aria-label={action.menuLabel}
                   />
                 }
               >
-                <CaretDown size={12} weight="duotone" />
-              </PopoverTrigger>
-              <PopoverContent
-                align="end"
-                className="w-auto min-w-0 overflow-hidden p-1 [scrollbar-gutter:auto]"
-                role="menu"
-              >
-                <button
-                  type="button"
-                  role="menuitemcheckbox"
-                  aria-checked={action.menuChecked}
-                  className="flex min-h-7 w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-xs whitespace-nowrap text-popover-foreground hover:bg-accent focus-visible:bg-accent focus-visible:outline-none"
-                  onClick={action.onMenuToggle}
+                <CaretDown size={12} weight="duotone" aria-hidden />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuCheckboxItem
+                  checked={action.menuChecked}
+                  onCheckedChange={action.onMenuToggle}
                 >
-                  <Check
-                    data-icon="inline-start"
-                    size={12}
-                    weight="duotone"
-                    className={action.menuChecked ? undefined : 'opacity-0'}
-                    aria-hidden
-                  />
-                  <span>{action.menuItemLabel}</span>
-                </button>
-              </PopoverContent>
-            </Popover>
-          </div>
+                  {action.menuItemLabel}
+                </DropdownMenuCheckboxItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </ButtonGroup>
         ) : (
           <Button
             key={action.key}

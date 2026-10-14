@@ -63,6 +63,12 @@ const analyzeText = (value: string) => {
   };
 };
 
+const spaceTransforms: Record<string, (input: string) => string> = {
+  trim: (input) => input.trim(),
+  compressSpaces: (input) => input.replace(/ {2,}/g, ' '),
+  removeSpaces: (input) => input.replace(/[ \t]+/g, ''),
+};
+
 type CaseMode = 'upper' | 'lower' | 'lineUpper' | 'lineLower' | 'wordUpper' | 'wordLower';
 // 模块级常量避免每次渲染触发 CodeMirror reconfigure，导致搜索面板被重置关闭。
 const editorExtensions = [EditorView.lineWrapping];
@@ -168,6 +174,16 @@ export default function TextTool({
 }) {
   const { t } = useTranslation();
   const [value, setValue] = useState('');
+  const [removeTrailingBackslash, setRemoveTrailingBackslash] = useState(false);
+  const compressLine = useCallback(
+    (input: string) => {
+      const prepared = removeTrailingBackslash
+        ? input.replace(/\\[ \t]*(?=\r\n?|\n|$)/g, '')
+        : input;
+      return prepared.replace(/\r\n?|\n/g, ' ');
+    },
+    [removeTrailingBackslash],
+  );
   // 用 state 触发一次 effect 重跑，确保自动应用「始终显示搜索」时编辑器已创建。
   const [editorReady, setEditorReady] = useState(false);
   const consumed = useRef<PendingAction | null>(null);
@@ -253,10 +269,10 @@ export default function TextTool({
     consumed.current = pending;
     clearPending();
     const transforms: Record<string, (input: string) => string> = {
-      trim: (s) => s.trim(),
-      removeSpaces: (s) => s.replace(/[ \t]+/g, ''),
-      compress: (s) => s.replace(/ {2,}/g, ' '),
-      compressLine: (s) => s.replace(/\r\n?|\n/g, ' '),
+      trim: spaceTransforms.trim,
+      removeSpaces: spaceTransforms.removeSpaces,
+      compress: spaceTransforms.compressSpaces,
+      compressLine,
       upper: (s) => transformCase(s, 'upper'),
       lower: (s) => transformCase(s, 'lower'),
       lineUpper: (s) => transformCase(s, 'lineUpper'),
@@ -285,7 +301,7 @@ export default function TextTool({
       return;
     }
     setValue(pending.input);
-  }, [pending, value, t]);
+  }, [pending, value, t, compressLine]);
   // 勾选后打开搜索栏并保持常驻；用户按 Esc 或点关闭时关闭面板并同步取消勾选。
   useEffect(() => {
     const view = inputView.current;
@@ -450,35 +466,27 @@ export default function TextTool({
                   ),
               },
               {
-                key: 'trim',
-                label: t('textTool.trim'),
-                variant: 'secondary',
+                key: 'spaces',
+                label: t('textTool.spaces'),
+                type: 'menu',
                 disabled: !value,
-                onPress: () => apply(t('textTool.trimmed'), (input) => input.trim()),
-              },
-              {
-                key: 'compressSpaces',
-                label: t('textTool.compressSpaces'),
-                variant: 'secondary',
-                disabled: !value,
-                onPress: () =>
-                  apply(t('textTool.compressedSpaces'), (input) => input.replace(/ {2,}/g, ' ')),
-              },
-              {
-                key: 'removeSpaces',
-                label: t('textTool.removeSpaces'),
-                variant: 'secondary',
-                disabled: !value,
-                onPress: () =>
-                  apply(t('textTool.removedSpaces'), (input) => input.replace(/[ \t]+/g, '')),
+                options: ['trim', 'compressSpaces', 'removeSpaces'].map((key) => ({
+                  key,
+                  label: t(`textTool.${key}`),
+                })),
+                onSelect: (mode) => apply(t(`textTool.${mode}`), spaceTransforms[mode]),
               },
               {
                 key: 'compressLine',
                 label: t('textTool.compressLine'),
+                type: 'split',
+                menuLabel: t('textTool.compressLineOptions'),
+                menuChecked: removeTrailingBackslash,
+                menuItemLabel: t('textTool.removeTrailingBackslash'),
+                onMenuToggle: () => setRemoveTrailingBackslash((checked) => !checked),
                 variant: 'secondary',
                 disabled: !value,
-                onPress: () =>
-                  apply(t('textTool.compressedLine'), (input) => input.replace(/\r\n?|\n/g, ' ')),
+                onPress: () => apply(t('textTool.compressedLine'), compressLine),
               },
               {
                 key: 'copy',
