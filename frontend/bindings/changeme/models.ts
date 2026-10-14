@@ -40,6 +40,7 @@ export interface Config {
     "sshProfiles": SSHProfile[] | null;
     "fileSources": FileSource[] | null;
     "serviceTargets": ServiceTarget[] | null;
+    "serviceLogHighlightLevels": boolean;
     "portSources": PortSource[] | null;
     "portForwards": PortForwardConfig[] | null;
 }

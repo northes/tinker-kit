@@ -18,6 +18,35 @@ func TestDefaultConfigTheme(t *testing.T) {
 	}
 }
 
+func TestServiceLogHighlightConfig(t *testing.T) {
+	for _, data := range []string{`{}`, `{"serviceLogHighlightLevels":true}`, `{"serviceLogHighlightLevels":false}`} {
+		cfg, err := decodeImportedConfig([]byte(data))
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := data != `{"serviceLogHighlightLevels":false}`
+		if cfg.ServiceLogHighlight != want {
+			t.Fatalf("凸显着色默认值或显式选择未保留：%s", data)
+		}
+		path := filepath.Join(t.TempDir(), "config.json")
+		service := &ConfigService{path: path, cfg: defaultConfig()}
+		if err := service.Save(cfg); err != nil {
+			t.Fatal(err)
+		}
+		persisted, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		reloaded := defaultConfig()
+		if err := json.Unmarshal(persisted, &reloaded); err != nil {
+			t.Fatal(err)
+		}
+		if reloaded.ServiceLogHighlight != want {
+			t.Fatalf("凸显着色选择落盘后未保留：%s", data)
+		}
+	}
+}
+
 func TestDecodeImportedConfigFillsDefaultsAndKeepsCredentials(t *testing.T) {
 	cfg, err := decodeImportedConfig([]byte(`{"language":"en-US","sshProfiles":[{"id":"profile-1","name":"prod","origin":"manual","host":"example.com","port":22,"username":"deploy","password":"secret"}]}`))
 	if err != nil {
