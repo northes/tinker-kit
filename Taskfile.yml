@@ -25,6 +25,11 @@ tasks:
     cmds:
       - go test {{.GO_TEST_FLAGS}} ./...
 
+  test:shared-logic:
+    summary: Checks byte formatting, task formatting, and rename rules
+    cmds:
+      - node --experimental-strip-types --test frontend/src/lib/byte-format.test.mjs frontend/src/lib/name-transform.test.mjs frontend/src/lib/task-format.test.mjs
+
   test:image-tasks:
     summary: Checks image task snapshot ordering
     cmds:

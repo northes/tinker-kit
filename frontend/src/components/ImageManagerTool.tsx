@@ -1,11 +1,6 @@
-import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
-import { useTranslation } from 'react-i18next';
-import { useVirtualizer } from '@tanstack/react-virtual';
-import { CancelError, Events } from '@wailsio/runtime';
 import {
   ArrowsClockwise,
   CaretDown,
-  CaretLeft,
   CaretUp,
   CloudArrowDown,
   Copy,
@@ -13,58 +8,105 @@ import {
   GearSix,
   IdentificationCard,
   ListDashes,
-  MagnifyingGlass,
   Package,
   PencilSimple,
   Trash,
   UploadSimple,
 } from '@phosphor-icons/react';
+import { useVirtualizer } from '@tanstack/react-virtual';
+import { CancelError } from '@wailsio/runtime';
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import { ValidateImageSource } from '../../bindings/changeme/configservice';
 import {
   DeleteDockerImages,
-  GetImageTasks,
+  PrepareImageImports,
   PushDockerImages,
-  RefreshDockerImages,
+  ResolveImagePullPlatforms,
   StartImageExport,
   StartImageExports,
   StartImageImports,
-  PrepareImageImports,
   StartImagePulls,
-  StartRegistryImagePulls,
-  ResolveImagePullPlatforms,
   StartImageTagChanges,
+  StartRegistryImagePulls,
   TestImageSourceConnection,
-  WatchDockerImages,
 } from '../../bindings/changeme/imageservice';
-import { ValidateImageSource } from '../../bindings/changeme/configservice';
 import type {
-  Config as Settings,
-  DockerImageBatchResult,
-  DockerImage,
-  DockerImageDetail,
   DockerDeleteTarget,
-  DockerStatus,
-  ImageSource,
+  DockerImageBatchResult,
   ImageImportEntry,
+  ImageSource,
   ImageTask,
-  ImageTaskSnapshot,
-  SSHProfile,
+  Config as Settings,
 } from '../../bindings/changeme/models';
-import { applyImageTaskSnapshot } from '../lib/image-tasks';
+import { formatBackendError } from '../lib/backend-error';
 import { imageArchitectures } from '../lib/image-architectures';
+import { ConfirmDialog } from './ConfirmDialog';
+import { ImageSearchField } from './image-manager/ImageSearchField';
+import {
+  associatedRegistryTags,
+  asStringList,
+  bindingSource,
+  buildImageRows,
+  buildRenamePreview,
+  clipboardList,
+  copyableImageName,
+  deleteTargets,
+  errorMessage,
+  formatBytes,
+  formatCreatedAt,
+  formatCreatedAtCompact,
+  IMAGE_TASK_RETENTION_MS,
+  imageCreatedAtMs,
+  imageExportEstimateBytes,
+  imageExportReference,
+  imageLabel,
+  imageRowLabel,
+  imageSizeBytes,
+  imageWithTag,
+  isLocalSource,
+  isNamedImageRow,
+  LOCAL_SOURCE,
+  LOCAL_SOURCE_ID,
+  MANAGE_SOURCES_VALUE,
+  renameFormHasInput,
+  resolveContentViewState,
+  resolveSources,
+  resolveSourceViewState,
+  shortId,
+  sourceDisplayName,
+  sourceMissingSSHProfile,
+  suggestedPullTarget,
+  type ConfirmState,
+  type ImageOperationDialogState,
+  type ImageRenameForm,
+  type ImageRenameScope,
+  type ImageRow,
+  type IndexedImage,
+  type ManagedImageSource,
+  type SortDirection,
+  type SortKey,
+  type SourceDraft,
+} from './image-manager/model';
+import { useImageManagerWatch } from './image-manager/useImageManagerWatch';
+import { ImageImportDialog } from './ImageImportDialog';
 import {
   Reveal,
+  ToolHeaderField,
   ToolLayout,
   ToolLayoutContent,
   ToolLayoutFooter,
   ToolLayoutHeader,
   ToolLayoutToolbar,
-  ToolHeaderField,
   useCheckboxDragSelect,
   type PendingAction,
   type ToolId,
 } from './shared';
+import { SSHProfileFormField } from './SSHProfileFormField';
+import { useSSHProfiles } from './SSHProfileManagerDialog';
+import { TargetHostManagerDialog, upsertManagerItem } from './TargetHostManagerDialog';
+import { openTaskCenter } from './TaskCenter';
 import { Badge } from './ui/badge';
-import { ScrollArea } from './ui/scroll-area';
 import { Button } from './ui/button';
 import { Checkbox } from './ui/checkbox';
 import {
@@ -84,8 +126,8 @@ import {
   DialogTitle,
 } from './ui/dialog';
 import { Input } from './ui/input';
-import { ImageImportDialog } from './ImageImportDialog';
 import { Label } from './ui/label';
+import { ScrollArea } from './ui/scroll-area';
 import {
   Select,
   SelectContent,
@@ -98,971 +140,6 @@ import {
 import { Spinner } from './ui/spinner';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
 import { toast } from './ui/toast';
-import { openTaskCenter } from './TaskCenter';
-import { SSHProfileFormField } from './SSHProfileFormField';
-import { useSSHProfiles } from './SSHProfileManagerDialog';
-import { ConfirmDialog } from './ConfirmDialog';
-import { TargetHostManagerDialog, upsertManagerItem } from './TargetHostManagerDialog';
-import { formatBackendError } from '../lib/backend-error';
-
-const LOCAL_SOURCE_ID = 'local';
-const MANAGE_SOURCES_VALUE = '__manage-sources__';
-const LOCAL_SOURCE = {
-  id: LOCAL_SOURCE_ID,
-  name: '本机',
-  kind: 'local',
-} as unknown as ImageSource;
-const IMAGE_TASK_RETENTION_MS = 24 * 60 * 60 * 1000;
-
-type ManagedImageSource = Omit<
-  ImageSource,
-  'sshProfileID' | 'registryURL' | 'registryUsername' | 'registryPassword'
-> & {
-  sshProfileID?: string;
-  registryURL?: string;
-  registryUsername?: string;
-  registryPassword?: string;
-  capabilities?: { canDelete?: boolean; canPush?: boolean };
-};
-type SourceDraft = Partial<ManagedImageSource> &
-  Pick<ManagedImageSource, 'name' | 'kind'> & { id?: string };
-
-type WatchEventKind = 'snapshot' | 'create' | 'update' | 'delete';
-
-type WatchProgress = {
-  scanned?: number;
-  total?: number;
-  stage?: string;
-};
-
-type WatchDockerImagesEvent = {
-  clientID: string;
-  sourceID: string;
-  generation?: number;
-  revision?: number;
-  kind?: WatchEventKind;
-  images?: DockerImage[];
-  image?: DockerImage;
-  imageID?: string;
-  imageIDs?: string[];
-  status?: DockerStatus;
-  progress?: WatchProgress;
-  isUpdating?: boolean;
-  isInitialLoad?: boolean;
-  hasSnapshot?: boolean;
-  snapshotUpdatedAt?: string;
-  error?: string;
-};
-
-type ConfirmState = {
-  type: 'delete';
-  ids: string[];
-  targets: DockerDeleteTarget[];
-  name: string;
-  sourceId: string;
-  sourceKind: string;
-  sourceConfigKey: string;
-  deleteManifest: boolean;
-} | null;
-
-type ImageRenameScope = 'tag' | 'name';
-type ImageRenameMode = 'prefix' | 'suffix' | 'replace' | 'custom';
-
-type ImageRenameForm = {
-  scope: ImageRenameScope;
-  mode: ImageRenameMode;
-  value: string;
-  find: string;
-  replacement: string;
-};
-
-type ImageRenamePreview = {
-  source: string;
-  target: string;
-  status: 'ok' | 'empty' | 'unchanged' | 'duplicate' | 'crossRepository';
-};
-
-type ImageOperationDialogState =
-  | {
-      type: 'push';
-      changes: Array<{ source: string; target: string }>;
-      sourceConfigKey: string;
-      value: string;
-    }
-  | {
-      type: 'rename';
-      rows: ImageRow[];
-      sourceConfigKey: string;
-      form: ImageRenameForm;
-    }
-  | {
-      type: 'copy-tag';
-      rows: ImageRow[];
-      sourceConfigKey: string;
-      value: string;
-    }
-  | {
-      type: 'pull-image';
-      sourceConfigKey: string;
-      value: string;
-      target: string;
-      username: string;
-      password: string;
-      platform: string;
-      platforms: string[];
-      platformStatus: 'idle' | 'loading' | 'success' | 'error';
-      platformError: string;
-    }
-  | null;
-
-type SourceViewState = 'connecting' | 'unavailable' | 'loading-details' | 'updating' | 'connected';
-type ContentViewState = 'loading' | 'error' | 'empty' | 'no-results' | 'table';
-
-function errorMessage(error: unknown) {
-  return formatBackendError(error);
-}
-
-// 来源状态只由连接探测、扫描错误和后台更新事件共同决定。
-function resolveSourceViewState(
-  isConnecting: boolean,
-  status: DockerStatus | null,
-  loadError: string,
-  isUpdating: boolean,
-  isInitialLoad: boolean,
-): SourceViewState {
-  if (isConnecting) return 'connecting';
-  if (loadError || !status?.available) return 'unavailable';
-  if (isUpdating && isInitialLoad) return 'loading-details';
-  if (isUpdating) return 'updating';
-  return 'connected';
-}
-
-// 内容区优先保留已有数据；只有没有任何镜像时，更新中才显示 loading。
-function resolveContentViewState(
-  isConnecting: boolean,
-  hasSnapshot: boolean,
-  imageCount: number,
-  filteredCount: number,
-  sourceViewState: SourceViewState,
-): ContentViewState {
-  if (isConnecting && !hasSnapshot && imageCount === 0) return 'loading';
-  if (imageCount > 0) return filteredCount > 0 ? 'table' : 'no-results';
-  if (hasSnapshot) return 'empty';
-  if (sourceViewState === 'unavailable') return 'error';
-  if (sourceViewState === 'loading-details' || sourceViewState === 'updating') return 'loading';
-  return 'empty';
-}
-
-function isWatchCancelError(error: unknown) {
-  return error instanceof CancelError || (error instanceof Error && error.name === 'CancelError');
-}
-
-function isLocalSource(source: ImageSource) {
-  return source.id === LOCAL_SOURCE_ID || source.kind === 'local';
-}
-
-function resolveSources(sources: ImageSource[] | null | undefined): ImageSource[] {
-  const list = (sources ?? []).filter((source) => source.id);
-  if (list.some(isLocalSource)) return list;
-  return [LOCAL_SOURCE, ...list];
-}
-
-function sourceDisplayName(
-  source: ImageSource,
-  t: (key: string) => string,
-  profiles: SSHProfile[],
-) {
-  if (isLocalSource(source)) return t('imageManagerTool.localSource');
-  if (source.name) return source.name;
-  if (source.kind === 'ssh') {
-    const profileID = (source as ManagedImageSource).sshProfileID?.trim() ?? '';
-    return (
-      profiles.find((profile) => profile.id === profileID)?.name ??
-      t('imageManagerTool.sshProfileMissing')
-    );
-  }
-  return (source as ManagedImageSource).registryURL || '';
-}
-
-function sourceMissingSSHProfile(source: ImageSource, profiles: SSHProfile[]) {
-  if (source.kind !== 'ssh') return false;
-  const profileID = (source as ManagedImageSource).sshProfileID?.trim() ?? '';
-  return !profileID || !profiles.some((profile) => profile.id === profileID);
-}
-
-function bindingSource(source: ManagedImageSource): ImageSource {
-  const ssh = source.kind === 'ssh';
-  const registry = source.kind === 'registry';
-  const registryURL = registry ? (source.registryURL?.trim() ?? '') : '';
-  let normalizedRegistryURL = registryURL.replace(/\/+$/, '');
-  try {
-    const parsed = new URL(registryURL);
-    if (parsed.protocol === 'https:') {
-      parsed.hostname = parsed.hostname.toLowerCase();
-      parsed.pathname = parsed.pathname.replace(/\/+$/, '');
-      normalizedRegistryURL = parsed.toString().replace(/\/$/, '');
-    }
-  } catch {
-    // 让服务端返回具体的 URL 校验错误。
-  }
-  return {
-    id: source.id,
-    name: source.name.trim(),
-    kind: source.kind.trim(),
-    sshProfileID: ssh ? (source.sshProfileID?.trim() ?? '') : '',
-    registryURL: normalizedRegistryURL,
-    registryUsername: registry ? (source.registryUsername?.trim() ?? '') : '',
-    registryPassword: registry ? (source.registryPassword ?? '') : '',
-  } as ImageSource;
-}
-
-function asStringList(value: string[] | string | null | undefined) {
-  if (!value) return [];
-  return (Array.isArray(value) ? value : [value]).map((item) => item.trim()).filter(Boolean);
-}
-
-function labelEntries(labels: DockerImageDetail['labels']) {
-  if (!labels) return [];
-  return Object.entries(labels).filter((entry): entry is [string, string] =>
-    Boolean(entry[0] && entry[1] != null && entry[1] !== ''),
-  );
-}
-
-function formatBytes(bytes: number, locale: string) {
-  if (!Number.isFinite(bytes) || bytes < 0) return '';
-  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
-  let value = bytes;
-  let unit = 0;
-  while (value >= 1024 && unit < units.length - 1) {
-    value /= 1024;
-    unit += 1;
-  }
-  return `${value.toLocaleString(locale, {
-    maximumFractionDigits: unit === 0 ? 0 : 1,
-  })} ${units[unit]}`;
-}
-
-function formatRawJSON(value: string) {
-  if (!value) return '';
-  try {
-    return JSON.stringify(JSON.parse(value), null, 2) ?? value;
-  } catch {
-    return value;
-  }
-}
-
-function parseDateSafe(value: string): Date | null {
-  if (!value) return null;
-  const raw = value.trim();
-  if (!raw) return null;
-
-  // 1. 标准 Date 解析（ISO 8601、RFC 3339 等）
-  let parsed = new Date(raw);
-  if (!Number.isNaN(parsed.getTime())) {
-    return parsed;
-  }
-
-  // 2. 匹配 Go time.String() 格式，例如: "2025-07-15 19:01:16 +0800 CST" 或 "2025-07-15 19:01:16.123456789 +0800 CST m=+0.000000001"
-  // 去除尾随的非标准时区缩写/单调时钟，转换为标准 ISO/RFC 格式 "YYYY-MM-DDTHH:mm:ss[.SSS]±HH:MM"
-  const goTimeMatch = raw.match(
-    /^(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2}:\d{2}(?:\.\d+)?)\s*([+-]\d{2})(?::?(\d{2}))?(?:\s+[A-Za-z0-9_-]+)?(?:\s+m=.*)?$/,
-  );
-  if (goTimeMatch) {
-    const [, datePart, timePart, tzHours, tzMinutes = '00'] = goTimeMatch;
-    const isoString = `${datePart}T${timePart}${tzHours}:${tzMinutes}`;
-    parsed = new Date(isoString);
-    if (!Number.isNaN(parsed.getTime())) {
-      return parsed;
-    }
-  }
-
-  // 3. 匹配常见无时区格式 "YYYY-MM-DD HH:mm:ss"
-  const simpleMatch = raw.match(/^(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2}:\d{2}(?:\.\d+)?)$/);
-  if (simpleMatch) {
-    const [, datePart, timePart] = simpleMatch;
-    parsed = new Date(`${datePart}T${timePart}`);
-    if (!Number.isNaN(parsed.getTime())) {
-      return parsed;
-    }
-  }
-
-  return null;
-}
-
-function formatCreatedAt(value: string, locale: string) {
-  if (!value) return '';
-  const date = parseDateSafe(value);
-  return date ? date.toLocaleString(locale) : value;
-}
-
-function formatCreatedAtCompact(value: string, locale: string) {
-  if (!value) return '';
-  const date = parseDateSafe(value);
-  if (!date) return value;
-  const isCurrentYear = date.getFullYear() === new Date().getFullYear();
-  return new Intl.DateTimeFormat(locale, {
-    ...(isCurrentYear ? {} : { year: 'numeric' }),
-    month: 'numeric',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-    hourCycle: 'h23',
-  }).format(date);
-}
-
-function shortId(id: string) {
-  const value = id.replace(/^sha256:/, '');
-  return value.length > 12 ? value.slice(0, 12) : value;
-}
-
-function imageLabel(image: DockerImage, unnamed: string) {
-  return image.name?.trim() || unnamed;
-}
-
-function isNamedImageReference(image: DockerImage, unnamed: string) {
-  const name = imageLabel(image, unnamed);
-  return Boolean(name) && name !== unnamed && !name.includes('<none>') && !name.includes('@');
-}
-
-function imageExportReference(image: DockerImage, unnamed: string) {
-  return isNamedImageReference(image, unnamed) ? imageLabel(image, unnamed) : image.id;
-}
-
-function imageRepository(reference: string) {
-  const lastSlash = reference.lastIndexOf('/');
-  const lastColon = reference.lastIndexOf(':');
-  return lastColon > lastSlash ? reference.slice(0, lastColon) : reference;
-}
-
-// 目标是当前 Registry 内的仓库引用，去掉来源域名，保留命名空间和 Tag。
-function suggestedPullTarget(reference: string) {
-  let value = reference.trim().split('@')[0];
-  if (!value) return '';
-  const slash = value.indexOf('/');
-  const first = value.slice(0, slash);
-  if (slash >= 0 && (first.includes('.') || first.includes(':') || first === 'localhost')) {
-    value = value.slice(slash + 1);
-  }
-  if (!value) return '';
-  return imageTag(value) ? value : `${value}:latest`;
-}
-
-function imageWithTag(reference: string, tag: string) {
-  return `${imageRepository(reference)}:${tag}`;
-}
-
-function imageTag(reference: string) {
-  const repository = imageRepository(reference);
-  return repository === reference ? '' : reference.slice(repository.length + 1);
-}
-
-function applyImageRenameTransform(base: string, form: ImageRenameForm) {
-  switch (form.mode) {
-    case 'prefix':
-      return `${form.value}${base}`;
-    case 'suffix':
-      return `${base}${form.value}`;
-    case 'replace':
-      return form.find ? base.split(form.find).join(form.replacement) : base;
-    case 'custom':
-      return form.value;
-  }
-}
-
-// 作用对象为 Tag 时只改最后一个冒号后的部分，其余情况作用于完整镜像名。
-function imageRenameTarget(reference: string, form: ImageRenameForm) {
-  if (form.scope === 'name') {
-    return applyImageRenameTransform(reference, form);
-  }
-  const repository = imageRepository(reference);
-  const nextTag = applyImageRenameTransform(imageTag(reference), form);
-  return nextTag ? `${repository}:${nextTag}` : reference;
-}
-
-function renameFormHasInput(form: ImageRenameForm) {
-  return form.mode === 'replace' ? form.find.length > 0 : form.value.length > 0;
-}
-
-// 预览同时标记空目标、未变化、跨行重复和 Registry 跨仓库，提交前即可发现非法重命名。
-function buildRenamePreview(
-  rows: ImageRow[],
-  form: ImageRenameForm,
-  sameRepositoryRequired: boolean,
-): ImageRenamePreview[] {
-  const targets = rows.map((row) => imageRenameTarget(row.reference, form).trim());
-  const counts = new Map<string, number>();
-  for (const target of targets) counts.set(target, (counts.get(target) ?? 0) + 1);
-  return rows.map((row, index) => {
-    const source = row.reference;
-    const target = targets[index];
-    const status: ImageRenamePreview['status'] = !target
-      ? 'empty'
-      : target === source
-        ? 'unchanged'
-        : (counts.get(target) ?? 0) > 1
-          ? 'duplicate'
-          : sameRepositoryRequired && imageRepository(target) !== imageRepository(source)
-            ? 'crossRepository'
-            : 'ok';
-    return { source, target, status };
-  });
-}
-
-function copyableImageName(source: ImageSource, name: string) {
-  if (source.kind !== 'registry') return name;
-  const registryPrefix = ((source as ManagedImageSource).registryURL ?? '')
-    .trim()
-    .replace(/^[a-z][a-z0-9+.-]*:\/\//i, '')
-    .replace(/\/+$/, '');
-  return registryPrefix && !name.startsWith(`${registryPrefix}/`)
-    ? `${registryPrefix}/${name}`
-    : name;
-}
-
-// 多选复制时按「1. 值\n2. 值\n...\n共 N 个」输出；单选直接返回原始值。
-function clipboardList(values: string[], countLabel: string) {
-  if (values.length <= 1) return values[0] ?? '';
-  return [...values.map((value, index) => `${index + 1}. ${value}`), countLabel].join('\n');
-}
-
-function registryImageIdentity(image: DockerImage) {
-  const digest = image.digest?.trim();
-  return digest ? `${image.repository}\u0000${digest}` : '';
-}
-
-function associatedRegistryTags(images: DockerImage[], ids: string[]) {
-  const selectedIds = new Set(ids);
-  const selectedImages = images.filter((image) => selectedIds.has(image.id));
-  const identities = new Set(selectedImages.map(registryImageIdentity).filter(Boolean));
-  if (identities.size === 0) return [];
-  const selectedTags = new Set(selectedImages.flatMap((image) => asStringList(image.tags)));
-  return [
-    ...new Set(
-      images
-        .filter((image) => identities.has(registryImageIdentity(image)))
-        .flatMap((image) => asStringList(image.tags))
-        .filter((tag) => !selectedTags.has(tag)),
-    ),
-  ];
-}
-
-// 删除按行粒度：具名行用 repo:tag（docker rmi <tag> 只移除该 tag），
-// 悬空行才回退到镜像 ID（docker rmi <id> 删除整个镜像）。
-function deleteTargets(rows: ImageRow[]): DockerDeleteTarget[] {
-  const seen = new Set<string>();
-  const targets: DockerDeleteTarget[] = [];
-  for (const row of rows) {
-    const imageID = row.reference || row.image.id;
-    if (seen.has(imageID)) continue;
-    seen.add(imageID);
-    targets.push({ imageID, expectedDigest: row.image.digest?.trim() ?? '' });
-  }
-  return targets;
-}
-
-function ImageSearchField({
-  id,
-  label,
-  placeholder,
-  value,
-  onSearch,
-}: {
-  id: string;
-  label: string;
-  placeholder: string;
-  value: string;
-  onSearch: (value: string) => void;
-}) {
-  const labelId = useId();
-  const [draft, setDraft] = useState(value);
-
-  useEffect(() => {
-    setDraft(value);
-  }, [value]);
-
-  return (
-    <div className="flex min-w-0 flex-col gap-1 text-[10px] font-medium text-muted-foreground max-[700px]:w-full">
-      <span id={labelId}>{label}</span>
-      <div className="relative flex w-[220px] max-w-full items-center max-[700px]:w-full">
-        <MagnifyingGlass
-          size={14}
-          weight="duotone"
-          aria-hidden="true"
-          className="pointer-events-none absolute left-2.5 text-muted-foreground"
-        />
-        <Input
-          id={id}
-          aria-labelledby={labelId}
-          value={draft}
-          onChange={(event) => setDraft(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === 'Enter' && !event.nativeEvent.isComposing) {
-              onSearch(draft);
-            }
-          }}
-          placeholder={placeholder}
-          className="h-[30px] pl-8 text-[11px]"
-        />
-      </div>
-    </div>
-  );
-}
-
-export function ImageManagerDetailView({
-  active,
-  detail,
-  error,
-  loading,
-  onBack,
-}: {
-  active: boolean;
-  detail: DockerImageDetail | null;
-  error: string;
-  loading: boolean;
-  onBack: () => void;
-}) {
-  const { t, i18n } = useTranslation();
-  const unnamed = t('imageManagerTool.unnamed');
-  const detailMetadataRows = detail
-    ? [
-        { key: 'id', label: t('imageManagerTool.detailId'), value: detail.id },
-        {
-          key: 'names',
-          label: t('imageManagerTool.detailNames'),
-          value: [detail.name, ...asStringList(detail.tags)].filter(Boolean).join(', ') || unnamed,
-        },
-        {
-          key: 'repository',
-          label: t('imageManagerTool.detailRepository'),
-          value: detail.repository,
-        },
-        {
-          key: 'size',
-          label: t('imageManagerTool.detailSize'),
-          value: formatBytes(detail.size, i18n.language),
-        },
-        { key: 'digest', label: t('imageManagerTool.detailDigest'), value: detail.digest },
-        { key: 'mediaType', label: t('imageManagerTool.detailMediaType'), value: detail.mediaType },
-        { key: 'sizeType', label: t('imageManagerTool.detailSizeType'), value: detail.sizeType },
-        {
-          key: 'manifest',
-          label: t('imageManagerTool.detailManifest'),
-          value: detail.manifest
-            ? `${detail.manifest.mediaType} · ${t('imageManagerTool.manifestSize', { size: formatBytes(detail.manifest.config.size + (detail.manifest.layers ?? []).reduce((total, layer) => total + layer.size, 0), i18n.language) })}`
-            : detail.index
-              ? t('imageManagerTool.detailIndex')
-              : '',
-        },
-        {
-          key: 'platforms',
-          label: t('imageManagerTool.detailPlatforms'),
-          value: detail.index?.manifests
-            ?.map((item) =>
-              item.platform
-                ? `${item.platform.os}/${item.platform.architecture}${item.platform.variant ? `/${item.platform.variant}` : ''}`
-                : '',
-            )
-            .filter(Boolean)
-            .join(', '),
-        },
-        {
-          key: 'createdAt',
-          label: t('imageManagerTool.detailCreated'),
-          value: formatCreatedAt(detail.metadata.createdAt || detail.createdAt, i18n.language),
-        },
-        {
-          key: 'architecture',
-          label: t('imageManagerTool.detailArchitecture'),
-          value: detail.metadata.architecture || detail.architecture,
-        },
-        {
-          key: 'os',
-          label: t('imageManagerTool.detailOs'),
-          value: detail.metadata.os || detail.os,
-        },
-        {
-          key: 'osVersion',
-          label: t('imageManagerTool.detailOsVersion'),
-          value: detail.metadata.osVersion,
-        },
-        {
-          key: 'variant',
-          label: t('imageManagerTool.detailVariant'),
-          value: detail.metadata.variant,
-        },
-        { key: 'author', label: t('imageManagerTool.detailAuthor'), value: detail.metadata.author },
-        {
-          key: 'dockerVersion',
-          label: t('imageManagerTool.detailDockerVersion'),
-          value: detail.metadata.dockerVersion,
-        },
-        {
-          key: 'container',
-          label: t('imageManagerTool.detailContainer'),
-          value: detail.metadata.container,
-        },
-        {
-          key: 'configDigest',
-          label: t('imageManagerTool.detailConfigDigest'),
-          value: detail.metadata.configDigest,
-        },
-        {
-          key: 'rootfsType',
-          label: t('imageManagerTool.detailRootfsType'),
-          value: detail.metadata.rootfsType,
-        },
-        {
-          key: 'diffIDs',
-          label: t('imageManagerTool.detailDiffIDs'),
-          value: asStringList(detail.metadata.diffIDs).join('\n'),
-        },
-      ]
-    : [];
-
-  const runtime = detail?.runtime;
-  const healthcheck = runtime?.healthcheck;
-  const runtimeHealthcheck = healthcheck
-    ? [
-        `${t('imageManagerTool.detailRuntimeHealthcheckTest')}: ${asStringList(healthcheck.test).join(' ') || t('imageManagerTool.emptyValue')}`,
-        healthcheck.interval
-          ? `${t('imageManagerTool.detailRuntimeHealthcheckInterval')}: ${healthcheck.interval}`
-          : '',
-        healthcheck.timeout
-          ? `${t('imageManagerTool.detailRuntimeHealthcheckTimeout')}: ${healthcheck.timeout}`
-          : '',
-        healthcheck.startPeriod
-          ? `${t('imageManagerTool.detailRuntimeHealthcheckStartPeriod')}: ${healthcheck.startPeriod}`
-          : '',
-        healthcheck.retries > 0
-          ? `${t('imageManagerTool.detailRuntimeHealthcheckRetries')}: ${healthcheck.retries}`
-          : '',
-      ]
-        .filter(Boolean)
-        .join('\n')
-    : '';
-  const runtimeRows = detail
-    ? [
-        {
-          key: 'command',
-          label: t('imageManagerTool.detailCommand'),
-          value: asStringList(runtime?.command ?? detail.command).join(' '),
-        },
-        {
-          key: 'entrypoint',
-          label: t('imageManagerTool.detailEntrypoint'),
-          value: asStringList(runtime?.entrypoint ?? detail.entrypoint).join(' '),
-        },
-        { key: 'user', label: t('imageManagerTool.detailRuntimeUser'), value: runtime?.user ?? '' },
-        {
-          key: 'workingDir',
-          label: t('imageManagerTool.detailRuntimeWorkingDir'),
-          value: runtime?.workingDir ?? '',
-        },
-        {
-          key: 'env',
-          label: t('imageManagerTool.detailRuntimeEnv'),
-          value: asStringList(runtime?.env).join('\n'),
-        },
-        {
-          key: 'exposedPorts',
-          label: t('imageManagerTool.detailRuntimeExposedPorts'),
-          value: asStringList(runtime?.exposedPorts).join('\n'),
-        },
-        {
-          key: 'volumes',
-          label: t('imageManagerTool.detailRuntimeVolumes'),
-          value: asStringList(runtime?.volumes).join('\n'),
-        },
-        {
-          key: 'stopSignal',
-          label: t('imageManagerTool.detailRuntimeStopSignal'),
-          value: runtime?.stopSignal ?? '',
-        },
-        {
-          key: 'shell',
-          label: t('imageManagerTool.detailRuntimeShell'),
-          value: asStringList(runtime?.shell).join(' '),
-        },
-        {
-          key: 'healthcheck',
-          label: t('imageManagerTool.detailRuntimeHealthcheck'),
-          value: runtimeHealthcheck,
-        },
-        {
-          key: 'tty',
-          label: t('imageManagerTool.detailRuntimeTty'),
-          value: runtime?.tty
-            ? t('imageManagerTool.booleanTrue')
-            : t('imageManagerTool.booleanFalse'),
-        },
-        {
-          key: 'openStdin',
-          label: t('imageManagerTool.detailRuntimeOpenStdin'),
-          value: runtime?.openStdin
-            ? t('imageManagerTool.booleanTrue')
-            : t('imageManagerTool.booleanFalse'),
-        },
-        {
-          key: 'networkDisabled',
-          label: t('imageManagerTool.detailRuntimeNetworkDisabled'),
-          value: runtime?.networkDisabled
-            ? t('imageManagerTool.booleanTrue')
-            : t('imageManagerTool.booleanFalse'),
-        },
-      ]
-    : [];
-  const detailLayers =
-    detail?.layers && detail.layers.length > 0 ? detail.layers : (detail?.manifest?.layers ?? []);
-  const rawManifest = detail ? formatRawJSON(detail.rawManifest) : '';
-  const renderDetailRows = (rows: Array<{ key: string; label: string; value?: string }>) =>
-    rows.map((row) => {
-      const isMono = ['id', 'digest', 'configDigest', 'diffIDs', 'command', 'entrypoint'].includes(
-        row.key,
-      );
-      return (
-        <div
-          key={row.key}
-          className="grid grid-cols-1 gap-1 py-2.5 sm:grid-cols-[7rem_minmax(0,1fr)] sm:gap-4"
-        >
-          <dt className="text-[10px] font-medium text-muted-foreground">{row.label}</dt>
-          <dd
-            className={`m-0 min-w-0 whitespace-pre-wrap break-words text-[12px] text-foreground ${isMono ? 'font-mono' : ''}`}
-          >
-            {row.value || t('imageManagerTool.emptyValue')}
-          </dd>
-        </div>
-      );
-    });
-
-  return (
-    <Reveal index={0} fill active={active}>
-      <ToolLayout>
-        <ToolLayoutHeader title={t('imageManagerTool.detailTitle')} />
-        <ToolLayoutToolbar
-          left={
-            <Button
-              variant="ghost"
-              onClick={onBack}
-              className="h-[30px] flex-none px-[11px] text-[11px]"
-            >
-              <CaretLeft data-icon="inline-start" weight="duotone" aria-hidden="true" />
-              {t('imageManagerTool.back')}
-            </Button>
-          }
-        />
-        <ToolLayoutContent className="flex min-h-0 flex-col">
-          {loading ? (
-            <div className="flex min-h-0 flex-1 items-center justify-center">
-              <Spinner />
-            </div>
-          ) : error ? (
-            <div className="flex h-auto min-h-0 flex-1 flex-col items-center justify-center gap-2 text-center">
-              <Package size={28} weight="duotone" className="text-muted-foreground" />
-              <div className="text-sm font-medium text-foreground">
-                {t('imageManagerTool.loadFailed')}
-              </div>
-              <div className="max-w-md text-xs text-muted-foreground">{error}</div>
-            </div>
-          ) : detail ? (
-            <ScrollArea
-              className="h-full min-h-0 [padding-inline-end:var(--overlay-scrollbar-size)]"
-              options={{ overflow: { x: 'hidden' } }}
-            >
-              <section aria-labelledby="image-detail-metadata" className="mt-3">
-                <h3
-                  id="image-detail-metadata"
-                  className="m-0 text-[12px] font-semibold text-foreground"
-                >
-                  {t('imageManagerTool.detailMetadata')}
-                </h3>
-                <dl className="mt-2 divide-y divide-border">
-                  {renderDetailRows(detailMetadataRows)}
-                </dl>
-                <dl className="divide-y divide-border">
-                  <div className="grid grid-cols-1 gap-1 py-2.5 sm:grid-cols-[7rem_minmax(0,1fr)] sm:gap-4">
-                    <dt className="text-[10px] font-medium text-muted-foreground">
-                      {t('imageManagerTool.detailLabels')}
-                    </dt>
-                    <dd className="m-0 min-w-0">
-                      {labelEntries(detail.labels).length === 0 ? (
-                        <p className="m-0 text-[12px] text-muted-foreground">
-                          {t('imageManagerTool.labelsEmpty')}
-                        </p>
-                      ) : (
-                        <div className="space-y-2">
-                          {labelEntries(detail.labels).map(([key, value]) => (
-                            <div key={key} className="flex flex-col gap-0.5">
-                              <span className="font-mono text-[10px] text-muted-foreground">
-                                {key}
-                              </span>
-                              <span className="break-words text-[12px] text-foreground">
-                                {value}
-                              </span>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </dd>
-                  </div>
-                </dl>
-              </section>
-
-              <section aria-labelledby="image-detail-layers" className="mt-6">
-                <h3
-                  id="image-detail-layers"
-                  className="m-0 text-[12px] font-semibold text-foreground"
-                >
-                  {t('imageManagerTool.detailLayers')}
-                </h3>
-                {detailLayers.length === 0 ? (
-                  <p className="mt-2 text-[12px] text-muted-foreground">
-                    {t('imageManagerTool.layersEmpty')}
-                  </p>
-                ) : (
-                  <ScrollArea className="mt-2 border-y border-border">
-                    <Table className="min-w-[42rem] text-[11px]">
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead className="w-14">
-                            {t('imageManagerTool.detailLayerIndex')}
-                          </TableHead>
-                          <TableHead>{t('imageManagerTool.detailLayerSize')}</TableHead>
-                          <TableHead>{t('imageManagerTool.detailLayerDigest')}</TableHead>
-                          <TableHead>{t('imageManagerTool.detailLayerMediaType')}</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {detailLayers.map((layer, index) => (
-                          <TableRow key={`${layer.digest}-${index}`}>
-                            <TableCell className="text-muted-foreground">{index + 1}</TableCell>
-                            <TableCell className="whitespace-nowrap">
-                              {layer.size > 0
-                                ? formatBytes(layer.size, i18n.language)
-                                : t('imageManagerTool.emptyValue')}
-                            </TableCell>
-                            <TableCell className="max-w-[24rem] break-all font-mono">
-                              {layer.digest || t('imageManagerTool.emptyValue')}
-                            </TableCell>
-                            <TableCell className="max-w-[20rem] break-all font-mono">
-                              {layer.mediaType || t('imageManagerTool.emptyValue')}
-                            </TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                  </ScrollArea>
-                )}
-              </section>
-
-              <section aria-labelledby="image-detail-runtime" className="mt-6">
-                <h3
-                  id="image-detail-runtime"
-                  className="m-0 text-[12px] font-semibold text-foreground"
-                >
-                  {t('imageManagerTool.detailRuntime')}
-                </h3>
-                <dl className="mt-2 divide-y divide-border">{renderDetailRows(runtimeRows)}</dl>
-              </section>
-
-              <section aria-labelledby="image-detail-raw-manifest" className="mt-6 pb-6">
-                <h3
-                  id="image-detail-raw-manifest"
-                  className="m-0 text-[12px] font-semibold text-foreground"
-                >
-                  {t('imageManagerTool.detailRawManifest')}
-                </h3>
-                {rawManifest ? (
-                  <ScrollArea
-                    element="pre"
-                    className="mt-2 max-h-[32rem] whitespace-pre-wrap break-all border-y border-border p-3 font-mono text-[11px] leading-5 text-foreground"
-                  >
-                    {rawManifest}
-                  </ScrollArea>
-                ) : (
-                  <p className="mt-2 text-[12px] text-muted-foreground">
-                    {t('imageManagerTool.rawManifestEmpty')}
-                  </p>
-                )}
-              </section>
-            </ScrollArea>
-          ) : null}
-        </ToolLayoutContent>
-      </ToolLayout>
-    </Reveal>
-  );
-}
-
-type ImageWithSizeBytes = DockerImage & { sizeBytes?: number | null };
-type SortKey = 'name' | 'size' | 'createdAt';
-type SortDirection = 'asc' | 'desc';
-
-function imageSizeBytes(image: DockerImage) {
-  const sizeBytes = (image as ImageWithSizeBytes).sizeBytes;
-  if (typeof sizeBytes === 'number' && Number.isFinite(sizeBytes)) return Math.max(0, sizeBytes);
-  const match = String(image.size ?? '')
-    .trim()
-    .match(/^([\d.,]+)\s*(B|KB|MB|GB|TB|KiB|MiB|GiB|TiB)?$/i);
-  if (!match) return 0;
-  const value = Number(match[1].replace(/,/g, ''));
-  if (!Number.isFinite(value)) return 0;
-  const unit = (match[2] ?? 'B').toLowerCase();
-  const exponent =
-    unit.startsWith('ki') || unit.startsWith('mi') || unit.startsWith('gi') || unit.startsWith('ti')
-      ? ({ b: 0, kib: 1, mib: 2, gib: 3, tib: 4 }[unit] ?? 0)
-      : ({ b: 0, kb: 1, mb: 2, gb: 3, tb: 4 }[unit] ?? 0);
-  return value * (unit.endsWith('i') || unit.includes('ib') ? 1024 ** exponent : 1000 ** exponent);
-}
-
-function imageExportEstimateBytes(image: DockerImage) {
-  const sizeBytes = imageSizeBytes(image);
-  return Number.isFinite(sizeBytes) && sizeBytes > 0 ? Math.round(sizeBytes) : 0;
-}
-
-function imageCreatedAtMs(value: string) {
-  const date = parseDateSafe(value);
-  return date ? date.getTime() : null;
-}
-
-type ImageRow = {
-  key: string;
-  reference: string;
-  tag: string;
-  image: DockerImage;
-};
-
-// 与 `docker images` 一致：同一镜像的每个 tag 各占一行，行身份是 repo:tag。
-// 只有没有任何具名 tag 的悬空镜像才退回镜像 ID 作为行键。
-function buildImageRows(images: DockerImage[]): ImageRow[] {
-  const rows: ImageRow[] = [];
-  for (const image of images) {
-    const tags = asStringList(image.tags).filter((tag) => !tag.includes('<none>'));
-    if (tags.length === 0) {
-      rows.push({ key: image.id, reference: '', tag: '', image });
-      continue;
-    }
-    for (const tag of tags) {
-      rows.push({ key: tag, reference: tag, tag, image });
-    }
-  }
-  return rows;
-}
-
-function imageRowLabel(row: ImageRow, unnamed: string) {
-  return row.reference || imageLabel(row.image, unnamed);
-}
-
-function isNamedImageRow(row: ImageRow) {
-  return Boolean(row.reference);
-}
-
-type IndexedImage = {
-  row: ImageRow;
-  searchId: string;
-  searchName: string;
-  sortName: string;
-  sizeBytes: number;
-  createdAtMs: number | null;
-};
 
 export default function ImageManagerTool({
   active,
@@ -1090,13 +167,27 @@ export default function ImageManagerTool({
   const [sourceId, setSourceId] = useState(LOCAL_SOURCE_ID);
   const source = sources.find((item) => item.id === sourceId) ?? sources[0] ?? LOCAL_SOURCE;
   const sourceProfileMissing = sourceMissingSSHProfile(source, profiles);
-  const [reloadNonce, setReloadNonce] = useState(0);
-  const [connectionPending, setConnectionPending] = useState(false);
-  const [loadError, setLoadError] = useState('');
-  const [status, setStatus] = useState<DockerStatus | null>(null);
-  const [watchSourceId, setWatchSourceId] = useState<string | null>(null);
-  const [images, setImages] = useState<DockerImage[]>([]);
-  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const sourceConfigKey = JSON.stringify({
+    source,
+    profile:
+      source.kind === 'ssh' ? profiles.find((item) => item.id === source.sshProfileID) : null,
+  });
+  const {
+    connectionPending,
+    loadError,
+    status,
+    watchSourceId,
+    images,
+    selected,
+    setSelected,
+    isUpdating,
+    isInitialLoad,
+    hasSnapshot,
+    snapshotUpdatedAt,
+    tasks,
+    requestWatchReload,
+    applyTasks,
+  } = useImageManagerWatch({ active, source, sourceProfileMissing, sourceConfigKey, cliPath });
   const [busy, setBusy] = useState<'push' | 'tag' | 'delete' | null>(null);
   const [manageOpen, setManageOpen] = useState(false);
   const [savingSources, setSavingSources] = useState(false);
@@ -1107,66 +198,6 @@ export default function ImageManagerTool({
   const [search, setSearch] = useState('');
   const [sortKey, setSortKey] = useState<SortKey>('name');
   const [sortDirection, setSortDirection] = useState<SortDirection>('asc');
-  const [isUpdating, setIsUpdating] = useState(false);
-  const [isInitialLoad, setIsInitialLoad] = useState(false);
-  const [hasSnapshot, setHasSnapshot] = useState(false);
-  const [snapshotUpdatedAt, setSnapshotUpdatedAt] = useState('');
-  const watchClientID = useRef<string | null>(null);
-  const watchSourceIDRef = useRef<string | null>(null);
-  const [taskSnapshot, setTaskSnapshot] = useState<ImageTaskSnapshot | null>(null);
-  const tasks = taskSnapshot?.tasks ?? [];
-  // 后台更新会高频推送镜像与任务事件（每张镜像的 create/update、每次进度各一条）。
-  // 事件只写入暂存引用并按帧合并成一次渲染：无论一轮扫描推送多少条事件，每帧最多
-  // setState 一次，主线程不会因逐事件重渲染而占满、阻塞工具切换；工具不活跃（例如
-  // 已切到别的工具）时不排帧，回到列表时一次性补齐。
-  const activeRef = useRef(active);
-  const pendingImagesRef = useRef(false);
-  const pendingTasksRef = useRef<ImageTaskSnapshot | null>(null);
-  const rebuildImagesRef = useRef<(() => DockerImage[]) | null>(null);
-  const imageFrameRef = useRef(0);
-  const taskFrameRef = useRef(0);
-  const flushImages = useCallback(() => {
-    imageFrameRef.current = 0;
-    if (!activeRef.current || !pendingImagesRef.current) return;
-    pendingImagesRef.current = false;
-    const rebuild = rebuildImagesRef.current;
-    if (rebuild) setImages(rebuild());
-  }, []);
-  const scheduleImages = useCallback(() => {
-    pendingImagesRef.current = true;
-    if (!activeRef.current || imageFrameRef.current) return;
-    imageFrameRef.current = requestAnimationFrame(flushImages);
-  }, [flushImages]);
-  const flushTasks = useCallback(() => {
-    taskFrameRef.current = 0;
-    if (!activeRef.current || !pendingTasksRef.current) return;
-    const next = pendingTasksRef.current;
-    pendingTasksRef.current = null;
-    setTaskSnapshot((current) => applyImageTaskSnapshot(current, next));
-  }, []);
-  // 手动刷新标记：只有用户主动刷新触发的 update 任务完成才提示，
-  // 每 2 分钟的定时轮询保持静默。
-  const applyTasks = useCallback(
-    (snapshot: ImageTaskSnapshot) => {
-      pendingTasksRef.current = applyImageTaskSnapshot(pendingTasksRef.current, snapshot);
-      if (!activeRef.current || taskFrameRef.current) return;
-      taskFrameRef.current = requestAnimationFrame(flushTasks);
-    },
-    [flushTasks],
-  );
-  useEffect(
-    () => () => {
-      if (imageFrameRef.current) cancelAnimationFrame(imageFrameRef.current);
-      if (taskFrameRef.current) cancelAnimationFrame(taskFrameRef.current);
-    },
-    [],
-  );
-  useEffect(() => {
-    activeRef.current = active;
-    if (!active) return;
-    flushImages();
-    flushTasks();
-  }, [active, flushImages, flushTasks]);
   const [batchExportStarting, setBatchExportStarting] = useState(false);
   const [pullStarting, setPullStarting] = useState(false);
   const [importStarting, setImportStarting] = useState(false);
@@ -1176,31 +207,9 @@ export default function ImageManagerTool({
   } | null>(null);
   const importRequest = useRef<ReturnType<typeof PrepareImageImports> | null>(null);
   const [taskClock, setTaskClock] = useState(Date.now);
-  const sourceConfigKey = JSON.stringify({
-    source,
-    profile:
-      source.kind === 'ssh' ? profiles.find((item) => item.id === source.sshProfileID) : null,
-  });
   const sourceIsChanging = !sourceProfileMissing && watchSourceId !== source.id;
   const isConnecting = !sourceProfileMissing && (connectionPending || sourceIsChanging);
   const displayedImages = sourceIsChanging ? [] : images;
-  const requestWatchReload = useCallback(() => {
-    if (sourceProfileMissing) {
-      setConnectionPending(false);
-      setLoadError(t('imageManagerTool.sshProfileMissingHint'));
-      return;
-    }
-    const clientID = watchClientID.current;
-    if (clientID && watchSourceIDRef.current === source.id) {
-      void RefreshDockerImages(source.id, clientID).catch((error) => {
-        setLoadError(errorMessage(error) || t('imageManagerTool.loadFailed'));
-      });
-      return;
-    }
-    setConnectionPending(true);
-    setLoadError('');
-    setReloadNonce((value) => value + 1);
-  }, [source.id, sourceProfileMissing, t]);
   const currentSourceConfigKey = useRef(sourceConfigKey);
   useEffect(() => {
     currentSourceConfigKey.current = sourceConfigKey;
@@ -1215,29 +224,6 @@ export default function ImageManagerTool({
   const refreshList = useCallback(() => {
     requestWatchReload();
   }, [requestWatchReload]);
-  const restartWatch = useCallback(() => {
-    setConnectionPending(true);
-    setLoadError('');
-    setReloadNonce((value) => value + 1);
-  }, []);
-
-  // 导出与拉取在 Go 侧异步执行，前端只能从任务快照得知结果。首次快照只登记状态，
-  // 之后的终态变化才提示，避免工具重新挂载时对历史任务重复弹 toast。
-  useEffect(() => {
-    let active = true;
-    const apply = (snapshot: ImageTaskSnapshot) => {
-      if (!active) return;
-      applyTasks(snapshot);
-    };
-    const off = Events.On('image-manager:tasks', (event) => apply(event.data as ImageTaskSnapshot));
-    void GetImageTasks()
-      .then(apply)
-      .catch(() => undefined);
-    return () => {
-      active = false;
-      off();
-    };
-  }, [applyTasks]);
 
   useEffect(() => {
     const now = Date.now();
@@ -1253,170 +239,6 @@ export default function ImageManagerTool({
   useEffect(() => {
     if (!sources.some((item) => item.id === sourceId)) setSourceId(LOCAL_SOURCE_ID);
   }, [sourceId, sources]);
-
-  // 列表组件在详情页仍保持挂载；watcher 不随 active 切换重启，返回列表复用现有快照，按后台定时轮次更新。
-  useEffect(() => {
-    let mounted = true;
-    const clientID = crypto.randomUUID();
-    const sourceID = source.id;
-    watchClientID.current = clientID;
-    watchSourceIDRef.current = sourceID;
-    let maxRevision = -1;
-    let currentGeneration = -1;
-    let restarting = false;
-    const map = new Map<string, DockerImage>();
-    const rebuild = () => Array.from(map.values());
-    rebuildImagesRef.current = rebuild;
-
-    setImages([]);
-    setSelected(new Set());
-    setWatchSourceId(sourceID);
-    setStatus(null);
-    setConnectionPending(true);
-    setLoadError('');
-    setIsUpdating(false);
-    setIsInitialLoad(false);
-    setHasSnapshot(false);
-    setSnapshotUpdatedAt('');
-
-    if (sourceProfileMissing) {
-      setConnectionPending(false);
-      setLoadError(t('imageManagerTool.sshProfileMissingHint'));
-      return () => {
-        mounted = false;
-        if (watchClientID.current === clientID) watchClientID.current = null;
-        if (watchSourceIDRef.current === sourceID) watchSourceIDRef.current = null;
-      };
-    }
-
-    const offWatch = Events.On('image-manager:watch-docker-images', (event) => {
-      const payload = event.data as WatchDockerImagesEvent | undefined;
-      if (!mounted || !payload || payload.clientID !== clientID || payload.sourceID !== sourceID) {
-        return;
-      }
-
-      if (typeof payload.generation === 'number') {
-        if (payload.generation < currentGeneration) return;
-        if (payload.generation > currentGeneration) {
-          currentGeneration = payload.generation;
-          maxRevision = -1;
-          map.clear();
-          scheduleImages();
-          setHasSnapshot(false);
-          setSnapshotUpdatedAt('');
-        }
-      }
-
-      if (typeof payload.revision === 'number') {
-        if (maxRevision >= 0 && payload.revision !== maxRevision + 1) {
-          if (!restarting) {
-            restarting = true;
-            restartWatch();
-          }
-          return;
-        }
-        if (payload.revision <= maxRevision) return;
-        maxRevision = payload.revision;
-      }
-
-      if (payload.status) {
-        setStatus(payload.status);
-        // 连接态只由后端连接探测结果结束；镜像数据事件不能代表
-        // SSH/Registry 已连通或 Docker daemon 可用。
-        setConnectionPending(false);
-      }
-      if (payload.isUpdating !== undefined) {
-        setIsUpdating(payload.isUpdating);
-      }
-      if (payload.isInitialLoad !== undefined) {
-        setIsInitialLoad(payload.isInitialLoad);
-      }
-      if (payload.hasSnapshot !== undefined) {
-        setHasSnapshot(payload.hasSnapshot);
-      }
-      if (payload.snapshotUpdatedAt) {
-        setSnapshotUpdatedAt(payload.snapshotUpdatedAt);
-      }
-      if (payload.progress) {
-        const stage = payload.progress.stage;
-        if (stage === 'scanning' || stage === 'done') {
-          setLoadError('');
-        }
-        if (stage === 'done' || stage === 'failed') {
-          setConnectionPending(false);
-        }
-      }
-      if (payload.error) {
-        setLoadError(formatBackendError(payload.error));
-      }
-
-      const kind =
-        payload.kind ?? (payload.images ? 'snapshot' : payload.image ? 'update' : undefined);
-
-      if (kind === 'snapshot') {
-        map.clear();
-        for (const img of payload.images ?? []) {
-          if (img && img.id) {
-            map.set(img.id, img);
-          }
-        }
-        scheduleImages();
-      } else if (kind === 'create' || kind === 'update') {
-        if (payload.image && payload.image.id) {
-          const image = payload.image;
-          map.set(image.id, image);
-          scheduleImages();
-        }
-      } else if (kind === 'delete') {
-        const idsToDelete = payload.imageIDs ?? (payload.imageID ? [payload.imageID] : []);
-        let changed = false;
-        for (const id of idsToDelete) {
-          if (map.delete(id)) {
-            changed = true;
-          }
-        }
-        if (changed) {
-          scheduleImages();
-        }
-        setSelected((current) => {
-          const next = new Set(current);
-          let selChanged = false;
-          for (const id of idsToDelete) {
-            if (next.delete(id)) selChanged = true;
-          }
-          return selChanged ? next : current;
-        });
-      }
-    });
-
-    const watchCall = WatchDockerImages(sourceID, clientID);
-    void watchCall.catch((error) => {
-      if (!mounted || isWatchCancelError(error)) return;
-      setConnectionPending(false);
-      setLoadError(errorMessage(error) || t('imageManagerTool.loadFailed'));
-    });
-
-    return () => {
-      mounted = false;
-      if (watchClientID.current === clientID) watchClientID.current = null;
-      if (watchSourceIDRef.current === sourceID) watchSourceIDRef.current = null;
-      if (rebuildImagesRef.current === rebuild) rebuildImagesRef.current = null;
-      offWatch();
-      if (typeof watchCall?.cancel === 'function') {
-        watchCall.cancel();
-      }
-    };
-  }, [
-    cliPath,
-    reloadNonce,
-    requestWatchReload,
-    restartWatch,
-    scheduleImages,
-    source.id,
-    sourceConfigKey,
-    sourceProfileMissing,
-    t,
-  ]);
 
   useEffect(() => {
     if (!pending || pending.tool !== 'image-manager' || consumed.current === pending) return;

@@ -6,7 +6,7 @@ import type {
   ServiceTarget,
 } from '../../bindings/changeme/models';
 import { useServiceMetricTrend } from '../hooks/useServiceMetricTrend';
-import { formatBytes } from './ServiceMetricChart';
+import { formatMetricBytes as formatBytes } from '../lib/byte-format';
 import { ScrollArea } from './ui/scroll-area';
 import { Spinner } from './ui/spinner';
 

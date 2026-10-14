@@ -1,3 +1,4 @@
+import { formatMetricBytes as formatBytes } from '../lib/byte-format';
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
@@ -43,19 +44,6 @@ function primaryMetricValue(point: MetricPoint, metric: MetricKind) {
   if (metric === 'network') return point.networkRx;
   if (metric === 'disk') return point.diskRead;
   return metricValue(point, metric);
-}
-
-export function formatBytes(value: number | null | undefined) {
-  if (!finite(value)) return '—';
-  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
-  let current = Math.max(0, value);
-  let unit = 0;
-  while (current >= 1000 && unit < units.length - 1) {
-    current /= 1000;
-    unit += 1;
-  }
-  const digits = current >= 100 || unit === 0 ? 0 : current >= 10 ? 1 : 2;
-  return `${current.toFixed(digits)} ${units[unit]}`;
 }
 
 function formatRate(value: number | null | undefined) {

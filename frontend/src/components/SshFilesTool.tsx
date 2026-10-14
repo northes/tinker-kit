@@ -1,21 +1,8 @@
 import {
-  lazy,
-  Suspense,
-  useCallback,
-  useEffect,
-  useLayoutEffect,
-  useMemo,
-  useRef,
-  useState,
-} from 'react';
-import { Events } from '@wailsio/runtime';
-import { useTranslation } from 'react-i18next';
-import { useVirtualizer } from '@tanstack/react-virtual';
-import {
   Archive,
   ArrowClockwise,
-  ArrowUpRight,
   ArrowsLeftRight,
+  ArrowUpRight,
   CaretDown,
   CaretRight,
   CaretUp,
@@ -24,36 +11,6 @@ import {
   DownloadSimple,
   File,
   FileArchive,
-  FileAudio,
-  FileC,
-  FileCode,
-  FileCpp,
-  FileCSharp,
-  FileCss,
-  FileCsv,
-  FileDoc,
-  FileHtml,
-  FileImage,
-  FileIni,
-  FileJpg,
-  FileJs,
-  FileJsx,
-  FileMd,
-  FilePdf,
-  FilePng,
-  FilePpt,
-  FilePy,
-  FileRs,
-  FileSql,
-  FileSvg,
-  FileText,
-  FileTs,
-  FileTsx,
-  FileTxt,
-  FileVideo,
-  FileVue,
-  FileXls,
-  FileZip,
   Folder,
   FolderSimplePlus,
   FolderStar,
@@ -67,12 +24,78 @@ import {
   UploadSimple,
   Warning,
   XCircle,
-  type Icon,
 } from '@phosphor-icons/react';
-import { Badge } from './ui/badge';
-import { ScrollArea } from './ui/scroll-area';
-import { Button } from './ui/button';
-import { Checkbox } from './ui/checkbox';
+import { useVirtualizer } from '@tanstack/react-virtual';
+import { Events } from '@wailsio/runtime';
+import {
+  lazy,
+  Suspense,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
+import { useTranslation } from 'react-i18next';
+import {
+  CalculateRemoteSize,
+  CancelFileTask,
+  CreateRemoteDirectory,
+  GetFileTasks,
+  ListRemoteFiles,
+  OperateRemoteFiles,
+  ResolveRemoteFileTask,
+  SaveFileSources,
+  StartFileDownload,
+  StartFileUpload,
+  StartRemoteFileOperation,
+} from '../../bindings/changeme/fileservice';
+import type { FileTask, FileTaskSnapshot, RemoteFileEntry } from '../../bindings/changeme/models';
+import { ConfirmDialog } from './ConfirmDialog';
+import { useFileDrop } from './fileDrop';
+import {
+  ToolHeaderField,
+  ToolLayout,
+  ToolLayoutContent,
+  ToolLayoutFooter,
+  ToolLayoutHeader,
+  ToolLayoutToolbar,
+  useCheckboxDragSelect,
+} from './shared';
+import {
+  archiveStem,
+  basename,
+  buildRenamePreview,
+  DIRECTORY_CACHE_TTL_MS,
+  directoryListingKey,
+  emptyFileSource,
+  errorMessage,
+  formatBytes,
+  formatRemoteTimestamp,
+  isArchivePath,
+  isEditableTextFile,
+  MANAGE_SOURCES_VALUE,
+  normalizeRemotePath,
+  remoteFileIcon,
+  remoteParent,
+  timestampMillis,
+  usesDirectoryTree,
+  type CachedDirectoryListing,
+  type FileSortKey,
+  type ManagedFileSource,
+  type OperationConflictState,
+  type OperationDialogState,
+  type RemoteFileOperation,
+  type RemoteOperationRunResult,
+  type SortDirection,
+} from './ssh-files/model';
+import { TaskProgressMeter } from './ssh-files/TaskProgressMeter';
+import { useRemoteFileBrowser } from './ssh-files/useRemoteFileBrowser';
+import { SSHProfileFormField } from './SSHProfileFormField';
+import { useSSHProfiles } from './SSHProfileManagerDialog';
+import { TargetHostManagerDialog, upsertManagerItem } from './TargetHostManagerDialog';
+import { openTaskCenter } from './TaskCenter';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -83,17 +106,9 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from './ui/alert-dialog';
-import { Label } from './ui/label';
-import { Switch } from './ui/switch';
-import {
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectSeparator,
-  SelectTrigger,
-  SelectValue,
-} from './ui/select';
+import { Badge } from './ui/badge';
+import { Button } from './ui/button';
+import { Checkbox } from './ui/checkbox';
 import {
   ContextMenu,
   ContextMenuContent,
@@ -120,696 +135,34 @@ import {
   DropdownMenuTrigger,
 } from './ui/dropdown-menu';
 import { Input } from './ui/input';
+import { Label } from './ui/label';
+import { ScrollArea } from './ui/scroll-area';
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectSeparator,
+  SelectTrigger,
+  SelectValue,
+} from './ui/select';
 import { Spinner } from './ui/spinner';
+import { Switch } from './ui/switch';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
-import {
-  ToolLayout,
-  ToolLayoutContent,
-  ToolLayoutFooter,
-  ToolLayoutHeader,
-  ToolLayoutToolbar,
-  ToolHeaderField,
-  useCheckboxDragSelect,
-} from './shared';
-import { useFileDrop } from './fileDrop';
-import type {
-  FileSource,
-  FileTask,
-  FileTaskSnapshot,
-  RemoteFileEntry,
-  SSHProfile,
-} from '../../bindings/changeme/models';
-import {
-  CancelRemoteFileRequest,
-  CalculateRemoteSize,
-  CancelFileTask,
-  CreateRemoteDirectory,
-  GetFileSources,
-  GetFileTasks,
-  GetRemoteCreationTimes,
-  ListRemoteFiles,
-  OperateRemoteFiles,
-  ResolveRemoteFileTask,
-  SaveFileSources,
-  SearchRemoteFiles,
-  StartFileDownload,
-  StartRemoteFileOperation,
-  StartFileUpload,
-} from '../../bindings/changeme/fileservice';
-import { SSHProfileFormField } from './SSHProfileFormField';
-import { openTaskCenter } from './TaskCenter';
-import { ConfirmDialog } from './ConfirmDialog';
-import { useSSHProfiles } from './SSHProfileManagerDialog';
-import { TargetHostManagerDialog, upsertManagerItem } from './TargetHostManagerDialog';
 import { toast } from './ui/toast';
-import { backendErrorKey, formatBackendError, rawErrorMessage } from '../lib/backend-error';
 
 const RemoteTextEditorDialog = lazy(async () => ({
   default: (await import('./RemoteTextEditorDialog')).RemoteTextEditorDialog,
 }));
 
-type ManagedFileSource = FileSource;
-
-const MANAGE_SOURCES_VALUE = '__manage-sources__';
-
-function emptyFileSource(sshProfileID = ''): ManagedFileSource {
-  return {
-    id: '',
-    name: '',
-    sshProfileID,
-    defaultPath: '',
-    favoritePaths: [],
-  };
-}
-
-function basename(path: string) {
-  return path.split('/').filter(Boolean).pop() || path;
-}
-
-function normalizeRemotePath(value: string) {
-  const segments: string[] = [];
-  for (const segment of value.trim().split('/')) {
-    if (!segment || segment === '.') continue;
-    if (segment === '..') {
-      segments.pop();
-      continue;
-    }
-    segments.push(segment);
-  }
-  return `/${segments.join('/')}`;
-}
-
-function remoteParent(value: string) {
-  const normalized = normalizeRemotePath(value);
-  const index = normalized.lastIndexOf('/');
-  return index <= 0 ? '/' : normalized.slice(0, index);
-}
-
-function sshProfileListingKey(profile: SSHProfile | null | undefined) {
-  if (!profile) return '';
-  return [
-    profile.origin,
-    profile.originAlias,
-    profile.host,
-    String(profile.port),
-    profile.username,
-    profile.password,
-    profile.privateKey,
-    profile.privateKeyPath,
-    profile.keyPassphrase,
-  ].join('\0');
-}
-
-const archiveFileExtensions = new Set([
-  '7z',
-  'apk',
-  'arj',
-  'bz',
-  'bz2',
-  'cab',
-  'cpio',
-  'deb',
-  'dmg',
-  'ear',
-  'gz',
-  'gzip',
-  'iso',
-  'jar',
-  'lz',
-  'lz4',
-  'lzma',
-  'rar',
-  'rpm',
-  'tar',
-  'tbz',
-  'tbz2',
-  'tgz',
-  'txz',
-  'war',
-  'xz',
-  'z',
-  'zipx',
-  'zst',
-]);
-
-const imageFileExtensions = new Set([
-  'avif',
-  'bmp',
-  'gif',
-  'heic',
-  'heif',
-  'ico',
-  'jif',
-  'jfif',
-  'jpe',
-  'raw',
-  'tif',
-  'tiff',
-  'webp',
-]);
-
-const videoFileExtensions = new Set([
-  '3gp',
-  'avi',
-  'flv',
-  'm2ts',
-  'm4v',
-  'mkv',
-  'mov',
-  'mp4',
-  'mpeg',
-  'mpg',
-  'mxf',
-  'ogv',
-  'webm',
-  'wmv',
-]);
-
-const audioFileExtensions = new Set([
-  'aac',
-  'aiff',
-  'alac',
-  'amr',
-  'flac',
-  'm4a',
-  'm4b',
-  'mid',
-  'midi',
-  'mp3',
-  'oga',
-  'ogg',
-  'opus',
-  'wav',
-  'wma',
-]);
-
-const codeFileExtensions = new Set([
-  'astro',
-  'bash',
-  'dart',
-  'ex',
-  'exs',
-  'fish',
-  'go',
-  'graphql',
-  'h',
-  'hpp',
-  'java',
-  'json',
-  'jl',
-  'kt',
-  'kts',
-  'less',
-  'lua',
-  'm',
-  'mm',
-  'php',
-  'pl',
-  'proto',
-  'r',
-  'rb',
-  'scss',
-  'sh',
-  'swift',
-  'toml',
-  'xml',
-  'yaml',
-  'yml',
-  'zsh',
-]);
-
-const textFileExtensions = new Set([
-  'cfg',
-  'conf',
-  'diff',
-  'env',
-  'log',
-  'patch',
-  'properties',
-  'rtf',
-  'srt',
-]);
-
-const fileIconsByExtension = new Map<string, Icon>([
-  ['c', FileC],
-  ['cc', FileCpp],
-  ['cjs', FileJs],
-  ['cpp', FileCpp],
-  ['cs', FileCSharp],
-  ['css', FileCss],
-  ['csv', FileCsv],
-  ['doc', FileDoc],
-  ['docx', FileDoc],
-  ['hh', FileCpp],
-  ['h', FileC],
-  ['htm', FileHtml],
-  ['html', FileHtml],
-  ['ini', FileIni],
-  ['jpeg', FileJpg],
-  ['jpg', FileJpg],
-  ['js', FileJs],
-  ['jsx', FileJsx],
-  ['md', FileMd],
-  ['markdown', FileMd],
-  ['mjs', FileJs],
-  ['mts', FileTs],
-  ['cts', FileTs],
-  ['pdf', FilePdf],
-  ['png', FilePng],
-  ['ppt', FilePpt],
-  ['pptx', FilePpt],
-  ['py', FilePy],
-  ['rs', FileRs],
-  ['sql', FileSql],
-  ['svg', FileSvg],
-  ['ts', FileTs],
-  ['tsx', FileTsx],
-  ['txt', FileTxt],
-  ['text', FileTxt],
-  ['vue', FileVue],
-  ['xls', FileXls],
-  ['xlsx', FileXls],
-]);
-
-function remoteFileExtension(path: string) {
-  const name = basename(path).toLowerCase();
-  const index = name.lastIndexOf('.');
-  return index > 0 ? name.slice(index + 1) : '';
-}
-
-function remoteFileIcon(path: string): Icon {
-  const extension = remoteFileExtension(path);
-  if (extension === 'zip') return FileZip;
-  const extensionIcon = fileIconsByExtension.get(extension);
-  if (extensionIcon) return extensionIcon;
-  if (archiveFileExtensions.has(extension)) return FileArchive;
-  if (imageFileExtensions.has(extension)) return FileImage;
-  if (videoFileExtensions.has(extension)) return FileVideo;
-  if (audioFileExtensions.has(extension)) return FileAudio;
-  if (codeFileExtensions.has(extension)) return FileCode;
-  if (textFileExtensions.has(extension)) return FileText;
-  return File;
-}
-
-function isEditableTextFile(path: string) {
-  const name = basename(path).toLowerCase();
-  const extension = remoteFileExtension(path);
-  return (
-    codeFileExtensions.has(extension) ||
-    (textFileExtensions.has(extension) && extension !== 'rtf') ||
-    [
-      'txt',
-      'text',
-      'csv',
-      'md',
-      'markdown',
-      'html',
-      'htm',
-      'css',
-      'js',
-      'jsx',
-      'ts',
-      'tsx',
-      'c',
-      'cc',
-      'cpp',
-      'cs',
-      'py',
-      'rs',
-      'sql',
-      'svg',
-      'ini',
-      'jsonc',
-      'mjs',
-      'cjs',
-      'mts',
-      'cts',
-    ].includes(extension) ||
-    ['dockerfile', 'makefile', 'readme', '.env', '.gitignore', '.editorconfig', '.npmrc'].includes(
-      name,
-    ) ||
-    name.startsWith('.env.')
-  );
-}
-
-function isArchivePath(value: string) {
-  const lower = value.toLowerCase();
-  return (
-    lower.endsWith('.zip') ||
-    lower.endsWith('.tar') ||
-    lower.endsWith('.tar.gz') ||
-    lower.endsWith('.tgz')
-  );
-}
-
-function archiveStem(value: string) {
-  const name = basename(value);
-  const lower = name.toLowerCase();
-  for (const extension of ['.tar.gz', '.tgz', '.zip', '.tar']) {
-    if (lower.endsWith(extension)) {
-      const stem = name.slice(0, -extension.length);
-      return stem || name;
-    }
-  }
-  return name;
-}
-
-function formatBytes(value: number, precise = false) {
-  if (!Number.isFinite(value) || value < 0) return '—';
-  if (value < 1024) return `${value} B`;
-  const units = ['KB', 'MB', 'GB', 'TB'];
-  let amount = value;
-  let index = -1;
-  do {
-    amount /= 1024;
-    index++;
-  } while (amount >= 1024 && index < units.length - 1);
-  const fractionDigits = precise && index > 0 ? 1 : amount >= 10 ? 0 : 1;
-  const formatted = amount.toFixed(fractionDigits);
-  return `${precise ? formatted.replace(/\.0$/, '') : formatted} ${units[index]}`;
-}
-
-function timestampMillis(value: string) {
-  if (!value) return null;
-  const timestamp = Date.parse(value);
-  return Number.isFinite(timestamp) ? timestamp : null;
-}
-
-function formatRemoteTimestamp(value: string, locale: string) {
-  const timestamp = timestampMillis(value);
-  return timestamp === null ? '—' : new Date(timestamp).toLocaleString(locale);
-}
-
-function taskPercent(task: FileTask, completed = task.completed) {
-  if (!task.total || task.total <= 0) return null;
-  return Math.max(0, Math.min(100, (completed / task.total) * 100));
-}
-
-const progressMinCatchUpDuration = 80;
-const progressMaxCatchUpDuration = 800;
-
-type ProgressAnimation = {
-  from: number;
-  to: number;
-  startedAt: number;
-  duration: number;
-};
-
-function progressCatchUpDuration(interval: number) {
-  return Math.max(progressMinCatchUpDuration, Math.min(progressMaxCatchUpDuration, interval));
-}
-
-function useDisplayedTaskCompleted(task: FileTask) {
-  const smooth = task.type === 'download';
-  const [displayed, setDisplayed] = useState(task.completed);
-  const displayedRef = useRef(task.completed);
-  const animationRef = useRef<ProgressAnimation | null>(null);
-  const frameRef = useRef<number | null>(null);
-  const lastTargetAtRef = useRef<number | null>(null);
-
-  const animate = useCallback((now: number) => {
-    frameRef.current = null;
-    const animation = animationRef.current;
-    if (!animation) return;
-
-    const elapsed = Math.max(0, now - animation.startedAt);
-    const ratio = Math.min(1, elapsed / animation.duration);
-    const next =
-      ratio >= 1
-        ? animation.to
-        : Math.round(animation.from + (animation.to - animation.from) * ratio);
-    if (next !== displayedRef.current) {
-      displayedRef.current = next;
-      setDisplayed(next);
-    }
-
-    if (ratio < 1) {
-      frameRef.current = requestAnimationFrame(animate);
-    } else {
-      animationRef.current = null;
-    }
-  }, []);
-
-  useEffect(() => {
-    const target = task.completed;
-    const current = displayedRef.current;
-    const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    if (!smooth || reducedMotion || target <= current) {
-      animationRef.current = null;
-      if (frameRef.current !== null) {
-        cancelAnimationFrame(frameRef.current);
-        frameRef.current = null;
-      }
-      if (target !== current) {
-        displayedRef.current = target;
-        setDisplayed(target);
-      }
-      return;
-    }
-
-    if (animationRef.current?.to === target) return;
-    const now = performance.now();
-    const lastTargetAt = lastTargetAtRef.current;
-    lastTargetAtRef.current = now;
-    animationRef.current = {
-      from: current,
-      to: target,
-      startedAt: now,
-      duration: progressCatchUpDuration(
-        lastTargetAt === null ? progressMinCatchUpDuration : now - lastTargetAt,
-      ),
-    };
-    if (frameRef.current === null) {
-      frameRef.current = requestAnimationFrame(animate);
-    }
-  }, [animate, smooth, task.completed]);
-
-  useEffect(
-    () => () => {
-      if (frameRef.current !== null) cancelAnimationFrame(frameRef.current);
-    },
-    [],
-  );
-
-  return displayed;
-}
-
-function taskUsesByteProgress(task: FileTask) {
-  return task.type === 'download' || task.type === 'compress' || task.type === 'extract';
-}
-
-function TaskProgressMeter({ task, compact = false }: { task: FileTask; compact?: boolean }) {
-  const { t } = useTranslation();
-  const completed = useDisplayedTaskCompleted(task);
-  const percent = taskPercent(task, completed);
-  const running = ['queued', 'running', 'scanning'].includes(task.status);
-  const progressWidth = percent ?? (task.status === 'success' ? 100 : 0);
-
-  if (compact) {
-    return (
-      <span
-        className={`relative h-1.5 w-20 overflow-hidden rounded-full bg-muted ${percent === null ? 'animate-pulse motion-reduce:animate-none' : ''}`}
-        aria-hidden="true"
-      >
-        <span
-          className="absolute inset-y-0 left-0 rounded-full bg-primary"
-          style={{ width: `${progressWidth}%` }}
-        />
-      </span>
-    );
-  }
-
-  const progressText =
-    task.type === 'extract' && task.total <= 0
-      ? t('sshFilesTool.taskExtractedUnknown', {
-          completed: formatBytes(completed),
-        })
-      : taskUsesByteProgress(task)
-        ? t('sshFilesTool.taskBytes', {
-            completed: formatBytes(completed, task.type === 'download'),
-            total: task.total ? formatBytes(task.total) : '—',
-          })
-        : task.files > 0
-          ? t('sshFilesTool.taskFiles', {
-              done: task.doneFiles,
-              total: task.files,
-            })
-          : t('sshFilesTool.taskBytes', {
-              completed: formatBytes(completed),
-              total: task.total ? formatBytes(task.total) : '—',
-            });
-
-  return (
-    <div className="mt-2 flex items-center gap-2">
-      <div
-        className={`h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-muted ${percent === null && running ? 'animate-pulse motion-reduce:animate-none' : ''}`}
-        role="progressbar"
-        aria-valuemin={0}
-        aria-valuemax={100}
-        aria-valuenow={percent ?? undefined}
-        aria-valuetext={progressText}
-      >
-        <div
-          className={`h-full rounded-full ${task.status === 'success' ? 'bg-success' : task.status === 'failed' ? 'bg-destructive' : 'bg-primary'}`}
-          style={{ width: `${progressWidth}%` }}
-        />
-      </div>
-      <span className="flex-none font-mono text-[10px] text-muted-foreground">{progressText}</span>
-    </div>
-  );
-}
-
-function errorMessage(error: unknown) {
-  return formatBackendError(error);
-}
-
-function isRemotePathNotFound(error: unknown) {
-  const key = backendErrorKey(error);
-  if (key && /notfound|not_found|missing/i.test(key)) return true;
-  const message = rawErrorMessage(error).toLowerCase();
-  return (
-    message.includes('no such file') ||
-    /(?:file|directory|path).*(?:does not exist|not found)/.test(message)
-  );
-}
-
 type Props = { active: boolean };
-type RemoteFileOperation = 'copy' | 'move' | 'rename' | 'delete' | 'extract' | 'compress';
-type InputRemoteFileOperation = Exclude<RemoteFileOperation, 'delete'>;
-type TransferOperation = Extract<RemoteFileOperation, 'copy' | 'move'>;
-function usesDirectoryTree(operation: InputRemoteFileOperation | undefined) {
-  return (
-    operation === 'copy' ||
-    operation === 'move' ||
-    operation === 'compress' ||
-    operation === 'extract'
-  );
-}
-type RenameMode = 'prefix' | 'suffix' | 'replace' | 'custom';
-type RenameForm = { mode: RenameMode; value: string; find: string; replacement: string };
-type RenamePreview = {
-  source: string;
-  target: string;
-  status: 'ok' | 'empty' | 'invalid' | 'unchanged' | 'duplicate' | 'occupied';
-};
-type OperationDialogState = {
-  operation: InputRemoteFileOperation;
-  paths: string[];
-  value: string;
-  renameForm?: RenameForm;
-} | null;
-type OperationConflictState = {
-  taskID: string;
-  operation: TransferOperation;
-  paths: string[];
-  target: string;
-  value: string;
-  conflicts: string[];
-} | null;
-type RemoteOperationRunResult =
-  | { status: 'completed' }
-  | { status: 'started' }
-  | { status: 'conflict'; paths: string[] }
-  | { status: 'failed' };
-type FileSortKey = 'name' | 'size' | 'modifiedAt' | 'createdAt';
-type SortDirection = 'asc' | 'desc';
-type RemoteSearchMode = 'name' | 'content';
-type RemoteSearchScope = 'current' | 'recursive';
-type MissingFavoritePath = { sourceID: string; path: string; previousPath: string };
-type LoadingKind = 'sources' | 'directory' | 'search';
-type DirectoryLoadingPhase = 'connecting' | 'loadingDirectory';
-type CachedDirectoryListing = {
-  cachedAt: number;
-  requestID: number;
-  path: string;
-  entries: RemoteFileEntry[];
-};
-type CancellableCall = {
-  cancel: (cause?: unknown) => PromiseLike<void> | void;
-};
-
-const DIRECTORY_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
-
-function renameTargetName(name: string, form: RenameForm, isDirectory: boolean) {
-  switch (form.mode) {
-    case 'prefix':
-      return `${form.value}${name}`;
-    case 'suffix': {
-      const dot = name.lastIndexOf('.');
-      return !isDirectory && dot > 0
-        ? `${name.slice(0, dot)}${form.value}${name.slice(dot)}`
-        : `${name}${form.value}`;
-    }
-    case 'replace':
-      return form.find ? name.split(form.find).join(form.replacement) : name;
-    case 'custom':
-      return form.value;
-  }
-}
-
-function buildRenamePreview(paths: string[], form: RenameForm, entries: RemoteFileEntry[]) {
-  const sources = new Set(paths);
-  const occupied = new Set(entries.map((entry) => entry.path));
-  const directories = new Set(entries.filter((entry) => entry.isDir).map((entry) => entry.path));
-  const targets = paths.map((source) => {
-    const name = renameTargetName(basename(source), form, directories.has(source)).trim();
-    return { name, path: normalizeRemotePath(`${remoteParent(source)}/${name}`) };
-  });
-  const counts = new Map<string, number>();
-  for (const target of targets) counts.set(target.path, (counts.get(target.path) ?? 0) + 1);
-  return paths.map((source, index): RenamePreview => {
-    const target = targets[index];
-    const status = !target.name
-      ? 'empty'
-      : target.name === '.' || target.name === '..' || /[\\/]/.test(target.name)
-        ? 'invalid'
-        : target.path === source
-          ? 'unchanged'
-          : (counts.get(target.path) ?? 0) > 1
-            ? 'duplicate'
-            : sources.has(target.path) || occupied.has(target.path)
-              ? 'occupied'
-              : 'ok';
-    return { source, target: target.path, status };
-  });
-}
-
-function directoryListingKey(
-  sourceID: string,
-  sshProfileID: string,
-  profileKey: string,
-  remotePath: string,
-  showHidden: boolean,
-) {
-  return [sourceID, sshProfileID, profileKey, remotePath, showHidden ? '1' : '0'].join('\0');
-}
 
 export default function SshFilesTool({ active }: Props) {
   const { t, i18n } = useTranslation();
   const { profiles } = useSSHProfiles();
-  const [sources, setSources] = useState<ManagedFileSource[]>([]);
-  const [sourceID, setSourceID] = useState('');
-  const [currentPath, setCurrentPath] = useState('');
-  const [pathInput, setPathInput] = useState('');
-  const [pathEditing, setPathEditing] = useState(false);
-  const [searchInput, setSearchInput] = useState('');
-  const [searchQuery, setSearchQuery] = useState('');
-  const [searchMode, setSearchMode] = useState<RemoteSearchMode>('name');
-  const [searchScope, setSearchScope] = useState<RemoteSearchScope>('current');
-  const [searchActive, setSearchActive] = useState(false);
-  const [searching, setSearching] = useState(false);
-  const [entries, setEntries] = useState<RemoteFileEntry[]>([]);
   const [sortKey, setSortKey] = useState<FileSortKey>('name');
   const [sortDirection, setSortDirection] = useState<SortDirection>('asc');
   const [sizeValues, setSizeValues] = useState<Record<string, number>>({});
-  const [showHidden, setShowHidden] = useState(false);
-  const [selected, setSelected] = useState<string[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [directoryLoadingPhase, setDirectoryLoadingPhase] =
-    useState<DirectoryLoadingPhase>('connecting');
-  const [loadingSources, setLoadingSources] = useState(false);
-  const [loadingCanceled, setLoadingCanceled] = useState<LoadingKind | null>(null);
-  const [error, setError] = useState('');
   const [tasks, setTasks] = useState<FileTask[]>([]);
   const [manageOpen, setManageOpen] = useState(false);
   const [savingManage, setSavingManage] = useState(false);
@@ -842,97 +195,63 @@ export default function SshFilesTool({ active }: Props) {
   const [createFolderError, setCreateFolderError] = useState('');
   const [creatingFolder, setCreatingFolder] = useState(false);
   const [favoritesSaving, setFavoritesSaving] = useState(false);
-  const [missingFavoritePath, setMissingFavoritePath] = useState<MissingFavoritePath | null>(null);
   const refreshedUploadTasks = useRef(new Set<string>());
   const refreshedOperationTasks = useRef(new Set<string>());
   const handledConflictTasks = useRef(new Set<string>());
   const taskRevisionRef = useRef(0);
-  const sourcesRequestRef = useRef(0);
-  const directoryRequestRef = useRef(0);
-  const searchRequestRef = useRef(0);
-  const loadingKindRef = useRef<LoadingKind | null>(null);
-  const loadingCallsRef = useRef(new Set<CancellableCall>());
-  const pendingFavoritePathRef = useRef<MissingFavoritePath | null>(null);
+  const {
+    currentPath,
+    sourceID,
+    activeSourceProfileID,
+    profileListingKey,
+    reloadCurrentView,
+    sourceUsable,
+    loadingSources,
+    loading,
+    searching,
+    setError,
+    resetSearchState,
+    loadDirectory,
+    showHidden,
+    selected,
+    entries,
+    setSelected,
+    source,
+    favoritePaths,
+    sources,
+    setSources,
+    missingFavoritePath,
+    setMissingFavoritePath,
+    navigate,
+    searchActive,
+    setEntries,
+    setSourceID,
+    searchMode,
+    searchScope,
+    setLoading,
+    setPathEditing,
+    setCurrentPath,
+    setShowHidden,
+    executeSearch,
+    searchInput,
+    setSearchInput,
+    clearSearch,
+    setSearchMode,
+    setSearchScope,
+    pathEditing,
+    pathInput,
+    setPathInput,
+    breadcrumbs,
+    isCurrentPathFavorite,
+    cancelLoading,
+    directoryLoadingPhase,
+    loadingDirectoryPath,
+    loadingCanceled,
+    retryCanceledLoading,
+    error,
+    directoryCache,
+  } = useRemoteFileBrowser({ active, profiles, manageOpen });
   const currentPathRef = useRef(currentPath);
-  const directoryLoadKeyRef = useRef('');
-  const directoryCacheRef = useRef(new Map<string, CachedDirectoryListing>());
-  const sourcesLoadedRef = useRef(false);
-
-  const cancelLoading = useCallback(() => {
-    const kind = loadingKindRef.current;
-    if (!kind) return;
-    const activeDirectoryRequestID = String(directoryRequestRef.current);
-    // 目录加载被中断时清空已加载标记，返回该工具时会重新加载。
-    if (kind === 'directory') directoryLoadKeyRef.current = '';
-    sourcesRequestRef.current++;
-    directoryRequestRef.current++;
-    searchRequestRef.current++;
-    const requests = Array.from(loadingCallsRef.current);
-    loadingCallsRef.current.clear();
-    loadingKindRef.current = null;
-    if (kind === 'directory') {
-      void CancelRemoteFileRequest(activeDirectoryRequestID).catch(() => undefined);
-    } else {
-      for (const request of requests) void request.cancel();
-    }
-    setLoadingSources(false);
-    setLoading(false);
-    setSearching(false);
-    setError('');
-    setLoadingCanceled(kind);
-  }, []);
-
-  useEffect(() => {
-    return () => {
-      const activeDirectoryRequestID = String(directoryRequestRef.current);
-      if (loadingKindRef.current === 'directory')
-        void CancelRemoteFileRequest(activeDirectoryRequestID).catch(() => undefined);
-      sourcesRequestRef.current++;
-      directoryRequestRef.current++;
-      searchRequestRef.current++;
-      const requests = Array.from(loadingCallsRef.current);
-      loadingCallsRef.current.clear();
-      if (loadingKindRef.current !== 'directory') {
-        for (const request of requests) void request.cancel();
-      }
-    };
-  }, []);
-
-  const source = sources.find((item) => item.id === sourceID) ?? null;
-  const favoritePaths = source?.favoritePaths ?? [];
-  const isCurrentPathFavorite = favoritePaths.includes(currentPath);
-  const activeSourceProfileID = source?.sshProfileID ?? '';
-  const activeSourceProfile = profiles.find((item) => item.id === activeSourceProfileID);
-  const sourceUsable = Boolean(source && activeSourceProfile);
-  const sourceDefaultPath = source?.defaultPath ?? '';
-  const loadingDirectoryPath = currentPath.trim()
-    ? currentPath
-    : sourceDefaultPath.trim()
-      ? normalizeRemotePath(sourceDefaultPath)
-      : t('sshFilesTool.remoteHome');
-  const profileListingKey = useMemo(
-    () => sshProfileListingKey(activeSourceProfile),
-    [activeSourceProfile],
-  );
-  const directoryLoadKey = sourceID
-    ? directoryListingKey(
-        sourceID,
-        activeSourceProfileID,
-        profileListingKey,
-        currentPath,
-        showHidden,
-      )
-    : '';
-  const breadcrumbs = useMemo(() => {
-    const parts = currentPath.split('/').filter(Boolean);
-    return [
-      { label: '/', path: '/' },
-      ...parts.map((part, index) => ({
-        label: part,
-        path: `/${parts.slice(0, index + 1).join('/')}`,
-      })),
-    ];
-  }, [currentPath]);
 
   const applyTaskSnapshot = useCallback((snapshot: FileTaskSnapshot) => {
     if (snapshot.revision < taskRevisionRef.current) return;
@@ -949,274 +268,15 @@ export default function SshFilesTool({ active }: Props) {
     });
   }, []);
 
-  const loadSources = useCallback(async () => {
-    const requestID = ++sourcesRequestRef.current;
-    loadingKindRef.current = 'sources';
-    setLoadingCanceled(null);
-    setLoadingSources(true);
-    setError('');
-    let sourceRequest: ReturnType<typeof GetFileSources> | null = null;
-    try {
-      sourceRequest = GetFileSources();
-      loadingCallsRef.current.add(sourceRequest);
-      const nextSources = await sourceRequest;
-      if (requestID !== sourcesRequestRef.current) return;
-      setSources(nextSources ?? []);
-      setSourceID((current) =>
-        nextSources?.some((item) => item.id === current) ? current : nextSources?.[0]?.id || '',
-      );
-      sourcesLoadedRef.current = true;
-    } catch (reason) {
-      if (requestID !== sourcesRequestRef.current) return;
-      throw reason;
-    } finally {
-      if (sourceRequest) loadingCallsRef.current.delete(sourceRequest);
-      if (requestID === sourcesRequestRef.current) {
-        setLoadingSources(false);
-        if (loadingKindRef.current === 'sources') loadingKindRef.current = null;
-      }
-    }
-  }, []);
-
-  const loadDirectory = useCallback(
-    async (id: string, pathValue: string, hidden: boolean, forceReload = false) => {
-      const requestID = ++directoryRequestRef.current;
-      loadingKindRef.current = 'directory';
-      setDirectoryLoadingPhase('connecting');
-      setLoadingCanceled(null);
-      const requested = pathValue.trim();
-      const normalizedPath = requested ? normalizeRemotePath(requested) : '';
-      const pendingFavoritePath =
-        pendingFavoritePathRef.current?.sourceID === id &&
-        pendingFavoritePathRef.current.path === normalizedPath
-          ? pendingFavoritePathRef.current
-          : null;
-      pendingFavoritePathRef.current = null;
-      setMissingFavoritePath(null);
-      if (!id) {
-        if (loadingKindRef.current === 'directory') loadingKindRef.current = null;
-        setEntries([]);
-        setSelected([]);
-        setError('');
-        setLoading(false);
-        return;
-      }
-      const cacheKey = directoryListingKey(
-        id,
-        activeSourceProfileID,
-        profileListingKey,
-        normalizedPath,
-        hidden,
-      );
-      const cacheScope = [id, activeSourceProfileID, profileListingKey].join('\0') + '\0';
-      if (forceReload) {
-        for (const [key, cached] of directoryCacheRef.current) {
-          if (key.startsWith(cacheScope) && (key === cacheKey || cached.path === normalizedPath)) {
-            directoryCacheRef.current.delete(key);
-          }
-        }
-      }
-      if (!forceReload) {
-        const cached = directoryCacheRef.current.get(cacheKey);
-        if (cached && Date.now() - cached.cachedAt < DIRECTORY_CACHE_TTL_MS) {
-          const resolvedKey = directoryListingKey(
-            id,
-            activeSourceProfileID,
-            profileListingKey,
-            cached.path,
-            hidden,
-          );
-          directoryLoadKeyRef.current = resolvedKey;
-          setEntries(cached.entries);
-          setSelected([]);
-          setError('');
-          setLoading(false);
-          setCurrentPath(cached.path);
-          setPathInput(cached.path);
-          if (loadingKindRef.current === 'directory') loadingKindRef.current = null;
-          return;
-        }
-        if (cached) {
-          for (const [key, candidate] of directoryCacheRef.current) {
-            if (candidate.requestID === cached.requestID) directoryCacheRef.current.delete(key);
-          }
-        }
-      }
-      setLoading(true);
-      setError('');
-      setEntries([]);
-      setSelected([]);
-      const request = ListRemoteFiles(id, normalizedPath, hidden, String(requestID));
-      loadingCallsRef.current.add(request);
-      try {
-        const result = await request;
-        if (requestID !== directoryRequestRef.current) return;
-        const resolved = result.path ? normalizeRemotePath(result.path) : normalizedPath;
-        const nextEntries = result.entries ?? [];
-        const resolvedKey = directoryListingKey(
-          id,
-          activeSourceProfileID,
-          profileListingKey,
-          resolved,
-          hidden,
-        );
-        const cachedListing: CachedDirectoryListing = {
-          cachedAt: Date.now(),
-          requestID,
-          path: resolved,
-          entries: nextEntries,
-        };
-        directoryCacheRef.current.set(cacheKey, cachedListing);
-        directoryCacheRef.current.set(resolvedKey, cachedListing);
-        setEntries(nextEntries);
-        if (nextEntries.length) {
-          const metadataRequest = GetRemoteCreationTimes(
-            id,
-            nextEntries.map((entry) => entry.path),
-          );
-          loadingCallsRef.current.add(metadataRequest);
-          void metadataRequest
-            .then((createdAt) => {
-              if (!createdAt) return;
-              const withCreationTimes = nextEntries.map((entry) => ({
-                ...entry,
-                createdAt: createdAt[entry.path] ?? entry.createdAt,
-              }));
-              for (const key of new Set([cacheKey, resolvedKey])) {
-                const cached = directoryCacheRef.current.get(key);
-                if (cached?.requestID === requestID) {
-                  directoryCacheRef.current.set(key, { ...cached, entries: withCreationTimes });
-                }
-              }
-              if (requestID === directoryRequestRef.current) setEntries(withCreationTimes);
-            })
-            .catch(() => undefined)
-            .finally(() => loadingCallsRef.current.delete(metadataRequest));
-        }
-        if (resolved) {
-          directoryLoadKeyRef.current = resolvedKey;
-          setCurrentPath(resolved);
-          setPathInput(resolved);
-        }
-      } catch (reason) {
-        if (requestID !== directoryRequestRef.current) return;
-        setEntries([]);
-        const message = errorMessage(reason);
-        setError(message);
-        if (pendingFavoritePath && isRemotePathNotFound(reason)) {
-          setMissingFavoritePath(pendingFavoritePath);
-        }
-      } finally {
-        loadingCallsRef.current.delete(request);
-        if (requestID === directoryRequestRef.current) {
-          setLoading(false);
-          if (loadingKindRef.current === 'directory') loadingKindRef.current = null;
-        }
-      }
-    },
-    [activeSourceProfileID, profileListingKey],
-  );
-
-  const resetSearchState = useCallback(() => {
-    searchRequestRef.current++;
-    setSearchInput('');
-    setSearchQuery('');
-    setSearchActive(false);
-    setSearching(false);
-  }, []);
-
-  const executeSearch = async (queryValue = searchInput) => {
-    if (!sourceUsable || searching) return;
-    const query = queryValue.trim();
-    if (!query) {
-      resetSearchState();
-      if (sourceID) await loadDirectory(sourceID, currentPath, showHidden);
-      return;
-    }
-
-    const requestID = ++searchRequestRef.current;
-    directoryRequestRef.current++;
-    loadingKindRef.current = 'search';
-    setLoadingCanceled(null);
-    setSearchInput(query);
-    setSearchQuery(query);
-    setSearchActive(true);
-    setSearching(true);
-    setLoading(true);
-    setError('');
-    setEntries([]);
-    setSelected([]);
-    const request = SearchRemoteFiles(
-      sourceID,
-      currentPath,
-      query,
-      searchMode,
-      searchScope,
-      showHidden,
-    );
-    loadingCallsRef.current.add(request);
-    try {
-      const result = await request;
-      if (requestID !== searchRequestRef.current) return;
-      setEntries(result ?? []);
-    } catch (reason) {
-      if (requestID !== searchRequestRef.current) return;
-      setEntries([]);
-      setError(errorMessage(reason));
-    } finally {
-      loadingCallsRef.current.delete(request);
-      if (requestID === searchRequestRef.current) {
-        setLoading(false);
-        setSearching(false);
-        if (loadingKindRef.current === 'search') loadingKindRef.current = null;
-      }
-    }
-  };
-
-  const retryCanceledLoading = () => {
-    const kind = loadingCanceled;
-    setLoadingCanceled(null);
-    setError('');
-    if (kind === 'sources') {
-      void loadSources().catch((reason) => setError(errorMessage(reason)));
-    } else if (kind === 'search' && searchQuery) {
-      void executeSearch(searchQuery);
-    } else if (sourceID) {
-      void loadDirectory(sourceID, currentPath, showHidden);
-    }
-  };
-
-  const reloadCurrentView = () => {
-    if (searchActive && searchQuery) {
-      void executeSearch(searchQuery);
-    } else if (sourceID) {
-      void loadDirectory(sourceID, currentPath, showHidden, true);
-    }
-  };
-
   const refreshAfterTextSave = () => {
     if (editingFile) {
       const parent = remoteParent(editingFile.path);
       const prefix = [sourceID, activeSourceProfileID, profileListingKey].join('\0') + '\0';
-      for (const [key, listing] of directoryCacheRef.current) {
-        if (key.startsWith(prefix) && listing.path === parent)
-          directoryCacheRef.current.delete(key);
+      for (const [key, listing] of directoryCache) {
+        if (key.startsWith(prefix) && listing.path === parent) directoryCache.delete(key);
       }
     }
     reloadCurrentView();
-  };
-
-  const clearSearch = () => {
-    const shouldReload = searchActive || Boolean(searchQuery);
-    resetSearchState();
-    if (shouldReload && sourceID) {
-      void loadDirectory(sourceID, currentPath, showHidden);
-    } else if (shouldReload) {
-      setEntries([]);
-      setSelected([]);
-      setError('');
-      setLoading(false);
-    }
   };
 
   useEffect(() => {
@@ -1247,23 +307,6 @@ export default function SshFilesTool({ active }: Props) {
   });
 
   useEffect(() => {
-    if (!active) {
-      cancelLoading();
-      return;
-    }
-    if (sourcesLoadedRef.current) return;
-    resetSearchState();
-    void loadSources().catch((reason) => setError(errorMessage(reason)));
-  }, [active, cancelLoading, loadSources, resetSearchState]);
-
-  useEffect(() => {
-    if (!active) return;
-    const refresh = () => void loadSources().catch((reason) => setError(errorMessage(reason)));
-    window.addEventListener('tinkerkit:config-replaced', refresh);
-    return () => window.removeEventListener('tinkerkit:config-replaced', refresh);
-  }, [active, loadSources]);
-
-  useEffect(() => {
     if (!active) return;
     void GetFileTasks()
       .then(applyTaskSnapshot)
@@ -1271,65 +314,10 @@ export default function SshFilesTool({ active }: Props) {
     const offTasks = Events.On('ssh-files:tasks', (event) =>
       applyTaskSnapshot(event.data as FileTaskSnapshot),
     );
-    const offDirectoryLoading = Events.On('ssh-files:directory-loading', (event) => {
-      const payload = event.data as { requestID?: string; phase?: string };
-      if (
-        payload.requestID !== String(directoryRequestRef.current) ||
-        loadingKindRef.current !== 'directory'
-      ) {
-        return;
-      }
-      if (payload.phase === 'connecting' || payload.phase === 'loadingDirectory') {
-        setDirectoryLoadingPhase(payload.phase);
-      }
-    });
     return () => {
       offTasks();
-      offDirectoryLoading();
     };
   }, [active, applyTaskSnapshot]);
-
-  useEffect(() => {
-    if (!active || !sourceID) return;
-    if (manageOpen) return;
-    if (!sourceUsable) {
-      directoryLoadKeyRef.current = directoryLoadKey;
-      resetSearchState();
-      setEntries([]);
-      setLoading(false);
-      setError(t('sshFilesTool.sshProfileMissing'));
-      return;
-    }
-    const nextPath = sourceDefaultPath
-      ? currentPath === '/' || !currentPath.trim()
-        ? normalizeRemotePath(sourceDefaultPath)
-        : normalizeRemotePath(currentPath)
-      : currentPath.trim()
-        ? normalizeRemotePath(currentPath)
-        : '';
-    if (nextPath !== currentPath) {
-      setCurrentPath(nextPath);
-      setPathInput(nextPath);
-      return;
-    }
-    setPathInput(currentPath);
-    if (directoryLoadKeyRef.current === directoryLoadKey) return;
-    directoryLoadKeyRef.current = directoryLoadKey;
-    resetSearchState();
-    void loadDirectory(sourceID, currentPath, showHidden);
-  }, [
-    active,
-    currentPath,
-    directoryLoadKey,
-    loadDirectory,
-    manageOpen,
-    resetSearchState,
-    showHidden,
-    sourceDefaultPath,
-    sourceID,
-    sourceUsable,
-    t,
-  ]);
 
   useEffect(() => {
     if (!active || !sourceUsable) return;
@@ -1412,25 +400,6 @@ export default function SshFilesTool({ active }: Props) {
     t,
     tasks,
   ]);
-
-  const navigate = (nextPath: string, navigationSource: 'favorite' | 'normal' = 'normal') => {
-    const normalizedPath = normalizeRemotePath(nextPath);
-    pendingFavoritePathRef.current =
-      navigationSource === 'favorite' && sourceID
-        ? { sourceID, path: normalizedPath, previousPath: currentPath }
-        : null;
-    resetSearchState();
-    setPathEditing(false);
-    setEntries([]);
-    setSelected([]);
-    setError('');
-    setLoading(true);
-    if (normalizedPath === currentPath) {
-      void loadDirectory(sourceID, normalizedPath, showHidden);
-      return;
-    }
-    setCurrentPath(normalizedPath);
-  };
 
   const operationPathsFor = (entryPath: string) =>
     selected.includes(entryPath) ? selected : [entryPath];
@@ -1651,7 +620,7 @@ export default function SshFilesTool({ active }: Props) {
       path,
       showHidden,
     );
-    const cached = directoryCacheRef.current.get(key);
+    const cached = directoryCache.get(key);
     if (cached && Date.now() - cached.cachedAt < DIRECTORY_CACHE_TTL_MS) return cached.entries;
     if (path === currentPath && !loading && !searchActive) return entries;
     return undefined;
@@ -1660,7 +629,7 @@ export default function SshFilesTool({ active }: Props) {
   const isKnownTreeDirectory = (path: string) =>
     path === '/' ||
     (path === currentPath && !searchActive) ||
-    Array.from(directoryCacheRef.current.values()).some(
+    Array.from(directoryCache.values()).some(
       (listing) =>
         Date.now() - listing.cachedAt < DIRECTORY_CACHE_TTL_MS &&
         listing.entries.some((entry) => entry.path === path && entry.isDir),
@@ -1813,12 +782,12 @@ export default function SshFilesTool({ active }: Props) {
         path: resolved,
         entries: result.entries ?? [],
       };
-      directoryCacheRef.current.set(
+      directoryCache.set(
         directoryListingKey(sourceID, activeSourceProfileID, profileListingKey, path, showHidden),
         listing,
       );
       if (resolved === currentPath && !searchActive) setEntries(listing.entries);
-      directoryCacheRef.current.set(
+      directoryCache.set(
         directoryListingKey(
           sourceID,
           activeSourceProfileID,

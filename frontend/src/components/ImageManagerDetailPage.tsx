@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { InspectDockerImage } from '../../bindings/changeme/imageservice';
 import type { DockerImageDetail } from '../../bindings/changeme/models';
-import { ImageManagerDetailView } from './ImageManagerTool';
+import { ImageManagerDetailView } from './image-manager/ImageManagerDetailView';
 import type { ToolId } from './shared';
 import { formatBackendError as errorMessage } from '../lib/backend-error';
 
