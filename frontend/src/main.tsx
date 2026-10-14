@@ -8,6 +8,11 @@ import { SSHProfileProvider } from './components/SSHProfileManagerDialog';
 import './i18n';
 import './index.css';
 
+// 仅阻止浏览器默认菜单，保留事件传播，让自定义右键菜单正常触发。
+document.addEventListener('contextmenu', (event) => {
+  event.preventDefault();
+});
+
 // macOS 27 起系统窗口的红绿灯区域更宽更高，标题栏需切换为 tall 几何；
 // 其余平台（含旧版 macOS）沿用默认标题栏实现。
 void GetSystemInfo()
