@@ -60,7 +60,6 @@ import {
   ToolHeaderField,
   ToolLayout,
   ToolLayoutContent,
-  ToolLayoutHeader,
   ToolLayoutToolbar,
 } from './shared';
 import { SSHProfileFormField } from './SSHProfileFormField';
@@ -774,7 +773,6 @@ export default function ServiceManagerTool({
   return (
     <Reveal active={active} fill>
       <ToolLayout>
-        <ToolLayoutHeader title={t('serviceManagerTool.title')} />
         <ToolLayoutToolbar
           left={
             <>

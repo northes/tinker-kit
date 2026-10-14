@@ -11,7 +11,6 @@ import {
   ToolActionBar,
   ToolLayoutContent,
   ToolLayoutFooter,
-  ToolLayoutHeader,
   ToolLayout,
   decodeBase64Text,
   useFocusOnActivate,
@@ -220,7 +219,6 @@ export default function JwtTool({
   return (
     <Reveal index={0} fill active={active}>
       <ToolLayout>
-        <ToolLayoutHeader title={t('jwtTool.title')} />
         <ToolLayoutContent className="grid grid-rows-[minmax(0,1fr)_auto] gap-3">
           <div className="grid min-h-0 min-w-0 grid-cols-2 gap-3">
             <JwtPane

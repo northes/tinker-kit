@@ -39,7 +39,6 @@ import {
   ToolLayout,
   ToolLayoutContent,
   ToolLayoutFooter,
-  ToolLayoutHeader,
   ToolLayoutToolbar,
   WheelText,
 } from './shared';
@@ -608,7 +607,6 @@ export default function PortTool({ active }: { active: boolean }) {
 
   return (
     <ToolLayout>
-      <ToolLayoutHeader title={t('portTool.title')} />
       <ToolLayoutToolbar
         left={
           <ToolHeaderField

@@ -34,7 +34,6 @@ import {
   ToolLayout,
   ToolLayoutContent,
   ToolLayoutFooter,
-  ToolLayoutHeader,
   ToolLayoutToolbar,
   type PendingAction,
   type ToolId,
@@ -204,7 +203,6 @@ export default function TextGeneratorTool({
   return (
     <Reveal index={0} fill active={active}>
       <ToolLayout>
-        <ToolLayoutHeader title={t('textGeneratorTool.title')} />
         <ToolLayoutToolbar
           left={
             <>

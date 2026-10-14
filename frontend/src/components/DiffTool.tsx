@@ -22,7 +22,6 @@ import {
   ToolLayout,
   ToolLayoutContent,
   ToolLayoutFooter,
-  ToolLayoutHeader,
   ToolLayoutToolbar,
   ToolLayoutToolbarGroup,
   type PendingAction,
@@ -501,7 +500,6 @@ export default function DiffTool({
   return (
     <Reveal index={0} fill active={active}>
       <ToolLayout className="diff-tool-layout [container-type:inline-size]">
-        <ToolLayoutHeader title={t('diffTool.title')} />
         <ToolLayoutToolbar
           right={
             <ToolLayoutToolbarGroup>

@@ -12,7 +12,6 @@ import {
   ToolActionBar,
   ToolLayoutContent,
   ToolLayoutFooter,
-  ToolLayoutHeader,
   ToolLayout,
   useFocusOnActivate,
   decodeBase64,
@@ -458,7 +457,6 @@ export default function Base64Tool({
   return (
     <Reveal index={0} fill active={active}>
       <ToolLayout>
-        <ToolLayoutHeader title={t('base64Tool.title')} />
         <ToolLayoutContent className="grid grid-rows-[minmax(0,1fr)_auto] gap-3">
           <div className="grid h-full min-h-0 grid-cols-2 gap-3.5" {...fileDrop.dropProps}>
             {inputPane}

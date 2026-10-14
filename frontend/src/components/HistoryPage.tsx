@@ -44,7 +44,6 @@ import {
   ToolLayout,
   ToolLayoutContent,
   ToolLayoutFooter,
-  ToolLayoutHeader,
   ToolLayoutToolbar,
   type ToolId,
 } from './shared';
@@ -372,7 +371,6 @@ export default function HistoryPage({
   return (
     <Reveal index={0} fill>
       <ToolLayout>
-        <ToolLayoutHeader title={t('history.title')} />
         <ToolLayoutToolbar
           left={
             <div className="flex min-w-0 flex-wrap items-end gap-4 max-[700px]:w-full">

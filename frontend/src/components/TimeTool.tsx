@@ -46,7 +46,6 @@ import { Label } from './ui/label';
 import {
   Reveal,
   ToolLayoutContent,
-  ToolLayoutHeader,
   ToolLayout,
   undoRedoKey,
   useFocusOnActivate,
@@ -358,7 +357,6 @@ export default function TimeTool({
   return (
     <Reveal index={0} fill active={active}>
       <ToolLayout>
-        <ToolLayoutHeader title={t('timeTool.title')} />
         <ToolLayoutContent>
           <Tabs
             value={mode}

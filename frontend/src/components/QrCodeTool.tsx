@@ -13,7 +13,6 @@ import {
   ToolActionBar,
   ToolLayoutContent,
   ToolLayoutFooter,
-  ToolLayoutHeader,
   ToolLayout,
   useFocusOnActivate,
   type PendingAction,
@@ -333,7 +332,6 @@ export default function QrCodeTool({
   return (
     <Reveal index={0} fill active={active}>
       <ToolLayout>
-        <ToolLayoutHeader title={t('qrTool.title')} />
         <ToolLayoutContent>
           <div
             className="grid h-full min-h-0 min-w-0 grid-cols-2 gap-3.5 max-[700px]:grid-cols-1"

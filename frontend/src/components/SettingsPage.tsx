@@ -68,7 +68,7 @@ import {
 } from '../../bindings/changeme/configservice';
 import { CheckForUpdates, GetCurrentVersion } from '../../bindings/changeme/updateservice';
 import { ClearHistoryDialog } from './HistoryPage';
-import { ToolLayout, ToolLayoutHeader, ToolLayoutContent, type Icon, type ToolId } from './shared';
+import { ToolLayout, ToolLayoutContent, type Icon, type ToolId } from './shared';
 import { toast } from './ui/toast';
 import { GITHUB_REPO_URL } from '../repositoryUrl';
 import { THEME_MODE_OPTIONS, type ThemeMode } from '../theme';
@@ -1252,7 +1252,6 @@ export default function SettingsPage({
   return (
     <div className="h-full min-h-0">
       <ToolLayout>
-        <ToolLayoutHeader title={t('settings.title')} />
         <ToolLayoutContent className="px-0">
           <Tabs
             orientation="vertical"

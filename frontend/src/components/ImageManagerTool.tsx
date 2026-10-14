@@ -96,7 +96,6 @@ import {
   ToolLayout,
   ToolLayoutContent,
   ToolLayoutFooter,
-  ToolLayoutHeader,
   ToolLayoutToolbar,
   useCheckboxDragSelect,
   type PendingAction,
@@ -1102,7 +1101,6 @@ export default function ImageManagerTool({
   return (
     <Reveal index={0} fill active={active}>
       <ToolLayout>
-        <ToolLayoutHeader title={t('imageManagerTool.title')} />
         <ToolLayoutToolbar
           left={
             <div className="flex min-w-0 flex-wrap items-end gap-4 max-[700px]:w-full">

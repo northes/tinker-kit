@@ -188,6 +188,7 @@ func main() {
 		MinHeight:        440,
 		DisableResize:    false,
 		EnableFileDrop:   true,
+		DevToolsEnabled:  devToolsEnabled,
 		BackgroundColour: application.NewRGB(17, 17, 19),
 		URL:              "/",
 		Mac: application.MacWindow{
@@ -212,6 +213,9 @@ func main() {
 		})
 	})
 	log.Printf("[startup] window created; WebKit back-forward gestures enabled")
+	window.OnWindowEvent(events.Common.WindowRuntimeReady, func(_ *application.WindowEvent) {
+		configureLocalInspector(window)
+	})
 	window.Show()
 	log.Printf("[startup] window shown; installing local swipe monitor")
 	installMouseNavigationMonitor()
@@ -360,12 +364,61 @@ func main() {
 	// 默认应用菜单把 Cmd+R 绑定为 Reload，会在 WebView 之前拦截按键；
 	// 重建 View 菜单去掉 Reload，让快捷键交给前端（编辑器搜索），Cmd+Shift+R 仍可强制重载。
 	appMenu := app.Menu.New()
-	appMenu.AddRole(application.AppMenu)
+	if runtime.GOOS == "darwin" {
+		tinkerKitMenu := appMenu.AddSubmenu(appName)
+		var localizedItems []struct {
+			item *application.MenuItem
+			zh   string
+			en   string
+		}
+		addLocalized := func(item *application.MenuItem, zh, en string) {
+			tinkerKitMenu.Append(application.NewMenuFromItems(item))
+			localizedItems = append(localizedItems, struct {
+				item *application.MenuItem
+				zh   string
+				en   string
+			}{item, zh, en})
+		}
+		addLocalized(application.NewRole(application.About), "关于 TinkerKit", "About TinkerKit")
+		tinkerKitMenu.AddSeparator()
+		addLocalized(application.NewMenuItem("设置").OnClick(func(_ *application.Context) {
+			showFromTray()
+			app.Event.Emit("navigate", "settings")
+		}), "设置", "Settings")
+		addLocalized(application.NewMenuItem("检查更新").OnClick(func(_ *application.Context) {
+			showFromTray()
+			app.Event.Emit("check-updates")
+		}), "检查更新", "Check for Updates")
+		tinkerKitMenu.AddSeparator()
+		addLocalized(application.NewRole(application.ServicesMenu), "服务", "Services")
+		tinkerKitMenu.AddSeparator()
+		addLocalized(application.NewRole(application.Hide), "隐藏 TinkerKit", "Hide TinkerKit")
+		addLocalized(application.NewRole(application.HideOthers), "隐藏其他", "Hide Others")
+		addLocalized(application.NewRole(application.ShowAll), "显示全部", "Show All")
+		tinkerKitMenu.AddSeparator()
+		addLocalized(application.NewRole(application.Quit).OnClick(func(_ *application.Context) {
+			quit()
+		}), "退出 TinkerKit", "Quit TinkerKit")
+		updateMenuLanguage := func(cfg Config) {
+			for _, entry := range localizedItems {
+				label := entry.zh
+				if cfg.Language == "en-US" {
+					label = entry.en
+				}
+				entry.item.SetLabel(label)
+			}
+		}
+		updateMenuLanguage(cfgService.Get())
+		cfgService.setOnChange(updateMenuLanguage)
+	}
 	appMenu.AddRole(application.FileMenu)
 	appMenu.AddRole(application.EditMenu)
 	viewMenu := appMenu.AddSubmenu("View")
 	viewMenu.AddRole(application.ForceReload)
-	addDevToolsMenuItem(viewMenu)
+	addDevToolsMenuItem(viewMenu, func() {
+		showFromTray()
+		window.OpenDevTools()
+	})
 	viewMenu.AddSeparator()
 	viewMenu.AddRole(application.ResetZoom)
 	viewMenu.AddRole(application.ZoomIn)
@@ -374,6 +427,16 @@ func main() {
 	viewMenu.AddRole(application.ToggleFullscreen)
 	appMenu.AddRole(application.WindowMenu)
 	appMenu.AddRole(application.HelpMenu)
+	helpMenu := appMenu.FindByRole(application.HelpMenu).GetSubmenu()
+	helpMenu.Clear()
+	helpMenu.Add("Project Homepage").OnClick(func(_ *application.Context) {
+		if err := app.Browser.OpenURL("https://github.com/northes/tinker-kit"); err != nil {
+			log.Printf("打开项目主页失败: %v", err)
+		}
+	})
+	updateApplicationMenuLanguage := applicationMenuLanguageUpdater(appMenu)
+	updateApplicationMenuLanguage(cfgService.Get())
+	cfgService.setOnChange(updateApplicationMenuLanguage)
 	app.Menu.SetApplicationMenu(appMenu)
 
 	window.RegisterHook(events.Common.WindowClosing, func(event *application.WindowEvent) {

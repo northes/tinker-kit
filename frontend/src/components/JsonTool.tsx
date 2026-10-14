@@ -72,7 +72,6 @@ import {
   ToolActionBar,
   ToolLayoutContent,
   ToolLayoutFooter,
-  ToolLayoutHeader,
   ToolLayoutToolbar,
   ToolLayoutToolbarGroup,
   ToolLayout,
@@ -1297,7 +1296,6 @@ export default function JsonTool({
   return (
     <Reveal index={0} fill active={active}>
       <ToolLayout className="json-page [container-name:json-page] [container-type:inline-size]">
-        <ToolLayoutHeader title={t('jsonTool.title')} />
         <ToolLayoutToolbar
           className="json-toolbar @max-[700px]/json-page:flex-col @max-[700px]/json-page:items-stretch"
           rightClassName="@max-[700px]/json-page:ml-0"

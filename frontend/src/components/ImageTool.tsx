@@ -49,7 +49,6 @@ import {
     ToolLayout,
     ToolLayoutContent,
     ToolLayoutFooter,
-    ToolLayoutHeader,
     useFocusOnActivate,
 } from './shared';
 import {toast} from './ui/toast';
@@ -1185,7 +1184,6 @@ export default function ImageTool({
     return (
         <Reveal index={0} fill active={active}>
             <ToolLayout className="image-tool">
-                <ToolLayoutHeader title={t('imageTool.title')}/>
                 <ToolLayoutContent>
                     <div
                         className="grid h-full min-h-0 min-w-0 grid-cols-[minmax(0,1.2fr)_minmax(228px,0.72fr)] grid-rows-[minmax(0,1fr)] max-[700px]:grid-cols-1 max-[700px]:grid-rows-[minmax(0,1fr)_minmax(0,1fr)]">

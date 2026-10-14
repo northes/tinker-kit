@@ -59,7 +59,6 @@ import {
   ToolLayout,
   ToolLayoutContent,
   ToolLayoutFooter,
-  ToolLayoutHeader,
   ToolLayoutToolbar,
   useCheckboxDragSelect,
 } from './shared';
@@ -1210,7 +1209,6 @@ export default function SshFilesTool({ active }: Props) {
 
   return (
     <ToolLayout>
-      <ToolLayoutHeader title={t('sshFilesTool.title')} />
       <ToolLayoutToolbar
         left={
           <div className="flex min-w-0 flex-wrap items-end gap-3 max-[700px]:w-full">

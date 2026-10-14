@@ -14,7 +14,6 @@ import {
   ToolActionBar,
   ToolLayoutContent,
   ToolLayoutFooter,
-  ToolLayoutHeader,
   ToolLayoutToolbar,
   ToolLayoutToolbarGroup,
   ToolLayout,
@@ -195,7 +194,6 @@ export default function UrlTool({
   return (
     <Reveal index={0} fill active={active}>
       <ToolLayout>
-        <ToolLayoutHeader title={t('urlTool.title')} />
         <ToolLayoutToolbar
           right={
             <ToolLayoutToolbarGroup>

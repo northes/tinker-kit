@@ -5,7 +5,7 @@ import {
 } from '@phosphor-icons/react';
 import { Clipboard, Events } from '@wailsio/runtime';
 import type { SetStateAction } from 'react';
-import { lazy, Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import { useLocation, useNavigate, useNavigationType } from 'react-router';
@@ -730,6 +730,31 @@ function AppShell() {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [paletteOpen, closePalette, sidebarManaging]);
+  const checkForUpdates = useCallback(() => {
+    void (async () => {
+      window.dispatchEvent(new CustomEvent('tinkerkit:update-check', { detail: 'checking' }));
+      try {
+        const available = await CheckForUpdates();
+        if (!available) toast.add({ title: t('settings.upToDate'), type: 'success' });
+        window.dispatchEvent(
+          new CustomEvent('tinkerkit:update-check', {
+            detail: available ? 'available' : 'finished',
+          }),
+        );
+      } catch (error) {
+        toast.add({
+          title: t('settings.updateFailed'),
+          description: formatBackendError(error) || t('settings.updateFailedDesc'),
+          type: 'error',
+        });
+        window.dispatchEvent(new CustomEvent('tinkerkit:update-check', { detail: 'finished' }));
+      }
+    })();
+  }, [t]);
+  useEffect(() => {
+    const off = Events.On('check-updates', checkForUpdates);
+    return () => off();
+  }, [checkForUpdates]);
   const run = (item: IndexedItem) => {
     const toolId = paletteToolId(item);
     if (toolId && !enabledToolSet.has(toolId)) return;
@@ -742,27 +767,7 @@ function AppShell() {
           if (page !== 'settings') navigate('settings');
           return;
         case 'check-updates':
-          void (async () => {
-            window.dispatchEvent(new CustomEvent('tinkerkit:update-check', { detail: 'checking' }));
-            try {
-              const available = await CheckForUpdates();
-              if (!available) toast.add({ title: t('settings.upToDate'), type: 'success' });
-              window.dispatchEvent(
-                new CustomEvent('tinkerkit:update-check', {
-                  detail: available ? 'available' : 'finished',
-                }),
-              );
-            } catch (error) {
-              toast.add({
-                title: t('settings.updateFailed'),
-                description: formatBackendError(error) || t('settings.updateFailedDesc'),
-                type: 'error',
-              });
-              window.dispatchEvent(
-                new CustomEvent('tinkerkit:update-check', { detail: 'finished' }),
-              );
-            }
-          })();
+          checkForUpdates();
           return;
         case 'toggle-display-mode':
           setSettingsWithThemeTransition((current) => {
@@ -940,45 +945,60 @@ function AppShell() {
       <div className="app-shell relative grid h-dvh grid-rows-[var(--app-titlebar-height)_minmax(0,1fr)] bg-background">
         <div className="ambient pointer-events-none absolute inset-0 z-0" />
         <header
-          className="titlebar relative z-[2] flex h-full cursor-default pointer-events-auto select-none items-center border-b border-border bg-background px-4 pl-(--app-titlebar-pad-left) [--wails-draggable:drag]"
+          className="titlebar relative z-[2] grid grid-cols-3 h-full cursor-default pointer-events-auto select-none items-center border-b border-border bg-background px-4 [--wails-draggable:drag]"
           data-wails-drag
         >
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            className="sidebar-toggle relative top-(--app-titlebar-toggle-offset) flex-none self-center rounded-lg text-muted-foreground [--wails-draggable:no-drag] hover:bg-muted hover:text-foreground"
-            onClick={cycleSidebar}
-            disabled={sidebarManaging}
-            aria-label={t('sidebar.toggle')}
-            title={t('sidebar.toggle')}
-          >
-            <SidebarSimple size={16} weight="duotone" />
-          </Button>
-          <div className="titlebar-navigation relative top-(--app-titlebar-item-offset) ml-1 flex h-7 items-center gap-0.5 self-center [--wails-draggable:no-drag]">
+          <div className="flex min-w-0 items-center pl-[calc(var(--app-titlebar-pad-left)-1rem)]">
             <Button
               variant="ghost"
-              disabled={!canGoBack}
               size="icon-sm"
-              className="titlebar-navigation-button flex-none text-muted-foreground hover:bg-muted hover:text-foreground [&_svg]:size-[15px]"
-              onClick={() => routerNavigate(-1)}
-              aria-label={t('titlebar.back')}
-              title={t('titlebar.back')}
+              className="sidebar-toggle relative top-(--app-titlebar-toggle-offset) flex-none self-center rounded-lg text-muted-foreground [--wails-draggable:no-drag] hover:bg-muted hover:text-foreground"
+              onClick={cycleSidebar}
+              disabled={sidebarManaging}
+              aria-label={t('sidebar.toggle')}
+              title={t('sidebar.toggle')}
             >
-              <ArrowLeft size={15} weight="duotone" />
+              <SidebarSimple size={16} weight="duotone" />
             </Button>
-            <Button
-              variant="ghost"
-              disabled={!canGoForward}
-              size="icon-sm"
-              className="titlebar-navigation-button flex-none text-muted-foreground hover:bg-muted hover:text-foreground [&_svg]:size-[15px]"
-              onClick={() => routerNavigate(1)}
-              aria-label={t('titlebar.forward')}
-              title={t('titlebar.forward')}
-            >
-              <ArrowRight size={15} weight="duotone" />
-            </Button>
+            <div className="titlebar-navigation relative top-(--app-titlebar-item-offset) ml-1 flex h-7 items-center gap-0.5 self-center [--wails-draggable:no-drag]">
+              <Button
+                variant="ghost"
+                disabled={!canGoBack}
+                size="icon-sm"
+                className="titlebar-navigation-button flex-none text-muted-foreground hover:bg-muted hover:text-foreground [&_svg]:size-[15px]"
+                onClick={() => routerNavigate(-1)}
+                aria-label={t('titlebar.back')}
+                title={t('titlebar.back')}
+              >
+                <ArrowLeft size={15} weight="duotone" />
+              </Button>
+              <Button
+                variant="ghost"
+                disabled={!canGoForward}
+                size="icon-sm"
+                className="titlebar-navigation-button flex-none text-muted-foreground hover:bg-muted hover:text-foreground [&_svg]:size-[15px]"
+                onClick={() => routerNavigate(1)}
+                aria-label={t('titlebar.forward')}
+                title={t('titlebar.forward')}
+              >
+                <ArrowRight size={15} weight="duotone" />
+              </Button>
+            </div>
           </div>
-          <UpdatePill />
+          <div className="pointer-events-none flex min-w-0 items-center justify-center">
+            <h1 className="m-0 truncate text-sm font-semibold text-foreground">
+              {t(
+                sidebarPage === 'settings'
+                  ? 'settings.title'
+                  : sidebarPage === 'history'
+                    ? 'history.title'
+                    : `tools.${sidebarPage}.name`,
+              )}
+            </h1>
+          </div>
+          <div className="flex min-w-0 items-center justify-end [&>*]:max-w-full">
+            <UpdatePill />
+          </div>
         </header>
         <div
           className={`main relative z-[1] grid min-h-0 ${layoutSidebarMode === 'hidden' ? 'grid-cols-[0px_minmax(0,1fr)] [&_.sidebar]:invisible [&_.sidebar]:overflow-hidden' : layoutSidebarMode === 'icon' ? 'grid-cols-[56px_minmax(0,1fr)] [&_.sidebar]:overflow-hidden [&_.sidebar]:pt-3 [&_.sidebar-heading]:hidden [&_.sidebar-item]:justify-center [&_.sidebar-item]:px-0 [&_.sidebar-item_span]:hidden [&_.sidebar-palette_kbd]:hidden [&_.sidebar-palette_span]:hidden [&_.sidebar-palette]:justify-center' : 'grid-cols-[232px_minmax(0,1fr)]'}`}

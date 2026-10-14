@@ -37,7 +37,6 @@ import {
   ToolLayout,
   ToolLayoutContent,
   ToolLayoutFooter,
-  ToolLayoutHeader,
   ToolLayoutToolbar,
   type PendingAction,
   type ToolId,
@@ -736,7 +735,6 @@ export default function NetworkTestTool({
     <>
       <Reveal fill active={active}>
         <ToolLayout>
-          <ToolLayoutHeader title={t('networkTestTool.title')} />
           <ToolLayoutToolbar
             left={
               <>
