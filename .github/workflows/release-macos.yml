@@ -35,11 +35,11 @@ jobs:
         uses: actions/cache@v6
         with:
           path: ~/go/bin/wails3
-          key: wails3-${{ runner.os }}-${{ runner.arch }}-go-${{ steps.setup-go.outputs.go-version }}-v3.0.0-beta.23
+          key: wails3-${{ runner.os }}-${{ runner.arch }}-go-${{ steps.setup-go.outputs.go-version }}-v3.0.0-beta.29
 
       - name: 安装 Wails CLI
         if: steps.cache-wails.outputs.cache-hit != 'true'
-        run: go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-beta.23
+        run: go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-beta.29
 
       - name: 构建前端
         run: wails3 task common:build:frontend CI=true BUILD_FLAGS="-tags production"
@@ -88,11 +88,11 @@ jobs:
         uses: actions/cache@v6
         with:
           path: ~/go/bin/wails3
-          key: wails3-${{ runner.os }}-${{ runner.arch }}-go-${{ steps.setup-go.outputs.go-version }}-v3.0.0-beta.23
+          key: wails3-${{ runner.os }}-${{ runner.arch }}-go-${{ steps.setup-go.outputs.go-version }}-v3.0.0-beta.29
 
       - name: 安装 Wails CLI
         if: steps.cache-wails.outputs.cache-hit != 'true'
-        run: go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-beta.23
+        run: go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-beta.29
 
       - name: 下载前端构建产物
         uses: actions/download-artifact@v8
