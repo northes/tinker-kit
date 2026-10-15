@@ -118,7 +118,7 @@ function SortableClock({
   return (
     <div
       ref={setNodeRef}
-      data-clock-id={entry.id}
+      data-clock-zone={entry.zone}
       style={{ transform: CSS.Transform.toString(transform), transition }}
       className={`min-w-[232px] flex-1 px-3.5 py-3 transition-colors ${selected ? 'bg-accent' : ''} ${isDragging ? 'opacity-50' : ''}`}
     >
@@ -210,6 +210,7 @@ export default function RealTimePanel({
     panelViewport.current = viewport;
   }, []);
   const clockRow = useRef<HTMLDivElement | null>(null);
+  const pendingFocusZone = useRef<string | null>(null);
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
@@ -247,64 +248,6 @@ export default function RealTimePanel({
         ? items
         : [...items, { id: `clock-${crypto.randomUUID()}`, zone }],
     );
-  const nearestZoneAtPointer = (event: React.PointerEvent<SVGSVGElement>) => {
-    const svg = event.currentTarget,
-      matrix = svg.getScreenCTM(),
-      pointer = matrix
-        ? new DOMPoint(event.clientX, event.clientY).matrixTransform(matrix.inverse())
-        : { x: 0, y: 0 },
-      toPoint = (item: { longitude: number; latitude: number }) => ({
-        x: ((item.longitude + 180) / 360) * 900,
-        y: ((90 - item.latitude) / 180) * 300,
-      });
-    return cityZones.reduce((best, item) => {
-      const current = toPoint(item),
-        bestPoint = toPoint(best),
-        distance =
-          (current.x - pointer.x) ** 2 + ((current.y - pointer.y) * mapLatitudeWeight) ** 2,
-        bestDistance =
-          (bestPoint.x - pointer.x) ** 2 + ((bestPoint.y - pointer.y) * mapLatitudeWeight) ** 2;
-      return distance < bestDistance ? item : best;
-    }).zone;
-  };
-  const hoverMapPoint = (event: React.PointerEvent<SVGSVGElement>) => {
-    setMapCandidate(nearestZoneAtPointer(event));
-  };
-  const addMapPoint = (event: React.PointerEvent<SVGSVGElement>) => {
-    const zone = nearestZoneAtPointer(event);
-    addZone(zone);
-    setFocusedZone(zone);
-    setMapCandidate(zone);
-  };
-  const locateClock = (clock: ClockEntry) => {
-    setFocusedZone(clock.zone);
-    setMapCandidate(null);
-    const viewport = clockViewport.current;
-    if (!viewport) return;
-    const card = viewport.querySelector<HTMLElement>(`[data-clock-id="${clock.id}"]`);
-    if (!card) return;
-    const viewportRect = viewport.getBoundingClientRect();
-    const cardRect = card.getBoundingClientRect();
-    const delta = cardRect.left - viewportRect.left - (viewportRect.width - cardRect.width) / 2;
-    viewport.scrollBy({ left: delta, behavior: 'smooth' });
-    const row = clockRow.current;
-    const panel = panelViewport.current;
-    if (!row || !panel) return;
-    const panelRect = panel.getBoundingClientRect();
-    const rowRect = row.getBoundingClientRect();
-    if (rowRect.top < panelRect.top || rowRect.bottom > panelRect.bottom) {
-      panel.scrollBy({ top: rowRect.top - panelRect.top, behavior: 'smooth' });
-    }
-  };
-  const scrollClocksByWheel = (event: React.WheelEvent<HTMLDivElement>) => {
-    const { deltaX, deltaY, deltaMode } = event;
-    if (event.ctrlKey || (deltaX === 0 && deltaY === 0)) return;
-    const viewport = clockViewport.current;
-    if (!viewport || viewport.scrollWidth <= viewport.clientWidth) return;
-    const scale = deltaMode === 1 ? 16 : deltaMode === 2 ? viewport.clientWidth : 1;
-    viewport.scrollLeft += (Math.abs(deltaX) > Math.abs(deltaY) ? deltaX : deltaY) * scale;
-    event.preventDefault();
-  };
   const mapPoint = (zone: string) => {
     const city = cityZones.find((item) => item.zone === zone);
     if (city) return city;
@@ -318,6 +261,77 @@ export default function RealTimePanel({
         (Number(offsetMatch[2]) + Number(offsetMatch[3] ?? 0) / 60)
       : 0;
     return { longitude: offset * 15, latitude: 0, zone };
+  };
+  const nearestZoneAtPointer = (event: React.PointerEvent<SVGSVGElement>) => {
+    const svg = event.currentTarget,
+      matrix = svg.getScreenCTM(),
+      pointer = matrix
+        ? new DOMPoint(event.clientX, event.clientY).matrixTransform(matrix.inverse())
+        : { x: 0, y: 0 },
+      toPoint = (item: { longitude: number; latitude: number }) => ({
+        x: ((item.longitude + 180) / 360) * 900,
+        y: ((90 - item.latitude) / 180) * 300,
+      }),
+      candidates = [...cityZones, ...clocks.map((clock) => mapPoint(clock.zone))];
+    return candidates.reduce((best, item) => {
+      const current = toPoint(item),
+        bestPoint = toPoint(best),
+        distance =
+          (current.x - pointer.x) ** 2 + ((current.y - pointer.y) * mapLatitudeWeight) ** 2,
+        bestDistance =
+          (bestPoint.x - pointer.x) ** 2 + ((bestPoint.y - pointer.y) * mapLatitudeWeight) ** 2;
+      return distance < bestDistance ? item : best;
+    }).zone;
+  };
+  const hoverMapPoint = (event: React.PointerEvent<SVGSVGElement>) => {
+    setMapCandidate(nearestZoneAtPointer(event));
+  };
+  const scrollClockIntoView = useCallback((zone: string) => {
+    const viewport = clockViewport.current;
+    if (!viewport) return;
+    const card = viewport.querySelector<HTMLElement>(`[data-clock-zone="${zone}"]`);
+    if (!card) return;
+    const viewportRect = viewport.getBoundingClientRect();
+    const cardRect = card.getBoundingClientRect();
+    const delta = cardRect.left - viewportRect.left - (viewportRect.width - cardRect.width) / 2;
+    viewport.scrollBy({ left: delta, behavior: 'smooth' });
+    const row = clockRow.current;
+    const panel = panelViewport.current;
+    if (!row || !panel) return;
+    const panelRect = panel.getBoundingClientRect();
+    const rowRect = row.getBoundingClientRect();
+    if (rowRect.top < panelRect.top || rowRect.bottom > panelRect.bottom) {
+      panel.scrollBy({ top: rowRect.top - panelRect.top, behavior: 'smooth' });
+    }
+  }, []);
+  useEffect(() => {
+    const zone = pendingFocusZone.current;
+    if (zone === null) return;
+    pendingFocusZone.current = null;
+    scrollClockIntoView(zone);
+  }, [clocks, scrollClockIntoView]);
+  const addMapPoint = (event: React.PointerEvent<SVGSVGElement>) => {
+    const zone = nearestZoneAtPointer(event);
+    const isNew = !clocks.some((clock) => clock.zone === zone);
+    addZone(zone);
+    setFocusedZone(zone);
+    setMapCandidate(zone);
+    if (isNew) pendingFocusZone.current = zone;
+    else scrollClockIntoView(zone);
+  };
+  const locateClock = (clock: ClockEntry) => {
+    setFocusedZone(clock.zone);
+    setMapCandidate(null);
+    scrollClockIntoView(clock.zone);
+  };
+  const scrollClocksByWheel = (event: React.WheelEvent<HTMLDivElement>) => {
+    const { deltaX, deltaY, deltaMode } = event;
+    if (event.ctrlKey || (deltaX === 0 && deltaY === 0)) return;
+    const viewport = clockViewport.current;
+    if (!viewport || viewport.scrollWidth <= viewport.clientWidth) return;
+    const scale = deltaMode === 1 ? 16 : deltaMode === 2 ? viewport.clientWidth : 1;
+    viewport.scrollLeft += (Math.abs(deltaX) > Math.abs(deltaY) ? deltaX : deltaY) * scale;
+    event.preventDefault();
   };
   const mapX = (zone: string) => ((mapPoint(zone).longitude + 180) / 360) * 900;
   const mapY = (zone: string) => ((90 - mapPoint(zone).latitude) / 180) * 300;
