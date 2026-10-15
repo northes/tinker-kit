@@ -209,7 +209,8 @@ TinkerKit 是一组融入开发者日常工作的工具：快速、好用、克�
 - **Secondary：** `bg-secondary text-secondary-foreground`，hover 混入少量 foreground。
 - **Ghost：** 无边框，hover 使用 `bg-muted`。
 - **Destructive：** `bg-destructive/10 text-destructive`，只用于破坏性动作，并由确认对话框承接二次确认。
-- **Tool Action Button：** 工具页底部动作栏使用 30px 高、`px-[11px]`、`text-[11px]` 的紧凑尺寸，`ToolActionBar` 统一右对齐。
+- **Tool Action Button（header 工具栏与 footer 动作栏）：** 两处共用同一套标准：高 30px、`px-[11px]`、`text-[11px]`，图标 14px `weight="duotone"` 置于文字前，动作永远使用「图标 + 文字」。footer 由 `ToolActionBar` 右对齐渲染，header 由 `ToolActionButton` 渲染，variant 映射统一为 `primary → default`、`secondary → outline`、`tertiary → ghost`、`danger → destructive`。下拉型动作（`menu` / `split`）在文字右侧追加 12px `CaretDown`；下拉菜单项本身保持纯文字。
+- **Tool Icon Button：** 纯图标按钮（`ToolIconButton`）只在语义唯一且空间受限的 header 入口使用，如高级设置、刷新、字段内清空；必须为 30×30 正方形、ghost 变体，并提供 `aria-label` 与 `title`。字段内联的清除/搜索按钮跟随字段内部高度，不套用 30px 尺寸。
 
 ### Inputs / Fields
 
@@ -248,6 +249,7 @@ TinkerKit 是一组融入开发者日常工作的工具：快速、好用、克�
 - **Do** 只提供 shadcn 默认浅色和默认深色两个主题，并让所有组件从当前主题语义 token 取色。
 - **Do** 用布局、1px 分隔线、明度差和明确作用域组织高密度工具界面。
 - **Do** 保持每个操作作用域最多一个 primary，并让清空到主要结果的顺序由左向右推进。
+- **Do** 让 header 工具栏与 footer 动作栏的动作按钮统一为「图标 + 文字」，由 `ToolActionBar` / `ToolActionButton` 渲染；纯图标只用于语义唯一的 header 入口。
 - **Do** 使用系统 UI 字体和系统等宽字体，保持 4–24px 的既有间距节奏。
 - **Do** 让滚动条统一走 `ScrollArea`（OverlayScrollbars），并复用 `--overlay-scrollbar-size`，不要另建滚动条样式。
 - **Do** 默认关闭过渡和入场动画（Toast 进出场、主题切换揭示除外），并继续尊重 `prefers-reduced-motion`。
@@ -259,4 +261,5 @@ TinkerKit 是一组融入开发者日常工作的工具：快速、好用、克�
 - **Don't** 使用渐变、玻璃拟态、装饰性阴影、营销式大标题或卡片堆叠。
 - **Don't** 用硬编码颜色绕过 `globals.css`，也不要把项目语义适配 token 当作独立主题。
 - **Don't** 为视觉反馈增加位移、缩放或持续动效；状态应通过即时颜色、边界和内容变化表达。
+- **Don't** 为工具栏动作按钮手写 `size="sm"`、`h-8`、`h-[32px]` 等尺寸类或省略图标；也不要新增第二套动作按钮样式。
 - **Don't** 在全局隐藏原生滚动条，或为单个容器写局部滚动条覆盖。

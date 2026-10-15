@@ -24,6 +24,7 @@
 - 工具页 header 中的字段 label 与控件纵向排列时，复用 `shared.tsx` 的 `ToolHeaderField`；需要通过 `aria-labelledby` 关联控件时传入 `labelId`。尺寸、字重、颜色和间距以镜像管理 header 的 label 为基准；不要在各工具内重复拼接 label 样式，也不要把标签的 muted 颜色放在包住控件的容器上。
 - 浮层在暗色下“没有阴影”通常是主题 token 问题：`--shadow-*` 明暗同值（10% 黑），在深色背景上不可见；要改的是暗色 token，不要改组件或加局部阴影覆盖。
 - 图标默认使用 phosphor 的 `weight="duotone"`（按钮、下拉项等装饰性图标）；表格排序图标例外使用 Regular 的 `CaretUpDown` / `CaretDown` / `CaretUp`。新增或调整控件时不要遗漏个别图标。
+- 工具页 header 工具栏与 footer 动作栏的动作按钮共用同一标准：复用 `shared.tsx` 的 `ToolActionBar`（footer）与 `ToolActionButton`（header），30px 高、`px-[11px]`、`text-[11px]`，统一「图标 + 文字」，图标 14px `weight="duotone"` 置于文字前，下拉型动作（`menu` / `split`）在文字右侧追加 12px `CaretDown`；不要为单个工具手写 `size="sm"`、`h-8`、`h-[32px]` 等尺寸类，也不要省略图标。纯图标按钮只在语义唯一且空间受限的 header 入口使用，统一用 `ToolIconButton`（30×30、ghost、`aria-label` 与 `title`）；字段内联的清除/搜索按钮跟随字段内部高度，不套用该尺寸。
 - 工具页操作栏中的清空按钮统一使用 phosphor `Trash`，复制按钮统一使用 `Copy`，由 `ToolActionBar` 以 `weight="duotone"` 渲染；同类操作跨工具保持图标一致，不使用 `X` 或 `ClipboardText` 替代。
 - 复制成功只通过 toast 反馈；按钮文案、`aria-label`、`title` 始终保持复制操作名称，图标保持 `Copy`，不要切换成“已复制”等成功态文案、对勾图标或延时复原状态。既有复制入口若缺少成功 toast，应补上。
 - 多个工具重复的同类字段抽为共享组件（如来源或配置选择字段），由各工具共同使用，不要在工具内各写一套 Select + 管理入口。
