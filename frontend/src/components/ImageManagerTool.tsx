@@ -163,8 +163,9 @@ export default function ImageManagerTool({
   const sourceLabelId = useId();
   const sources = useMemo(() => resolveSources(settings.imageSources), [settings.imageSources]);
   const cliPath = settings.dockerCLIPath ?? '';
-  const [sourceId, setSourceId] = useState(LOCAL_SOURCE_ID);
-  const source = sources.find((item) => item.id === sourceId) ?? sources[0] ?? LOCAL_SOURCE;
+  // 默认加载来源列表的首项；仅当用户在本工具内手动选择过且该来源仍存在时才保留选择。
+  const [pickedSourceId, setPickedSourceId] = useState<string | null>(null);
+  const source = sources.find((item) => item.id === pickedSourceId) ?? sources[0] ?? LOCAL_SOURCE;
   const sourceProfileMissing = sourceMissingSSHProfile(source, profiles);
   const sourceConfigKey = JSON.stringify({
     source,
@@ -235,9 +236,6 @@ export default function ImageManagerTool({
     return () => window.clearTimeout(timer);
   }, [tasks, taskClock]);
 
-  useEffect(() => {
-    if (!sources.some((item) => item.id === sourceId)) setSourceId(LOCAL_SOURCE_ID);
-  }, [sourceId, sources]);
 
   useEffect(() => {
     if (!pending || pending.tool !== 'image-manager' || consumed.current === pending) return;
@@ -1121,7 +1119,7 @@ export default function ImageManagerTool({
                       return;
                     }
                     if (value) {
-                      setSourceId(value);
+                      setPickedSourceId(value);
                     }
                   }}
                 >
