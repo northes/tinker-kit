@@ -1,4 +1,4 @@
-import type { RemoteFileEntry } from '../../../bindings/changeme/models';
+import type { RemoteFileEntry } from '../../../bindings/tinkerkit/models';
 import { transformName } from '../../lib/name-transform.ts';
 import { basename, normalizeRemotePath, remoteParent } from './paths.ts';
 

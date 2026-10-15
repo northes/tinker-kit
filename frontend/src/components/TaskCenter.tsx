@@ -19,28 +19,28 @@ import {
   ListDashes,
   X,
 } from '@phosphor-icons/react';
-import type { Config, FileTask, ImageTask } from '../../bindings/changeme/models';
+import type { Config, FileTask, ImageTask } from '../../bindings/tinkerkit/models';
 import {
   CancelFileTask,
   ClearFileTasks,
   GetFileTasks,
   OpenFileTaskFolder,
   RetryFileTask,
-} from '../../bindings/changeme/fileservice';
+} from '../../bindings/tinkerkit/fileservice';
 import {
   CancelImageTask,
   ClearImageTasks,
   GetImageTasks,
   OpenImageTaskFolder,
   RetryImageTask,
-} from '../../bindings/changeme/imageservice';
-import { GetFileSources } from '../../bindings/changeme/fileservice';
+} from '../../bindings/tinkerkit/imageservice';
+import { GetFileSources } from '../../bindings/tinkerkit/fileservice';
 import {
   IsAvailable,
   OpenNotificationSettings,
   RequestAuthorization,
   Send,
-} from '../../bindings/changeme/tasknotificationservice';
+} from '../../bindings/tinkerkit/tasknotificationservice';
 import { toast } from './ui/toast';
 import { showTaskNotificationPermissionDialog } from '../lib/task-notification-feedback';
 import {
@@ -480,7 +480,7 @@ export function TaskCenter({
     setConcurrencyDraft(updated);
     onSettingsChange({ [key]: next });
     void (async () => {
-      const { SetTaskSettings } = await import('../../bindings/changeme/configservice');
+      const { SetTaskSettings } = await import('../../bindings/tinkerkit/configservice');
       const saved = await SetTaskSettings(
         updated.taskConcurrency ?? 4,
         updated.taskChunkConcurrency ?? 4,

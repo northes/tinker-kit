@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { ConvertJSON } from '../../bindings/changeme/jsonpipelineservice';
+import { ConvertJSON } from '../../bindings/tinkerkit/jsonpipelineservice';
 import type { JsonConvertErrorCode, JsonConvertFormat } from '../lib/json-converter';
 
 export type JsonConversionError = {

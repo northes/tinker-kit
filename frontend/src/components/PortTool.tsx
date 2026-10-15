@@ -36,13 +36,13 @@ import {
   StartForward,
   StopForward,
   UpdateForward,
-} from '../../bindings/changeme/portservice';
+} from '../../bindings/tinkerkit/portservice';
 import type {
   PortEntry,
   PortForward,
   PortForwardRequest,
   PortSource,
-} from '../../bindings/changeme/models';
+} from '../../bindings/tinkerkit/models';
 import { formatBackendError } from '../lib/backend-error';
 import { useSSHProfiles } from './SSHProfileManagerDialog';
 import { SSHProfileFormField } from './SSHProfileFormField';

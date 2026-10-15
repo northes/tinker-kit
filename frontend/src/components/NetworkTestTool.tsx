@@ -9,18 +9,18 @@ import type {
   NetworkTestRequest,
   NetworkTestResult,
   NetworkTestStage as BackendNetworkTestStage,
-} from '../../bindings/changeme/models';
+} from '../../bindings/tinkerkit/models';
 import {
   CancelNetworkTest,
   ListNetworkInterfaces,
   RunNetworkTest,
-} from '../../bindings/changeme/networktestservice';
+} from '../../bindings/tinkerkit/networktestservice';
 import {
   GetNetworkTestSettings,
   GetNetworkTestSources,
   SaveNetworkTestSettings,
   SaveNetworkTestSources,
-} from '../../bindings/changeme/configservice';
+} from '../../bindings/tinkerkit/configservice';
 import { formatBackendError } from '../lib/backend-error';
 import {
   automaticTarget,

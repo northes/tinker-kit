@@ -26,7 +26,7 @@ import {
 } from '@phosphor-icons/react';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import type { SidebarToolConfig } from '../../bindings/changeme/models';
+import type { SidebarToolConfig } from '../../bindings/tinkerkit/models';
 import type { ToolDefinition } from '../components/SettingsPage';
 import { type ToolId } from '../components/shared';
 import { Button } from '../components/ui/button';

@@ -4,7 +4,7 @@ import type {
   LogMonitor,
   ServiceMetricSample,
   ServiceTarget,
-} from '../../bindings/changeme/models';
+} from '../../bindings/tinkerkit/models';
 import { useServiceMetricTrend } from '../hooks/useServiceMetricTrend';
 import { formatMetricBytes as formatBytes } from '../lib/byte-format';
 import { ScrollArea } from './ui/scroll-area';

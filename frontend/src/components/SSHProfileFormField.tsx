@@ -1,4 +1,4 @@
-import type { SSHProfile } from '../../bindings/changeme/models';
+import type { SSHProfile } from '../../bindings/tinkerkit/models';
 import { SSHProfileSelect } from './SSHProfileSelect';
 import { useSSHProfiles } from './SSHProfileManagerDialog';
 

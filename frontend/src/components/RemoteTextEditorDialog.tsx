@@ -29,7 +29,7 @@ import { diff } from '@codemirror/legacy-modes/mode/diff';
 import { toml } from '@codemirror/legacy-modes/mode/toml';
 import { protobuf } from '@codemirror/legacy-modes/mode/protobuf';
 import { properties } from '@codemirror/legacy-modes/mode/properties';
-import { ReadRemoteTextFile, SaveRemoteTextFile } from '../../bindings/changeme/fileservice';
+import { ReadRemoteTextFile, SaveRemoteTextFile } from '../../bindings/tinkerkit/fileservice';
 import { quietEditorTheme } from './codeMirrorTheme';
 import { ConfirmDialog } from './ConfirmDialog';
 import { Button } from './ui/button';

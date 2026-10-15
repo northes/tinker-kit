@@ -17,10 +17,10 @@ import {
   ResolveSSHHostKeyPrompt,
   Save as SaveConfig,
   SaveImageSources,
-} from '../bindings/changeme/configservice';
-import { Log as LogFrontend } from '../bindings/changeme/logservice';
-import type { Config as Settings, SidebarToolConfig } from '../bindings/changeme/models';
-import { CheckForUpdates, SetAutoCheckEnabled } from '../bindings/changeme/updateservice';
+} from '../bindings/tinkerkit/configservice';
+import { Log as LogFrontend } from '../bindings/tinkerkit/logservice';
+import type { Config as Settings, SidebarToolConfig } from '../bindings/tinkerkit/models';
+import { CheckForUpdates, SetAutoCheckEnabled } from '../bindings/tinkerkit/updateservice';
 import { detectBase64, detectJwt } from './app/clipboard';
 import { CommandPalette } from './app/CommandPalette';
 import { defaultSettings } from './app/default-settings';

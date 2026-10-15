@@ -15,10 +15,12 @@ build/android/gen/
 .playwright-mcp/
 
 # Go build and local runtime output
+# 仅锚定根目录的裸 `go build` 产物；不要写成裸名字，否则会连带忽略
+# `frontend/bindings/tinkerkit/` 下的生成绑定。
+/tinkerkit
 *.test
 *.out
 *.prof
-tinker-kit
 dist/
 tmp/
 
@@ -51,9 +53,3 @@ frontend/pnpm-debug.log*
 .env
 .env.*
 !.env.example
-
-changeme
-
-iconsax/
-
-image-base64

@@ -1,6 +1,6 @@
 import { CaretLeft, Package } from '@phosphor-icons/react';
 import { useTranslation } from 'react-i18next';
-import type { DockerImageDetail } from '../../../bindings/changeme/models';
+import type { DockerImageDetail } from '../../../bindings/tinkerkit/models';
 import {
   Reveal,
   ToolActionButton,

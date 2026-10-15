@@ -11,7 +11,7 @@ import {
 } from '@phosphor-icons/react';
 import {useTranslation} from 'react-i18next';
 
-import {SaveBase64File} from '../../bindings/changeme/configservice';
+import {SaveBase64File} from '../../bindings/tinkerkit/configservice';
 import {
     blobToDataUrl,
     canvasToBlob,

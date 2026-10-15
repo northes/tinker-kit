@@ -1,6 +1,6 @@
 import { useId, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import type { ImageImportEntry } from '../../bindings/changeme/models';
+import type { ImageImportEntry } from '../../bindings/tinkerkit/models';
 import { formatBackendError } from '../lib/backend-error';
 import { Button } from './ui/button';
 import {

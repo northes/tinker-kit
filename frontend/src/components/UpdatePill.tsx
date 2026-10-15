@@ -4,7 +4,7 @@ import { ArrowCircleUp, X } from '@phosphor-icons/react';
 import { Button } from './ui/button';
 import { Spinner } from './ui/spinner';
 import { useTranslation } from 'react-i18next';
-import { InstallUpdate, RestartApp } from '../../bindings/changeme/updateservice';
+import { InstallUpdate, RestartApp } from '../../bindings/tinkerkit/updateservice';
 import { formatBackendError } from '../lib/backend-error';
 import { toast } from './ui/toast';
 import './UpdatePill.css';

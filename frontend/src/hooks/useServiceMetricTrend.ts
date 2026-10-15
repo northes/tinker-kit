@@ -3,11 +3,11 @@ import {
   GetServiceMetricsTrend,
   StartServiceMetrics,
   StopServiceMetrics,
-} from '../../bindings/changeme/servicemanagerservice';
+} from '../../bindings/tinkerkit/servicemanagerservice';
 import type {
   ServiceMetricSnapshot,
   ServiceMetricTrendPoint,
-} from '../../bindings/changeme/models';
+} from '../../bindings/tinkerkit/models';
 
 // 与 Go 端 serviceMetricInterval / serviceMetricRetention 对应。
 export const SERVICE_METRIC_INTERVAL = 5000;

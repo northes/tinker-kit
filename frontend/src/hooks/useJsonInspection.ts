@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { InspectJSON } from '../../bindings/changeme/jsonpipelineservice';
+import { InspectJSON } from '../../bindings/tinkerkit/jsonpipelineservice';
 
 export type JsonInspectionState =
   | { status: 'idle' }

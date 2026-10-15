@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Copy, GearSix, HashStraight, PencilSimple, Plus, Trash } from '@phosphor-icons/react';
-import type { TextGeneratorSource } from '../../bindings/changeme/models';
+import type { TextGeneratorSource } from '../../bindings/tinkerkit/models';
 import { Button } from './ui/button';
 import { ConfirmDialog } from './ConfirmDialog';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from './ui/dialog';

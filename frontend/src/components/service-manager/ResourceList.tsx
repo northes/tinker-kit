@@ -19,7 +19,7 @@ import type {
   ServiceInventory,
   ServiceResourceRef,
   SystemdUnit,
-} from '../../../bindings/changeme/models';
+} from '../../../bindings/tinkerkit/models';
 import { Button } from '../ui/button';
 import {
   ContextMenu,

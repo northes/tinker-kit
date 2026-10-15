@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { WarningCircle } from '@phosphor-icons/react';
 import { enUS, zhCN } from 'date-fns/locale';
-import type { ServiceMetricSample, ServiceResourceRef } from '../../bindings/changeme/models';
+import type { ServiceMetricSample, ServiceResourceRef } from '../../bindings/tinkerkit/models';
 import { useServiceMetricTrend } from '../hooks/useServiceMetricTrend';
 import DateTimePickerPopover from './DateTimePickerPopover';
 import { MetricLineChart, type MetricKind } from './ServiceMetricChart';

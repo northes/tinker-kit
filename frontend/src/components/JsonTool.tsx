@@ -52,7 +52,7 @@ import {
 } from '@codemirror/view';
 import { RangeSetBuilder } from '@codemirror/state';
 import { acceptCompletion } from '@codemirror/autocomplete';
-import { SaveText } from '../../bindings/changeme/fileservice';
+import { SaveText } from '../../bindings/tinkerkit/fileservice';
 import { JSON_CONVERT_FORMATS, type JsonConvertFormat } from '../lib/json-converter';
 import { useDebouncedJsonConversion } from '../hooks/useDebouncedJsonConversion';
 import { useJsonInspection } from '../hooks/useJsonInspection';
@@ -106,7 +106,7 @@ import {
   RepairJSON,
   TransformJSON,
   ValidateJSON,
-} from '../../bindings/changeme/jsonpipelineservice';
+} from '../../bindings/tinkerkit/jsonpipelineservice';
 import { backendJSONPathCompletions } from './JsonPathCompletion';
 import { dataUrlToText, readLocalFile, useFileDrop } from './fileDrop';
 

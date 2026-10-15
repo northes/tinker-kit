@@ -17,7 +17,7 @@ import { useVirtualizer } from '@tanstack/react-virtual';
 import { CancelError } from '@wailsio/runtime';
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ValidateImageSource } from '../../bindings/changeme/configservice';
+import { ValidateImageSource } from '../../bindings/tinkerkit/configservice';
 import {
   DeleteDockerImages,
   PrepareImageImports,
@@ -30,7 +30,7 @@ import {
   StartImageTagChanges,
   StartRegistryImagePulls,
   TestImageSourceConnection,
-} from '../../bindings/changeme/imageservice';
+} from '../../bindings/tinkerkit/imageservice';
 import type {
   DockerDeleteTarget,
   DockerImageBatchResult,
@@ -38,7 +38,7 @@ import type {
   ImageSource,
   ImageTask,
   Config as Settings,
-} from '../../bindings/changeme/models';
+} from '../../bindings/tinkerkit/models';
 import { formatBackendError } from '../lib/backend-error';
 import { imageArchitectures } from '../lib/image-architectures';
 import { ConfirmDialog } from './ConfirmDialog';

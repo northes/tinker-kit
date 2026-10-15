@@ -7,13 +7,13 @@ import type {
   LogMonitor,
   ServiceResourceRef,
   ServiceTarget,
-} from '../../../bindings/changeme/models';
+} from '../../../bindings/tinkerkit/models';
 import {
   GetDockerContainerDetail,
   GetDockerContainerSize,
   GetPM2ProcessDetail,
   GetSystemdUnitDetail,
-} from '../../../bindings/changeme/servicemanagerservice';
+} from '../../../bindings/tinkerkit/servicemanagerservice';
 import { formatBackendError } from '../../lib/backend-error';
 import { formatMetricBytes as formatBytes } from '../../lib/byte-format';
 import { Badge } from '../ui/badge';

@@ -2,7 +2,7 @@ import { CaretDown } from '@phosphor-icons/react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
-import type { ServiceLogLine } from '../../../bindings/changeme/models';
+import type { ServiceLogLine } from '../../../bindings/tinkerkit/models';
 import { ansiPlainText, parseAnsi, type AnsiSpan } from '../../lib/ansi';
 import { WheelText } from '../shared';
 import { Button } from '../ui/button';

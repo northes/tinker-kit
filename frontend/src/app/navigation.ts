@@ -1,4 +1,4 @@
-import type { SidebarToolConfig } from '../../bindings/changeme/models';
+import type { SidebarToolConfig } from '../../bindings/tinkerkit/models';
 import { type ToolId } from '../components/shared';
 import { tools, type Page, type PaletteItem } from './definitions';
 

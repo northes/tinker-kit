@@ -42,8 +42,8 @@ import { ArrowsOut, DotsSixVertical, Table as TableIcon, Trash } from '@phosphor
 import type { Extension } from '@codemirror/state';
 import { backendPathCompletions, backendValueCompletions } from './JsonPathCompletion';
 import type { PipelineCompletionContext, PipelineEvaluation } from './useBackendPipelineEvaluation';
-import { ReadPipelineTablePage } from '../../bindings/changeme/jsonpipelineservice';
-import type { PipelineTablePage } from '../../bindings/changeme/models';
+import { ReadPipelineTablePage } from '../../bindings/tinkerkit/jsonpipelineservice';
+import type { PipelineTablePage } from '../../bindings/tinkerkit/models';
 import { Spinner } from './ui/spinner';
 import { JsonErrorPanel } from './JsonErrorPanel';
 import { JsonTablePreview } from './JsonTablePreview';

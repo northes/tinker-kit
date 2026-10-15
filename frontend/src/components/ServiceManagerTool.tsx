@@ -18,7 +18,7 @@ import type {
   ServiceLogLine,
   ServiceResourceRef,
   ServiceTarget,
-} from '../../bindings/changeme/models';
+} from '../../bindings/tinkerkit/models';
 import {
   ClearLogBuffer,
   GetLogMonitors,
@@ -29,7 +29,7 @@ import {
   RemoveLogMonitor,
   SaveServiceTargets,
   StartLogMonitors,
-} from '../../bindings/changeme/servicemanagerservice';
+} from '../../bindings/tinkerkit/servicemanagerservice';
 import { formatBackendError } from '../lib/backend-error';
 import { ConfirmDialog } from './ConfirmDialog';
 import { logPattern, matchesLog } from './service-manager/LogList';

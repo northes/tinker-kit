@@ -7,8 +7,8 @@ import {
   GetRemoteCreationTimes,
   ListRemoteFiles,
   SearchRemoteFiles,
-} from '../../../bindings/changeme/fileservice';
-import type { RemoteFileEntry, SSHProfile } from '../../../bindings/changeme/models';
+} from '../../../bindings/tinkerkit/fileservice';
+import type { RemoteFileEntry, SSHProfile } from '../../../bindings/tinkerkit/models';
 import {
   DIRECTORY_CACHE_TTL_MS,
   directoryListingKey,

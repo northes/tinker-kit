@@ -6,7 +6,7 @@ import type {
   ServiceLogLine,
   ServiceResourceRef,
   ServiceTarget,
-} from '../../../bindings/changeme/models';
+} from '../../../bindings/tinkerkit/models';
 import { backendErrorKey } from '../../lib/backend-error';
 
 export const MANAGE_TARGETS_VALUE = '__manage-targets__';

@@ -4,8 +4,8 @@ import {
   ClosePipelineSession,
   OpenPipelineSession,
   UpdatePipelineState,
-} from '../../bindings/changeme/jsonpipelineservice';
-import type { PipelineItem } from '../../bindings/changeme/models';
+} from '../../bindings/tinkerkit/jsonpipelineservice';
+import type { PipelineItem } from '../../bindings/tinkerkit/models';
 
 // PipelineError / PipelineResultPayload 只作为事件负载，Wails 不会为纯事件结构生成
 // 模型，因此在前端按后端字段定义。

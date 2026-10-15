@@ -1,6 +1,6 @@
 import { useTranslation } from 'react-i18next';
 import { GearSix } from '@phosphor-icons/react';
-import type { SSHProfile } from '../../bindings/changeme/models';
+import type { SSHProfile } from '../../bindings/tinkerkit/models';
 import { cn } from '@/lib/utils';
 import { emptyProfile, useSSHProfiles } from './SSHProfileManagerDialog';
 import { Button } from './ui/button';

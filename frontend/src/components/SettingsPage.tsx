@@ -55,7 +55,7 @@ import {
 import { Application, Browser } from '@wailsio/runtime';
 import { useTranslation } from 'react-i18next';
 import i18n, { SUPPORTED_LANGUAGES } from '../i18n';
-import type { Config as Settings, SSHKnownHost } from '../../bindings/changeme/models';
+import type { Config as Settings, SSHKnownHost } from '../../bindings/tinkerkit/models';
 import {
   DeleteSSHKnownHost,
   GetSSHKnownHosts,
@@ -65,8 +65,8 @@ import {
   ResetConfig,
   SetAutostart,
   UpdateSSHKnownHost,
-} from '../../bindings/changeme/configservice';
-import { CheckForUpdates, GetCurrentVersion } from '../../bindings/changeme/updateservice';
+} from '../../bindings/tinkerkit/configservice';
+import { CheckForUpdates, GetCurrentVersion } from '../../bindings/tinkerkit/updateservice';
 import { ClearHistoryDialog } from './HistoryPage';
 import { ToolLayout, ToolLayoutContent, type Icon, type ToolId } from './shared';
 import { toast } from './ui/toast';
@@ -86,7 +86,7 @@ import {
   IsAvailable as IsTaskNotificationAvailable,
   RequestAuthorization as RequestTaskNotificationAuthorization,
   Send as SendTaskNotification,
-} from '../../bindings/changeme/tasknotificationservice';
+} from '../../bindings/tinkerkit/tasknotificationservice';
 
 // Keep in sync with Go config normalization and the frontend's initial settings.
 const TRAY_MATCHABLE_TOOLS: readonly ToolId[] = [

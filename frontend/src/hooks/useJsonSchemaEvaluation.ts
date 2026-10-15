@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { EvaluateJSONPath } from '../../bindings/changeme/jsonpipelineservice';
+import { EvaluateJSONPath } from '../../bindings/tinkerkit/jsonpipelineservice';
 
 export type JsonPathErrorCode =
   | 'unclosedComment'

@@ -9,7 +9,7 @@ import type {
   ServiceLogLine,
   ServiceTarget,
   SystemdUnitDetail,
-} from '../../../bindings/changeme/models';
+} from '../../../bindings/tinkerkit/models';
 import { formatBackendError } from '../../lib/backend-error';
 import { ConfirmDialog } from '../ConfirmDialog';
 import { ServicePickedPerformance } from '../ServicePickedPerformance';

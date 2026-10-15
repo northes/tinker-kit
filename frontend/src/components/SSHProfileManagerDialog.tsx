@@ -21,7 +21,7 @@ import {
   Trash,
   WarningCircle,
 } from '@phosphor-icons/react';
-import type { SSHProfile } from '../../bindings/changeme/models';
+import type { SSHProfile } from '../../bindings/tinkerkit/models';
 import {
   DeleteSSHProfile,
   GetSSHConfigProfiles,
@@ -30,7 +30,7 @@ import {
   RefreshSSHConfigProfile,
   SaveSSHProfile,
   TestSSHProfile,
-} from '../../bindings/changeme/sshprofileservice';
+} from '../../bindings/tinkerkit/sshprofileservice';
 import { ConfirmDialog } from './ConfirmDialog';
 import { Badge } from './ui/badge';
 import { ScrollArea } from './ui/scroll-area';

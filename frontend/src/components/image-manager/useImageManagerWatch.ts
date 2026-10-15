@@ -5,13 +5,13 @@ import {
   GetImageTasks,
   RefreshDockerImages,
   WatchDockerImages,
-} from '../../../bindings/changeme/imageservice';
+} from '../../../bindings/tinkerkit/imageservice';
 import type {
   DockerImage,
   DockerStatus,
   ImageSource,
   ImageTaskSnapshot,
-} from '../../../bindings/changeme/models';
+} from '../../../bindings/tinkerkit/models';
 import { formatBackendError } from '../../lib/backend-error';
 import { applyImageTaskSnapshot } from '../../lib/image-tasks';
 import { errorMessage, isWatchCancelError, type WatchDockerImagesEvent } from './model';

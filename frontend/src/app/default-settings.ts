@@ -1,4 +1,4 @@
-import type { Config as Settings } from '../../bindings/changeme/models';
+import type { Config as Settings } from '../../bindings/tinkerkit/models';
 
 export const defaultSettings: Settings = {
   trayMatchEnabled: true,

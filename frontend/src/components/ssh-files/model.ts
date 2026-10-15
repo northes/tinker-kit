@@ -38,7 +38,7 @@ import type {
   FileTask,
   RemoteFileEntry,
   SSHProfile,
-} from '../../../bindings/changeme/models';
+} from '../../../bindings/tinkerkit/models';
 import { backendErrorKey, formatBackendError, rawErrorMessage } from '../../lib/backend-error';
 import { basename } from './paths';
 import { type RenameForm } from './rename';

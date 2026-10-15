@@ -12,8 +12,8 @@ import { Dialogs, Events } from '@wailsio/runtime';
 import { Button } from './ui/button';
 import { cn } from '@/lib/utils';
 import type { Icon } from './shared';
-import { ReadFile } from '../../bindings/changeme/fileservice';
-import type { LocalFile } from '../../bindings/changeme/models';
+import { ReadFile } from '../../bindings/tinkerkit/fileservice';
+import type { LocalFile } from '../../bindings/tinkerkit/models';
 import './fileDrop.css';
 
 export type LocalFilePickOptions = {

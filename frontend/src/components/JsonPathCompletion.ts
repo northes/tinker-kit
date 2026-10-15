@@ -8,7 +8,7 @@ import { EditorView, tooltips } from '@codemirror/view';
 import {
   QueryJSONPathCompletion,
   QueryPipelineCompletion,
-} from '../../bindings/changeme/jsonpipelineservice';
+} from '../../bindings/tinkerkit/jsonpipelineservice';
 import type { PipelineCompletionContext } from './useBackendPipelineEvaluation';
 
 type PathToken = { type: 'key' | 'index' | 'all'; value: string };

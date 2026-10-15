@@ -37,8 +37,8 @@ import { useTranslation } from 'react-i18next';
 import { type DateRange } from 'react-day-picker';
 import { type ColumnDef } from '@tanstack/react-table';
 import { enUS, zhCN } from 'date-fns/locale';
-import type { HistoryItem as StoredHistoryItem } from '../../bindings/changeme/models';
-import { QueryHistory } from '../../bindings/changeme/configservice';
+import type { HistoryItem as StoredHistoryItem } from '../../bindings/tinkerkit/models';
+import { QueryHistory } from '../../bindings/tinkerkit/configservice';
 import {
   Reveal,
   ToolActionButton,

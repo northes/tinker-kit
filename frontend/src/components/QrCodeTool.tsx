@@ -7,7 +7,7 @@ import jsQR from 'jsqr';
 import CodeMirror from '@uiw/react-codemirror';
 import { EditorView } from '@codemirror/view';
 import { quietEditorTheme } from './codeMirrorTheme';
-import { SaveBase64File } from '../../bindings/changeme/configservice';
+import { SaveBase64File } from '../../bindings/tinkerkit/configservice';
 import {
   Reveal,
   ToolActionBar,

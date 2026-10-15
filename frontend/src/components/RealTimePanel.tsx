@@ -17,7 +17,7 @@ import {
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { ArrowClockwise, DotsSixVertical, GearSix, Plus, X } from '@phosphor-icons/react';
-import { GetRealTime } from '../../bindings/changeme/realtimeservice';
+import { GetRealTime } from '../../bindings/tinkerkit/realtimeservice';
 import { Button } from './ui/button';
 import { ScrollArea } from './ui/scroll-area';
 import { NtpServerDialog } from './NtpServerDialog';

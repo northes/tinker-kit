@@ -50,8 +50,8 @@ import {
   StartFileDownload,
   StartFileUpload,
   StartRemoteFileOperation,
-} from '../../bindings/changeme/fileservice';
-import type { FileTask, FileTaskSnapshot, RemoteFileEntry } from '../../bindings/changeme/models';
+} from '../../bindings/tinkerkit/fileservice';
+import type { FileTask, FileTaskSnapshot, RemoteFileEntry } from '../../bindings/tinkerkit/models';
 import { ConfirmDialog } from './ConfirmDialog';
 import { useFileDrop } from './fileDrop';
 import {

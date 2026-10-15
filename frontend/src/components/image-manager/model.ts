@@ -6,7 +6,7 @@ import type {
   DockerStatus,
   ImageSource,
   SSHProfile,
-} from '../../../bindings/changeme/models';
+} from '../../../bindings/tinkerkit/models';
 import { formatBackendError } from '../../lib/backend-error';
 import { type ImageRenameForm, imageRepository, imageTag } from './rename';
 
