@@ -1096,7 +1096,7 @@ func validateImportedConfig(cfg Config) error {
 	for index, forward := range cfg.PortForwards {
 		forwardIDs[index] = forward.ID
 		if _, err := normalizeForward(PortForwardRequest{
-			SourceID: forward.SourceID, Direction: forward.Direction,
+			Name: forward.Name, SourceID: forward.SourceID, Direction: forward.Direction,
 			ListenHost: forward.ListenHost, ListenPort: forward.ListenPort,
 			TargetHost: forward.TargetHost, TargetPort: forward.TargetPort,
 		}); err != nil {

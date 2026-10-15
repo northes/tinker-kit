@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -15,6 +16,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"time"
 
 	"golang.org/x/crypto/ssh"
@@ -40,6 +42,7 @@ type PortSource struct {
 }
 
 type PortForwardRequest struct {
+	Name       string `json:"name"`
 	SourceID   string `json:"sourceID"`
 	Direction  string `json:"direction"`
 	ListenHost string `json:"listenHost"`
@@ -50,6 +53,7 @@ type PortForwardRequest struct {
 
 type PortForward struct {
 	ID         string `json:"id"`
+	Name       string `json:"name"`
 	SourceID   string `json:"sourceID"`
 	Direction  string `json:"direction"`
 	ListenHost string `json:"listenHost"`
@@ -64,6 +68,7 @@ type PortForward struct {
 // PortForwardConfig 是转发定义（持久化部分）；运行态（状态、重试、错误）只存在于内存。
 type PortForwardConfig struct {
 	ID         string `json:"id"`
+	Name       string `json:"name"`
 	SourceID   string `json:"sourceID"`
 	Direction  string `json:"direction"`
 	ListenHost string `json:"listenHost"`
@@ -454,6 +459,7 @@ func validForwardHost(host string) bool {
 	return !strings.ContainsAny(host, " \t\r\n/\\")
 }
 func normalizeForward(request PortForwardRequest) (PortForwardRequest, error) {
+	request.Name = strings.TrimSpace(request.Name)
 	request.SourceID = strings.TrimSpace(request.SourceID)
 	request.ListenHost = strings.TrimSpace(request.ListenHost)
 	request.TargetHost = strings.TrimSpace(request.TargetHost)
@@ -462,6 +468,10 @@ func normalizeForward(request PortForwardRequest) (PortForwardRequest, error) {
 	}
 	if request.TargetHost == "" {
 		request.TargetHost = "127.0.0.1"
+	}
+	// 名称可选；留空时界面回退到监听地址作为显示名。
+	if request.Name != "" && !validTextValue(request.Name, 64) {
+		return request, userError("errors.port.invalidForward")
 	}
 	if request.SourceID == "" || request.SourceID == "local" || (request.Direction != "local" && request.Direction != "remote") || !validForwardHost(request.ListenHost) || !validForwardHost(request.TargetHost) || !validForwardPort(request.ListenPort) || !validForwardPort(request.TargetPort) {
 		return request, userError("errors.port.invalidForward")
@@ -480,6 +490,7 @@ func normalizePortForwards(forwards []PortForwardConfig) []PortForwardConfig {
 			continue
 		}
 		request, err := normalizeForward(PortForwardRequest{
+			Name:       forward.Name,
 			SourceID:   forward.SourceID,
 			Direction:  forward.Direction,
 			ListenHost: forward.ListenHost,
@@ -493,6 +504,7 @@ func normalizePortForwards(forwards []PortForwardConfig) []PortForwardConfig {
 		seen[forward.ID] = true
 		result = append(result, PortForwardConfig{
 			ID:         forward.ID,
+			Name:       request.Name,
 			SourceID:   request.SourceID,
 			Direction:  request.Direction,
 			ListenHost: request.ListenHost,
@@ -509,6 +521,7 @@ func newPortTunnel(definition PortForwardConfig, profile SSHProfile) *portTunnel
 	return &portTunnel{
 		PortForward: PortForward{
 			ID:         definition.ID,
+			Name:       definition.Name,
 			SourceID:   definition.SourceID,
 			Direction:  definition.Direction,
 			ListenHost: definition.ListenHost,
@@ -546,7 +559,44 @@ func (s *PortService) forwardDefinition(id string) (PortForwardConfig, bool) {
 	return PortForwardConfig{}, false
 }
 
-// AddForward 创建一条转发定义并立即启动；启动或持久化失败时回滚，不留下半成品。
+// startForwardDefinition 持久化 definition 并尝试启动。
+// 监听端口不可用（本地被占用或远端拒绝）时仍然保存定义，但保持停止状态，
+// 并把失败原因写回返回值的 error，交由界面提示；其余失败仍按原错误返回且不落库。
+func (s *PortService) startForwardDefinition(
+	definition PortForwardConfig,
+	profile SSHProfile,
+	mutate func([]PortForwardConfig) []PortForwardConfig,
+) (PortForward, error) {
+	tunnel := newPortTunnel(definition, profile)
+	client, listener, err := s.openTunnel(tunnel.ctx, tunnel)
+	if err != nil {
+		tunnel.cancel()
+		if !listenUnavailable(definition.Direction, err) {
+			return PortForward{}, err
+		}
+		if persistErr := s.persistForwards(mutate); persistErr != nil {
+			return PortForward{}, persistErr
+		}
+		forward := tunnel.PortForward
+		forward.Status = "stopped"
+		forward.Error = listenUnavailableReason(definition, err).Error()
+		return forward, nil
+	}
+	tunnel.client, tunnel.listener, tunnel.Status = client, listener, "connected"
+	if err := s.persistForwards(mutate); err != nil {
+		tunnel.cancel()
+		_ = listener.Close()
+		_ = client.Close()
+		return PortForward{}, err
+	}
+	s.mu.Lock()
+	s.tunnels[definition.ID] = tunnel
+	s.mu.Unlock()
+	go s.runTunnel(tunnel)
+	return tunnel.PortForward, nil
+}
+
+// AddForward 创建一条转发定义并立即启动；监听端口已被占用时仍然创建，只是不启动。
 func (s *PortService) AddForward(request PortForwardRequest) (PortForward, error) {
 	request, err := normalizeForward(request)
 	if err != nil {
@@ -558,6 +608,7 @@ func (s *PortService) AddForward(request PortForwardRequest) (PortForward, error
 	}
 	definition := PortForwardConfig{
 		ID:         fmt.Sprintf("port-forward-%d", s.counter.Add(1)),
+		Name:       request.Name,
 		SourceID:   request.SourceID,
 		Direction:  request.Direction,
 		ListenHost: request.ListenHost,
@@ -565,26 +616,51 @@ func (s *PortService) AddForward(request PortForwardRequest) (PortForward, error
 		TargetHost: request.TargetHost,
 		TargetPort: request.TargetPort,
 	}
-	tunnel := newPortTunnel(definition, profile)
-	client, listener, err := s.openTunnel(tunnel.ctx, tunnel)
-	if err != nil {
-		tunnel.cancel()
-		return PortForward{}, err
-	}
-	tunnel.client, tunnel.listener, tunnel.Status = client, listener, "connected"
-	if err := s.persistForwards(func(defs []PortForwardConfig) []PortForwardConfig {
+	return s.startForwardDefinition(definition, profile, func(defs []PortForwardConfig) []PortForwardConfig {
 		return append(defs, definition)
-	}); err != nil {
-		tunnel.cancel()
-		_ = listener.Close()
-		_ = client.Close()
+	})
+}
+
+// UpdateForward 用新参数替换一条转发定义并按新参数重启；
+// 监听端口已被占用时仍然保存新定义，只是不启动。
+func (s *PortService) UpdateForward(id string, request PortForwardRequest) (PortForward, error) {
+	id = strings.TrimSpace(id)
+	if _, ok := s.forwardDefinition(id); !ok {
+		return PortForward{}, userError("errors.port.forwardNotFound")
+	}
+	request, err := normalizeForward(request)
+	if err != nil {
 		return PortForward{}, err
 	}
-	s.mu.Lock()
-	s.tunnels[definition.ID] = tunnel
-	s.mu.Unlock()
-	go s.runTunnel(tunnel)
-	return tunnel.PortForward, nil
+	profile, err := s.sourceProfile(request.SourceID)
+	if err != nil {
+		return PortForward{}, err
+	}
+	definition := PortForwardConfig{
+		ID:         id,
+		Name:       request.Name,
+		SourceID:   request.SourceID,
+		Direction:  request.Direction,
+		ListenHost: request.ListenHost,
+		ListenPort: request.ListenPort,
+		TargetHost: request.TargetHost,
+		TargetPort: request.TargetPort,
+	}
+	// 先停止旧隧道，避免旧监听占用新端口而被误判为端口已被占用。
+	if err := s.StopForward(id); err != nil {
+		return PortForward{}, err
+	}
+	return s.startForwardDefinition(definition, profile, func(defs []PortForwardConfig) []PortForwardConfig {
+		result := make([]PortForwardConfig, len(defs))
+		for index, forward := range defs {
+			if forward.ID == id {
+				result[index] = definition
+			} else {
+				result[index] = forward
+			}
+		}
+		return result
+	})
 }
 
 // StartForward 启动一条已持久化但未运行的转发（已停止或重连失败）。
@@ -625,6 +701,14 @@ func (s *PortService) StartForward(id string) error {
 	return nil
 }
 
+// listenError 标记监听端口绑定失败，与 SSH 连接失败区分开：
+// 绑定失败可以在保留转发定义的前提下不启动，连接失败则视为整体失败。
+// 远端（SSH）只返回“拒绝监听”，无法进一步区分是否端口被占用。
+type listenError struct{ err error }
+
+func (e *listenError) Error() string { return e.err.Error() }
+func (e *listenError) Unwrap() error { return e.err }
+
 func (s *PortService) openTunnel(ctx context.Context, tunnel *portTunnel) (*ssh.Client, net.Listener, error) {
 	client, err := s.dial(ctx, tunnel.profile)
 	if err != nil {
@@ -639,9 +723,32 @@ func (s *PortService) openTunnel(ctx context.Context, tunnel *portTunnel) (*ssh.
 	}
 	if err != nil {
 		client.Close()
-		return nil, nil, err
+		return nil, nil, &listenError{err: err}
 	}
 	return client, listener, nil
+}
+
+// listenUnavailable 判断监听端口是否不可用：本地端口已被占用，或远端拒绝监听。
+func listenUnavailable(direction string, err error) bool {
+	var failed *listenError
+	if !errors.As(err, &failed) {
+		return false
+	}
+	if direction == "local" {
+		return errors.Is(failed.err, syscall.EADDRINUSE)
+	}
+	// 远端仅返回“拒绝监听”，最常见原因是端口已被占用。
+	return true
+}
+
+// listenUnavailableReason 把监听失败转换成用户可见的多语言错误。
+func listenUnavailableReason(definition PortForwardConfig, err error) error {
+	if errors.Is(err, syscall.EADDRINUSE) {
+		return userErrorParams("errors.port.portInUse", map[string]any{
+			"address": net.JoinHostPort(definition.ListenHost, strconv.Itoa(definition.ListenPort)),
+		})
+	}
+	return userErrorCause("errors.port.listenDenied", err)
 }
 
 func relayPorts(inbound, outbound net.Conn) {
@@ -793,6 +900,7 @@ func (s *PortService) GetForwards() []PortForward {
 	for _, definition := range definitions {
 		forward := PortForward{
 			ID:         definition.ID,
+			Name:       definition.Name,
 			SourceID:   definition.SourceID,
 			Direction:  definition.Direction,
 			ListenHost: definition.ListenHost,

@@ -2,7 +2,12 @@ package main
 
 import (
 	"context"
+	"errors"
+	"net"
+	"os"
 	"path/filepath"
+	"strings"
+	"syscall"
 	"testing"
 )
 
@@ -51,13 +56,16 @@ func TestParseSSPorts(t *testing.T) {
 }
 
 func TestNormalizeForward(t *testing.T) {
-	request, err := normalizeForward(PortForwardRequest{SourceID: " source ", Direction: "local", ListenPort: 8080, TargetPort: 80})
-	if err != nil || request.SourceID != "source" || request.ListenHost != "127.0.0.1" || request.TargetHost != "127.0.0.1" {
+	request, err := normalizeForward(PortForwardRequest{Name: "  web  ", SourceID: " source ", Direction: "local", ListenPort: 8080, TargetPort: 80})
+	if err != nil || request.Name != "web" || request.SourceID != "source" || request.ListenHost != "127.0.0.1" || request.TargetHost != "127.0.0.1" {
 		t.Fatalf("unexpected normalized request: %+v, %v", request, err)
 	}
 	_, err = normalizeForward(PortForwardRequest{SourceID: "source", Direction: "remote", ListenPort: 70000, TargetPort: 80})
 	if err == nil {
 		t.Fatal("expected invalid port rejection")
+	}
+	if _, err = normalizeForward(PortForwardRequest{Name: strings.Repeat("x", 65), SourceID: "source", Direction: "local", ListenPort: 8080, TargetPort: 80}); err == nil {
+		t.Fatal("expected over-long name rejection")
 	}
 }
 
@@ -84,5 +92,29 @@ func TestNormalizePortForwardsKeepsMissingSourceReference(t *testing.T) {
 	})
 	if len(result) != 1 || result[0].SourceID != "port:deleted" {
 		t.Fatalf("dangling source reference should be kept: %+v", result)
+	}
+}
+
+func TestListenUnavailableClassification(t *testing.T) {
+	occupied := &net.OpError{Op: "listen", Net: "tcp", Err: &os.SyscallError{Syscall: "bind", Err: syscall.EADDRINUSE}}
+	if !listenUnavailable("local", &listenError{err: occupied}) {
+		t.Fatal("an occupied local port should count as unavailable")
+	}
+	if listenUnavailable("local", &listenError{err: errors.New("bind: permission denied")}) {
+		t.Fatal("non-EADDRINUSE local listen failures are not occupied ports")
+	}
+	if !listenUnavailable("remote", &listenError{err: errors.New("ssh: tcpip-forward request denied by peer")}) {
+		t.Fatal("a denied remote listen should count as unavailable")
+	}
+	if listenUnavailable("local", errors.New("ssh: handshake failed")) {
+		t.Fatal("connection failures must not be treated as listen failures")
+	}
+
+	definition := PortForwardConfig{ListenHost: "127.0.0.1", ListenPort: 8080, Direction: "local"}
+	if key := localizedErrorKey(listenUnavailableReason(definition, occupied)); key != "errors.port.portInUse" {
+		t.Fatalf("unexpected occupied-port reason key: %q", key)
+	}
+	if key := localizedErrorKey(listenUnavailableReason(definition, errors.New("denied"))); key != "errors.port.listenDenied" {
+		t.Fatalf("unexpected listen-denied reason key: %q", key)
 	}
 }

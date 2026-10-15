@@ -614,6 +614,7 @@ export interface PortEntry {
 
 export interface PortForward {
     "id": string;
+    "name": string;
     "sourceID": string;
     "direction": string;
     "listenHost": string;
@@ -630,6 +631,7 @@ export interface PortForward {
  */
 export interface PortForwardConfig {
     "id": string;
+    "name": string;
     "sourceID": string;
     "direction": string;
     "listenHost": string;
@@ -639,6 +641,7 @@ export interface PortForwardConfig {
 }
 
 export interface PortForwardRequest {
+    "name": string;
     "sourceID": string;
     "direction": string;
     "listenHost": string;
