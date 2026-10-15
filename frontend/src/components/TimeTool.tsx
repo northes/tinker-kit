@@ -47,6 +47,7 @@ import {
   Reveal,
   ToolLayoutContent,
   ToolLayout,
+  ToolLayoutTabs,
   undoRedoKey,
   useFocusOnActivate,
   useHistory,
@@ -57,7 +58,7 @@ import DateCalculator, { dateCalculatorModes } from './DateCalculator';
 import DateTimePickerPopover from './DateTimePickerPopover';
 import RealTimePanel from './RealTimePanel';
 import { TimezoneCombobox } from './TimezoneCombobox';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
+import { TabsContent } from './ui/tabs';
 import {
   formatTimeInZone,
   getSystemTimeZone,
@@ -358,19 +359,18 @@ export default function TimeTool({
     <Reveal index={0} fill active={active}>
       <ToolLayout>
         <ToolLayoutContent>
-          <Tabs
+          <ToolLayoutTabs
             value={mode}
             onValueChange={(value) => {
               if (value === 'convert' || value === 'dateCalculator' || value === 'realTime')
                 setMode(value);
             }}
-            className="h-full min-h-0 gap-3"
+            items={[
+              { value: 'convert', label: t('timeTool.modes.convert') },
+              { value: 'dateCalculator', label: t('timeTool.modes.dateCalculator') },
+              { value: 'realTime', label: t('timeTool.modes.realTime') },
+            ]}
           >
-            <TabsList className="w-full">
-              <TabsTrigger value="convert">{t('timeTool.modes.convert')}</TabsTrigger>
-              <TabsTrigger value="dateCalculator">{t('timeTool.modes.dateCalculator')}</TabsTrigger>
-              <TabsTrigger value="realTime">{t('timeTool.modes.realTime')}</TabsTrigger>
-            </TabsList>
             <TabsContent value="convert" keepMounted className="min-h-0 overflow-hidden">
               <div className="grid h-full min-h-0 grid-rows-[auto_auto_auto_auto_minmax(0,1fr)] px-1.5">
                 <Label className="flex flex-col items-stretch gap-2 font-mono text-[10px] font-medium uppercase tracking-[.04em] text-muted-foreground">
@@ -599,7 +599,7 @@ export default function TimeTool({
             <TabsContent value="realTime" keepMounted className="min-h-0 overflow-hidden">
               <RealTimePanel ntpServers={ntpServers} onNtpServersChange={onNtpServersChange} />
             </TabsContent>
-          </Tabs>
+          </ToolLayoutTabs>
         </ToolLayoutContent>
       </ToolLayout>
     </Reveal>

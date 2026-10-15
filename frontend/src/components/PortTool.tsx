@@ -44,6 +44,7 @@ import {
   ToolLayout,
   ToolLayoutContent,
   ToolLayoutFooter,
+  ToolLayoutTabs,
   WheelText,
 } from './shared';
 import { Badge } from './ui/badge';
@@ -76,7 +77,7 @@ import {
   SelectValue,
 } from './ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
+import { TabsContent } from './ui/tabs';
 import { toast } from './ui/toast';
 
 const initialForward: PortForwardRequest = {
@@ -661,11 +662,14 @@ export default function PortTool({ active }: { active: boolean }) {
   return (
     <ToolLayout>
       <ToolLayoutContent>
-        <Tabs value={tab} onValueChange={(value) => setTab(value)} className="h-full min-h-0 gap-3">
-          <TabsList className="w-full">
-            <TabsTrigger value="ports">{t('portTool.ports')}</TabsTrigger>
-            <TabsTrigger value="forwards">{t('portTool.forwards')}</TabsTrigger>
-          </TabsList>
+        <ToolLayoutTabs
+          value={tab}
+          onValueChange={setTab}
+          items={[
+            { value: 'ports', label: t('portTool.ports') },
+            { value: 'forwards', label: t('portTool.forwards') },
+          ]}
+        >
           <TabsContent value="ports" className="flex min-h-0 flex-col gap-2">
             <div className="flex min-w-0 flex-wrap items-end gap-2">
               <ToolHeaderField
@@ -1007,7 +1011,7 @@ export default function PortTool({ active }: { active: boolean }) {
               )}
             </ScrollArea>
           </TabsContent>
-        </Tabs>
+        </ToolLayoutTabs>
       </ToolLayoutContent>
       <ToolLayoutFooter>
         {error && (

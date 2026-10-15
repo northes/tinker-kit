@@ -18,6 +18,7 @@ import {
 } from './ui/dropdown-menu';
 import { ButtonGroup } from './ui/button-group';
 import { ScrollArea } from './ui/scroll-area';
+import { Tabs, TabsList, TabsTrigger } from './ui/tabs';
 import { BracketsCurly, CaretDown } from '@phosphor-icons/react';
 export { parseJsonLoose, stripJsonComments, stripTrailingCommas } from '../lib/json-parse';
 
@@ -219,6 +220,37 @@ export function ToolLayoutContent({
     >
       {children}
     </div>
+  );
+}
+
+export type ToolTabItem = {
+  value: string;
+  label: ReactNode;
+};
+
+// 工具页顶部页签：页签列表按文字宽度左对齐排布，内容由 children 传入。
+export function ToolLayoutTabs({
+  value,
+  onValueChange,
+  items,
+  children,
+}: {
+  value: string;
+  onValueChange: (value: string) => void;
+  items: ToolTabItem[];
+  children: ReactNode;
+}) {
+  return (
+    <Tabs value={value} onValueChange={onValueChange} className="h-full min-h-0 gap-3">
+      <TabsList className="self-start">
+        {items.map((item) => (
+          <TabsTrigger key={item.value} value={item.value}>
+            {item.label}
+          </TabsTrigger>
+        ))}
+      </TabsList>
+      {children}
+    </Tabs>
   );
 }
 
