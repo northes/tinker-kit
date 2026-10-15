@@ -5,9 +5,13 @@ import {
   CaretDown,
   CaretUp,
   CaretUpDown,
+  Copy,
   GearSix,
   MagnifyingGlass,
+  PencilSimple,
+  Play,
   Plus,
+  Stop,
   Trash,
   XCircle,
 } from '@phosphor-icons/react';
@@ -21,6 +25,7 @@ import {
   SavePortSources,
   StartForward,
   StopForward,
+  UpdateForward,
 } from '../../bindings/changeme/portservice';
 import type {
   PortEntry,
@@ -39,12 +44,17 @@ import {
   ToolLayout,
   ToolLayoutContent,
   ToolLayoutFooter,
-  ToolLayoutToolbar,
   WheelText,
 } from './shared';
 import { Badge } from './ui/badge';
 import { Button } from './ui/button';
-import { ButtonGroup } from './ui/button-group';
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuTrigger,
+} from './ui/context-menu';
 import {
   Dialog,
   DialogContent,
@@ -53,12 +63,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from './ui/dialog';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from './ui/dropdown-menu';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { ScrollArea } from './ui/scroll-area';
@@ -73,8 +77,10 @@ import {
 } from './ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
+import { toast } from './ui/toast';
 
 const initialForward: PortForwardRequest = {
+  name: '',
   sourceID: '',
   direction: 'local',
   listenHost: '127.0.0.1',
@@ -107,9 +113,18 @@ const PORT_COLUMN_WIDTHS: Record<(typeof PORT_COLUMNS)[number], string> = {
   parentPID: 'w-[88px]',
   parentPath: 'w-[260px]',
 };
-const FORWARD_COLUMNS = ['direction', 'source', 'listen', 'target', 'status', 'retries'] as const;
+const FORWARD_COLUMNS = [
+  'forwardName',
+  'direction',
+  'source',
+  'listen',
+  'target',
+  'status',
+  'retries',
+] as const;
 type ForwardSortKey = (typeof FORWARD_COLUMNS)[number];
 const FORWARD_COLUMN_WIDTHS: Record<ForwardSortKey, string> = {
+  forwardName: 'w-[170px]',
   direction: 'w-[150px]',
   source: 'w-[120px]',
   listen: 'w-[200px]',
@@ -128,6 +143,11 @@ function isForwardRunning(forward: PortForward) {
     forward.status === 'connected' ||
     forward.status === 'reconnecting'
   );
+}
+
+// 显示名：命名优先，留空时回退到监听地址，与新增/编辑表单的 placeholder 一致。
+function forwardLabel(forward: PortForward) {
+  return forward.name || `${forward.listenHost}:${forward.listenPort}`;
 }
 
 function SortableHead({
@@ -297,6 +317,7 @@ export default function PortTool({ active }: { active: boolean }) {
   const scanRevision = useRef(0);
   const [error, setError] = useState('');
   const [dialog, setDialog] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<PortForwardRequest>(initialForward);
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState('');
@@ -314,13 +335,10 @@ export default function PortTool({ active }: { active: boolean }) {
       setSources(next);
       const initialLoad = !sourcesLoadedRef.current;
       sourcesLoadedRef.current = true;
-      const fallback = next.find((item) => item.id === 'local' || item.kind === 'local')?.id;
+      // 默认加载来源列表首项；当前来源仍存在时保持不变，来源被移除后回退到首项。
+      const fallback = next[0]?.id ?? 'local';
       setSource((current) =>
-        initialLoad
-          ? (fallback ?? next[0]?.id ?? 'local')
-          : next.some((item) => item.id === current)
-            ? current
-            : (fallback ?? next[0]?.id ?? 'local'),
+        initialLoad ? fallback : next.some((item) => item.id === current) ? current : fallback,
       );
     } catch (cause) {
       setError(formatBackendError(cause));
@@ -375,10 +393,19 @@ export default function PortTool({ active }: { active: boolean }) {
     setSaving(true);
     setFormError('');
     try {
-      await AddForward(form);
+      const saved = editingId ? await UpdateForward(editingId, form) : await AddForward(form);
       setDialog(false);
+      setEditingId(null);
       setTab('forwards');
       await refreshForwards();
+      // 监听端口被占用时后端仍会创建/更新定义，只是不启动；此处提示原因。
+      if (saved && !isForwardRunning(saved) && saved.error) {
+        toast.add({
+          title: t('portTool.forwardNotStarted'),
+          description: formatBackendError(saved.error),
+          type: 'warning',
+        });
+      }
     } catch (cause) {
       setFormError(formatBackendError(cause));
     } finally {
@@ -433,22 +460,46 @@ export default function PortTool({ active }: { active: boolean }) {
   const forwardSourceOptions = sources
     .filter((item) => item.kind === 'ssh')
     .map((item) => ({ value: item.id, label: item.name }));
+  // 弹窗同时承载新增、编辑与复制：editingId 为空时保存会创建新转发。
+  const openForwardForm = (next: { editingId: string | null; request: PortForwardRequest }) => {
+    setError('');
+    setFormError('');
+    setEditingId(next.editingId);
+    setForm(next.request);
+    setDialog(true);
+  };
+  const forwardRequest = (forward: PortForward): PortForwardRequest => ({
+    name: forward.name,
+    sourceID: forward.sourceID,
+    direction: forward.direction,
+    listenHost: forward.listenHost,
+    listenPort: forward.listenPort,
+    targetHost: forward.targetHost,
+    targetPort: forward.targetPort,
+  });
+  const newForwardRequest = (): PortForwardRequest => ({
+    ...initialForward,
+    sourceID:
+      selectedSource?.kind === 'ssh' ? selectedSource.id : (forwardSourceOptions[0]?.value ?? ''),
+  });
   // 点击端口行时按当前来源推断转发方向并预填端口：来源为远程时做本地转发，
   // 来源为本机时做远程转发（把本机端口暴露到 SSH 主机）。
   const openForwardForPort = (entry: PortEntry) => {
-    setForm({
-      ...initialForward,
-      sourceID:
-        selectedSource?.kind === 'ssh' ? selectedSource.id : (forwardSourceOptions[0]?.value ?? ''),
-      direction: source === 'local' ? 'remote' : 'local',
-      listenHost: '127.0.0.1',
-      listenPort: entry.port,
-      targetHost: '127.0.0.1',
-      targetPort: entry.port,
+    openForwardForm({
+      editingId: null,
+      request: {
+        ...initialForward,
+        sourceID:
+          selectedSource?.kind === 'ssh'
+            ? selectedSource.id
+            : (forwardSourceOptions[0]?.value ?? ''),
+        direction: source === 'local' ? 'remote' : 'local',
+        listenHost: '127.0.0.1',
+        listenPort: entry.port,
+        targetHost: '127.0.0.1',
+        targetPort: entry.port,
+      },
     });
-    setError('');
-    setFormError('');
-    setDialog(true);
   };
   const collator = useMemo(
     () => new Intl.Collator(i18n.language, { numeric: true, sensitivity: 'base' }),
@@ -504,6 +555,8 @@ export default function PortTool({ active }: { active: boolean }) {
   const forwardField = useCallback(
     (forward: PortForward, key: ForwardSortKey): string | number => {
       switch (key) {
+        case 'forwardName':
+          return forwardLabel(forward);
         case 'source':
           return sourceNames.get(forward.sourceID) ?? t('portTool.missingSource');
         case 'listen':
@@ -607,70 +660,56 @@ export default function PortTool({ active }: { active: boolean }) {
 
   return (
     <ToolLayout>
-      <ToolLayoutToolbar
-        left={
-          <ToolHeaderField
-            label={t('portTool.source')}
-            labelId={sourceLabelId}
-            className="max-[700px]:w-full"
-          >
-            <Select
-              items={sourceOptions}
-              value={source}
-              onValueChange={(value) => {
-                if (value === MANAGE_SOURCES_VALUE) {
-                  openSourceManager();
-                  return;
-                }
-                setSource(value || 'local');
-                setUserFilter('all');
-              }}
-            >
-              <SelectTrigger
-                id="port-source"
-                aria-labelledby={sourceLabelId}
-                className="w-[220px] max-w-full max-[700px]:w-full"
-              >
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectGroup>
-                  {sourceOptions.map((option) => (
-                    <SelectItem key={option.value} value={option.value}>
-                      {option.label}
-                    </SelectItem>
-                  ))}
-                  {sourceOptions.length > 0 ? <SelectSeparator /> : null}
-                  <SelectItem value={MANAGE_SOURCES_VALUE}>
-                    <span className="flex items-center gap-2">
-                      <GearSix size={14} weight="duotone" />
-                      {t('portTool.manageSources')}
-                    </span>
-                  </SelectItem>
-                </SelectGroup>
-              </SelectContent>
-            </Select>
-          </ToolHeaderField>
-        }
-        right={
-          <Button
-            variant="outline"
-            disabled={loading || tab !== 'ports'}
-            onClick={() => void refreshPorts()}
-          >
-            <ArrowsClockwise weight="duotone" />
-            {t('portTool.refresh')}
-          </Button>
-        }
-      />
       <ToolLayoutContent>
-        <Tabs value={tab} onValueChange={(value) => setTab(value)} className="h-full min-h-0">
-          <TabsList>
+        <Tabs value={tab} onValueChange={(value) => setTab(value)} className="h-full min-h-0 gap-3">
+          <TabsList className="w-full">
             <TabsTrigger value="ports">{t('portTool.ports')}</TabsTrigger>
             <TabsTrigger value="forwards">{t('portTool.forwards')}</TabsTrigger>
           </TabsList>
           <TabsContent value="ports" className="flex min-h-0 flex-col gap-2">
             <div className="flex min-w-0 flex-wrap items-end gap-2">
+              <ToolHeaderField
+                label={t('portTool.source')}
+                labelId={sourceLabelId}
+                className="max-[700px]:w-full"
+              >
+                <Select
+                  items={sourceOptions}
+                  value={source}
+                  onValueChange={(value) => {
+                    if (value === MANAGE_SOURCES_VALUE) {
+                      openSourceManager();
+                      return;
+                    }
+                    setSource(value || 'local');
+                    setUserFilter('all');
+                  }}
+                >
+                  <SelectTrigger
+                    id="port-source"
+                    aria-labelledby={sourceLabelId}
+                    className="w-[220px] max-w-full max-[700px]:w-full"
+                  >
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectGroup>
+                      {sourceOptions.map((option) => (
+                        <SelectItem key={option.value} value={option.value}>
+                          {option.label}
+                        </SelectItem>
+                      ))}
+                      {sourceOptions.length > 0 ? <SelectSeparator /> : null}
+                      <SelectItem value={MANAGE_SOURCES_VALUE}>
+                        <span className="flex items-center gap-2">
+                          <GearSix size={14} weight="duotone" />
+                          {t('portTool.manageSources')}
+                        </span>
+                      </SelectItem>
+                    </SelectGroup>
+                  </SelectContent>
+                </Select>
+              </ToolHeaderField>
               <SearchField
                 id="port-search"
                 label={t('portTool.search')}
@@ -703,6 +742,15 @@ export default function PortTool({ active }: { active: boolean }) {
                   })),
                 ]}
               />
+              <Button
+                variant="outline"
+                className="ml-auto"
+                disabled={loading}
+                onClick={() => void refreshPorts()}
+              >
+                <ArrowsClockwise weight="duotone" />
+                {t('portTool.refresh')}
+              </Button>
             </div>
             <ScrollArea
               className="min-h-0 flex-1"
@@ -838,7 +886,7 @@ export default function PortTool({ active }: { active: boolean }) {
               options={{ overflow: { x: 'scroll' } }}
               onViewport={setForwardViewport}
             >
-              <Table className="min-w-[954px] table-fixed" containerClassName="overflow-x-visible">
+              <Table className="min-w-[1014px] table-fixed" containerClassName="overflow-x-visible">
                 <TableHeader className="sticky top-0 z-10 bg-background">
                   <TableRow>
                     {FORWARD_COLUMNS.map((key) => (
@@ -851,7 +899,6 @@ export default function PortTool({ active }: { active: boolean }) {
                         onSort={() => changeForwardSort(key)}
                       />
                     ))}
-                    <TableHead className="w-[100px]">{t('portTool.action')}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -862,78 +909,88 @@ export default function PortTool({ active }: { active: boolean }) {
                   )}
                   {visibleForwards.map((row) => {
                     const forward = visibleForwardData[row.index];
+                    const running = isForwardRunning(forward);
                     return (
-                      <TableRow
-                        key={row.key}
-                        ref={forwardVirtualizer.measureElement}
-                        data-index={row.index}
-                      >
-                        <TableCell>{t(`portTool.${forward.direction}Forward`)}</TableCell>
-                        <TableCell>
-                          <WheelText>
-                            {sourceNames.get(forward.sourceID) ?? t('portTool.missingSource')}
-                          </WheelText>
-                        </TableCell>
-                        <TableCell>
-                          <WheelText>{`${forward.listenHost}:${forward.listenPort}`}</WheelText>
-                        </TableCell>
-                        <TableCell>
-                          <WheelText>{`${forward.targetHost}:${forward.targetPort}`}</WheelText>
-                        </TableCell>
-                        <TableCell>
-                          {t(`portTool.${forward.status}`)}
-                          {forward.error && (
-                            <WheelText className="text-xs text-destructive">
-                              {formatBackendError(forward.error)}
+                      <ContextMenu key={row.key}>
+                        <ContextMenuTrigger
+                          render={
+                            <TableRow
+                              ref={forwardVirtualizer.measureElement}
+                              data-index={row.index}
+                              className={running ? undefined : 'text-muted-foreground'}
+                            />
+                          }
+                        >
+                          <TableCell>
+                            <WheelText>{forwardLabel(forward)}</WheelText>
+                          </TableCell>
+                          <TableCell>{t(`portTool.${forward.direction}Forward`)}</TableCell>
+                          <TableCell>
+                            <WheelText>
+                              {sourceNames.get(forward.sourceID) ?? t('portTool.missingSource')}
                             </WheelText>
-                          )}
-                        </TableCell>
-                        <TableCell>{forward.retries}/5</TableCell>
-                        <TableCell>
-                          <div className="flex justify-end">
-                            <ButtonGroup>
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                disabled={busyForward !== ''}
-                                onClick={() =>
-                                  isForwardRunning(forward)
-                                    ? void stopForward(forward)
-                                    : void startForward(forward)
-                                }
-                              >
-                                {t(isForwardRunning(forward) ? 'portTool.stop' : 'portTool.start')}
-                              </Button>
-                              <DropdownMenu>
-                                <DropdownMenuTrigger
-                                  render={
-                                    <Button
-                                      variant="outline"
-                                      size="icon-sm"
-                                      className="flex-none"
-                                      aria-label={t('portTool.actions')}
-                                    />
-                                  }
-                                >
-                                  <CaretDown aria-hidden="true" />
-                                </DropdownMenuTrigger>
-                                <DropdownMenuContent align="end" className="w-40">
-                                  <DropdownMenuItem
-                                    variant="destructive"
-                                    onClick={() => {
-                                      setDeleteError('');
-                                      setDeleteTarget(forward);
-                                    }}
-                                  >
-                                    <Trash weight="duotone" />
-                                    {t('portTool.delete')}
-                                  </DropdownMenuItem>
-                                </DropdownMenuContent>
-                              </DropdownMenu>
-                            </ButtonGroup>
-                          </div>
-                        </TableCell>
-                      </TableRow>
+                          </TableCell>
+                          <TableCell>
+                            <WheelText>{`${forward.listenHost}:${forward.listenPort}`}</WheelText>
+                          </TableCell>
+                          <TableCell>
+                            <WheelText>{`${forward.targetHost}:${forward.targetPort}`}</WheelText>
+                          </TableCell>
+                          <TableCell>
+                            {t(`portTool.${forward.status}`)}
+                            {forward.error && (
+                              <WheelText className="text-xs text-destructive">
+                                {formatBackendError(forward.error)}
+                              </WheelText>
+                            )}
+                          </TableCell>
+                          <TableCell>{forward.retries}/5</TableCell>
+                        </ContextMenuTrigger>
+                        <ContextMenuContent className="w-40">
+                          <ContextMenuItem
+                            disabled={busyForward !== ''}
+                            onClick={() =>
+                              running ? void stopForward(forward) : void startForward(forward)
+                            }
+                          >
+                            {running ? <Stop weight="duotone" /> : <Play weight="duotone" />}
+                            {t(running ? 'portTool.stop' : 'portTool.start')}
+                          </ContextMenuItem>
+                          <ContextMenuItem
+                            onClick={() =>
+                              openForwardForm({
+                                editingId: forward.id,
+                                request: forwardRequest(forward),
+                              })
+                            }
+                          >
+                            <PencilSimple weight="duotone" />
+                            {t('portTool.editForward')}
+                          </ContextMenuItem>
+                          <ContextMenuItem
+                            onClick={() =>
+                              openForwardForm({
+                                editingId: null,
+                                request: forwardRequest(forward),
+                              })
+                            }
+                          >
+                            <Copy weight="duotone" />
+                            {t('portTool.copyForward')}
+                          </ContextMenuItem>
+                          <ContextMenuSeparator />
+                          <ContextMenuItem
+                            variant="destructive"
+                            onClick={() => {
+                              setDeleteError('');
+                              setDeleteTarget(forward);
+                            }}
+                          >
+                            <Trash weight="duotone" />
+                            {t('portTool.delete')}
+                          </ContextMenuItem>
+                        </ContextMenuContent>
+                      </ContextMenu>
                     );
                   })}
                   {forwardPaddingBottom > 0 && (
@@ -976,18 +1033,7 @@ export default function PortTool({ active }: { active: boolean }) {
                 icon: Plus,
                 variant: 'primary',
                 disabled: forwardSourceOptions.length === 0,
-                onPress: () => {
-                  setForm({
-                    ...initialForward,
-                    sourceID:
-                      selectedSource?.kind === 'ssh'
-                        ? selectedSource.id
-                        : (forwardSourceOptions[0]?.value ?? ''),
-                  });
-                  setError('');
-                  setFormError('');
-                  setDialog(true);
-                },
+                onPress: () => openForwardForm({ editingId: null, request: newForwardRequest() }),
               },
             ]}
           />
@@ -996,12 +1042,14 @@ export default function PortTool({ active }: { active: boolean }) {
       <Dialog
         open={dialog}
         onOpenChange={(open) => {
-          if (!saving) setDialog(open);
+          if (saving) return;
+          setDialog(open);
+          if (!open) setEditingId(null);
         }}
       >
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>{t('portTool.add')}</DialogTitle>
+            <DialogTitle>{t(editingId ? 'portTool.editForward' : 'portTool.add')}</DialogTitle>
             <DialogDescription>
               {t(
                 form.direction === 'remote'
@@ -1015,6 +1063,18 @@ export default function PortTool({ active }: { active: boolean }) {
             className="grid gap-3"
             onSubmit={(event) => void submitForward(event)}
           >
+            <div>
+              <Label htmlFor="forward-name">{t('portTool.forwardName')}</Label>
+              <Input
+                id="forward-name"
+                className="mt-1"
+                value={form.name}
+                placeholder={`${form.listenHost}:${form.listenPort}`}
+                onChange={(event) =>
+                  setForm((current) => ({ ...current, name: event.target.value }))
+                }
+              />
+            </div>
             <div>
               <Label htmlFor="forward-source">{t('portTool.source')}</Label>
               <Select
@@ -1150,11 +1210,17 @@ export default function PortTool({ active }: { active: boolean }) {
             </p>
           )}
           <DialogFooter>
-            <Button variant="outline" onClick={() => setDialog(false)}>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setDialog(false);
+                setEditingId(null);
+              }}
+            >
               {t('portTool.cancel')}
             </Button>
             <Button type="submit" form="port-forward-form" disabled={saving || !form.sourceID}>
-              {t('portTool.add')}
+              {t(editingId ? 'common.save' : 'portTool.add')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1166,7 +1232,7 @@ export default function PortTool({ active }: { active: boolean }) {
         }}
         title={t('portTool.deleteConfirmTitle')}
         description={t('portTool.deleteConfirmDescription', {
-          listen: deleteTarget ? `${deleteTarget.listenHost}:${deleteTarget.listenPort}` : '',
+          name: deleteTarget ? forwardLabel(deleteTarget) : '',
         })}
         confirmLabel={t('portTool.delete')}
         destructive
