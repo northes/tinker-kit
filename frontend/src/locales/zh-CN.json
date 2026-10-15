@@ -2336,6 +2336,8 @@
     "search": "搜索",
     "searchPortsPlaceholder": "输入后按回车搜索端口、进程或路径",
     "searchForwardsPlaceholder": "输入后按回车搜索转发规则",
+    "filters": "筛选",
+    "filtersActive": "已启用 {{total}} 个筛选",
     "allProtocols": "全部协议",
     "allUsers": "全部用户",
     "unknownUser": "未知用户",

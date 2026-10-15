@@ -1,4 +1,13 @@
-import { useCallback, useEffect, useId, useMemo, useRef, useState, type FormEvent } from 'react';
+import {
+  Fragment,
+  useCallback,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+  type FormEvent,
+} from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import {
   ArrowsClockwise,
@@ -6,6 +15,7 @@ import {
   CaretUp,
   CaretUpDown,
   Copy,
+  Funnel,
   GearSix,
   MagnifyingGlass,
   PencilSimple,
@@ -49,6 +59,16 @@ import {
 } from './shared';
 import { Badge } from './ui/badge';
 import { Button } from './ui/button';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from './ui/dropdown-menu';
 import {
   ContextMenu,
   ContextMenuContent,
@@ -197,36 +217,54 @@ function SortableHead({
   );
 }
 
-function FilterSelect({
-  id,
-  label,
-  value,
-  options,
-  onChange,
-}: {
-  id: string;
+type FilterGroup = {
+  key: string;
   label: string;
   value: string;
   options: Array<{ value: string; label: string }>;
   onChange: (value: string) => void;
-}) {
+};
+
+// 次要筛选集中到一个下拉菜单，头部只保留来源、搜索、刷新等高频控件。
+function FilterMenu({ label, groups }: { label: string; groups: FilterGroup[] }) {
+  const { t } = useTranslation();
+  // 每个分组的第一项是默认值（全部），其余取值计为已启用筛选。
+  const activeCount = groups.filter(
+    (group) => group.value !== (group.options[0]?.value ?? ''),
+  ).length;
   return (
-    <ToolHeaderField label={label} htmlFor={id} className="min-w-32">
-      <Select items={options} value={value} onValueChange={(next) => onChange(next || 'all')}>
-        <SelectTrigger id={id} className="w-full">
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectGroup>
-            {options.map((option) => (
-              <SelectItem key={option.value} value={option.value}>
-                {option.label}
-              </SelectItem>
-            ))}
-          </SelectGroup>
-        </SelectContent>
-      </Select>
-    </ToolHeaderField>
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        render={
+          <Button
+            variant="outline"
+            className="flex-none"
+            aria-label={activeCount ? t('portTool.filtersActive', { total: activeCount }) : label}
+          />
+        }
+      >
+        <Funnel data-icon="inline-start" weight="duotone" />
+        {label}
+        {activeCount ? <Badge variant="secondary">{activeCount}</Badge> : null}
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="min-w-44">
+        {groups.map((group, index) => (
+          <Fragment key={group.key}>
+            {index > 0 ? <DropdownMenuSeparator /> : null}
+            <DropdownMenuGroup>
+              <DropdownMenuLabel>{group.label}</DropdownMenuLabel>
+              <DropdownMenuRadioGroup value={group.value} onValueChange={group.onChange}>
+                {group.options.map((option) => (
+                  <DropdownMenuRadioItem key={option.value} value={option.value}>
+                    {option.label}
+                  </DropdownMenuRadioItem>
+                ))}
+              </DropdownMenuRadioGroup>
+            </DropdownMenuGroup>
+          </Fragment>
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 
@@ -247,8 +285,8 @@ function SearchField({
 }) {
   const { t } = useTranslation();
   return (
-    <ToolHeaderField label={label} htmlFor={id} className="min-w-48 flex-1">
-      <div className="relative min-w-0">
+    <ToolHeaderField label={label} htmlFor={id} className="w-[220px] max-[700px]:w-full">
+      <div className="relative w-full min-w-0">
         <MagnifyingGlass
           size={14}
           weight="duotone"
@@ -483,25 +521,7 @@ export default function PortTool({ active }: { active: boolean }) {
     sourceID:
       selectedSource?.kind === 'ssh' ? selectedSource.id : (forwardSourceOptions[0]?.value ?? ''),
   });
-  // 点击端口行时按当前来源推断转发方向并预填端口：来源为远程时做本地转发，
-  // 来源为本机时做远程转发（把本机端口暴露到 SSH 主机）。
-  const openForwardForPort = (entry: PortEntry) => {
-    openForwardForm({
-      editingId: null,
-      request: {
-        ...initialForward,
-        sourceID:
-          selectedSource?.kind === 'ssh'
-            ? selectedSource.id
-            : (forwardSourceOptions[0]?.value ?? ''),
-        direction: source === 'local' ? 'remote' : 'local',
-        listenHost: '127.0.0.1',
-        listenPort: entry.port,
-        targetHost: '127.0.0.1',
-        targetPort: entry.port,
-      },
-    });
-  };
+
   const collator = useMemo(
     () => new Intl.Collator(i18n.language, { numeric: true, sensitivity: 'base' }),
     [i18n.language],
@@ -722,28 +742,33 @@ export default function PortTool({ active }: { active: boolean }) {
                 onDraftChange={setPortSearchDraft}
                 onSearch={setPortSearch}
               />
-              <FilterSelect
-                id="port-protocol"
-                label={t('portTool.protocol')}
-                value={protocolFilter}
-                onChange={setProtocolFilter}
-                options={[
-                  { value: 'all', label: t('portTool.allProtocols') },
-                  { value: 'TCP', label: 'TCP' },
-                  { value: 'UDP', label: 'UDP' },
-                ]}
-              />
-              <FilterSelect
-                id="port-user"
-                label={t('portTool.user')}
-                value={userFilter}
-                onChange={setUserFilter}
-                options={[
-                  { value: 'all', label: t('portTool.allUsers') },
-                  ...users.map((user) => ({
-                    value: `user:${user}`,
-                    label: user || t('portTool.unknownUser'),
-                  })),
+              <FilterMenu
+                label={t('portTool.filters')}
+                groups={[
+                  {
+                    key: 'protocol',
+                    label: t('portTool.protocol'),
+                    value: protocolFilter,
+                    onChange: setProtocolFilter,
+                    options: [
+                      { value: 'all', label: t('portTool.allProtocols') },
+                      { value: 'TCP', label: 'TCP' },
+                      { value: 'UDP', label: 'UDP' },
+                    ],
+                  },
+                  {
+                    key: 'user',
+                    label: t('portTool.user'),
+                    value: userFilter,
+                    onChange: setUserFilter,
+                    options: [
+                      { value: 'all', label: t('portTool.allUsers') },
+                      ...users.map((user) => ({
+                        value: `user:${user}`,
+                        label: user || t('portTool.unknownUser'),
+                      })),
+                    ],
+                  },
                 ]}
               />
               <Button
@@ -752,7 +777,7 @@ export default function PortTool({ active }: { active: boolean }) {
                 disabled={loading}
                 onClick={() => void refreshPorts()}
               >
-                <ArrowsClockwise weight="duotone" />
+                <ArrowsClockwise data-icon="inline-start" weight="duotone" />
                 {t('portTool.refresh')}
               </Button>
             </div>
@@ -790,16 +815,7 @@ export default function PortTool({ active }: { active: boolean }) {
                         ref={portVirtualizer.measureElement}
                         data-index={row.index}
                       >
-                        <TableCell>
-                          <Button
-                            variant="link"
-                            size="sm"
-                            className="h-auto px-0"
-                            onClick={() => openForwardForPort(entry)}
-                          >
-                            {entry.port}
-                          </Button>
-                        </TableCell>
+                        <TableCell>{entry.port}</TableCell>
                         <TableCell>
                           <WheelText>{entry.address}</WheelText>
                         </TableCell>
@@ -848,40 +864,45 @@ export default function PortTool({ active }: { active: boolean }) {
                 onDraftChange={setForwardSearchDraft}
                 onSearch={setForwardSearch}
               />
-              <FilterSelect
-                id="forward-direction-filter"
-                label={t('portTool.direction')}
-                value={directionFilter}
-                onChange={setDirectionFilter}
-                options={[
-                  { value: 'all', label: t('portTool.allDirections') },
-                  { value: 'local', label: t('portTool.localForward') },
-                  { value: 'remote', label: t('portTool.remoteForward') },
-                ]}
-              />
-              <FilterSelect
-                id="forward-status-filter"
-                label={t('portTool.status')}
-                value={statusFilter}
-                onChange={setStatusFilter}
-                options={[
-                  { value: 'all', label: t('portTool.allStatuses') },
-                  ...(['connecting', 'connected', 'reconnecting', 'failed'] as const).map(
-                    (status) => ({ value: status, label: t(`portTool.${status}`) }),
-                  ),
-                ]}
-              />
-              <FilterSelect
-                id="forward-source-filter"
-                label={t('portTool.source')}
-                value={sourceFilter}
-                onChange={setSourceFilter}
-                options={[
-                  { value: 'all', label: t('portTool.allSources') },
-                  ...forwardSourceIDs.map((id) => ({
-                    value: id,
-                    label: sourceNames.get(id) ?? t('portTool.missingSource'),
-                  })),
+              <FilterMenu
+                label={t('portTool.filters')}
+                groups={[
+                  {
+                    key: 'direction',
+                    label: t('portTool.direction'),
+                    value: directionFilter,
+                    onChange: setDirectionFilter,
+                    options: [
+                      { value: 'all', label: t('portTool.allDirections') },
+                      { value: 'local', label: t('portTool.localForward') },
+                      { value: 'remote', label: t('portTool.remoteForward') },
+                    ],
+                  },
+                  {
+                    key: 'status',
+                    label: t('portTool.status'),
+                    value: statusFilter,
+                    onChange: setStatusFilter,
+                    options: [
+                      { value: 'all', label: t('portTool.allStatuses') },
+                      ...(['connecting', 'connected', 'reconnecting', 'failed'] as const).map(
+                        (status) => ({ value: status, label: t(`portTool.${status}`) }),
+                      ),
+                    ],
+                  },
+                  {
+                    key: 'source',
+                    label: t('portTool.source'),
+                    value: sourceFilter,
+                    onChange: setSourceFilter,
+                    options: [
+                      { value: 'all', label: t('portTool.allSources') },
+                      ...forwardSourceIDs.map((id) => ({
+                        value: id,
+                        label: sourceNames.get(id) ?? t('portTool.missingSource'),
+                      })),
+                    ],
+                  },
                 ]}
               />
             </div>
@@ -1028,19 +1049,21 @@ export default function PortTool({ active }: { active: boolean }) {
                   total: forwards.length,
                 })}
           </span>
-          <ToolActionBar
-            label={t('portTool.actions')}
-            actions={[
-              {
-                key: 'add',
-                label: t('portTool.add'),
-                icon: Plus,
-                variant: 'primary',
-                disabled: forwardSourceOptions.length === 0,
-                onPress: () => openForwardForm({ editingId: null, request: newForwardRequest() }),
-              },
-            ]}
-          />
+          {tab === 'forwards' && (
+            <ToolActionBar
+              label={t('portTool.actions')}
+              actions={[
+                {
+                  key: 'add',
+                  label: t('portTool.add'),
+                  icon: Plus,
+                  variant: 'primary',
+                  disabled: forwardSourceOptions.length === 0,
+                  onPress: () => openForwardForm({ editingId: null, request: newForwardRequest() }),
+                },
+              ]}
+            />
+          )}
         </div>
       </ToolLayoutFooter>
       <Dialog

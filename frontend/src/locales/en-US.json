@@ -2336,6 +2336,8 @@
     "search": "Search",
     "searchPortsPlaceholder": "Type and press Enter to search ports, processes, or paths",
     "searchForwardsPlaceholder": "Type and press Enter to search forwards",
+    "filters": "Filter",
+    "filtersActive": "{{total}} active filters",
     "allProtocols": "All protocols",
     "allUsers": "All users",
     "unknownUser": "Unknown user",
