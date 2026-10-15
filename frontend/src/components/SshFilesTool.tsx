@@ -55,6 +55,7 @@ import type { FileTask, FileTaskSnapshot, RemoteFileEntry } from '../../bindings
 import { ConfirmDialog } from './ConfirmDialog';
 import { useFileDrop } from './fileDrop';
 import {
+  ToolActionButton,
   ToolHeaderField,
   ToolLayout,
   ToolLayoutContent,
@@ -1374,15 +1375,13 @@ export default function SshFilesTool({ active }: Props) {
                 </DropdownMenuGroup>
               </DropdownMenuContent>
             </DropdownMenu>
-            <Button
-              variant="default"
-              className="h-[30px] flex-none px-[11px] text-[11px]"
+            <ToolActionButton
+              variant="primary"
+              icon={UploadSimple}
+              label={t('sshFilesTool.upload')}
               disabled={!sourceUsable || isLoading}
-              onClick={() => void fileDrop.pick()}
-            >
-              <UploadSimple data-icon="inline-start" size={14} />
-              {t('sshFilesTool.upload')}
-            </Button>
+              onPress={() => void fileDrop.pick()}
+            />
           </div>
         }
       />

@@ -4,7 +4,14 @@ import { Button } from './ui/button';
 import { Checkbox } from './ui/checkbox';
 import { Label } from './ui/label';
 import { Trans, useTranslation } from 'react-i18next';
-import { Copy, Trash, UploadSimple } from '@phosphor-icons/react';
+import {
+  ArrowsInLineHorizontal,
+  ArrowsInLineVertical,
+  Copy,
+  TextAa,
+  Trash,
+  UploadSimple,
+} from '@phosphor-icons/react';
 import CodeMirror from '@uiw/react-codemirror';
 import { EditorView } from '@codemirror/view';
 import { closeSearchPanel, openSearchPanel } from '@codemirror/search';
@@ -449,6 +456,7 @@ export default function TextTool({
               {
                 key: 'case',
                 label: t('textTool.case'),
+                icon: TextAa,
                 type: 'menu',
                 disabled: !value,
                 options: caseModeGroups.flatMap((group, index) =>
@@ -466,6 +474,7 @@ export default function TextTool({
               {
                 key: 'spaces',
                 label: t('textTool.spaces'),
+                icon: ArrowsInLineHorizontal,
                 type: 'menu',
                 disabled: !value,
                 options: ['trim', 'compressSpaces', 'removeSpaces'].map((key) => ({
@@ -477,6 +486,7 @@ export default function TextTool({
               {
                 key: 'compressLine',
                 label: t('textTool.compressLine'),
+                icon: ArrowsInLineVertical,
                 type: 'split',
                 menuLabel: t('textTool.compressLineOptions'),
                 menuChecked: removeTrailingBackslash,

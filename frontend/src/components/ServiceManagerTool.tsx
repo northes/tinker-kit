@@ -57,6 +57,7 @@ import { ResourceList } from './service-manager/ResourceList';
 import { ResourcePanel, RuntimeError } from './service-manager/ResourcePanel';
 import {
   Reveal,
+  ToolActionButton,
   ToolHeaderField,
   ToolLayout,
   ToolLayoutContent,
@@ -890,29 +891,36 @@ export default function ServiceManagerTool({
           }
           right={
             <div className="flex items-center gap-2">
-              <Button
-                variant={view === 'resource' ? 'secondary' : 'outline'}
-                size="sm"
-                onClick={showResources}
+              <ToolActionButton
+                variant="secondary"
+                active={view === 'resource'}
+                icon={ListBullets}
+                label={t('serviceManagerTool.hosts')}
+                onPress={showResources}
+              />
+              <ToolActionButton
+                variant="secondary"
+                active={view === 'picked'}
+                icon={Queue}
+                label={t('serviceManagerTool.picked')}
+                onPress={openPicked}
               >
-                <ListBullets weight="duotone" />
-                {t('serviceManagerTool.hosts')}
-              </Button>
-              <Button
-                variant={view === 'picked' ? 'secondary' : 'outline'}
-                size="sm"
-                onClick={openPicked}
-              >
-                <Queue weight="duotone" />
-                {t('serviceManagerTool.picked')}
                 <Badge variant={pickedMembers.length > 0 ? 'success' : 'secondary'}>
                   {pickedMembers.length}
                 </Badge>
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() =>
+              </ToolActionButton>
+              <ToolActionButton
+                variant="secondary"
+                label={t('serviceManagerTool.refresh')}
+                leading={
+                  loading ? (
+                    <Spinner className="size-3.5" />
+                  ) : (
+                    <ArrowsClockwise className="size-3.5" weight="duotone" aria-hidden />
+                  )
+                }
+                disabled={loading}
+                onPress={() =>
                   void (
                     view === 'picked'
                       ? Promise.allSettled(
@@ -938,11 +946,7 @@ export default function ServiceManagerTool({
                     if (view === 'picked') setDetailRefreshVersion((value) => value + 1);
                   })
                 }
-                disabled={loading}
-              >
-                {loading ? <Spinner className="size-3.5" /> : <ArrowsClockwise weight="duotone" />}
-                {t('serviceManagerTool.refresh')}
-              </Button>
+              />
             </div>
           }
         />

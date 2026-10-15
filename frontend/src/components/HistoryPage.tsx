@@ -41,6 +41,7 @@ import type { HistoryItem as StoredHistoryItem } from '../../bindings/changeme/m
 import { QueryHistory } from '../../bindings/changeme/configservice';
 import {
   Reveal,
+  ToolActionButton,
   ToolLayout,
   ToolLayoutContent,
   ToolLayoutFooter,
@@ -423,14 +424,13 @@ export default function HistoryPage({
           }
           right={
             total > 0 ? (
-              <Button
-                variant="ghost"
-                className="h-[32px] min-h-0 flex-none text-[11px] max-[700px]:self-end"
-                onClick={() => setConfirmClear(true)}
-              >
-                <Trash data-icon="inline-start" weight="duotone" />
-                {t('history.clear')}
-              </Button>
+              <ToolActionButton
+                variant="tertiary"
+                icon={Trash}
+                label={t('history.clear')}
+                className="max-[700px]:self-end"
+                onPress={() => setConfirmClear(true)}
+              />
             ) : null
           }
         />

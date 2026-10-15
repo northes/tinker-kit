@@ -59,8 +59,12 @@ import { useJsonInspection } from '../hooks/useJsonInspection';
 import { useJsonSchemaEvaluation } from '../hooks/useJsonSchemaEvaluation';
 import { jsonFoldParseActive, jsonFoldParseWarmup, quietEditorTheme } from './codeMirrorTheme';
 import {
+  ArrowsDownUp,
+  ArrowsInLineVertical,
+  ArrowsOutLineVertical,
   Copy,
   DownloadSimple,
+  Plus,
   Table as TableIcon,
   TreeStructure,
   Trash,
@@ -70,6 +74,7 @@ import {
 import {
   Reveal,
   ToolActionBar,
+  ToolActionButton,
   ToolLayoutContent,
   ToolLayoutFooter,
   ToolLayoutToolbar,
@@ -1004,6 +1009,7 @@ export default function JsonTool({
       {
         key: 'minify',
         label: t('jsonTool.minify'),
+        icon: ArrowsInLineVertical,
         variant: 'secondary',
         disabled: !value,
         onPress: () => requestTransform(pane, true),
@@ -1022,6 +1028,7 @@ export default function JsonTool({
         {
           key: 'format',
           label: t('jsonTool.format'),
+          icon: ArrowsOutLineVertical,
           variant: 'primary',
           disabled: !value,
           onPress: () => requestTransform(pane, false),
@@ -1031,6 +1038,7 @@ export default function JsonTool({
       actions.push({
         key: 'format',
         label: t('jsonTool.format'),
+        icon: ArrowsOutLineVertical,
         variant: 'primary',
         disabled: !value,
         onPress: () => requestTransform(pane, false),
@@ -1049,6 +1057,7 @@ export default function JsonTool({
         {
           key: 'importExport',
           label: t('jsonTool.pipeline.importExport'),
+          icon: ArrowsDownUp,
           type: 'menu',
           options: [
             { key: 'import', label: t('jsonTool.pipeline.importConfig') },
@@ -1062,6 +1071,7 @@ export default function JsonTool({
         {
           key: 'add',
           label: t('jsonTool.pipeline.addItem'),
+          icon: Plus,
           variant: 'primary',
           onPress: addPipelineItem,
         },
@@ -1301,16 +1311,12 @@ export default function JsonTool({
           rightClassName="@max-[700px]/json-page:ml-0"
           left={
             <>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="h-8 flex-none gap-1.5 px-2.5 text-[11px]"
-                onClick={() => void fileDrop.pick()}
-              >
-                <UploadSimple data-icon="inline-start" weight="duotone" />
-                {t('jsonTool.openFile')}
-              </Button>
+              <ToolActionButton
+                variant="secondary"
+                icon={UploadSimple}
+                label={t('jsonTool.openFile')}
+                onPress={() => void fileDrop.pick()}
+              />
               <Label className="flex h-8 flex-none items-center gap-2 border border-transparent bg-transparent py-0 pr-1.5 text-[11px] text-muted-foreground">
                 <Checkbox
                   checked={autoFormatOnFill}

@@ -3,12 +3,12 @@ import { useTranslation } from 'react-i18next';
 import type { DockerImageDetail } from '../../../bindings/changeme/models';
 import {
   Reveal,
+  ToolActionButton,
   ToolLayout,
   ToolLayoutContent,
   ToolLayoutHeader,
   ToolLayoutToolbar,
 } from '../shared';
-import { Button } from '../ui/button';
 import { ScrollArea } from '../ui/scroll-area';
 import { Spinner } from '../ui/spinner';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../ui/table';
@@ -246,14 +246,12 @@ export function ImageManagerDetailView({
         <ToolLayoutHeader title={t('imageManagerTool.detailTitle')} />
         <ToolLayoutToolbar
           left={
-            <Button
-              variant="ghost"
-              onClick={onBack}
-              className="h-[30px] flex-none px-[11px] text-[11px]"
-            >
-              <CaretLeft data-icon="inline-start" weight="duotone" aria-hidden="true" />
-              {t('imageManagerTool.back')}
-            </Button>
+            <ToolActionButton
+              variant="tertiary"
+              icon={CaretLeft}
+              label={t('imageManagerTool.back')}
+              onPress={onBack}
+            />
           }
         />
         <ToolLayoutContent className="flex min-h-0 flex-col">

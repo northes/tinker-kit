@@ -34,6 +34,7 @@ import {
   Reveal,
   ToolActionBar,
   ToolHeaderField,
+  ToolIconButton,
   ToolLayout,
   ToolLayoutContent,
   ToolLayoutFooter,
@@ -855,26 +856,16 @@ export default function NetworkTestTool({
             }
             right={
               <>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon-sm"
-                  aria-label={t('networkTestTool.requestSettings.title')}
-                  title={t('networkTestTool.requestSettings.title')}
-                  onClick={() => setRequestSettingsOpen(true)}
-                >
-                  <Code size={16} weight="duotone" />
-                </Button>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon-sm"
-                  aria-label={t('networkTestTool.advanced.title')}
-                  title={t('networkTestTool.advanced.title')}
-                  onClick={() => setAdvancedSettingsOpen(true)}
-                >
-                  <GearSix size={16} weight="duotone" />
-                </Button>
+                <ToolIconButton
+                  label={t('networkTestTool.requestSettings.title')}
+                  icon={Code}
+                  onPress={() => setRequestSettingsOpen(true)}
+                />
+                <ToolIconButton
+                  label={t('networkTestTool.advanced.title')}
+                  icon={GearSix}
+                  onPress={() => setAdvancedSettingsOpen(true)}
+                />
               </>
             }
           />

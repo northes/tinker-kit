@@ -92,6 +92,7 @@ import { useImageManagerWatch } from './image-manager/useImageManagerWatch';
 import { ImageImportDialog } from './ImageImportDialog';
 import {
   Reveal,
+  ToolActionButton,
   ToolHeaderField,
   ToolLayout,
   ToolLayoutContent,
@@ -1163,33 +1164,38 @@ export default function ImageManagerTool({
           }
           right={
             <div className="flex min-w-0 flex-wrap items-center gap-2 max-[700px]:w-full max-[700px]:justify-end">
-              <Button
-                variant="outline"
-                className="h-[30px] flex-none px-[11px] text-[11px]"
+              <ToolActionButton
+                variant="secondary"
+                icon={CloudArrowDown}
+                label={t('imageManagerTool.pull')}
                 disabled={actionBlocked || pullStarting}
-                onClick={openPullImageDialog}
-              >
-                <CloudArrowDown data-icon="inline-start" weight="duotone" />
-                {t('imageManagerTool.pull')}
-              </Button>
-              <Button
-                variant="outline"
-                className="h-[30px] flex-none px-[11px] text-[11px]"
+                onPress={openPullImageDialog}
+              />
+              <ToolActionButton
+                variant="secondary"
+                label={t('imageManagerTool.importTar')}
+                leading={
+                  importStarting ? (
+                    <Spinner className="size-3.5" />
+                  ) : (
+                    <Package className="size-3.5" weight="duotone" aria-hidden />
+                  )
+                }
                 disabled={actionBlocked || importStarting}
-                onClick={() => void runImport()}
-              >
-                {importStarting ? (
-                  <Spinner data-icon="inline-start" />
-                ) : (
-                  <Package data-icon="inline-start" weight="duotone" />
-                )}
-                {t('imageManagerTool.importTar')}
-              </Button>
-              <Button
-                variant="outline"
-                className="h-[30px] min-w-[30px] flex-none px-[11px] text-[11px]"
+                onPress={() => void runImport()}
+              />
+              <ToolActionButton
+                variant="secondary"
+                label={t('imageManagerTool.refresh')}
+                leading={
+                  sourceViewState === 'connecting' ? (
+                    <Spinner className="size-3.5" />
+                  ) : (
+                    <ArrowsClockwise className="size-3.5" weight="duotone" aria-hidden />
+                  )
+                }
                 disabled={busy !== null || sourceProfileMissing}
-                onClick={() => {
+                onPress={() => {
                   refreshList();
                   record(
                     'image-manager',
@@ -1198,14 +1204,7 @@ export default function ImageManagerTool({
                     source.id,
                   );
                 }}
-              >
-                {sourceViewState === 'connecting' ? (
-                  <Spinner data-icon="inline-start" />
-                ) : (
-                  <ArrowsClockwise data-icon="inline-start" weight="duotone" />
-                )}
-                {t('imageManagerTool.refresh')}
-              </Button>
+              />
             </div>
           }
         />

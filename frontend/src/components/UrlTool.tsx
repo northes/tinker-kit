@@ -4,7 +4,7 @@ import { ScrollArea } from './ui/scroll-area';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { Switch } from './ui/switch';
-import { Copy, Plus, Trash } from '@phosphor-icons/react';
+import { ArrowsLeftRight, Copy, Plus, Trash } from '@phosphor-icons/react';
 import { useTranslation } from 'react-i18next';
 import CodeMirror from '@uiw/react-codemirror';
 import { EditorView } from '@codemirror/view';
@@ -448,6 +448,7 @@ export default function UrlTool({
               {
                 key: 'convert',
                 label: t('urlTool.encodeDecode'),
+                icon: ArrowsLeftRight,
                 type: 'menu',
                 disabled: !input,
                 options: [
