@@ -335,6 +335,7 @@ export type ToolBarAction =
   | {
       key: string;
       label: string;
+      icon?: Icon;
       type: 'menu';
       disabled?: boolean;
       options: Array<{ key: string; label: string; group?: string }>;
@@ -343,6 +344,7 @@ export type ToolBarAction =
   | {
       key: string;
       label: string;
+      icon?: Icon;
       variant: 'primary' | 'secondary' | 'tertiary' | 'danger';
       type: 'split';
       disabled?: boolean;
@@ -359,6 +361,81 @@ const buttonVariant = {
   tertiary: 'ghost',
   danger: 'destructive',
 } as const;
+
+export type ToolActionVariant = keyof typeof buttonVariant;
+
+// 工具页动作按钮（header 工具栏与 footer 动作栏）统一尺寸：30px 高、11px 内边距、11px 字号。
+export const toolActionButtonClass = 'h-[30px] flex-none px-[11px] text-[11px]';
+
+// header 与 footer 共用的动作按钮：图标 14px duotone 置于文字前，统一「图标 + 文字」。
+// `active` 用于可切换的视图入口，激活时切到 shadcn secondary 实心样式。
+export function ToolActionButton({
+  label,
+  icon: IconComponent,
+  leading,
+  variant = 'secondary',
+  active = false,
+  disabled,
+  onPress,
+  className = '',
+  children,
+}: {
+  label: string;
+  icon?: Icon;
+  leading?: ReactNode;
+  variant?: ToolActionVariant;
+  active?: boolean;
+  disabled?: boolean;
+  onPress?: () => void;
+  className?: string;
+  children?: ReactNode;
+}) {
+  return (
+    <Button
+      variant={active ? 'secondary' : buttonVariant[variant]}
+      disabled={disabled}
+      onClick={onPress}
+      className={`${toolActionButtonClass}${className ? ` ${className}` : ''}`}
+    >
+      {leading ??
+        (IconComponent ? (
+          <IconComponent className="size-3.5" weight="duotone" aria-hidden />
+        ) : null)}
+      {label}
+      {children}
+    </Button>
+  );
+}
+
+// 纯图标动作按钮：仅用于语义唯一且空间受限的 header 入口；label 同时作为 aria-label 与 title。
+export function ToolIconButton({
+  label,
+  icon: IconComponent,
+  variant = 'tertiary',
+  disabled,
+  onPress,
+  className = '',
+}: {
+  label: string;
+  icon: Icon;
+  variant?: ToolActionVariant;
+  disabled?: boolean;
+  onPress?: () => void;
+  className?: string;
+}) {
+  return (
+    <Button
+      variant={buttonVariant[variant]}
+      disabled={disabled}
+      onClick={onPress}
+      aria-label={label}
+      title={label}
+      className={`size-[30px] flex-none${className ? ` ${className}` : ''}`}
+    >
+      <IconComponent className="size-4" weight="duotone" aria-hidden />
+    </Button>
+  );
+}
 
 // 按 group 字段把菜单项分成相邻的组，用于在菜单里插入分隔线。
 function groupMenuOptions(options: Array<{ key: string; label: string; group?: string }>) {
@@ -395,11 +472,15 @@ export function ToolActionBar({
                 <Button
                   variant="outline"
                   disabled={action.disabled}
-                  className="h-[30px] flex-none px-[11px] text-[11px]"
+                  className={toolActionButtonClass}
                 />
               }
             >
+              {action.icon ? (
+                <action.icon className="size-3.5" weight="duotone" aria-hidden />
+              ) : null}
               {action.label}
+              <CaretDown className="size-3" weight="duotone" aria-hidden />
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-max min-w-32 whitespace-nowrap">
               {groupMenuOptions(action.options).map((group, index) => (
@@ -421,27 +502,25 @@ export function ToolActionBar({
           </DropdownMenu>
         ) : action.type === 'split' ? (
           <ButtonGroup key={action.key} aria-label={action.label}>
-            <Button
-              variant={buttonVariant[action.variant]}
+            <ToolActionButton
+              variant={action.variant}
+              label={action.label}
+              icon={action.icon}
               disabled={action.disabled}
-              onClick={action.onPress}
-              className="h-[30px] flex-none px-[11px] text-[11px]"
-            >
-              {action.label}
-            </Button>
+              onPress={action.onPress}
+            />
             <DropdownMenu>
               <DropdownMenuTrigger
                 disabled={action.disabled}
                 render={
                   <Button
                     variant={buttonVariant[action.variant]}
-                    size="icon-sm"
                     className="h-[30px] w-[30px] flex-none"
                     aria-label={action.menuLabel}
                   />
                 }
               >
-                <CaretDown size={12} weight="duotone" aria-hidden />
+                <CaretDown className="size-3" weight="duotone" aria-hidden />
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
                 <DropdownMenuCheckboxItem
@@ -454,16 +533,14 @@ export function ToolActionBar({
             </DropdownMenu>
           </ButtonGroup>
         ) : (
-          <Button
+          <ToolActionButton
             key={action.key}
-            variant={buttonVariant[action.variant]}
+            variant={action.variant}
+            label={action.label}
+            icon={action.icon}
             disabled={action.disabled}
-            onClick={action.onPress}
-            className="h-[30px] flex-none px-[11px] text-[11px] [&_svg]:size-3.5"
-          >
-            {action.icon && <action.icon data-icon="inline-start" size={14} weight="duotone" />}
-            {action.label}
-          </Button>
+            onPress={action.onPress}
+          />
         ),
       )}
     </div>
