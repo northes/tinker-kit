@@ -19,20 +19,31 @@ function Command({
   className,
   onValueChange,
   onPointerMoveCapture,
+  initialValue,
   ...props
-}: React.ComponentProps<typeof CommandPrimitive>) {
+}: React.ComponentProps<typeof CommandPrimitive> & { initialValue?: string }) {
   const rootRef = React.useRef<HTMLDivElement>(null);
   const itemSignature = React.useRef('');
   const lastPointerPosition = React.useRef<{ x: number; y: number } | null>(null);
   const [activeValue, setActiveValue] = React.useState<string | undefined>();
   const dialogOpen = React.useContext(CommandDialogOpenContext);
+  // 打开时的初始高亮只消费一次，之后的筛选仍落回首个匹配项。
+  const pendingInitialValue = React.useRef<string | undefined>(undefined);
 
   React.useLayoutEffect(() => {
     if (!dialogOpen) return;
-    const first = rootRef.current?.querySelector<HTMLElement>(
-      '[cmdk-item][data-value]:not([hidden]):not([aria-disabled="true"])',
+    pendingInitialValue.current = initialValue;
+    const items = Array.from(
+      rootRef.current?.querySelectorAll<HTMLElement>(
+        '[cmdk-item][data-value]:not([hidden]):not([aria-disabled="true"])',
+      ) ?? [],
     );
-    setActiveValue(first?.dataset.value);
+    const preferred = items.find((item) => item.dataset.value === initialValue);
+    setActiveValue((preferred ?? items[0])?.dataset.value);
+    if (!preferred) return;
+    // 打开时把初始项滚到列表中间，而不是只贴在可视区边缘。
+    const frame = requestAnimationFrame(() => preferred.scrollIntoView({ block: 'center' }));
+    return () => cancelAnimationFrame(frame);
   }, [dialogOpen]);
 
   React.useLayoutEffect(() => {
@@ -43,7 +54,9 @@ function Command({
     const signature = values.join('\0');
     if (signature !== itemSignature.current) {
       itemSignature.current = signature;
-      setActiveValue(values[0] || undefined);
+      const initial = pendingInitialValue.current;
+      pendingInitialValue.current = undefined;
+      setActiveValue(initial || values[0] || undefined);
       return;
     }
 
