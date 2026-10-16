@@ -1,17 +1,29 @@
-# TinkerKit
+<div align="center">
 
-> A developer workbench that lives in the macOS menu bar — local tools work offline, while SSH, container and network debugging are always a click away.
+<h1>
+  <img src="assets/logo/tinkerkit-logo.svg" alt="TinkerKit" height="52" align="middle">
+  TinkerKit
+</h1>
 
-[![English](https://img.shields.io/badge/English-Default-0078D4)](README.md)
-[![简体中文](https://img.shields.io/badge/简体中文-中文文档-3DA639)](README.zh-CN.md)
+<img src="https://skillicons.dev/icons?i=go,react,ts,vite,tailwind,docker&perline=8" alt="Go, React, TypeScript, Vite, Tailwind CSS and Docker" height="44">
 
-Built with [Wails v3](https://v3.wails.io/), TinkerKit gathers the high-frequency utilities of everyday development and debugging together with remote debugging capabilities into one app that lives in the macOS menu bar: JSON, time, text, encoding, image and QR tools run fully offline, while SSH file management, port forwarding, containers and services, image management and network tests only connect to targets you specify explicitly. Compared with scattered online utilities or one-off scripts, it stays resident in the menu bar, works without a network, and keeps everything you need for debugging in one place.
+### One workbench for every dev task
 
-![GitHub release](https://img.shields.io/github/v/release/northes/tinker-kit?sort=semver&label=version)
-![license](https://img.shields.io/badge/license-MIT-3DA639)
-![platform](https://img.shields.io/badge/platform-macOS-000000)
-![Wails](https://img.shields.io/badge/Wails-v3%20beta-DF0D3F)
-![React](https://img.shields.io/badge/React-19-61DAFB)
+Look inside JSON, timestamps, JWT, SSH hosts, containers and network calls: 15 tools in one local-first macOS app, with nothing to deploy.
+
+[![release](https://img.shields.io/github/v/release/northes/tinker-kit?sort=semver&label=release)](https://github.com/northes/tinker-kit/releases)
+[![downloads](https://img.shields.io/github/downloads/northes/tinker-kit/total?label=downloads)](https://github.com/northes/tinker-kit/releases)
+[![license](https://img.shields.io/badge/license-MIT-3DA639)](LICENSE)
+[![platform](https://img.shields.io/badge/platform-macOS-000000)](#installation)
+[![Wails](https://img.shields.io/badge/Wails-v3%20beta-DF0D3F)](https://v3.wails.io/)
+[![React](https://img.shields.io/badge/React-19-61DAFB)](https://react.dev/)
+
+[Download](https://github.com/northes/tinker-kit/releases) · [Install guide](#installation) · [Tools](#built-in-tools) · [Privacy](#privacy--network) · [简体中文](README.zh-CN.md)
+
+<img src="assets/screenshot.png" alt="TinkerKit main window" width="100%">
+
+</div>
+
 
 ## Features
 
@@ -79,112 +91,6 @@ Download the latest `TinkerKit-<version>-darwin-universal.dmg` from [GitHub Rele
 - The only automatic background network activity is “Check for updates”: it runs silently after launch and every 24 hours, and can be turned off or triggered manually under “Settings → About”.
 - Debugging tools only connect to the targets you specify when you trigger an operation; credentials such as SSH passwords, key passphrases and registry passwords are stored in your local configuration file.
 - Configuration, history and sources live in `~/Library/Application Support/TinkerKit/` (`config.json`, `history.json` and `history-data/`). Clear history or export / import / reset the configuration under “Settings → Data & security” (reset restores defaults and removes all custom sources and connection credentials).
-
-## Development
-
-### Requirements
-
-- macOS
-- Go 1.26+ (as declared in `go.mod`)
-- Node.js 24+ (dependencies are installed only inside `frontend/`)
-- Wails v3 CLI, matching the library version in `go.mod` (currently `v3.0.0-beta.29`):
-
-  ```bash
-  go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-beta.29
-  ```
-
-Install frontend dependencies after the first checkout:
-
-```bash
-cd frontend && npm install
-```
-
-### Common Commands
-
-All tasks run through `wails3 task <name>` (the wails3 CLI bundles its own task runner — no separate install needed):
-
-| Command | Description |
-| --- | --- |
-| `wails3 task dev` | Dev loop: builds a DEV binary, starts Vite at `http://localhost:9245` by default, hot-reloads Go on change, and lets Vite hot-update the frontend |
-| `wails3 task build` | Builds a production executable (output goes to `bin/`) |
-| `wails3 task package` | Packages the macOS app bundle (output: `bin/TinkerKit.app`) |
-| `wails3 task darwin:package:dmg` | Creates the installer image (output: `bin/TinkerKit.dmg`) |
-| `wails3 task run` | Launches the built binary as a DEV app bundle (run a build first) |
-| `wails3 task test:go` | Runs all Go tests |
-| `wails3 task test:json-repair` | Runs the JSON repair Go tests |
-
-`Taskfile.yml` also holds several unit-test tasks for shared frontend logic and protocol parsing (`test:shared-logic`, `test:ansi`, `test:image-tasks`, `test:network-target` and more) that can be run individually.
-
-Frontend type and format checks:
-
-```bash
-cd frontend
-npx tsc --noEmit     # type check
-npm run format:check # Prettier format check (npm run format fixes it)
-```
-
-Frontend dependencies are installed only inside `frontend/`; the frontend build output is embedded by `main.go` via `//go:embed all:frontend/dist`, so `frontend/dist` must exist before any Go build.
-
-### Project Structure
-
-```
-├── main.go                # Go entrypoint: window, system tray, service registration, update scheduler
-├── appmenu_*.go           # Application menu and localized menu copy
-├── configservice*.go      # Settings and history persistence (ConfigService)
-├── updateservice.go       # Update polling and scheduling (Wails updater + GitHub Releases)
-├── fileservice.go         # Local file reading and save-as
-├── json*.go               # JSON parsing, repair, pipeline transforms and validation
-├── ssh*.go                # SSH profiles, connections, remote file operations and commands
-├── image*.go              # Image sources, pull / push / export / import and details
-├── networktest*.go        # Network test protocol implementations and stage timeline
-├── servicemanager*.go     # Docker / PM2 / Systemd service management
-├── portservice.go         # Port usage scanning and SSH port forwarding
-├── frontend/              # React 19 + TypeScript frontend
-│   ├── src/App.tsx        # Layout, routing and tool mounting
-│   ├── src/app/           # Tool registry, command palette, navigation, clipboard detection
-│   ├── src/components/    # Tool components (JsonTool / NetworkTestTool / …) and shared primitives
-│   ├── src/lib/           # Pure helpers plus *.test.mjs unit tests for shared logic
-│   ├── src/locales/       # i18n resources (zh-CN / en-US)
-│   └── bindings/          # Auto-generated TS bindings (do not edit)
-├── build/                 # Wails build config and per-platform Taskfiles
-├── tools/                 # Build-time helpers (e.g. DMG generation)
-└── .github/workflows/     # macOS release pipeline
-```
-
-### Tech Stack
-
-- Desktop shell: [Wails v3](https://v3.wails.io/) (Go), kept as a thin layer;
-- Frontend: React 19 + TypeScript + Vite;
-- UI: shadcn/ui (vendored source, built on Base UI) + Tailwind CSS v4 + [Phosphor Icons](https://phosphoricons.com/);
-- Editor: [CodeMirror 6](https://codemirror.net/) (syntax highlighting for JSON, logs and remote text, plus the diff merge view);
-- i18n: react-i18next;
-- Updates: Wails updater + GitHub Releases provider.
-
-## Releasing
-
-Push a semver tag to trigger [release-macos.yml](.github/workflows/release-macos.yml):
-
-```bash
-git tag v0.1.0
-git push origin v0.1.0
-```
-
-The workflow builds a Universal package for both Apple Silicon and Intel and uploads it to a single GitHub Release:
-
-- `TinkerKit-<version>-darwin-universal.dmg` — first-time installation;
-- `TinkerKit-<version>-darwin-universal.zip` — in-app updates;
-- `SHA256SUMS` — file integrity verification.
-
-Releases are ad-hoc signed Universal builds (no Apple Developer certificate or notarization yet); the DMG ships a `Repair` / `修复工具` script so first-time installs can get past Gatekeeper. Should formal distribution be needed later, add Developer ID signing and a `notarytool` step to the workflow. In-app updates always read the latest GitHub Release of the public `northes/tinker-kit` repository.
-
-## Contributing
-
-Issues and pull requests are welcome — report bugs or request features via [Issues](https://github.com/northes/tinker-kit/issues), and submit code via Pull Requests:
-
-- Before submitting, run `npx tsc --noEmit` and `npm run format:check` inside `frontend/`, and `wails3 task test:go` from the repository root;
-- Keep the existing code style, and use English Conventional Commits prefixes in commit messages (see `AGENTS.md`);
-- When adding a new tool, follow `.agents/skills/tool-development/SKILL.md` so the command palette, history and tray matching stay in sync;
-- User-facing copy goes through locale files — no hardcoded strings.
 
 ## License
 

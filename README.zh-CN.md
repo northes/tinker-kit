@@ -1,17 +1,29 @@
-# TinkerKit
+<div align="center">
 
-> 常驻 macOS 菜单栏的开发者工作台 —— 本地工具离线即用,SSH、容器与网络联调伸手可及。
+<h1>
+  <img src="assets/logo/tinkerkit-logo.svg" alt="TinkerKit" height="52" align="middle">
+  TinkerKit
+</h1>
 
-[![English](https://img.shields.io/badge/English-Default-0078D4)](README.md)
-[![简体中文](https://img.shields.io/badge/简体中文-中文文档-3DA639)](README.zh-CN.md)
+<img src="https://skillicons.dev/icons?i=go,react,ts,vite,tailwind,docker&perline=8" alt="Go、React、TypeScript、Vite、Tailwind CSS、Docker" height="44">
 
-TinkerKit 基于 [Wails v3](https://v3.wails.io/) 构建,把日常开发调试中高频的小工具与远程联调能力集中到一个常驻 macOS 菜单栏的桌面应用里:JSON、时间、文本、编码解析、图片与二维码等本地工具全程离线运行;SSH 文件管理、端口转发、容器与服务、镜像管理和网络测试只连接你显式指定的目标。相比零散的在线小工具或一次性脚本,它常驻菜单栏、离线可用,并把联调所需的能力收在同一处。
+### 一个工作台,覆盖每一项开发调试任务
 
-![GitHub release](https://img.shields.io/github/v/release/northes/tinker-kit?sort=semver&label=版本)
-![license](https://img.shields.io/badge/license-MIT-3DA639)
-![platform](https://img.shields.io/badge/platform-macOS-000000)
-![Wails](https://img.shields.io/badge/Wails-v3%20beta-DF0D3F)
-![React](https://img.shields.io/badge/React-19-61DAFB)
+拆解 JSON、时间戳、JWT、SSH 主机、容器与网络请求:15 个工具收在一个本地优先的 macOS 应用里,无需部署任何服务。
+
+[![版本](https://img.shields.io/github/v/release/northes/tinker-kit?sort=semver&label=版本)](https://github.com/northes/tinker-kit/releases)
+[![下载](https://img.shields.io/github/downloads/northes/tinker-kit/total?label=下载)](https://github.com/northes/tinker-kit/releases)
+[![license](https://img.shields.io/badge/license-MIT-3DA639)](LICENSE)
+[![platform](https://img.shields.io/badge/platform-macOS-000000)](#安装)
+[![Wails](https://img.shields.io/badge/Wails-v3%20beta-DF0D3F)](https://v3.wails.io/)
+[![React](https://img.shields.io/badge/React-19-61DAFB)](https://react.dev/)
+
+[下载](https://github.com/northes/tinker-kit/releases) · [安装说明](#安装) · [内置工具](#内置工具) · [隐私与网络](#隐私与网络) · [English](README.md)
+
+<img src="assets/screenshot.png" alt="TinkerKit 主窗口" width="100%">
+
+</div>
+
 
 ## 特性
 
@@ -79,112 +91,6 @@ TinkerKit 基于 [Wails v3](https://v3.wails.io/) 构建,把日常开发调试�
 - 唯一自动发生的后台联网行为是「检查更新」:启动后静默检查、每 24 小时复查,可在「设置 → 关于」中关闭自动检查或手动触发。
 - 联调类工具只在你触发操作时连接你指定的目标;SSH 密码与私钥口令、镜像仓库密码等凭据保存在本机配置文件中。
 - 配置、历史与来源保存在 `~/Library/Application Support/TinkerKit/`(`config.json`、`history.json` 与 `history-data/`),可在「设置 → 数据与安全」中清除历史,或导出 / 导入 / 重置配置(重置会恢复默认设置并删除所有自定义来源与连接凭据)。
-
-## 开发
-
-### 环境要求
-
-- macOS
-- Go 1.26+(以 `go.mod` 声明为准)
-- Node.js 24+(仅 `frontend/` 内需要安装依赖)
-- Wails v3 CLI(与 `go.mod` 中的库版本保持一致,当前为 `v3.0.0-beta.29`):
-
-  ```bash
-  go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-beta.29
-  ```
-
-首次检出后需安装前端依赖:
-
-```bash
-cd frontend && npm install
-```
-
-### 常用命令
-
-所有任务通过 `wails3 task <name>` 执行(wails3 CLI 自带 task runner,无需单独安装):
-
-| 命令 | 说明 |
-| --- | --- |
-| `wails3 task dev` | 开发循环:编译 DEV 二进制,默认在 `http://localhost:9245` 启动 Vite,Go 变更热重载,前端由 Vite 热更新 |
-| `wails3 task build` | 构建生产可执行文件(输出到 `bin/`) |
-| `wails3 task package` | 打包 macOS 应用包(输出到 `bin/TinkerKit.app`) |
-| `wails3 task darwin:package:dmg` | 生成安装镜像(输出到 `bin/TinkerKit.dmg`) |
-| `wails3 task run` | 以 DEV 应用包启动已构建的二进制(需先执行一次构建) |
-| `wails3 task test:go` | 运行全部 Go 测试 |
-| `wails3 task test:json-repair` | 运行 JSON 修复相关的 Go 测试 |
-
-`Taskfile.yml` 中还有若干前端共享逻辑与协议解析的单元测试任务(`test:shared-logic`、`test:ansi`、`test:image-tasks`、`test:network-target` 等),可直接单独执行。
-
-前端类型检查与格式检查:
-
-```bash
-cd frontend
-npx tsc --noEmit     # 类型检查
-npm run format:check # Prettier 格式检查(npm run format 自动修复)
-```
-
-前端依赖只在 `frontend/` 内安装;前端构建产物被 `main.go` 通过 `//go:embed all:frontend/dist` 嵌入,因此任何 Go 构建前 `frontend/dist` 必须已存在。
-
-### 项目结构
-
-```
-├── main.go                # Go 入口:窗口、系统托盘、服务注册与更新调度
-├── appmenu_*.go           # 应用菜单与中英文菜单文案
-├── configservice*.go      # 设置与历史持久化(ConfigService)
-├── updateservice.go       # 更新轮询与调度(基于 Wails updater + GitHub Releases)
-├── fileservice.go         # 本地文件读取与另存
-├── json*.go               # JSON 解析、修复、工作流转换与校验
-├── ssh*.go                # SSH 配置、连接、远程文件操作与命令
-├── image*.go              # 镜像来源、拉取 / 推送 / 导出 / 导入与详情
-├── networktest*.go        # 网络测试协议实现与阶段时间线
-├── servicemanager*.go     # Docker / PM2 / Systemd 服务管理
-├── portservice.go         # 端口占用扫描与 SSH 端口转发
-├── frontend/              # React 19 + TypeScript 前端
-│   ├── src/App.tsx        # 布局、路由与工具挂载
-│   ├── src/app/           # 工具注册表、命令面板、导航与剪贴板识别
-│   ├── src/components/    # 各工具组件(JsonTool / NetworkTestTool / …)与共享原语
-│   ├── src/lib/           # 纯函数与共享逻辑的 *.test.mjs 单元测试
-│   ├── src/locales/       # i18n 语言资源(zh-CN / en-US)
-│   └── bindings/          # wails 自动生成的 TS 绑定(勿手改)
-├── build/                 # Wails 构建资源配置与各平台 Taskfile
-├── tools/                 # 构建期小工具(如 DMG 生成)
-└── .github/workflows/     # macOS 发布流水线
-```
-
-### 技术栈
-
-- 桌面壳:[Wails v3](https://v3.wails.io/)(Go),Go 层保持薄壳职责;
-- 前端:React 19 + TypeScript + Vite;
-- UI:shadcn/ui(源码内嵌,基于 Base UI)+ Tailwind CSS v4 + [Phosphor Icons](https://phosphoricons.com/);
-- 编辑器:[CodeMirror 6](https://codemirror.net/)(JSON、日志、远程文本等语法高亮与差异合并视图);
-- 国际化:react-i18next;
-- 更新:Wails updater + GitHub Releases provider。
-
-## 发布
-
-推送语义化版本标签即可触发 [release-macos.yml](.github/workflows/release-macos.yml):
-
-```bash
-git tag v0.1.0
-git push origin v0.1.0
-```
-
-工作流会构建 Apple Silicon + Intel 的 Universal 包,并在同一个 GitHub Release 中上传:
-
-- `TinkerKit-<version>-darwin-universal.dmg` — 首次安装;
-- `TinkerKit-<version>-darwin-universal.zip` — 应用内更新;
-- `SHA256SUMS` — 文件完整性校验。
-
-构建产物为 ad-hoc 签名的 Universal 包(当前未接入 Apple Developer 证书与公证),DMG 内附带「修复工具」/`Repair` 脚本,供首次安装时绕过 Gatekeeper。若之后需要正式分发,可在工作流中补充 Developer ID 签名与 `notarytool` 公证步骤。应用内更新固定读取公开仓库 `northes/tinker-kit` 的最新 GitHub Release。
-
-## 贡献
-
-欢迎通过 [Issue](https://github.com/northes/tinker-kit/issues) 报告问题、提出需求,通过 Pull Request 提交代码:
-
-- 提交前在 `frontend/` 内通过 `npx tsc --noEmit` 类型检查与 `npm run format:check` 格式检查,并在仓库根目录执行 `wails3 task test:go`;
-- 保持既有代码风格,提交信息使用英文 Conventional Commits 前缀(详见 `AGENTS.md`);
-- 新增工具请遵循 `.agents/skills/tool-development/SKILL.md`,确保命令面板、历史记录、托盘匹配三处接线一致;
-- 用户可见文案走 locale 文件,不硬编码。
 
 ## 许可证
 
