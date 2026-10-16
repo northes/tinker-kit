@@ -25,6 +25,7 @@ const months: Record<string, number> = {
   dec: 12,
   december: 12,
 };
+// 中文区域/城市名只作为搜索关键词，列表展示名由 CLDR 按界面语言生成。
 const regionNames: Record<string, string> = {
   Africa: '非洲',
   America: '美洲',
@@ -167,6 +168,7 @@ const cityNames: Record<string, string> = {
   St_Helena: '圣赫勒拿',
   UTC: '协调世界时',
 };
+
 export function getSystemTimeZone() {
   return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
 }
@@ -287,7 +289,21 @@ function timeZoneOffsetLabel(timeZone: string, date = new Date()) {
     return 'UTC+00:00';
   }
 }
-export function getTimeZoneOptions(date = new Date()) {
+// 时区名跟随界面语言，由 CLDR 提供；仅能取到 GMT 偏移的时区不再重复展示名称。
+function timeZoneDisplayName(timeZone: string, locale: string, date: Date) {
+  const nameOf = (timeZoneName: 'longGeneric' | 'long') =>
+    new Intl.DateTimeFormat(locale, { timeZone, timeZoneName })
+      .formatToParts(date)
+      .find((item) => item.type === 'timeZoneName')?.value ?? '';
+  try {
+    const generic = nameOf('longGeneric');
+    const name = /^(GMT|UTC)/i.test(generic) ? nameOf('long') : generic;
+    return /^(GMT|UTC)/i.test(name) ? '' : name;
+  } catch {
+    return '';
+  }
+}
+export function getTimeZoneOptions(locale: string, date = new Date()) {
   const supported =
     (Intl as typeof Intl & { supportedValuesOf?: (key: string) => string[] }).supportedValuesOf?.(
       'timeZone',
@@ -296,10 +312,17 @@ export function getTimeZoneOptions(date = new Date()) {
   return ids
     .sort((a, b) => (a === 'UTC' ? -1 : b === 'UTC' ? 1 : a.localeCompare(b)))
     .map((id) => {
-      const region = regionNames[id.split('/')[0]] || '其他地区',
-        city = timeZoneNames[id] || cityNames[id.split('/').pop() || id] || '未命名时区',
-        localized = id === 'UTC' ? '协调世界时' : `${region}/${city}`;
-      return { id, label: `${timeZoneOffsetLabel(id, date)} ${id} ${localized}` };
+      const offset = timeZoneOffsetLabel(id, date),
+        name = timeZoneDisplayName(id, locale, date),
+        region = regionNames[id.split('/')[0]],
+        city = timeZoneNames[id] || cityNames[id.split('/').pop() || id];
+      return {
+        id,
+        // 列表里保留技术 ID，触发按钮只显示偏移量与本地化名称。
+        label: name ? `${offset} ${id} ${name}` : `${offset} ${id}`,
+        shortLabel: name ? `${offset} ${name}` : offset,
+        keywords: [region, city].filter((term): term is string => Boolean(term)),
+      };
     });
 }
 function validParts(

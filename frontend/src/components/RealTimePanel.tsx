@@ -182,8 +182,8 @@ export default function RealTimePanel({
   ntpServers: string[];
   onNtpServersChange: (ntpServers: string[]) => void;
 }) {
-  const { t } = useTranslation();
-  const zones = useMemo(() => getTimeZoneOptions(), []);
+  const { t, i18n } = useTranslation();
+  const zones = useMemo(() => getTimeZoneOptions(i18n.language), [i18n.language]);
   const [clocks, setClocks] = useState<ClockEntry[]>(() => {
     const selected = [
       getSystemTimeZone(),
