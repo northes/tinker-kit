@@ -14,25 +14,31 @@ export function TimezonePickerDialog({
   onOpenChange,
   zones,
   selectedIds,
+  currentId,
   onSelect,
+  title,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  zones: Array<{ id: string; label: string }>;
+  // 区域/城市名等额外检索词由数据源提供，不参与展示。
+  zones: Array<{ id: string; label: string; keywords?: string[] }>;
   selectedIds: string[];
+  // 打开面板时高亮并滚动到中间的当前值。
+  currentId?: string;
   onSelect: (id: string) => void;
+  title?: string;
 }) {
   const { t } = useTranslation();
-  const title = t('timeTool.realTime.selectZone');
+  const dialogTitle = title ?? t('timeTool.realTime.selectZone');
   return (
     <CommandDialog
       open={open}
       onOpenChange={onOpenChange}
-      title={title}
-      description={title}
+      title={dialogTitle}
+      description={dialogTitle}
       className="sm:max-w-lg"
     >
-      <Command className="rounded-none! bg-transparent">
+      <Command className="rounded-none! bg-transparent" initialValue={currentId}>
         <CommandInput placeholder={t('timeTool.timezonePlaceholder')} />
         <CommandList>
           <CommandEmpty>{t('timeTool.timezoneNoResults')}</CommandEmpty>
@@ -45,6 +51,7 @@ export function TimezonePickerDialog({
                   value={zone.id}
                   keywords={[
                     zone.label,
+                    ...(zone.keywords ?? []),
                     ...(added ? t('timeTool.realTime.alreadyAddedSearchTerms').split(/\s+/) : []),
                   ]}
                   onSelect={() => {

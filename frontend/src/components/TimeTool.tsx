@@ -25,6 +25,7 @@ import {
   DotsSixVertical,
   Eye,
   EyeClosed,
+  Globe,
   GpsFix,
 } from '@phosphor-icons/react';
 import { Button } from './ui/button';
@@ -57,7 +58,7 @@ import {
 import DateCalculator, { dateCalculatorModes } from './DateCalculator';
 import DateTimePickerPopover from './DateTimePickerPopover';
 import RealTimePanel from './RealTimePanel';
-import { TimezoneCombobox } from './TimezoneCombobox';
+import { TimezonePickerDialog } from './TimezonePickerDialog';
 import { TabsContent } from './ui/tabs';
 import {
   formatTimeInZone,
@@ -175,7 +176,7 @@ function TimeResultRow({
       ref={sortable.setNodeRef}
       style={style}
       data-time-result-id={id}
-      className={`grid min-h-11 items-center border-b border-border px-1 ${editing ? 'grid-cols-[30px_110px_minmax(0,1fr)_34px] select-none' : 'grid-cols-[110px_minmax(0,1fr)]'} ${hidden ? 'opacity-40' : ''} ${sortable.isDragging ? 'bg-accent' : ''}`}
+      className={`grid min-h-11 items-center border-b border-border px-1 ${editing ? 'grid-cols-[30px_128px_minmax(0,1fr)_34px] select-none' : 'grid-cols-[128px_minmax(0,1fr)]'} ${hidden ? 'opacity-40' : ''} ${sortable.isDragging ? 'bg-accent' : ''}`}
     >
       {editing && (
         <Button
@@ -193,10 +194,10 @@ function TimeResultRow({
       <span className="text-[10px] text-muted-foreground">{label}</span>
       <Button
         variant="ghost"
-        className="min-h-9 min-w-0 justify-start gap-2.5 rounded-lg px-3"
+        className="min-h-9 min-w-0 justify-start gap-2.5 rounded-lg px-3 text-muted-foreground"
         onClick={onCopy}
       >
-        <code className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-[10px] text-foreground">
+        <code className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-[13px] text-foreground">
           {value}
         </code>
         <Copy data-icon="inline-end" size={15} weight="duotone" />
@@ -243,10 +244,11 @@ export default function TimeTool({
   const { t, i18n } = useTranslation();
   const { value: input, setValue: setInput, undo, redo } = useHistory('');
   const [timeZone, setTimeZone] = useState(getSystemTimeZone);
-  const zones = useMemo(() => getTimeZoneOptions(), []);
+  const zones = useMemo(() => getTimeZoneOptions(i18n.language), [i18n.language]);
   const consumed = useRef<PendingAction | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const [mode, setMode] = useState<TimeToolMode>('convert');
+  const [zonePickerOpen, setZonePickerOpen] = useState(false);
   const [editing, setEditing] = useState(false);
   const [draftOrder, setDraftOrder] = useState<TimeResultId[]>(() => normalizeOrder(resultOrder));
   const [draftHidden, setDraftHidden] = useState<Set<string>>(() => new Set(hiddenResults));
@@ -299,6 +301,8 @@ export default function TimeTool({
       return;
     consumed.current = pending;
     clearPending();
+    // 输入框与时区都属于转换页；剪贴板匹配等来源填入数据时若停留在其它 tab，用户看不到结果。
+    setMode('convert');
     if (pending.action === 'refresh') {
       applyTimePreset('now');
       return;
@@ -372,21 +376,48 @@ export default function TimeTool({
             ]}
           >
             <TabsContent value="convert" keepMounted className="min-h-0 overflow-hidden">
-              <div className="grid h-full min-h-0 grid-rows-[auto_auto_auto_auto_minmax(0,1fr)] px-1.5">
-                <Label className="flex flex-col items-stretch gap-2 font-mono text-[10px] font-medium uppercase tracking-[.04em] text-muted-foreground">
-                  <span>{t('timeTool.input')}</span>
-                  <div className="flex h-[46px] min-w-0 items-center gap-2.5 rounded-lg border border-border bg-card px-3.5 focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/50">
-                    <Clock size={18} weight="duotone" />
-                    <Input
-                      ref={inputRef}
-                      className="min-w-0 flex-1 select-text border-0 bg-transparent px-0 py-0 text-[13px] shadow-none focus-visible:ring-0 dark:bg-transparent"
-                      value={input}
-                      onKeyDown={(event) => undoRedoKey(event, undo, redo)}
-                      onChange={(event) => setInput(event.target.value)}
-                      placeholder={t('timeTool.placeholder')}
-                    />
+              <div className="grid h-full min-h-0 grid-rows-[auto_auto_auto_minmax(0,1fr)] px-1.5">
+                {/* 解析时区是低频设置，压缩为输入行右侧的附属控件，不再单独占一行。 */}
+                <div className="grid grid-cols-[minmax(0,1fr)_auto] items-end gap-2">
+                  <Label className="flex flex-col items-stretch gap-2 font-mono text-[10px] font-medium uppercase tracking-[.04em] text-muted-foreground">
+                    <span>{t('timeTool.input')}</span>
+                    <div className="flex h-[46px] min-w-0 items-center gap-2.5 rounded-lg border border-border bg-card px-3.5 focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/50">
+                      <Clock size={18} weight="duotone" />
+                      <Input
+                        ref={inputRef}
+                        className="min-w-0 flex-1 select-text border-0 bg-transparent px-0 py-0 text-[13px] shadow-none focus-visible:ring-0 dark:bg-transparent"
+                        value={input}
+                        onKeyDown={(event) => undoRedoKey(event, undo, redo)}
+                        onChange={(event) => setInput(event.target.value)}
+                        placeholder={t('timeTool.placeholder')}
+                      />
+                    </div>
+                  </Label>
+                  <div className="flex h-[46px] flex-none items-center gap-0.5">
+                    <Button
+                      variant="ghost"
+                      className="max-w-56 min-w-0 gap-1.5 px-2.5 text-xs font-normal text-muted-foreground"
+                      aria-label={t('timeTool.timezone')}
+                      title={t('timeTool.timezone')}
+                      onClick={() => setZonePickerOpen(true)}
+                    >
+                      <Globe data-icon="inline-start" size={16} weight="duotone" />
+                      <span className="min-w-0 truncate">
+                        {zones.find((zone) => zone.id === timeZone)?.shortLabel ?? timeZone}
+                      </span>
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="flex-none text-muted-foreground"
+                      aria-label={t('timeTool.useSystemTimezone')}
+                      title={t('timeTool.useSystemTimezone')}
+                      onClick={() => setTimeZone(getSystemTimeZone())}
+                    >
+                      <GpsFix size={15} weight="duotone" />
+                    </Button>
                   </div>
-                </Label>
+                </div>
                 <div className="flex flex-col gap-2 pt-3.5">
                   <span className="font-mono text-[10px] font-medium uppercase tracking-[.04em] text-muted-foreground">
                     {t('timeTool.quickFill')}
@@ -505,25 +536,6 @@ export default function TimeTool({
                     />
                   </div>
                 </div>
-                <div className="flex items-end gap-2">
-                  <TimezoneCombobox
-                    value={timeZone}
-                    onChange={setTimeZone}
-                    zones={zones}
-                    label={t('timeTool.timezone')}
-                    placeholder={t('timeTool.timezonePlaceholder')}
-                    emptyLabel={t('timeTool.timezoneNoResults')}
-                  />
-                  <Button
-                    variant="ghost"
-                    size="icon-lg"
-                    className="flex-none rounded-lg"
-                    aria-label={t('timeTool.useSystemTimezone')}
-                    onClick={() => setTimeZone(getSystemTimeZone())}
-                  >
-                    <GpsFix size={17} weight="duotone" />
-                  </Button>
-                </div>
                 <div className="mt-3.5 flex min-h-[39px] items-center justify-between gap-3 border-b border-border px-1 py-1.5">
                   <span className="text-[10px] text-muted-foreground">
                     {editing ? t('timeTool.editHint') : ''}
@@ -582,6 +594,18 @@ export default function TimeTool({
                   )}
                 </ScrollArea>
               </div>
+              <TimezonePickerDialog
+                open={zonePickerOpen}
+                onOpenChange={setZonePickerOpen}
+                zones={zones}
+                selectedIds={[]}
+                currentId={timeZone}
+                title={t('timeTool.timezone')}
+                onSelect={(zone) => {
+                  setTimeZone(zone);
+                  setZonePickerOpen(false);
+                }}
+              />
             </TabsContent>
             <TabsContent value="dateCalculator" keepMounted className="min-h-0 min-w-0">
               <ScrollArea
