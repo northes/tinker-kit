@@ -116,6 +116,13 @@ export function IsAutostartEnabled(): $CancellablePromise<boolean> {
     return $Call.ByID(2726044057);
 }
 
+/**
+ * 日志过滤历史独立于操作历史，由配置服务串行管理并持久化。
+ */
+export function LogFilterHistory(action: string, query: string): $CancellablePromise<string[] | null> {
+    return $Call.ByID(409181351, action, query);
+}
+
 export function QueryHistory(offset: number, limit: number, filter: $models.HistoryFilter): $CancellablePromise<$models.HistoryPage> {
     return $Call.ByID(3316423139, offset, limit, filter);
 }

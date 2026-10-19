@@ -1297,7 +1297,55 @@
     "wholeWord": "Match whole word",
     "advancedSettings": "Advanced settings",
     "highlightLevels": "Highlight log levels",
-    "highlightLevelsDescription": "Use a red background for ERROR logs and yellow for WARN logs."
+    "highlightLevelsDescription": "Use a red background for ERROR logs and yellow for WARN logs.",
+    "filterHistory": "Filter history (latest 50)",
+    "clearFilterHistory": "Clear history",
+    "deleteFilterHistory": "Delete filter: {{query}}",
+    "noFilterHistory": "No filter history",
+    "historyFailed": "Failed to read or save log filter history",
+    "filterHelp": {
+      "title": "Advanced syntax",
+      "description": "Regular conditions filter all logs in the current scope. @name scopes the following conditions until the closing parenthesis, or the end of the expression at the top level.",
+      "rules": "Precedence: parentheses, not, and, or. Keywords use case-insensitive substring matching by default. The input buttons enable whole-word, regex and case-sensitive matching. Regex mode treats the entire input as a regular expression and bypasses this syntax. Inside quotes, use \\\" for a quote and \\\\ for a backslash.",
+      "shortcuts": "Type @ to complete names in the current scope. Use arrow keys and Enter to accept a suggestion; press Enter again to apply the filter. Esc closes suggestions. Names match exactly; resources sharing a name all receive the filter.",
+      "examples": {
+        "text": {
+          "title": "Match a keyword",
+          "query": "\"error\"",
+          "description": "Show logs whose text contains error. Quote multi-word phrases too, such as \"connection refused\"."
+        },
+        "or": {
+          "title": "Match either condition",
+          "query": "\"error\" or \"timeout\"",
+          "description": "Show logs containing error or timeout."
+        },
+        "exclude": {
+          "title": "Match and exclude",
+          "query": "\"error\" and not \"healthcheck\"",
+          "description": "Show logs containing error but not healthcheck."
+        },
+        "group": {
+          "title": "Group conditions",
+          "query": "(\"error\" or \"timeout\") and \"api\"",
+          "description": "Show logs containing api and either error or timeout."
+        },
+        "scope": {
+          "title": "Filter one container or service",
+          "query": "@zot.dev \"error\" and \"fm\"",
+          "description": "Show only logs containing both error and fm for zot.dev. Other containers and services are unaffected. Replace zot.dev with the actual name."
+        },
+        "quotedName": {
+          "title": "Names containing spaces",
+          "query": "@\"worker service\" \"timeout\"",
+          "description": "Quote the name to filter timeout logs for worker service while leaving other resources unchanged."
+        },
+        "mixedScope": {
+          "title": "Combine global and scoped conditions",
+          "query": "\"bb\" and (@zot.dev \"a\")",
+          "description": "Every container and service must contain bb; zot.dev must also contain a. The scoped condition ends at the closing parenthesis. Use and to combine multiple parenthesized @name conditions."
+        }
+      }
+    }
   },
   "colorPicker": {
     "area": "Color area",
@@ -2158,7 +2206,8 @@
       "logMonitorStopping": "The log monitor is stopping; try again later",
       "logMonitorLimitReached": "The number of concurrent log sources has reached the limit ({{max}})",
       "logMonitorNotFound": "Log monitor not found",
-      "logRegexInvalid": "Invalid log regular expression"
+      "logRegexInvalid": "Invalid log regular expression",
+      "logSyntaxInvalid": "Invalid log filter syntax: check quotes, parentheses, fields and and/or/not operators"
     },
     "sshFile": {
       "taskNotFound": "The file task does not exist",

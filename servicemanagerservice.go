@@ -186,6 +186,7 @@ type StartLogMonitorsRequest struct {
 }
 
 type ServiceLogFilter struct {
+	WholeWord     bool     `json:"wholeWord"`
 	Query         string   `json:"query"`
 	Regex         bool     `json:"regex"`
 	CaseSensitive bool     `json:"caseSensitive"`
@@ -199,9 +200,11 @@ type QueryLogBufferRequest struct {
 }
 
 type ServiceLogSnapshot struct {
-	Lines       []ServiceLogLine `json:"lines"`
-	MaxSequence uint64           `json:"maxSequence"`
-	Truncated   bool             `json:"truncated"`
+	HighlightPatterns map[string]string `json:"highlightPatterns"`
+	HighlightPattern  string            `json:"highlightPattern"`
+	Lines             []ServiceLogLine  `json:"lines"`
+	MaxSequence       uint64            `json:"maxSequence"`
+	Truncated         bool              `json:"truncated"`
 }
 
 type serviceLogEvent struct {
@@ -1455,7 +1458,7 @@ func (s *ServiceManagerService) GetLogMonitors(targetID string) []LogMonitor {
 	return result
 }
 func (s *ServiceManagerService) QueryLogBuffer(req QueryLogBufferRequest) (ServiceLogSnapshot, error) {
-	filter, err := newLogFilter(req.Filter)
+	filter, highlightPattern, highlightPatterns, err := compileLogFilter(req.Filter)
 	if err != nil {
 		return ServiceLogSnapshot{}, err
 	}
@@ -1465,7 +1468,7 @@ func (s *ServiceManagerService) QueryLogBuffer(req QueryLogBufferRequest) (Servi
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	snapshot := ServiceLogSnapshot{Lines: []ServiceLogLine{}}
+	snapshot := ServiceLogSnapshot{Lines: []ServiceLogLine{}, HighlightPattern: highlightPattern, HighlightPatterns: highlightPatterns}
 	for id, m := range s.monitors {
 		if len(wanted) > 0 && !wanted[id] {
 			continue
@@ -1487,6 +1490,11 @@ func (s *ServiceManagerService) QueryLogBuffer(req QueryLogBufferRequest) (Servi
 	return snapshot, nil
 }
 func newLogFilter(f ServiceLogFilter) (func(ServiceLogLine) bool, error) {
+	match, _, _, err := compileLogFilter(f)
+	return match, err
+}
+
+func compileLogFilter(f ServiceLogFilter) (logPredicate, string, map[string]string, error) {
 	query := f.Query
 	var re *regexp.Regexp
 	var err error
@@ -1494,14 +1502,55 @@ func newLogFilter(f ServiceLogFilter) (func(ServiceLogLine) bool, error) {
 		if !f.CaseSensitive {
 			query = "(?i)" + query
 		}
+		if f.WholeWord {
+			query = `\b(?:` + query + `)\b`
+		}
 		re, err = regexp.Compile(query)
 		if err != nil {
-			return nil, userError("errors.service.logRegexInvalid")
+			return nil, "", nil, userError("errors.service.logRegexInvalid")
 		}
 	}
-	needle := query
-	if !f.CaseSensitive {
-		needle = strings.ToLower(needle)
+	var predicate logPredicate
+	var terms []logHighlightTerm
+	patternsByName := map[string]string{}
+	highlightPattern := f.Query
+	if f.WholeWord && highlightPattern != "" {
+		highlightPattern = `\b(?:` + highlightPattern + `)\b`
+	}
+	if re == nil {
+		predicate, terms, err = compileLogExpression(f)
+		if err != nil {
+			return nil, "", nil, err
+		}
+	}
+	if re == nil {
+		global := []string{}
+		scoped := map[string][]string{}
+		for _, term := range terms {
+			if term.value == "" {
+				continue
+			}
+			if len(term.scopes) == 0 {
+				global = append(global, term.value)
+				continue
+			}
+			name := term.scopes[0]
+			same := true
+			for _, scope := range term.scopes[1:] {
+				if scope != name {
+					same = false
+					break
+				}
+			}
+			if same {
+				scoped[name] = append(scoped[name], term.value)
+			}
+		}
+		highlightPattern = logHighlightPattern(global, f.WholeWord)
+		for name, values := range scoped {
+			all := append(append([]string(nil), global...), values...)
+			patternsByName[name] = logHighlightPattern(all, f.WholeWord)
+		}
 	}
 	streams := map[string]bool{}
 	for _, v := range f.Streams {
@@ -1518,12 +1567,8 @@ func newLogFilter(f ServiceLogFilter) (func(ServiceLogLine) bool, error) {
 		if re != nil {
 			return re.MatchString(plain)
 		}
-		text := plain
-		if !f.CaseSensitive {
-			text = strings.ToLower(text)
-		}
-		return strings.Contains(text, needle)
-	}, nil
+		return predicate(line)
+	}, highlightPattern, patternsByName, nil
 }
 
 func (s *ServiceManagerService) start() {

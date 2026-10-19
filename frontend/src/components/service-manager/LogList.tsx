@@ -15,6 +15,7 @@ const LOG_GRID =
 export function LogList({
   lines,
   query,
+  highlightPatterns,
   regex,
   caseSensitive,
   sourceLabels,
@@ -22,6 +23,7 @@ export function LogList({
 }: {
   lines: ServiceLogLine[];
   query: string;
+  highlightPatterns: Record<string, string | undefined>;
   regex: boolean;
   caseSensitive: boolean;
   sourceLabels?: Map<string, string>;
@@ -146,7 +148,12 @@ export function LogList({
                     {sourceLabels?.get(line.monitorID) ?? line.name}
                   </WheelText>
                   <span className="break-all whitespace-pre-wrap">
-                    {renderLogText(line.text, query, regex, caseSensitive)}
+                    {renderLogText(
+                      line.text,
+                      highlightPatterns[line.name] ?? query,
+                      regex,
+                      caseSensitive,
+                    )}
                   </span>
                 </div>
               );
@@ -217,7 +224,7 @@ function logSpan(span: AnsiSpan, content: string, key: number, marked = false): 
   if (!content) return null;
   if (marked) {
     return (
-      <mark key={key} className={`rounded-[2px] bg-warning/30 ${span.className}`}>
+      <mark key={key} className="rounded-[2px] bg-warning font-medium text-neutral-950">
         {content}
       </mark>
     );
@@ -256,35 +263,9 @@ function logMatchRanges(
   return ranges;
 }
 
-export function logPattern(query: string, regex: boolean, wholeWord: boolean) {
-  if (!wholeWord || !query) return query;
-  const source = regex ? query : query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  return `\\b(${source})\\b`;
-}
-
 function logLevelBackground(text: string) {
   const plain = ansiPlainText(text);
   if (/\bERROR\b/i.test(plain)) return 'bg-destructive/15';
   if (/\bWARN(?:ING)?\b/i.test(plain)) return 'bg-warning/20';
   return '';
-}
-
-export function matchesLog(
-  line: ServiceLogLine,
-  query: string,
-  regex: boolean,
-  caseSensitive: boolean,
-  wholeWord: boolean,
-) {
-  if (!query) return true;
-  const text = ansiPlainText(line.text);
-  try {
-    if (regex || wholeWord)
-      return new RegExp(logPattern(query, regex, wholeWord), caseSensitive ? '' : 'i').test(text);
-    return (caseSensitive ? text : text.toLowerCase()).includes(
-      caseSensitive ? query : query.toLowerCase(),
-    );
-  } catch {
-    return false;
-  }
 }

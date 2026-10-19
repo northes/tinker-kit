@@ -1297,7 +1297,55 @@
     "wholeWord": "单独单词匹配",
     "advancedSettings": "高级设置",
     "highlightLevels": "凸显着色",
-    "highlightLevelsDescription": "ERROR 日志使用红色背景，WARN 日志使用黄色背景。"
+    "highlightLevelsDescription": "ERROR 日志使用红色背景，WARN 日志使用黄色背景。",
+    "filterHistory": "过滤历史（最近 50 条）",
+    "clearFilterHistory": "清空历史",
+    "deleteFilterHistory": "删除过滤记录：{{query}}",
+    "noFilterHistory": "暂无过滤记录",
+    "historyFailed": "日志过滤历史读写失败",
+    "filterHelp": {
+      "title": "高级语法",
+      "description": "普通条件筛选当前范围内的全部日志；@名称 将后面的条件限定到当前括号结束，未加括号时限定到整条表达式结束。",
+      "rules": "括号优先，其次为 not、and、or。关键词默认按包含匹配且忽略大小写；可用输入框右侧按钮启用全词、正则和大小写敏感。正则模式将整段输入视为正则表达式，不解析上述语法。双引号内用 \\\" 表示引号，用 \\\\ 表示反斜杠。",
+      "shortcuts": "输入 @ 后可补全当前范围内的名称，方向键选择、回车接受；再次回车应用筛选，Esc 关闭提示。名称按完整名称精确匹配，同名对象都会应用该筛选。",
+      "examples": {
+        "text": {
+          "title": "匹配关键词",
+          "query": "\"error\"",
+          "description": "显示正文中包含 error 的日志。多个词组成的短语也放在双引号内，例如 \"connection refused\"。"
+        },
+        "or": {
+          "title": "满足任一条件",
+          "query": "\"error\" or \"timeout\"",
+          "description": "显示包含 error 或 timeout 的日志。"
+        },
+        "exclude": {
+          "title": "同时匹配与排除",
+          "query": "\"error\" and not \"healthcheck\"",
+          "description": "显示包含 error 且不包含 healthcheck 的日志。"
+        },
+        "group": {
+          "title": "用括号组合条件",
+          "query": "(\"error\" or \"timeout\") and \"api\"",
+          "description": "显示包含 api，且同时包含 error 或 timeout 的日志。"
+        },
+        "scope": {
+          "title": "只筛选指定容器或服务",
+          "query": "@zot.dev \"error\" and \"fm\"",
+          "description": "仅让 zot.dev 显示同时包含 error 和 fm 的日志；其他容器和服务的日志不受影响。将 zot.dev 替换成实际名称。"
+        },
+        "quotedName": {
+          "title": "名称中包含空格",
+          "query": "@\"worker service\" \"timeout\"",
+          "description": "为名称加双引号，仅筛选 worker service 中包含 timeout 的日志，其他对象不受影响。"
+        },
+        "mixedScope": {
+          "title": "全局条件叠加局部条件",
+          "query": "\"bb\" and (@zot.dev \"a\")",
+          "description": "所有容器和服务都必须包含 bb；zot.dev 还必须包含 a。局部条件在括号结束处终止。可以用 and 连接多个带括号的 @名称 条件。"
+        }
+      }
+    }
   },
   "colorPicker": {
     "area": "颜色区域",
@@ -2158,7 +2206,8 @@
       "logMonitorStopping": "日志正在停止，请稍后重试",
       "logMonitorLimitReached": "同时监控的日志源已达到上限（{{max}}）",
       "logMonitorNotFound": "日志监控不存在",
-      "logRegexInvalid": "日志正则表达式无效"
+      "logRegexInvalid": "日志正则表达式无效",
+      "logSyntaxInvalid": "日志过滤语法无效，请检查引号、括号、字段和 and/or/not 运算符"
     },
     "sshFile": {
       "taskNotFound": "文件任务不存在",

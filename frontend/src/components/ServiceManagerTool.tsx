@@ -32,7 +32,7 @@ import {
 } from '../../bindings/tinkerkit/servicemanagerservice';
 import { formatBackendError } from '../lib/backend-error';
 import { ConfirmDialog } from './ConfirmDialog';
-import { logPattern, matchesLog } from './service-manager/LogList';
+import { LogFilterHistory } from '../../bindings/tinkerkit/configservice';
 import {
   composeGroupContainers,
   isLogLimitFailure,
@@ -152,11 +152,32 @@ export default function ServiceManagerTool({
   const [unpicking, setUnpicking] = useState(false);
   const [logDraft, setLogDraft] = useState('');
   const [logQuery, setLogQuery] = useState('');
+  const [filterHistory, setFilterHistory] = useState<string[]>([]);
+  const historyQueue = useRef(Promise.resolve());
+  const updateFilterHistory = (action: string, query = '') => {
+    historyQueue.current = historyQueue.current.then(async () => {
+      try {
+        setFilterHistory((await LogFilterHistory(action, query)) ?? []);
+      } catch (error) {
+        toast.add({
+          title: t('serviceManagerTool.historyFailed'),
+          description: formatBackendError(error),
+          type: 'error',
+        });
+      }
+    });
+    return historyQueue.current;
+  };
+  useEffect(() => {
+    void updateFilterHistory('list');
+  }, []);
   const [wholeWord, setWholeWord] = useState(false);
   const [regex, setRegex] = useState(false);
   const [caseSensitive, setCaseSensitive] = useState(false);
   const [lines, setLines] = useState<ServiceLogLine[]>([]);
   const [truncated, setTruncated] = useState(false);
+  const [highlightPattern, setHighlightPattern] = useState('');
+  const [highlightPatterns, setHighlightPatterns] = useState<Record<string, string | undefined>>({});
   const [manageOpen, setManageOpen] = useState(false);
   const [savingTargets, setSavingTargets] = useState(false);
   const [pendingAction, setPendingAction] = useState<{
@@ -338,76 +359,67 @@ export default function ServiceManagerTool({
     };
   }, [view, active, pickedTargetIDs.join('|')]);
   useEffect(() => {
-    const off = Events.On('service-manager:logs', (event) => {
-      const data = event.data as LogEvent;
-      const incoming = data?.lines ?? [];
-      if (!incoming.length || !activeMonitorKey) return;
-      setLines((current) => {
-        const accepted = incoming.filter(
-          (line) =>
-            activeMonitorIDs.includes(line.monitorID) &&
-            matchesLog(line, logQuery, regex, caseSensitive, wholeWord),
-        );
-        if (!accepted.length) return current;
-        const ids = new Set(current.map((line) => line.sequence));
-        return [...current, ...accepted.filter((line) => !ids.has(line.sequence))]
-          .sort((a, b) => a.sequence - b.sequence)
-          .slice(-VISIBLE_LOG_LIMIT);
-      });
-    });
-    const offState = Events.On('service-manager:log-state', () => void loadMonitors());
-    return () => {
-      off();
-      offState();
-    };
-  }, [activeMonitorKey, logQuery, regex, caseSensitive, wholeWord, targetID]);
-  useEffect(() => {
     let cancelled = false;
+    let running = false;
+    let dirty = false;
+    let failed = false;
+    let request: ReturnType<typeof QueryLogBuffer> | undefined;
+    setLines([]);
+    setTruncated(false);
+    setHighlightPattern('');
+    setHighlightPatterns({});
     const run = async () => {
-      if (!activeMonitorIDs.length) {
-        setLines([]);
-        setTruncated(false);
-        return;
-      }
+      if (failed) return;
+      dirty = true;
+      if (running) return;
+      running = true;
       try {
-        const snapshot = await QueryLogBuffer({
-          monitorIDs: activeMonitorIDs,
-          filter: {
-            query: logPattern(logQuery, regex, wholeWord),
-            regex: regex || wholeWord,
-            caseSensitive,
-            streams: [],
-          },
-          limit: VISIBLE_LOG_LIMIT,
-        });
-        if (!cancelled) {
-          setLines((current) =>
-            [
-              ...(snapshot.lines ?? []),
-              ...current.filter(
-                (line) =>
-                  line.sequence > snapshot.maxSequence &&
-                  activeMonitorIDs.includes(line.monitorID) &&
-                  matchesLog(line, logQuery, regex, caseSensitive, wholeWord),
-              ),
-            ]
-              .sort((a, b) => a.sequence - b.sequence)
-              .slice(-VISIBLE_LOG_LIMIT),
-          );
-          setTruncated(snapshot.truncated);
+        while (dirty && !cancelled) {
+          dirty = false;
+          if (!activeMonitorIDs.length) {
+            setLines([]);
+            setTruncated(false);
+            break;
+          }
+          request = QueryLogBuffer({
+            monitorIDs: activeMonitorIDs,
+            filter: { query: logQuery, regex, wholeWord, caseSensitive, streams: [] },
+            limit: VISIBLE_LOG_LIMIT,
+          });
+          const snapshot = await request;
+          if (!cancelled) {
+            setLines(snapshot.lines ?? []);
+            setTruncated(snapshot.truncated);
+            setHighlightPattern(snapshot.highlightPattern);
+            setHighlightPatterns(snapshot.highlightPatterns ?? {});
+          }
         }
       } catch (error) {
-        if (cancelled) return;
-        toast.add({
-          title: t('serviceManagerTool.filterFailed'),
-          description: formatBackendError(error),
-          type: 'error',
-        });
+        failed = true;
+        if (!cancelled)
+          toast.add({
+            title: t('serviceManagerTool.filterFailed'),
+            description: formatBackendError(error),
+            type: 'error',
+          });
+      } finally {
+        running = false;
       }
     };
+    const off = Events.On('service-manager:logs', (event) => {
+      const data = event.data as LogEvent;
+      if (data?.lines?.some((line) => activeMonitorIDs.includes(line.monitorID))) void run();
+    });
+    const offState = Events.On('service-manager:log-state', () => {
+      void loadMonitors();
+      void run();
+    });
     void run();
     return () => {
       cancelled = true;
+      request?.cancel();
+      off();
+      offState();
     };
   }, [activeMonitorKey, logQuery, regex, caseSensitive, wholeWord]);
 
@@ -1121,8 +1133,16 @@ export default function ServiceManagerTool({
                     truncated={truncated}
                     logDraft={logDraft}
                     setLogDraft={setLogDraft}
-                    applyFilter={() => setLogQuery(logDraft)}
-                    query={logQuery}
+                    applyFilter={(value = logDraft) => {
+                      setLogDraft(value);
+                      setLogQuery(value);
+                      if (value.trim()) void updateFilterHistory('add', value);
+                    }}
+                    filterHistory={filterHistory}
+                    deleteFilterHistory={(value) => void updateFilterHistory('delete', value)}
+                    clearFilterHistory={() => void updateFilterHistory('clear')}
+                    highlightPattern={highlightPattern}
+                    highlightPatterns={highlightPatterns}
                     regex={regex}
                     wholeWord={wholeWord}
                     setWholeWord={setWholeWord}

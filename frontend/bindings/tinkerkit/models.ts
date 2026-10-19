@@ -823,6 +823,7 @@ export interface ServiceInventory {
 }
 
 export interface ServiceLogFilter {
+    "wholeWord": boolean;
     "query": string;
     "regex": boolean;
     "caseSensitive": boolean;
@@ -842,6 +843,8 @@ export interface ServiceLogLine {
 }
 
 export interface ServiceLogSnapshot {
+    "highlightPatterns": { [_ in string]?: string } | null;
+    "highlightPattern": string;
     "lines": ServiceLogLine[] | null;
     "maxSequence": number;
     "truncated": boolean;

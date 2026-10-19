@@ -17,11 +17,12 @@ import { ServiceResourcePerformance } from '../ServiceResourcePerformance';
 import { Button } from '../ui/button';
 import { Checkbox } from '../ui/checkbox';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '../ui/dialog';
-import { Input } from '../ui/input';
 import { Label } from '../ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs';
 import { ToggleGroup, ToggleGroupItem } from '../ui/toggle-group';
-import { LogList, logPattern } from './LogList';
+import { LogList } from './LogList';
+import { LogFilterHelp } from './LogFilterHelp';
+import { LogFilterHistoryMenu } from './LogFilterHistory';
 import { targetLabel, VISIBLE_LOG_LIMIT, type Selection } from './model';
 import { ResourceInfoTab, ScopeInfoTab } from './ResourceInfo';
 
@@ -48,7 +49,11 @@ export function ResourcePanel({
   logDraft,
   setLogDraft,
   applyFilter,
-  query,
+  filterHistory,
+  deleteFilterHistory,
+  clearFilterHistory,
+  highlightPattern,
+  highlightPatterns,
   regex,
   setRegex,
   wholeWord,
@@ -75,8 +80,12 @@ export function ResourcePanel({
   truncated: boolean;
   logDraft: string;
   setLogDraft: (value: string) => void;
-  applyFilter: () => void;
-  query: string;
+  applyFilter: (value?: string) => void;
+  filterHistory: string[];
+  deleteFilterHistory: (value: string) => void;
+  clearFilterHistory: () => void;
+  highlightPattern: string;
+  highlightPatterns: Record<string, string | undefined>;
   regex: boolean;
   setRegex: (value: boolean) => void;
   wholeWord: boolean;
@@ -111,6 +120,17 @@ export function ResourcePanel({
       ]),
     );
   }, [scope, monitors, targets, selection.kind, t]);
+  const completionNames = useMemo(
+    () => [
+      ...new Set(
+        monitors
+          .filter((monitor) => monitorIDs.includes(monitor.id))
+          .map((monitor) => monitor.resource.name)
+          .filter((name): name is string => Boolean(name)),
+      ),
+    ],
+    [monitors, monitorIDs],
+  );
   const visibleLines = useMemo(
     () => lines.filter((line) => monitorIDs.includes(line.monitorID)),
     [lines, monitorIDs],
@@ -166,19 +186,20 @@ export function ResourcePanel({
           <div className="grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)]">
             <div className="border-b px-4 py-2">
               <div className="flex items-center gap-2">
-                <div className="relative min-w-0 flex-1">
-                  <Input
-                    className="h-8 pr-28"
-                    value={logDraft}
-                    onChange={(event) => setLogDraft(event.target.value)}
-                    onKeyDown={(event) => {
-                      if (event.key === 'Enter' && !event.nativeEvent.isComposing) applyFilter();
-                    }}
-                    placeholder={t('serviceManagerTool.logFilter')}
-                  />
+                <LogFilterHistoryMenu
+                  items={filterHistory}
+                  names={completionNames}
+                  value={logDraft}
+                  regex={regex}
+                  onChange={setLogDraft}
+                  onSelect={applyFilter}
+                  onDelete={deleteFilterHistory}
+                  onClear={clearFilterHistory}
+                >
                   <ToggleGroup
                     multiple
-                    className="absolute top-1/2 right-1 -translate-y-1/2"
+                    spacing={0}
+                    className="h-full shrink-0"
                     size="sm"
                     value={[
                       wholeWord ? 'word' : '',
@@ -192,6 +213,7 @@ export function ResourcePanel({
                     }}
                   >
                     <ToggleGroupItem
+                      className="h-full"
                       value="word"
                       title={t('serviceManagerTool.wholeWord')}
                       aria-label={t('serviceManagerTool.wholeWord')}
@@ -199,6 +221,7 @@ export function ResourcePanel({
                       <TextB weight="duotone" />
                     </ToggleGroupItem>
                     <ToggleGroupItem
+                      className="h-full"
                       value="regex"
                       title={t('serviceManagerTool.regex')}
                       aria-label={t('serviceManagerTool.regex')}
@@ -206,6 +229,7 @@ export function ResourcePanel({
                       <Asterisk weight="duotone" />
                     </ToggleGroupItem>
                     <ToggleGroupItem
+                      className="h-full"
                       value="case"
                       title={t('serviceManagerTool.caseSensitive')}
                       aria-label={t('serviceManagerTool.caseSensitive')}
@@ -213,7 +237,8 @@ export function ResourcePanel({
                       <TextAa weight="duotone" />
                     </ToggleGroupItem>
                   </ToggleGroup>
-                </div>
+                </LogFilterHistoryMenu>
+                <LogFilterHelp />
                 <Button
                   variant="ghost"
                   size="icon-sm"
@@ -251,8 +276,9 @@ export function ResourcePanel({
             </div>
             <LogList
               lines={visibleLines}
-              query={logPattern(query, regex, wholeWord)}
-              regex={regex || wholeWord}
+              query={highlightPattern}
+              highlightPatterns={highlightPatterns}
+              regex
               highlightLevels={highlightLevels}
               caseSensitive={caseSensitive}
               sourceLabels={sourceLabels}
