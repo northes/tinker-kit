@@ -141,11 +141,22 @@ tasks:
     cmds:
       - task: create:dmg
 
+  generate:dmg-background:
+    summary: 从矢量源生成普通和 Retina DMG 背景
+    platforms: [darwin]
+    cmds:
+      - |
+        set -eu
+        retina_background=$(mktemp -t tinkerkit-dmg-background)
+        trap 'rm -f "$retina_background"' EXIT
+        rsvg-convert -w 540 -h 380 build/darwin/dmg-background.svg -o build/darwin/dmg-background.png
+        rsvg-convert -w 1080 -h 760 build/darwin/dmg-background.svg -o "$retina_background"
+        tiffutil -cathidpicheck build/darwin/dmg-background.png "$retina_background" -out build/darwin/dmg-background.tiff
+
   create:dmg:
     summary: Creates a configurable `.dmg` from the `.app` bundle
     desc: |
-      Uses tools/dmg so every Finder icon is pinned: wails3 tool package places
-      the extra installer files on top of the app and Applications icons.
+      Uses tools/dmg to pin the app and Applications icons to the background layout.
     platforms: [darwin]
     cmds:
       - >-
@@ -155,16 +166,13 @@ tasks:
         -file-icon "{{.DMG_FILE_ICON}}"
         -window-width "{{.DMG_WINDOW_WIDTH}}"
         -window-height "{{.DMG_WINDOW_HEIGHT}}"
-        {{if .DMG_FILES}}-files "{{.DMG_FILES}}"{{end}}
     vars:
-      DMG_BACKGROUND: '{{.DMG_BACKGROUND | default "build/darwin/dmg-background.png"}}'
+      DMG_BACKGROUND: '{{.DMG_BACKGROUND | default "build/darwin/dmg-background.tiff"}}'
       DMG_VOLUME_ICON: '{{.DMG_VOLUME_ICON | default "build/darwin/icons.icns"}}'
       DMG_FILE_ICON: '{{.DMG_FILE_ICON | default "build/darwin/icons.icns"}}'
       DMG_WINDOW_WIDTH: '{{.DMG_WINDOW_WIDTH | default "540"}}'
       DMG_WINDOW_HEIGHT: '{{.DMG_WINDOW_HEIGHT | default "380"}}'
-      # 附带中英文安装修复脚本：未使用 Apple Developer 证书公证时，用于清除
-      # quarantine 标记并重新 ad-hoc 签名，避免 Gatekeeper 报「已损坏」。
-      DMG_FILES: '{{.DMG_FILES | default "Repair=build/darwin/dmg/repair,修复工具=build/darwin/dmg/repair-zh"}}'
+
 
 
   create:app:bundle:

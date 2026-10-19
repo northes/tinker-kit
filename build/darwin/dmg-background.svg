@@ -1,0 +1,34 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="540" height="380" viewBox="0 0 540 380">
+  <rect width="540" height="380" fill="white"/>
+  <svg x="24" y="24" width="16" height="16" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="panel" x1="512" y1="118" x2="512" y2="902" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#292929"/>
+      <stop offset=".48" stop-color="#191919"/>
+      <stop offset="1" stop-color="#0d0d0d"/>
+    </linearGradient>
+    <linearGradient id="ink" x1="512" y1="240" x2="512" y2="784" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#fff"/>
+      <stop offset=".52" stop-color="#f3f3f3"/>
+      <stop offset="1" stop-color="#cfcfcf"/>
+    </linearGradient>
+    <filter id="shadow" x="86" y="86" width="852" height="852" filterUnits="userSpaceOnUse">
+      <feDropShadow dx="0" dy="22" stdDeviation="18" flood-color="#000" flood-opacity=".42"/>
+    </filter>
+  </defs>
+  <rect width="1024" height="1024" rx="224" fill="url(#panel)"/>
+  <rect x="1" y="1" width="1022" height="1022" rx="223" fill="none" stroke="#fff" stroke-opacity=".08" stroke-width="2"/>
+  <g transform="translate(166.4 166.4) scale(2.7)" color="#fff">
+    <rect width="256" height="256" fill="none"/>
+    <path d="M176,216c64,0,0-88,64-88-64,0,0-88-64-88H80c-64,0,0,88-64,88,64,0,0,88,64,88Z" fill="currentColor" opacity="0.2"/>
+    <path d="M80,40c-64,0,0,88-64,88,64,0,0,88,64,88" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="16"/>
+    <path d="M176,40c64,0,0,88,64,88-64,0,0,88-64,88" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="16"/>
+  </g>
+  </svg>
+  <text x="45" y="37" font-family="Helvetica, Arial, sans-serif" font-size="13" font-weight="600" fill="black">TinkerKit</text>
+  <!-- 主图标中心为 (135,155) 和 (405,155)，文字与图标中心对齐。 -->
+  <g font-family="Menlo, monospace" font-size="20" fill="black">
+    <text x="262" y="162">.dragTo(</text>
+    <text x="458" y="162">)</text>
+  </g>
+</svg>
