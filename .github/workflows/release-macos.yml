@@ -221,3 +221,68 @@ jobs:
           files: |
             release/TinkerKit-*
             release/SHA256SUMS
+
+  update-homebrew:
+    name: 更新 Homebrew Cask
+    needs: release
+    if: ${{ !contains(github.ref_name, '-') }}
+    runs-on: ubuntu-24.04
+    concurrency:
+      group: homebrew-cask
+      cancel-in-progress: false
+    steps:
+      - name: 检出默认分支
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+
+      - name: 下载发布校验文件
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --pattern SHA256SUMS --dir "$RUNNER_TEMP/homebrew"
+
+      - name: 同步版本与 SHA256
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          python3 - <<'PY'
+          import os
+          import pathlib
+          import re
+
+          version = os.environ["RELEASE_TAG"].removeprefix("v")
+          if not re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", version):
+              raise SystemExit("Homebrew 仅接受稳定版 vX.Y.Z 标签")
+          path = pathlib.Path("Casks/tinker-kit.rb")
+          text = path.read_text()
+          current = re.search(r'(?m)^  version "([^"]+)"$', text)
+          if current is None:
+              raise SystemExit("未找到 Cask 版本")
+          if tuple(map(int, version.split("."))) < tuple(map(int, current[1].split("."))):
+              raise SystemExit("拒绝用旧版本覆盖 Homebrew Cask")
+          filename = f"TinkerKit-{version}-darwin-universal.dmg"
+          sums = pathlib.Path(os.environ["RUNNER_TEMP"], "homebrew", "SHA256SUMS").read_text()
+          matches = [line.split()[0] for line in sums.splitlines() if line.split()[1:] == [filename]]
+          if len(matches) != 1 or not re.fullmatch(r"[0-9a-f]{64}", matches[0]):
+              raise SystemExit("未找到唯一有效的 DMG SHA256")
+          text = re.sub(r'(?m)^  version "[^"]+"$', f'  version "{version}"', text)
+          text, count = re.subn(r'(?m)^  sha256 "[0-9a-f]{64}"$', f'  sha256 "{matches[0]}"', text)
+          if count != 1:
+              raise SystemExit("未找到唯一的 Cask SHA256")
+          path.write_text(text)
+          PY
+
+      - name: 提交 Cask 更新
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          if git diff --quiet -- Casks/tinker-kit.rb; then
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Casks/tinker-kit.rb
+          git commit -m "chore: update Homebrew cask to $RELEASE_TAG"
+          git push origin "HEAD:$DEFAULT_BRANCH"

@@ -68,6 +68,25 @@ The tools below connect to targets you specify (SSH hosts, container hosts, regi
 
 ## Installation
 
+### Homebrew
+
+```bash
+brew tap northes/tinker-kit https://github.com/northes/tinker-kit.git
+brew install --cask northes/tinker-kit/tinker-kit
+```
+
+Requires macOS 12 or later; supports Apple Silicon and Intel. Upgrade or uninstall:
+
+```bash
+brew update
+brew upgrade --cask --greedy northes/tinker-kit/tinker-kit
+brew uninstall --cask northes/tinker-kit/tinker-kit
+```
+
+The app also updates itself, so Homebrew upgrades use `--greedy`. Uninstalling preserves local configuration and history. For first-launch security warnings, follow the instructions below.
+
+### DMG installation
+
 Download the latest `TinkerKit-<version>-darwin-universal.dmg` from [GitHub Releases](https://github.com/northes/tinker-kit/releases) (macOS 12.0 or later):
 
 - One Universal build covers both Apple Silicon and Intel — no need to pick an architecture;

@@ -58,6 +58,25 @@ The tools below connect to targets you specify (SSH hosts, container hosts, regi
 
 ## Installation
 
+### Homebrew
+
+```bash
+brew tap northes/tinker-kit https://github.com/northes/tinker-kit.git
+brew install --cask northes/tinker-kit/tinker-kit
+```
+
+支持 macOS 12 及以上版本，兼容 Apple Silicon 和 Intel。升级与卸载：
+
+```bash
+brew update
+brew upgrade --cask --greedy northes/tinker-kit/tinker-kit
+brew uninstall --cask northes/tinker-kit/tinker-kit
+```
+
+应用支持内置更新，因此通过 Homebrew 升级时使用 `--greedy`。卸载保留本地配置和历史记录。首次启动遇到安全提示时，按下方说明处理。
+
+### DMG 安装
+
 Download the latest `TinkerKit-<version>-darwin-universal.dmg` from [GitHub Releases](https://github.com/northes/tinker-kit/releases) (macOS 12.0 or later):
 
 - One Universal build covers both Apple Silicon and Intel — no need to pick an architecture;
@@ -174,6 +193,8 @@ The workflow builds a Universal package for both Apple Silicon and Intel and upl
 - `TinkerKit-<version>-darwin-universal.dmg` — first-time installation;
 - `TinkerKit-<version>-darwin-universal.zip` — in-app updates;
 - `SHA256SUMS` — file integrity verification.
+
+稳定版 Release 发布成功后，工作流会将 `Casks/tinker-kit.rb` 的版本与 DMG SHA256 同步到仓库默认分支；预发布版本不更新 Cask。仓库需允许 GitHub Actions 写入默认分支；分支保护规则若禁止直接推送，同步任务会失败，需要调整对应规则。首次启用需要先将 Cask 和工作流合并到默认分支。
 
 Releases are ad-hoc signed Universal builds (no Apple Developer certificate or notarization yet); the DMG ships a `Repair` / `修复工具` script so first-time installs can get past Gatekeeper. Should formal distribution be needed later, add Developer ID signing and a `notarytool` step to the workflow. In-app updates always read the latest GitHub Release of the public `northes/tinker-kit` repository.
 
