@@ -1,11 +1,9 @@
 <div align="center">
 
 <h1>
-  <img src="assets/logo/tinkerkit-logo.svg" alt="TinkerKit" height="52" align="middle">
+  <img src="assets/logo/tinkerkit-logo.svg" alt="TinkerKit" height="52" align="absmiddle">
   TinkerKit
 </h1>
-
-<img src="https://skillicons.dev/icons?i=go,react,ts,vite,tailwind,docker&perline=8" alt="Go, React, TypeScript, Vite, Tailwind CSS and Docker" height="44">
 
 ### One workbench for every dev task
 
