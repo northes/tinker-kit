@@ -1,10 +1,11 @@
-import { autocompletion, completionStatus, type CompletionContext } from '@codemirror/autocomplete';
+import { completionStatus, type CompletionContext } from '@codemirror/autocomplete';
 import { StreamLanguage } from '@codemirror/language';
 import { EditorState } from '@codemirror/state';
-import { EditorView, tooltips } from '@codemirror/view';
+import { EditorView } from '@codemirror/view';
 import CodeMirror, { type ReactCodeMirrorRef } from '@uiw/react-codemirror';
 import { useMemo, type Ref } from 'react';
 import { quietEditorTheme } from '../codeMirrorTheme';
+import { editorCompletions } from '../codeMirrorCompletion';
 import '../../styles/tools/editor.css';
 
 // 仅标记词法类别；表达式校验与匹配仍由 Go 过滤器负责。
@@ -89,7 +90,6 @@ export function LogFilterInput({
       EditorView.updateListener.of((update) => {
         onCompletionChange(completionStatus(update.state) !== null);
       }),
-      tooltips({ position: 'fixed', parent: document.body }),
       EditorView.contentAttributes.of({
         'aria-label': label,
         'aria-expanded': String(open),
@@ -102,7 +102,7 @@ export function LogFilterInput({
         ? []
         : [
             filterLanguage,
-            autocompletion({
+            ...editorCompletions({
               tooltipClass: () => 'editor-autocomplete text-sm [--code-editor-font-size:14px]',
               override: [
                 (context: CompletionContext) => {

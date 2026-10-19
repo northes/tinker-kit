@@ -42,7 +42,6 @@ import { codeFolding, syntaxTree } from '@codemirror/language';
 import {
   Decoration,
   EditorView,
-  keymap,
   ViewPlugin,
   highlightSpecialChars,
   highlightWhitespace,
@@ -51,7 +50,6 @@ import {
   WidgetType,
 } from '@codemirror/view';
 import { RangeSetBuilder } from '@codemirror/state';
-import { acceptCompletion } from '@codemirror/autocomplete';
 import { SaveText } from '../../bindings/tinkerkit/fileservice';
 import { JSON_CONVERT_FORMATS, type JsonConvertFormat } from '../lib/json-converter';
 import { useDebouncedJsonConversion } from '../hooks/useDebouncedJsonConversion';
@@ -569,19 +567,7 @@ export default function JsonTool({
     }
   }, [result, resultInspection.status, resultTableMode]);
   const pathExt = useMemo(
-    () => [
-      EditorView.lineWrapping,
-      backendJSONPathCompletions(() => inputRef.current),
-      keymap.of([
-        {
-          key: 'Tab',
-          run: (v) => {
-            acceptCompletion(v);
-            return true;
-          },
-        },
-      ]),
-    ],
+    () => [EditorView.lineWrapping, backendJSONPathCompletions(() => inputRef.current)],
     [],
   );
   const foldExt = useMemo(

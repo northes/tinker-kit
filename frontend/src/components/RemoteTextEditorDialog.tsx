@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import CodeMirror from '@uiw/react-codemirror';
-import { autocompletion, completeAnyWord } from '@codemirror/autocomplete';
-import { EditorView, keymap, tooltips } from '@codemirror/view';
+import { completeAnyWord } from '@codemirror/autocomplete';
+import { EditorView, keymap } from '@codemirror/view';
 import { EditorState, type Extension } from '@codemirror/state';
 import { HighlightStyle, StreamLanguage, syntaxHighlighting } from '@codemirror/language';
 import { tags } from '@lezer/highlight';
@@ -31,6 +31,7 @@ import { protobuf } from '@codemirror/legacy-modes/mode/protobuf';
 import { properties } from '@codemirror/legacy-modes/mode/properties';
 import { ReadRemoteTextFile, SaveRemoteTextFile } from '../../bindings/tinkerkit/fileservice';
 import { quietEditorTheme } from './codeMirrorTheme';
+import { editorCompletions } from './codeMirrorCompletion';
 import { ConfirmDialog } from './ConfirmDialog';
 import { Button } from './ui/button';
 import {
@@ -45,7 +46,6 @@ import { Spinner } from './ui/spinner';
 import { toast } from './ui/toast';
 import { formatBackendError } from '../lib/backend-error';
 import '../styles/tools/editor.css';
-import '../styles/tools/json.css';
 
 const prettierParsers: Record<string, string> = {
   json: 'json',
@@ -168,19 +168,7 @@ export function RemoteTextEditorDialog({ sourceID, path, name, onClose, onSaved 
       editorLanguage(name),
       EditorView.lineWrapping,
       EditorState.languageData.of(() => [{ autocomplete: completeAnyWord }]),
-      autocompletion({ tooltipClass: () => 'json-path-autocomplete' }),
-      tooltips({
-        position: 'absolute',
-        tooltipSpace: (view) => {
-          const rect = view.dom.getBoundingClientRect();
-          return {
-            top: rect.top + 4,
-            left: rect.left + 4,
-            right: rect.right - 4,
-            bottom: rect.bottom - 4,
-          };
-        },
-      }),
+      ...editorCompletions(),
       keymap.of([
         {
           key: 'Mod-s',

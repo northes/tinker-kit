@@ -1,10 +1,10 @@
 import {
-  autocompletion,
   startCompletion,
   type CompletionContext,
   type CompletionResult,
 } from '@codemirror/autocomplete';
-import { EditorView, tooltips } from '@codemirror/view';
+import { EditorView } from '@codemirror/view';
+import { editorCompletions } from './codeMirrorCompletion';
 import {
   QueryJSONPathCompletion,
   QueryPipelineCompletion,
@@ -127,12 +127,10 @@ export function backendJSONPathCompletions(getSource: () => string) {
     }
   };
   return [
-    autocompletion({
+    ...editorCompletions({
       override: [source],
       activateOnTyping: true,
-      tooltipClass: () => 'editor-autocomplete',
     }),
-    tooltips({ position: 'fixed', parent: document.body }),
     normalizePathInput,
   ];
 }
@@ -162,12 +160,10 @@ export function valueCompletions(values: unknown[] | (() => unknown[])) {
     return { from: match?.from ?? context.pos, to: context.pos, options, filter: false };
   };
   return [
-    autocompletion({
+    ...editorCompletions({
       override: [source],
       activateOnTyping: true,
-      tooltipClass: () => 'editor-autocomplete',
     }),
-    tooltips({ position: 'fixed', parent: document.body }),
   ];
 }
 
@@ -254,12 +250,10 @@ export function backendPathCompletions(
     return { from, to: end, options, filter: false };
   };
   return [
-    autocompletion({
+    ...editorCompletions({
       override: [source],
       activateOnTyping: true,
-      tooltipClass: () => 'editor-autocomplete',
     }),
-    tooltips({ position: 'fixed', parent: document.body }),
     normalizePathInput,
   ];
 }
@@ -298,11 +292,9 @@ export function backendValueCompletions(getContext: BackendContextGetter, itemId
     }
   };
   return [
-    autocompletion({
+    ...editorCompletions({
       override: [source],
       activateOnTyping: true,
-      tooltipClass: () => 'editor-autocomplete',
     }),
-    tooltips({ position: 'fixed', parent: document.body }),
   ];
 }

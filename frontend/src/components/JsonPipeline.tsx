@@ -9,8 +9,7 @@ import {
 import { useTranslation } from 'react-i18next';
 import CodeMirror from '@uiw/react-codemirror';
 import { json5 } from 'codemirror-json5';
-import { EditorView, keymap } from '@codemirror/view';
-import { acceptCompletion } from '@codemirror/autocomplete';
+import { EditorView } from '@codemirror/view';
 import {
   DndContext,
   closestCenter,
@@ -230,7 +229,6 @@ function PathField({
       ...(field === 'filterValue'
         ? backendValueCompletions(getContext, itemId)
         : backendPathCompletions(getContext, itemId, field, template)),
-      keymap.of([{ key: 'Tab', run: (view) => acceptCompletion(view) }]),
     ];
   }, [completionRef, field, itemId, template]);
   const smallExtensions = useMemo(
