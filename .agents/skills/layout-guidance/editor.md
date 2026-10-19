@@ -16,11 +16,12 @@
 
 ## CodeMirror 补全弹框
 
-- 补全弹框复用 JSON 工具的实现：`JsonPathCompletion.ts` 使用 `autocompletion({ tooltipClass: () => 'editor-autocomplete' })`；背景、圆角、候选行、选中态与图标样式统一维护在 `frontend/src/styles/tools/editor.css`。使用方显式导入该公共样式，不依赖先打开 JSON 工具，也不复制工具专属选择器或另建补全外观。
+- 所有 CodeMirror 补全入口复用 `frontend/src/components/codeMirrorCompletion.ts` 的 `editorCompletions(config)`，通过 config 传入业务候选源；统一维护补全、浮层定位与 Tab 键位，不在使用方重复装配。公共扩展显式导入样式；背景、圆角、候选行、选中态与图标样式统一维护在 `frontend/src/styles/tools/editor.css`。不依赖先打开 JSON 工具，也不复制工具专属选择器或另建补全外观。
+- Tab 接受当前候选使用 `Prec.high(keymap.of([{ key: 'Tab', run: acceptCompletion }]))`，优先于 React CodeMirror 默认缩进；直接返回命令结果，无可接受候选时交回原有缩进或焦点导航，禁止无条件返回 true 吞键。单行输入保留 `indentWithTab={false}`；方向键、回车、Esc 使用 CodeMirror 默认补全键位，业务捕获阶段的提交逻辑必须先处理补全。
 - 使用 `tooltips({ position: 'fixed', parent: document.body })`，由 CodeMirror 根据光标和视口定位。不要把补全浮层留在带 `overflow: hidden` 的输入框、分栏、ScrollArea 或弹窗内容中，也不要靠取消容器裁切或手算坐标解决。
 - 弹框外壳负责背景、边框、圆角与裁切，候选列表内部滚动；保持公共样式中的视口宽度限制、列表高度限制及 `scrollbar-gutter: auto`，确保滚动内容与选中背景不溢出圆角。
 - 固定字号的输入框需要让挂到 body 的补全弹框使用同一字号，不能依赖输入框祖先的 CSS 变量继承。补全与历史浮层互斥时，以 CodeMirror 的补全状态协调；回车先接受当前补全，再由下一次回车提交输入。
-- 人工验收覆盖直接进入该工具、暗色与亮色、分栏边缘及窗口底部、窄窗口、长候选与列表滚动，确认浮层不被裁切、候选可读，方向键、回车和 Esc 正常；遵守项目禁止浏览器自动化的限制。
+- 人工验收覆盖直接进入该工具、暗色与亮色、分栏边缘及窗口底部、窄窗口、长候选与列表滚动，确认浮层不被裁切、候选可读，方向键、Tab、回车和 Esc 正常，并检查无候选时 Tab 缩进或焦点导航与 Shift+Tab 不受影响；遵守项目禁止浏览器自动化的限制。
 
 ## 可调整分栏
 
