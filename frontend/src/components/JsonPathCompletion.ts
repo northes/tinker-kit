@@ -130,7 +130,7 @@ export function backendJSONPathCompletions(getSource: () => string) {
     autocompletion({
       override: [source],
       activateOnTyping: true,
-      tooltipClass: () => 'json-path-autocomplete',
+      tooltipClass: () => 'editor-autocomplete',
     }),
     tooltips({ position: 'fixed', parent: document.body }),
     normalizePathInput,
@@ -165,7 +165,7 @@ export function valueCompletions(values: unknown[] | (() => unknown[])) {
     autocompletion({
       override: [source],
       activateOnTyping: true,
-      tooltipClass: () => 'json-path-autocomplete',
+      tooltipClass: () => 'editor-autocomplete',
     }),
     tooltips({ position: 'fixed', parent: document.body }),
   ];
@@ -257,7 +257,7 @@ export function backendPathCompletions(
     autocompletion({
       override: [source],
       activateOnTyping: true,
-      tooltipClass: () => 'json-path-autocomplete',
+      tooltipClass: () => 'editor-autocomplete',
     }),
     tooltips({ position: 'fixed', parent: document.body }),
     normalizePathInput,
@@ -301,7 +301,7 @@ export function backendValueCompletions(getContext: BackendContextGetter, itemId
     autocompletion({
       override: [source],
       activateOnTyping: true,
-      tooltipClass: () => 'json-path-autocomplete',
+      tooltipClass: () => 'editor-autocomplete',
     }),
     tooltips({ position: 'fixed', parent: document.body }),
   ];

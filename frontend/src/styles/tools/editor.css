@@ -163,3 +163,79 @@
   color: var(--foreground);
   font-size: 12px;
 }
+
+.json-cm .cm-tooltip-autocomplete,
+.editor-autocomplete.cm-tooltip-autocomplete {
+  min-width: 190px;
+  max-width: min(320px, calc(100vw - 32px));
+  padding: 4px;
+  background: var(--popover);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-md);
+  color: var(--popover-foreground);
+  overflow: hidden;
+}
+.json-cm .cm-tooltip-autocomplete ul,
+.editor-autocomplete.cm-tooltip-autocomplete ul {
+  max-height: 220px;
+  padding: 0;
+  margin: 0;
+  scrollbar-gutter: auto !important;
+}
+.json-cm .cm-tooltip-autocomplete li,
+.editor-autocomplete.cm-tooltip-autocomplete li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 28px;
+  padding: 5px 8px;
+  border-radius: calc(var(--radius) - 4px);
+  color: var(--muted-foreground);
+  white-space: nowrap;
+}
+.json-cm .cm-tooltip-autocomplete li[aria-selected],
+.editor-autocomplete.cm-tooltip-autocomplete li[aria-selected] {
+  background: var(--accent);
+  color: var(--accent-foreground);
+  outline: 1px solid color-mix(in oklch, var(--primary) 18%, transparent);
+  outline-offset: -1px;
+}
+.json-cm .cm-tooltip-autocomplete .cm-completionLabel,
+.editor-autocomplete.cm-tooltip-autocomplete .cm-completionLabel {
+  color: inherit;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.json-cm .cm-tooltip-autocomplete .cm-completionDetail,
+.editor-autocomplete.cm-tooltip-autocomplete .cm-completionDetail {
+  margin-left: auto;
+  color: var(--muted-foreground);
+  font-size: calc(var(--code-editor-font-size) - 2px);
+  opacity: 0.8;
+}
+.json-cm .cm-tooltip-autocomplete .cm-completionIcon,
+.editor-autocomplete.cm-tooltip-autocomplete .cm-completionIcon {
+  width: 16px;
+  min-width: 16px;
+  height: 16px;
+  margin: 0;
+  border: 0;
+  color: var(--primary);
+  font-size: calc(var(--code-editor-font-size) - 2px);
+  opacity: 0.85;
+}
+.json-cm .cm-tooltip-autocomplete .cm-completionIcon::after,
+.editor-autocomplete.cm-tooltip-autocomplete .cm-completionIcon::after {
+  font-weight: 600;
+}
+.json-cm .cm-tooltip-autocomplete .cm-completionIcon.cm-completionIcon-property::after,
+.editor-autocomplete.cm-tooltip-autocomplete
+  .cm-completionIcon.cm-completionIcon-property::after {
+  content: 'ƒ';
+}
+.json-cm .cm-tooltip-autocomplete .cm-completionIcon.cm-completionIcon-keyword::after,
+.editor-autocomplete.cm-tooltip-autocomplete
+  .cm-completionIcon.cm-completionIcon-keyword::after {
+  content: '◇';
+}
