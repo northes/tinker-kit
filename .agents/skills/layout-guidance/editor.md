@@ -14,6 +14,14 @@
 - 切页滚动复位使用 `useLayoutEffect`；workspace 滚动容器增加 `overflow-x: hidden`。
 - flex 中的图标按钮必须显式设置相等的 `width`/`min-width` 和 `flex: none`（或 `flex-shrink: 0`），必要时清除横向 padding，避免窄窗口或长输入压扁按钮。
 
+## CodeMirror 补全弹框
+
+- 补全弹框复用 JSON 工具的实现：`JsonPathCompletion.ts` 使用 `autocompletion({ tooltipClass: () => 'editor-autocomplete' })`；背景、圆角、候选行、选中态与图标样式统一维护在 `frontend/src/styles/tools/editor.css`。使用方显式导入该公共样式，不依赖先打开 JSON 工具，也不复制工具专属选择器或另建补全外观。
+- 使用 `tooltips({ position: 'fixed', parent: document.body })`，由 CodeMirror 根据光标和视口定位。不要把补全浮层留在带 `overflow: hidden` 的输入框、分栏、ScrollArea 或弹窗内容中，也不要靠取消容器裁切或手算坐标解决。
+- 弹框外壳负责背景、边框、圆角与裁切，候选列表内部滚动；保持公共样式中的视口宽度限制、列表高度限制及 `scrollbar-gutter: auto`，确保滚动内容与选中背景不溢出圆角。
+- 固定字号的输入框需要让挂到 body 的补全弹框使用同一字号，不能依赖输入框祖先的 CSS 变量继承。补全与历史浮层互斥时，以 CodeMirror 的补全状态协调；回车先接受当前补全，再由下一次回车提交输入。
+- 人工验收覆盖直接进入该工具、暗色与亮色、分栏边缘及窗口底部、窄窗口、长候选与列表滚动，确认浮层不被裁切、候选可读，方向键、回车和 Esc 正常；遵守项目禁止浏览器自动化的限制。
+
 ## 可调整分栏
 
 - `react-resizable-panels` 会按一组 panel `id` 缓存布局；同一组面板在单栏、左右分栏、上下分栏或不同业务模式下有不同约束时，各状态必须使用独立的 `id` 组合，避免关闭模式后复用旧尺寸。`id` 表示模式下的布局身份，React `key` 表示组件实例身份且保持稳定；不要为清空布局缓存改变 `key`，否则会丢失 CodeMirror 等子组件的撤销记录、滚动位置和内部状态。
