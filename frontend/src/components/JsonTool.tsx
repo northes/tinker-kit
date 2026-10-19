@@ -444,6 +444,10 @@ export default function JsonTool({
   const fmtPathError = (code: string, params?: Record<string, string | undefined>) =>
     t(`jsonTool.errors.${code}`, params);
   const [mode, setMode] = useState<JsonPageMode>('plain');
+  const [primaryCollapsed, setPrimaryCollapsed] = useState(false);
+  const [primarySize, setPrimarySize] = useState(50);
+  const [inputCollapsed, setInputCollapsed] = useState(false);
+  const [secondaryCollapsed, setSecondaryCollapsed] = useState(false);
   const schema = mode === 'schema';
   const pipelineMode = mode === 'pipeline';
   const convertMode = mode === 'convert';
@@ -1045,6 +1049,7 @@ export default function JsonTool({
       });
     return (
       <ToolActionBar
+        className="min-w-0"
         label={t(pane === 'input' ? 'jsonTool.inputActions' : 'jsonTool.resultActions')}
         actions={actions}
       />
@@ -1052,6 +1057,7 @@ export default function JsonTool({
   };
   const pipelineRuleActions = (
     <ToolActionBar
+      className="min-w-0"
       label={t('jsonTool.pipeline.ruleActions')}
       actions={[
         {
@@ -1080,6 +1086,7 @@ export default function JsonTool({
   );
   const pipelineActions = (
     <ToolActionBar
+      className="min-w-0"
       label={t('jsonTool.pipeline.actions')}
       actions={[
         {
@@ -1093,15 +1100,9 @@ export default function JsonTool({
       ]}
     />
   );
-  const footerGridClass = convertMode
-    ? 'grid-cols-1'
-    : pipelineMode
-      ? 'grid-cols-2'
-      : schema
-        ? 'grid-cols-2'
-        : 'grid-cols-1';
   const convertActions = (
     <ToolActionBar
+      className="min-w-0"
       label={t('jsonTool.convert.actions')}
       actions={[
         {
@@ -1374,7 +1375,15 @@ export default function JsonTool({
                   id={`json-primary-${mainLayoutKey}`}
                   defaultSize={splitMode ? '50%' : '100%'}
                   minSize={splitOrientation === 'vertical' ? '25%' : 220}
-                  className="min-h-0 min-w-0"
+                  collapsible={schema || convertMode}
+                  collapsedSize={0}
+                  onResize={(size) => {
+                    setPrimaryCollapsed(size.asPercentage === 0);
+                    setPrimarySize(size.asPercentage);
+                  }}
+                  className={`min-h-0 min-w-0 overflow-hidden${primaryCollapsed ? ' invisible pointer-events-none' : ''}`}
+                  aria-hidden={primaryCollapsed}
+                  inert={primaryCollapsed}
                 >
                   <ResizablePanelGroup
                     id="json-pipeline-split"
@@ -1385,7 +1394,12 @@ export default function JsonTool({
                       id={`json-pipeline-input-${pipelineLayoutKey}`}
                       defaultSize={pipelineMode ? '50%' : '100%'}
                       minSize="20%"
-                      className="min-h-0 min-w-0"
+                      collapsible={pipelineMode}
+                      collapsedSize={0}
+                      onResize={(size) => setInputCollapsed(size.asPercentage === 0)}
+                      className={`min-h-0 min-w-0 overflow-hidden${inputCollapsed ? ' invisible pointer-events-none' : ''}`}
+                      aria-hidden={inputCollapsed}
+                      inert={inputCollapsed}
                     >
                       <div className="flex h-full min-h-0 min-w-0 flex-col">
                         <JsonEditorPane
@@ -1463,7 +1477,12 @@ export default function JsonTool({
                   defaultSize={splitMode ? '50%' : 0}
                   minSize={splitMode ? (splitOrientation === 'vertical' ? '25%' : 220) : 0}
                   maxSize={splitMode ? '100%' : 0}
-                  className="min-h-0 min-w-0"
+                  collapsible={pipelineMode}
+                  collapsedSize={0}
+                  onResize={(size) => setSecondaryCollapsed(size.asPercentage === 0)}
+                  className={`min-h-0 min-w-0 overflow-hidden${secondaryCollapsed ? ' invisible pointer-events-none' : ''}`}
+                  aria-hidden={secondaryCollapsed}
+                  inert={secondaryCollapsed}
                 >
                   <div className="relative h-full min-h-0 min-w-0">
                     <div
@@ -1678,7 +1697,14 @@ export default function JsonTool({
         </ToolLayoutContent>
         <ToolLayoutFooter>
           <div
-            className={`json-footer-actions grid items-start gap-3 ${footerGridClass}${pipelineMode ? ' pipeline-layout' : ''}`}
+            className={`json-footer-actions min-w-0 items-center gap-y-2 pt-3 ${pipelineMode && !splitStacked ? 'grid gap-x-[9px]' : 'flex flex-wrap justify-end gap-x-1.5'}`}
+            style={
+              pipelineMode && !splitStacked
+                ? {
+                    gridTemplateColumns: `minmax(0, ${primarySize}fr) minmax(0, ${100 - primarySize}fr)`,
+                  }
+                : undefined
+            }
           >
             {convertMode ? (
               convertActions
@@ -1688,8 +1714,6 @@ export default function JsonTool({
                   editorActions('input')
                 ) : pipelineMode ? (
                   <div className="json-pipeline-footer-actions min-w-0">{pipelineActions}</div>
-                ) : schema ? (
-                  <div className="min-w-0" aria-hidden="true" />
                 ) : null}
                 {schema && editorActions('result')}
                 {pipelineMode && (
