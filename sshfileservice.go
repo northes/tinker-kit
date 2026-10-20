@@ -491,6 +491,27 @@ func (s *FileService) GetRemoteCreationTimes(sourceID string, remotePaths []stri
 	return result, nil
 }
 
+// GetRemoteFileEntry 解析收藏路径的当前类型，不读取整个父目录。
+func (s *FileService) GetRemoteFileEntry(sourceID, remotePath string) (RemoteFileEntry, error) {
+	_, conn, err := s.sourceSnapshot(sourceID)
+	if err != nil {
+		return RemoteFileEntry{}, err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	session, err := s.acquirePersistentSFTP(ctx, sourceID, conn)
+	if err != nil {
+		return RemoteFileEntry{}, err
+	}
+	defer s.releasePersistentSFTP(session)
+	remotePath = normalizedRemotePath(remotePath)
+	info, err := session.sftp.Lstat(remotePath)
+	if err != nil {
+		return RemoteFileEntry{}, userErrorCause("errors.sshFile.readRemoteItemFailed", err)
+	}
+	return remoteFileEntryFromInfo(remotePath, info, ""), nil
+}
+
 func remoteFileEntryFromInfo(remotePath string, entry os.FileInfo, createdAt string) RemoteFileEntry {
 	mode := entry.Mode()
 	size := int64(0)

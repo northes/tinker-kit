@@ -58,6 +58,13 @@ export function GetRemoteCreationTimes(sourceID: string, remotePaths: string[] |
     return $Call.ByID(3183858800, sourceID, remotePaths);
 }
 
+/**
+ * GetRemoteFileEntry 解析收藏路径的当前类型，不读取整个父目录。
+ */
+export function GetRemoteFileEntry(sourceID: string, remotePath: string): $CancellablePromise<$models.RemoteFileEntry> {
+    return $Call.ByID(1504669771, sourceID, remotePath);
+}
+
 export function ListRemoteFiles(sourceID: string, currentPath: string, showHidden: boolean, requestID: string): $CancellablePromise<$models.RemoteDirectoryListing> {
     return $Call.ByID(1852492260, sourceID, currentPath, showHidden, requestID);
 }
