@@ -1102,6 +1102,7 @@
     "pullPassword": "密码（可选）"
   },
   "serviceManagerTool": {
+    "staleInventory": "{{runtime}} 刷新失败，显示上次成功数据",
     "title": "容器与服务",
     "target": "目标主机",
     "localTarget": "本机",
@@ -1669,6 +1670,12 @@
     }
   },
   "sshFilesTool": {
+    "removeFavoriteDescription": "确定移除收藏 {{path}}？此操作不会删除文件或目录。",
+    "addFavoriteFile": "收藏此文件",
+    "favoriteFileAdded": "已收藏文件",
+    "favoriteFileRemoved": "已移除收藏文件",
+    "favoriteOpenFailed": "无法打开收藏路径",
+    "favoriteFileNotEditable": "该收藏文件当前不支持编辑",
     "title": "SSH 文件管理",
     "source": "目标主机",
     "noSource": "未配置目标主机",
@@ -1702,7 +1709,7 @@
     "searchFailed": "搜索失败",
     "searchNoResults": "未找到匹配文件",
     "searchNoResultsHint": "请尝试修改关键词、搜索方式或搜索范围。",
-    "favorites": "收藏路径",
+    "favorites": "收藏",
     "noFavorites": "暂无收藏路径",
     "addFavorite": "收藏当前路径",
     "removeFavorite": "取消收藏当前路径",

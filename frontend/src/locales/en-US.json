@@ -1102,6 +1102,7 @@
     "pullPassword": "Password (optional)"
   },
   "serviceManagerTool": {
+    "staleInventory": "{{runtime}} refresh failed; showing last successful data",
     "title": "Containers & Services",
     "target": "Target host",
     "localTarget": "Local machine",
@@ -1669,6 +1670,12 @@
     }
   },
   "sshFilesTool": {
+    "removeFavoriteDescription": "Remove {{path}} from favorites? The file or directory will not be deleted.",
+    "addFavoriteFile": "Add file to favorites",
+    "favoriteFileAdded": "Favorite file added",
+    "favoriteFileRemoved": "Favorite file removed",
+    "favoriteOpenFailed": "Failed to open favorite path",
+    "favoriteFileNotEditable": "This favorite file cannot currently be edited",
     "title": "SSH Files",
     "source": "Target host",
     "noSource": "No target host configured",
@@ -1702,7 +1709,7 @@
     "searchFailed": "Search failed",
     "searchNoResults": "No matching files",
     "searchNoResultsHint": "Try a different query, search mode, or scope.",
-    "favorites": "Favorite paths",
+    "favorites": "Favorites",
     "noFavorites": "No favorite paths yet",
     "addFavorite": "Favorite current path",
     "removeFavorite": "Remove current path from favorites",
