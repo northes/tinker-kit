@@ -748,6 +748,15 @@ func dockerImageFromDetail(base DockerImage, detail DockerImageDetail) DockerIma
 	if detail.CreatedAt != "" {
 		updated.CreatedAt = detail.CreatedAt
 	}
+	if detail.Index != nil {
+		updated.Platforms = nil
+		for _, manifest := range detail.Index.Manifests {
+			if manifest.Platform != nil {
+				updated.Platforms = append(updated.Platforms, *manifest.Platform)
+			}
+		}
+		return updated
+	}
 	architecture := detail.Metadata.Architecture
 	if architecture == "" {
 		architecture = detail.Architecture

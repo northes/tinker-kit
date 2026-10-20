@@ -1,10 +1,17 @@
 package main
 
 import (
+	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"io"
+	"net/http"
+	"net/url"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/google/go-containerregistry/pkg/v1"
@@ -29,7 +36,8 @@ func (s *ImageService) inspectWithGeneration(sourceID string, source ImageSource
 		}
 		return s.inspectDockerImage(requestCtx, source, cliPath, imageID)
 	}
-	if detail, ok := s.loadImageCache(sourceID, fingerprint, digest, repository, imageID); ok {
+	// 本地索引摘要不随平台内容的下载/删除改变，不能复用其持久化可用性快照。
+	if detail, ok := s.loadImageCache(sourceID, fingerprint, digest, repository, imageID); ok && (source.Kind == "registry" || detail.Index == nil) {
 		return detail, nil
 	}
 	key := imageCacheKey(sourceID, fingerprint, digest, repository)
@@ -58,7 +66,7 @@ func (s *ImageService) inspectWithGeneration(sourceID string, source ImageSource
 		close(call.done)
 		s.mu.Unlock()
 	}()
-	if detail, ok := s.loadImageCache(sourceID, fingerprint, digest, repository, imageID); ok {
+	if detail, ok := s.loadImageCache(sourceID, fingerprint, digest, repository, imageID); ok && (source.Kind == "registry" || detail.Index == nil) {
 		call.detail = detail
 		return detail, nil
 	}
@@ -104,6 +112,38 @@ func (s *ImageService) inspectDockerImage(ctx context.Context, source ImageSourc
 		return DockerImageDetail{}, userError("errors.image.dockerDetailEmpty")
 	}
 	item := entries[0]
+	var index *RegistryIndex
+	if item.Descriptor != nil && item.Descriptor.MediaType.IsIndex() {
+		// CLI inspect 不请求 manifests；从同一 daemon 读取本地可用内容，不能查询远端索引代替。
+		item, err = s.inspectDockerIndex(commandCtx, source, cliPath, imageID)
+		if err != nil {
+			return DockerImageDetail{}, err
+		}
+		index = &RegistryIndex{SchemaVersion: 2, MediaType: string(entries[0].Descriptor.MediaType)}
+		// inspect.Size 仅属于默认平台；列表的磁盘占用包含所有本地内容和解包数据。
+		// 未完整下载的平台和证明也可能占用空间，大小统计必须在平台过滤之前完成。
+		item.Size = 0
+		seen := map[RegistryPlatform]bool{}
+		for _, manifest := range item.Manifests {
+			item.Size += manifest.Size.Total
+			if !manifest.Available || manifest.Kind != "image" || manifest.ImageData == nil {
+				continue
+			}
+			platform := manifest.ImageData.Platform
+			platform.Architecture = normalizeImageArchitecture(platform.Architecture)
+			if platform.Architecture == "" || platform.OS == "" || platform.OS == "unknown" || seen[platform] {
+				continue
+			}
+			seen[platform] = true
+			descriptor := registryDescriptor(manifest.Descriptor)
+			descriptor.Platform = &platform
+			index.Manifests = append(index.Manifests, descriptor)
+		}
+		sort.Slice(index.Manifests, func(i, j int) bool {
+			a, b := index.Manifests[i].Platform, index.Manifests[j].Platform
+			return a.OS+"/"+a.Architecture+platformVariant(a.Variant) < b.OS+"/"+b.Architecture+platformVariant(b.Variant)
+		})
+	}
 	tags := append([]string(nil), item.RepoTags...)
 	nameValue := ""
 	if len(tags) > 0 {
@@ -128,10 +168,65 @@ func (s *ImageService) inspectDockerImage(ctx context.Context, source ImageSourc
 		Labels:       item.Config.Labels,
 		Command:      item.Config.Cmd,
 		Entrypoint:   item.Config.Entrypoint,
+		Index:        index,
 		Metadata:     metadata,
 		Layers:       dockerRootFSLayers(item.RootFS.Layers),
 		Runtime:      dockerRuntimeConfig(item.Config),
 	}, nil
+}
+
+// dial-stdio 复用 Docker CLI 的 context/连接配置，也适用于 SSH 上的 Docker。
+// 使用结构化 Engine 响应，避免解析 image ls --tree 的终端展示文本。
+func (s *ImageService) inspectDockerIndex(ctx context.Context, source ImageSource, cliPath, imageID string) (dockerImageInspectJSON, error) {
+	var item dockerImageInspectJSON
+	request := "GET /images/" + url.PathEscape(imageID) + "/json?manifests=true HTTP/1.1\r\nHost: docker\r\nConnection: close\r\n\r\n"
+	stdout := &limitedBuffer{limit: maxImageCommandOutput}
+	stderr := &limitedBuffer{limit: maxImageCommandOutput}
+	args := []string{"system", "dial-stdio"}
+	var err error
+	if source.Kind == "ssh" && (source.SSHPassword != "" || source.SSHPrivateKey != "" || source.SSHPrivateKeyPath != "") {
+		client, dialErr := dialAuthenticatedSSH(ctx, source, s.sshLanguage())
+		if dialErr != nil {
+			return item, dialErr
+		}
+		defer client.Close()
+		err = runSSHCommandToWriters(ctx, client, cliPath, strings.NewReader(request), stdout, stderr, args...)
+	} else {
+		name, commandArgs, buildErr := buildImageCommand(source, cliPath, args...)
+		if buildErr != nil {
+			return item, buildErr
+		}
+		cmd := execCommandContext(ctx, name, commandArgs...)
+		cmd.Stdin, cmd.Stdout, cmd.Stderr = strings.NewReader(request), stdout, stderr
+		err = cmd.Run()
+	}
+	if ctx.Err() != nil {
+		return item, ctx.Err()
+	}
+	if err != nil {
+		if stderr.Len() > 0 {
+			err = fmt.Errorf("%w: %s", err, strings.TrimSpace(stderr.String()))
+		}
+		return item, err
+	}
+	response, err := http.ReadResponse(bufio.NewReader(bytes.NewReader(stdout.Bytes())), nil)
+	if err != nil {
+		return item, userErrorCause("errors.image.dockerDetailParseFailed", err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		var failure struct {
+			Message string `json:"message"`
+		}
+		if err := json.NewDecoder(response.Body).Decode(&failure); err != nil {
+			return item, userErrorCause("errors.image.dockerDetailParseFailed", err)
+		}
+		return item, fmt.Errorf("Docker API %s: %s", response.Status, failure.Message)
+	}
+	if err := json.NewDecoder(io.LimitReader(response.Body, maxImageCommandOutput)).Decode(&item); err != nil {
+		return item, userErrorCause("errors.image.dockerDetailParseFailed", err)
+	}
+	return item, nil
 }
 
 func registryDescriptor(value v1.Descriptor) RegistryDescriptor {
@@ -348,6 +443,18 @@ func hashesToStrings(values []v1.Hash) []string {
 }
 
 type dockerImageInspectJSON struct {
+	Descriptor *v1.Descriptor `json:"Descriptor"`
+	Manifests  []struct {
+		Descriptor v1.Descriptor `json:"Descriptor"`
+		Available  bool          `json:"Available"`
+		Size       struct {
+			Total int64 `json:"Total"`
+		} `json:"Size"`
+		Kind      string `json:"Kind"`
+		ImageData *struct {
+			Platform RegistryPlatform `json:"Platform"`
+		} `json:"ImageData"`
+	} `json:"Manifests"`
 	ID           string    `json:"Id"`
 	RepoTags     []string  `json:"RepoTags"`
 	Size         int64     `json:"Size"`

@@ -33,8 +33,8 @@ type imageInventory struct {
 	Tags []string
 }
 
-// 详情字段扩展后必须淘汰旧缓存，避免旧 JSON 缺少 layers/runtime/rawManifest。
-const imageCacheSchema = 2
+// 淘汰未识别本地多架构索引的旧详情，避免继续把默认架构当成全部平台。
+const imageCacheSchema = 3
 
 func imageCacheKey(sourceID, fingerprint, imageID, repository string) string {
 	value := sourceID + "\x00" + fingerprint + "\x00" + imageID + "\x00" + repository
