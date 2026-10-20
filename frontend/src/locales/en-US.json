@@ -1092,6 +1092,8 @@
     "architectureMulti": "Multi-arch",
     "architectureHint": "Image architectures: {{architectures}}",
     "pullPlatform": "Architecture",
+    "architectureUnknown": "Unknown",
+    "pullCurrentPlatform": "Current architecture ({{architecture}})",
     "pullAllPlatforms": "All architectures",
     "resolvePullPlatforms": "Resolve supported architectures",
     "pullPlatformsIdle": "Not resolved. Click the button to fetch supported architectures.",

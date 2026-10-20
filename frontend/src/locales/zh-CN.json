@@ -1092,6 +1092,8 @@
     "architectureMulti": "多架构",
     "architectureHint": "镜像架构：{{architectures}}",
     "pullPlatform": "架构",
+    "architectureUnknown": "未知",
+    "pullCurrentPlatform": "当前架构（{{architecture}}）",
     "pullAllPlatforms": "全部架构",
     "resolvePullPlatforms": "解析支持的架构",
     "pullPlatformsIdle": "尚未解析，点击右侧按钮获取支持的架构。",

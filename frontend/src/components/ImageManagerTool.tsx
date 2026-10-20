@@ -342,6 +342,12 @@ export default function ImageManagerTool({
   const interactionBlocked = busy !== null;
   const sourceSupportsDockerMutations = source.kind !== 'registry';
   const isRegistrySource = source.kind === 'registry';
+  const currentPullPlatform = status?.localArchitecture
+    ? `linux/${status.localArchitecture}`
+    : '';
+  const currentPullPlatformLabel = t('imageManagerTool.pullCurrentPlatform', {
+    architecture: status?.localArchitecture || t('imageManagerTool.architectureUnknown'),
+  });
   const sourceCanDelete = (source as ManagedImageSource).capabilities?.canDelete ?? true;
   const registryConfirmDigests =
     confirm?.type === 'delete' && confirm.sourceKind === 'registry'
@@ -687,7 +693,7 @@ export default function ImageManagerTool({
       target: '',
       username: '',
       password: '',
-      platform: 'all',
+      platform: 'current',
       platforms: [],
       platformStatus: 'idle',
       platformError: '',
@@ -729,7 +735,7 @@ export default function ImageManagerTool({
               (!current.target || current.target === suggestedPullTarget(current.value))
                 ? suggestedPullTarget(patch.value)
                 : current.target,
-            platform: 'all',
+            platform: 'current',
             platforms: [],
             platformStatus: 'idle',
             platformError: '',
@@ -751,7 +757,7 @@ export default function ImageManagerTool({
       current?.type === 'pull-image'
         ? {
             ...current,
-            platform: 'all',
+            platform: 'current',
             platforms: [],
             platformStatus: 'loading',
             platformError: '',
@@ -833,6 +839,12 @@ export default function ImageManagerTool({
       return;
     }
     if (operationDialog.type === 'pull-image') {
+      const options = {
+        ...operationDialog,
+        platform:
+          operationDialog.platform === 'current' ? currentPullPlatform : operationDialog.platform,
+      };
+      if (operationDialog.platform === 'current' && !currentPullPlatform) return;
       if (!value) {
         setOperationError(t('imageManagerTool.operationInputRequired'));
         return;
@@ -842,11 +854,11 @@ export default function ImageManagerTool({
           setOperationError(t('imageManagerTool.operationInputRequired'));
           return;
         }
-        void runRegistryPull(value, operationDialog.target.trim(), operationDialog);
+        void runRegistryPull(value, operationDialog.target.trim(), options);
       } else {
         setOperationDialog(null);
         setOperationError('');
-        void runPullRefs([value], operationDialog);
+        void runPullRefs([value], options);
       }
       return;
     }
@@ -1862,6 +1874,7 @@ export default function ImageManagerTool({
                   <Select
                     value={operationDialog.platform}
                     items={[
+                      { value: 'current', label: currentPullPlatformLabel },
                       { value: 'all', label: t('imageManagerTool.pullAllPlatforms') },
                       ...operationDialog.platforms.map((value) => ({ value, label: value })),
                     ]}
@@ -1873,7 +1886,7 @@ export default function ImageManagerTool({
                     onValueChange={(value) =>
                       setOperationDialog((current) =>
                         current?.type === 'pull-image'
-                          ? { ...current, platform: value ?? 'all' }
+                          ? { ...current, platform: value ?? 'current' }
                           : current,
                       )
                     }
@@ -1883,6 +1896,9 @@ export default function ImageManagerTool({
                     </SelectTrigger>
                     <SelectContent>
                       <SelectGroup>
+                        <SelectItem value="current" disabled={!currentPullPlatform}>
+                          {currentPullPlatformLabel}
+                        </SelectItem>
                         <SelectItem value="all">
                           {t('imageManagerTool.pullAllPlatforms')}
                         </SelectItem>
@@ -2021,7 +2037,10 @@ export default function ImageManagerTool({
                 disabled={
                   busy !== null ||
                   pullStarting ||
-                  (operationDialog?.type === 'rename' && !renameReady)
+                  (operationDialog?.type === 'rename' && !renameReady) ||
+                  (operationDialog?.type === 'pull-image' &&
+                    operationDialog.platform === 'current' &&
+                    !currentPullPlatform)
                 }
               >
                 {busy || pullStarting ? <Spinner data-icon="inline-start" /> : null}
