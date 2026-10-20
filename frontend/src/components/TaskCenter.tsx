@@ -215,6 +215,7 @@ export function TaskCenter({
     taskChunkConcurrency: settings.taskChunkConcurrency ?? 4,
   });
   const [viewport, setViewport] = useState<HTMLElement | null>(null);
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
   const buffered = useRef<Array<{ kind: 'image' | 'file'; data: any }>>([]);
   const imageRevision = useRef(-1);
   const fileRevision = useRef(-1);
@@ -593,7 +594,10 @@ export function TaskCenter({
   return (
     <TaskCenterContext.Provider value={openTaskCenter}>
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="flex h-[600px] max-h-[calc(100dvh-var(--app-titlebar-height)-4rem)] min-h-0 flex-col sm:max-w-lg">
+        <DialogContent
+          initialFocus={closeButtonRef}
+          className="flex h-[600px] max-h-[calc(100dvh-var(--app-titlebar-height)-4rem)] min-h-0 flex-col sm:max-w-lg"
+        >
           <DialogHeader className="shrink-0">
             <DialogTitle>{t('taskCenter.title')}</DialogTitle>
           </DialogHeader>
@@ -985,7 +989,7 @@ export function TaskCenter({
                 </span>
               </div>
             </div>
-            <Button variant="outline" onClick={() => setOpen(false)}>
+            <Button ref={closeButtonRef} variant="outline" onClick={() => setOpen(false)}>
               {t('common.close')}
             </Button>
           </DialogFooter>
