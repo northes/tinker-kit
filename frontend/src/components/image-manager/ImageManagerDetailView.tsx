@@ -35,7 +35,9 @@ export function ImageManagerDetailView({
         {
           key: 'names',
           label: t('imageManagerTool.detailNames'),
-          value: [detail.name, ...asStringList(detail.tags)].filter(Boolean).join(', ') || unnamed,
+          value:
+            [...new Set([detail.name, ...asStringList(detail.tags)].filter(Boolean))].join(', ') ||
+            unnamed,
         },
         {
           key: 'repository',
