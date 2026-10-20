@@ -2,11 +2,14 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"sort"
 	"strings"
 
+	"github.com/google/go-containerregistry/pkg/name"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
+	"github.com/google/go-containerregistry/pkg/v1/types"
 )
 
 // uname、Docker 和 OCI 使用的常见 CPU 名称统一为 OCI 架构名。
@@ -117,11 +120,15 @@ func collectRegistryPlatforms(ctx context.Context, index v1.ImageIndex, platform
 			continue
 		}
 		if descriptor.Platform != nil {
-			architecture := normalizeImageArchitecture(descriptor.Platform.Architecture)
-			if architecture != "" {
-				platforms[RegistryPlatform{Architecture: architecture, OS: descriptor.Platform.OS, Variant: descriptor.Platform.Variant}] = true
+			platform := descriptor.Platform
+			if platform.OS == "unknown" || platform.Architecture == "unknown" {
+				continue
 			}
-			continue
+			architecture := normalizeImageArchitecture(platform.Architecture)
+			if architecture != "" && platform.OS != "" {
+				platforms[RegistryPlatform{Architecture: architecture, OS: platform.OS, Variant: platform.Variant}] = true
+				continue
+			}
 		}
 		image, err := index.Image(descriptor.Digest)
 		if err != nil {
@@ -136,4 +143,94 @@ func collectRegistryPlatforms(ctx context.Context, index v1.ImageIndex, platform
 		}
 	}
 	return nil
+}
+
+// CLI 来源读取原始索引，避免 manifest inspect 为每个平台请求 manifest 和 config。
+// CLI 在来源主机上运行，继续使用该主机的认证和网络配置。
+func (s *ImageService) resolveCLIImagePullPlatforms(ctx context.Context, source ImageSource, cliPath, image string, reference name.Reference) ([]string, error) {
+	values := map[string]bool{}
+	visited := map[string]bool{}
+	completed := map[string]bool{}
+	var collect func(string) error
+	collectLeaf := func(ref string) error {
+		if completed[ref] {
+			return nil
+		}
+		data, err := s.runDockerSnapshotContext(ctx, source, cliPath, []string{"manifest", "inspect", "--verbose", ref})
+		if err != nil {
+			return err
+		}
+		platforms, err := cliManifestPlatforms(data)
+		if err != nil {
+			return err
+		}
+		for _, platform := range platforms {
+			values[platform] = true
+		}
+		completed[ref] = true
+		return nil
+	}
+	collect = func(ref string) error {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if visited[ref] {
+			return userError("errors.image.registryPlatformCycle")
+		}
+		if completed[ref] {
+			return nil
+		}
+		visited[ref] = true
+		defer delete(visited, ref)
+		data, err := s.runDockerSnapshotContext(ctx, source, cliPath, []string{"buildx", "imagetools", "inspect", "--raw", ref})
+		if err != nil {
+			return err
+		}
+		var manifest struct {
+			MediaType types.MediaType `json:"mediaType"`
+			Manifests []v1.Descriptor `json:"manifests"`
+		}
+		if err := json.Unmarshal(data, &manifest); err != nil {
+			return err
+		}
+		if !manifest.MediaType.IsIndex() && manifest.Manifests == nil {
+			return collectLeaf(ref)
+		}
+		for _, descriptor := range manifest.Manifests {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+			if descriptor.Annotations["vnd.docker.reference.type"] == "attestation-manifest" {
+				continue
+			}
+			child := reference.Context().Digest(descriptor.Digest.String()).Name()
+			if descriptor.MediaType.IsIndex() {
+				if err := collect(child); err != nil {
+					return err
+				}
+				continue
+			}
+			if descriptor.Platform != nil {
+				platform := descriptor.Platform
+				architecture := normalizeImageArchitecture(platform.Architecture)
+				// unknown/unknown 是证明等非运行内容，不能当成缺失信息补查。
+				if platform.OS == "unknown" || platform.Architecture == "unknown" {
+					continue
+				}
+				if platform.OS != "" && architecture != "" {
+					values[platform.OS+"/"+architecture+platformVariant(platform.Variant)] = true
+					continue
+				}
+			}
+			if err := collectLeaf(child); err != nil {
+				return err
+			}
+		}
+		completed[ref] = true
+		return nil
+	}
+	if err := collect(image); err != nil {
+		return nil, err
+	}
+	return sortedPullPlatforms(values)
 }

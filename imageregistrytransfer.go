@@ -219,11 +219,7 @@ func (s *ImageService) resolveImagePullPlatforms(ctx context.Context, source Ima
 			return nil, redactRegistryError(err, origin)
 		}
 	} else {
-		data, err := s.runDockerSnapshotContext(ctx, source, cliPath, []string{"manifest", "inspect", "--verbose", strings.TrimSpace(image)})
-		if err != nil {
-			return nil, err
-		}
-		return cliManifestPlatforms(data)
+		return s.resolveCLIImagePullPlatforms(ctx, source, cliPath, strings.TrimSpace(image), reference)
 	}
 	values := map[string]bool{}
 	for _, platform := range platforms {
