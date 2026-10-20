@@ -1,3 +1,4 @@
+import { mergeServiceInventory } from '../lib/service-inventory';
 import {
   ArrowsClockwise,
   CaretDown,
@@ -177,7 +178,9 @@ export default function ServiceManagerTool({
   const [lines, setLines] = useState<ServiceLogLine[]>([]);
   const [truncated, setTruncated] = useState(false);
   const [highlightPattern, setHighlightPattern] = useState('');
-  const [highlightPatterns, setHighlightPatterns] = useState<Record<string, string | undefined>>({});
+  const [highlightPatterns, setHighlightPatterns] = useState<Record<string, string | undefined>>(
+    {},
+  );
   const [manageOpen, setManageOpen] = useState(false);
   const [savingTargets, setSavingTargets] = useState(false);
   const [pendingAction, setPendingAction] = useState<{
@@ -196,6 +199,19 @@ export default function ServiceManagerTool({
   } | null>(null);
   const [pickSelection, setPickSelection] = useState<Set<string>>(new Set());
   const monitorLoadVersion = useRef(0);
+  const inventoryRequests = useRef(new Map<string, ReturnType<typeof GetServiceInventory>>());
+  const inventoryLoadVersion = useRef(0);
+  const requestInventory = (id: string) => {
+    const existing = inventoryRequests.current.get(id);
+    if (existing) return existing;
+    const request = GetServiceInventory(id);
+    inventoryRequests.current.set(id, request);
+    const cleanup = () => {
+      if (inventoryRequests.current.get(id) === request) inventoryRequests.current.delete(id);
+    };
+    void request.then(cleanup, cleanup);
+    return request;
+  };
 
   useEffect(() => {
     const media = window.matchMedia('(max-width: 800px)');
@@ -213,21 +229,23 @@ export default function ServiceManagerTool({
   };
 
   const load = async (nextTarget = targetID, refreshDetails = false) => {
+    const version = ++inventoryLoadVersion.current;
     setLoading(true);
     try {
-      const next = await GetServiceInventory(nextTarget);
-      if (targetIDRef.current !== nextTarget) return;
-      setInventory(next);
+      const next = await requestInventory(nextTarget);
+      if (targetIDRef.current !== nextTarget || version !== inventoryLoadVersion.current) return;
+      setInventory((current) => mergeServiceInventory(current, next));
       if (refreshDetails) setDetailRefreshVersion((value) => value + 1);
     } catch (error) {
-      if (targetIDRef.current !== nextTarget) return;
+      if (targetIDRef.current !== nextTarget || version !== inventoryLoadVersion.current) return;
       toast.add({
         title: t('serviceManagerTool.refreshFailed'),
         description: formatBackendError(error),
         type: 'error',
       });
     } finally {
-      if (targetIDRef.current === nextTarget) setLoading(false);
+      if (targetIDRef.current === nextTarget && version === inventoryLoadVersion.current)
+        setLoading(false);
     }
   };
   const loadMonitors = async () => {
@@ -314,12 +332,15 @@ export default function ServiceManagerTool({
       .catch(() => setTargets([]));
   }, [profiles]);
   useEffect(() => {
+    setInventory(null);
     void load(targetID);
     void loadMonitors();
   }, [targetID]);
   useEffect(() => {
     if (!active) return;
-    const timer = window.setInterval(() => void load(), 5000);
+    const timer = window.setInterval(() => {
+      if (!inventoryRequests.current.has(targetID)) void load();
+    }, 5000);
     return () => window.clearInterval(timer);
   }, [active, targetID]);
   useEffect(() => {
@@ -327,13 +348,18 @@ export default function ServiceManagerTool({
     const hostIDs = pickedTargetIDs;
     if (!hostIDs.length) return;
     let cancelled = false;
+    let running = false;
     const refresh = async () => {
-      const results = await Promise.allSettled(hostIDs.map((id) => GetServiceInventory(id)));
+      if (running) return;
+      running = true;
+      const results = await Promise.allSettled(hostIDs.map((id) => requestInventory(id)));
+      running = false;
       if (cancelled) return;
       setPickedInventories((current) => {
         const next = { ...current };
         results.forEach((result, index) => {
-          if (result.status === 'fulfilled') next[hostIDs[index]] = result.value;
+          if (result.status === 'fulfilled')
+            next[hostIDs[index]] = mergeServiceInventory(current[hostIDs[index]], result.value);
         });
         return next;
       });
@@ -1056,9 +1082,7 @@ export default function ServiceManagerTool({
                           ) : null}
                           <ResourceList
                             targetID={hostID}
-                            inventory={
-                              pickedErrors[hostID] ? null : (pickedInventories[hostID] ?? null)
-                            }
+                            inventory={pickedInventories[hostID] ?? null}
                             pickedResources={pickedMembers
                               .filter((member) => member.targetID === hostID)
                               .map((member) => member.resource)}

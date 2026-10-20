@@ -20,6 +20,11 @@ includes:
   android: ./build/android/Taskfile.yml
 
 tasks:
+  test:service-inventory:
+    summary: Checks service inventory refresh failure and recovery
+    cmds:
+      - node --experimental-strip-types --test frontend/src/lib/service-inventory.test.mjs
+
   test:go:
     summary: Runs Go tests
     cmds:

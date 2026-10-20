@@ -816,6 +816,8 @@ export interface ServiceInventory {
     "docker": ServiceRuntimeStatus;
     "pm2": ServiceRuntimeStatus;
     "systemd": ServiceRuntimeStatus;
+    "systemdSystem": ServiceRuntimeStatus;
+    "systemdUser": ServiceRuntimeStatus;
     "dockerGroups": DockerComposeGroup[] | null;
     "containers": DockerContainer[] | null;
     "pm2Processes": PM2Process[] | null;

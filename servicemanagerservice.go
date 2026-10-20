@@ -89,14 +89,16 @@ type SystemdUnit struct {
 }
 
 type ServiceInventory struct {
-	Target       ServiceTarget        `json:"target"`
-	Docker       ServiceRuntimeStatus `json:"docker"`
-	PM2          ServiceRuntimeStatus `json:"pm2"`
-	Systemd      ServiceRuntimeStatus `json:"systemd"`
-	DockerGroups []DockerComposeGroup `json:"dockerGroups"`
-	Containers   []DockerContainer    `json:"containers"`
-	PM2Processes []PM2Process         `json:"pm2Processes"`
-	SystemUnits  []SystemdUnit        `json:"systemUnits"`
+	Target        ServiceTarget        `json:"target"`
+	Docker        ServiceRuntimeStatus `json:"docker"`
+	PM2           ServiceRuntimeStatus `json:"pm2"`
+	Systemd       ServiceRuntimeStatus `json:"systemd"`
+	SystemdSystem ServiceRuntimeStatus `json:"systemdSystem"`
+	SystemdUser   ServiceRuntimeStatus `json:"systemdUser"`
+	DockerGroups  []DockerComposeGroup `json:"dockerGroups"`
+	Containers    []DockerContainer    `json:"containers"`
+	PM2Processes  []PM2Process         `json:"pm2Processes"`
+	SystemUnits   []SystemdUnit        `json:"systemUnits"`
 }
 
 type ServiceResourceRef struct {
@@ -492,32 +494,65 @@ func (s *ServiceManagerService) GetServiceInventory(targetID string) ServiceInve
 	if err != nil {
 		return ServiceInventory{Target: ServiceTarget{ID: targetID}, Docker: ServiceRuntimeStatus{Error: err.Error()}, PM2: ServiceRuntimeStatus{Error: err.Error()}, Systemd: ServiceRuntimeStatus{Error: err.Error()}}
 	}
-	ctx, cancel := context.WithTimeout(s.ctx, serviceCommandTimeout)
-	defer cancel()
+	// 各运行时独立查询，避免慢命令耗尽其他运行时的超时预算。
 	result := ServiceInventory{Target: target, DockerGroups: []DockerComposeGroup{}, Containers: []DockerContainer{}, PM2Processes: []PM2Process{}, SystemUnits: []SystemdUnit{}}
-	if containers, e := s.listContainers(ctx, source, dockerCLI); e != nil {
-		result.Docker.Error = e.Error()
-	} else {
-		result.Docker.Available = true
-		result.DockerGroups, result.Containers = groupDockerContainers(containers)
+	var wg sync.WaitGroup
+	wg.Add(4)
+	go func() {
+		defer wg.Done()
+		ctx, cancel := context.WithTimeout(s.ctx, serviceCommandTimeout)
+		defer cancel()
+		if containers, e := s.listContainers(ctx, source, dockerCLI); e != nil {
+			result.Docker.Error = e.Error()
+		} else {
+			result.Docker.Available = true
+			result.DockerGroups, result.Containers = groupDockerContainers(containers)
+		}
+	}()
+	go func() {
+		defer wg.Done()
+		ctx, cancel := context.WithTimeout(s.ctx, serviceCommandTimeout)
+		defer cancel()
+		if processes, e := s.listPM2(ctx, source); e != nil {
+			result.PM2.Error = e.Error()
+		} else {
+			result.PM2.Available = true
+			result.PM2Processes = processes
+		}
+	}()
+	var systemUnits, userUnits []SystemdUnit
+	for _, scope := range []string{"system", "user"} {
+		go func(scope string) {
+			defer wg.Done()
+			ctx, cancel := context.WithTimeout(s.ctx, serviceCommandTimeout)
+			defer cancel()
+			units, e := s.listSystemd(ctx, source, scope)
+			status := ServiceRuntimeStatus{Available: e == nil}
+			if e != nil {
+				status.Error = e.Error()
+			}
+			if scope == "system" {
+				result.SystemdSystem = status
+				systemUnits = units
+			} else {
+				result.SystemdUser = status
+				userUnits = units
+			}
+		}(scope)
 	}
-	if processes, e := s.listPM2(ctx, source); e != nil {
-		result.PM2.Error = e.Error()
-	} else {
-		result.PM2.Available = true
-		result.PM2Processes = processes
-	}
-	if units, e := s.listSystemd(ctx, source, "system"); e != nil {
-		result.Systemd.Error = e.Error()
-	} else {
-		result.Systemd.Available = true
-		result.SystemUnits = append(result.SystemUnits, units...)
-	}
-	if units, e := s.listSystemd(ctx, source, "user"); e == nil {
-		result.Systemd.Available = true
-		result.SystemUnits = append(result.SystemUnits, units...)
-	} else if !result.Systemd.Available && result.Systemd.Error == "" {
-		result.Systemd.Error = e.Error()
+	wg.Wait()
+	result.SystemUnits = append(systemUnits, userUnits...)
+	result.Systemd.Available = result.SystemdSystem.Available || result.SystemdUser.Available
+	result.Systemd.Error = strings.Join(nonEmptyServiceErrors(result.SystemdSystem.Error, result.SystemdUser.Error), "; ")
+	return result
+}
+
+func nonEmptyServiceErrors(values ...string) []string {
+	var result []string
+	for _, value := range values {
+		if value != "" {
+			result = append(result, value)
+		}
 	}
 	return result
 }

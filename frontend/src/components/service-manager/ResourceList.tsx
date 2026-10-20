@@ -379,6 +379,16 @@ export function ResourceList({
   const showRuntimeSection = (visibleItems: number) => visibleItems > 0 || (!allowed && !search);
   const content = (
     <>
+      {inventory &&
+        (['docker', 'pm2', 'systemd'] as const).map((runtime) =>
+          inventory[runtime].available && inventory[runtime].error ? (
+            <RuntimeError
+              key={runtime}
+              name={t('serviceManagerTool.staleInventory', { runtime })}
+              error={inventory[runtime].error}
+            />
+          ) : null,
+        )}
       {inventory && runtimeFiltered(statuses, 'docker') ? (
         <>
           {inventory.docker.available ? (
