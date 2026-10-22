@@ -77,6 +77,71 @@ const yamlSyntax = syntaxHighlighting(
     { tag: tags.content, color: 'var(--success)' },
   ]),
 );
+const dotenvSyntax = syntaxHighlighting(
+  HighlightStyle.define([
+    { tag: [tags.propertyName, tags.definition(tags.propertyName)], color: 'var(--primary)' },
+  ]),
+);
+
+type DotenvState = { mode: 'key' | 'separator' | 'value'; quote: '' | '"' | "'" };
+
+// dotenv 没有标准解析器，按行区分键、等号、值与注释，保证 .env 文件可见着色。
+const dotenvLanguage = StreamLanguage.define<DotenvState>({
+  name: 'dotenv',
+  startState: () => ({ mode: 'key', quote: '' }),
+  token(stream, state) {
+    if (stream.sol()) {
+      state.mode = 'key';
+      state.quote = '';
+    }
+    if (stream.eatSpace() || stream.eol()) return null;
+
+    const ch = stream.peek() as string;
+
+    if (state.quote) {
+      stream.next();
+      if (ch === state.quote) state.quote = '';
+      return 'string';
+    }
+
+    if (state.mode === 'key') {
+      if (ch === '#') {
+        stream.skipToEnd();
+        return 'comment';
+      }
+      if (stream.match(/^export\b/)) return 'keyword';
+      if (stream.match(/^[A-Za-z0-9_.-]+/)) {
+        state.mode = 'separator';
+        return 'propertyName';
+      }
+      stream.next();
+      return null;
+    }
+
+    if (state.mode === 'separator') {
+      stream.next();
+      if (ch === '=') {
+        state.mode = 'value';
+        return 'operator';
+      }
+      return null;
+    }
+
+    if (ch === '"' || ch === "'") {
+      state.quote = ch;
+      stream.next();
+      return 'string';
+    }
+    if (ch === '#' && (stream.pos === 0 || /\s/.test(stream.string[stream.pos - 1]))) {
+      stream.skipToEnd();
+      return 'comment';
+    }
+    if (ch === '$' && (stream.match(/^\$\{[^}]*\}/) || stream.match(/^\$[A-Za-z_][A-Za-z0-9_]*/)))
+      return 'string-2';
+    stream.next();
+    return 'string';
+  },
+});
 
 function extension(name: string) {
   return name.toLowerCase().split('.').pop() ?? '';
@@ -111,8 +176,8 @@ function editorLanguage(name: string): Extension {
   if (['diff', 'patch'].includes(ext)) return StreamLanguage.define(diff);
   if (ext === 'toml') return StreamLanguage.define(toml);
   if (ext === 'proto') return StreamLanguage.define(protobuf);
-  if (['ini', 'properties', 'env', 'cfg', 'conf'].includes(ext) || lower.startsWith('.env'))
-    return StreamLanguage.define(properties);
+  if (ext === 'env' || lower.startsWith('.env')) return [dotenvLanguage, dotenvSyntax];
+  if (['ini', 'properties', 'cfg', 'conf'].includes(ext)) return StreamLanguage.define(properties);
   return [];
 }
 
