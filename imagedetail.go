@@ -19,8 +19,8 @@ import (
 	"github.com/google/go-containerregistry/pkg/v1/types"
 )
 
-func (s *ImageService) inspectWithSnapshot(sourceID string, source ImageSource, cliPath, fingerprint, imageID, repository string) (DockerImageDetail, error) {
-	return s.inspectWithGeneration(sourceID, source, cliPath, fingerprint, imageID, repository, s.serviceContext(), imageDetailForeground, 0)
+func (s *ImageService) inspectWithSnapshot(ctx context.Context, sourceID string, source ImageSource, cliPath, fingerprint, imageID, repository string) (DockerImageDetail, error) {
+	return s.inspectWithGeneration(sourceID, source, cliPath, fingerprint, imageID, repository, ctx, imageDetailForeground, 0)
 }
 
 func (s *ImageService) inspectWithGeneration(sourceID string, source ImageSource, cliPath, fingerprint, imageID, repository string, requestCtx context.Context, requestClass imageDetailRequestClass, generation uint64) (DockerImageDetail, error) {
@@ -469,7 +469,8 @@ type dockerImageInspectJSON struct {
 	} `json:"RootFS"`
 }
 
-func (s *ImageService) InspectDockerImage(sourceID string, imageID string) (DockerImageDetail, error) {
+// InspectDockerImage 的 ctx 来自 Wails 绑定调用；前端取消时中断镜像详情查询。
+func (s *ImageService) InspectDockerImage(ctx context.Context, sourceID string, imageID string) (DockerImageDetail, error) {
 	taskID := s.newImageTask(imageTaskTypeDetail, sourceID, imageID)
 	s.updateTask(taskID, func(task *imageTaskState) {
 		task.Status = imageTaskRunning
@@ -478,7 +479,12 @@ func (s *ImageService) InspectDockerImage(sourceID string, imageID string) (Dock
 	})
 	finish := func(detail DockerImageDetail, err error) (DockerImageDetail, error) {
 		if err != nil {
+			canceled := errors.Is(err, context.Canceled)
 			s.updateTask(taskID, func(task *imageTaskState) {
+				if canceled {
+					task.Status, task.Stage = imageTaskCanceled, imageTaskCanceled
+					return
+				}
 				task.Status = imageTaskFailed
 				task.Stage = "failed"
 				task.Error = err.Error()
@@ -506,5 +512,5 @@ func (s *ImageService) InspectDockerImage(sourceID string, imageID string) (Dock
 	} else if !validImageReference(imageID) {
 		return finish(DockerImageDetail{}, userError("errors.image.imageIDInvalid"))
 	}
-	return finish(s.inspectWithSnapshot(sourceID, source, cliPath, fingerprint, imageID, repository))
+	return finish(s.inspectWithSnapshot(ctx, sourceID, source, cliPath, fingerprint, imageID, repository))
 }

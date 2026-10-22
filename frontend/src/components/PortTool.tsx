@@ -353,7 +353,9 @@ export default function PortTool({ active }: { active: boolean }) {
     direction: 'asc',
   });
   const [loading, setLoading] = useState(false);
+  const [portsCanceled, setPortsCanceled] = useState(false);
   const scanRevision = useRef(0);
+  const portsRequest = useRef<ReturnType<typeof ListPorts> | null>(null);
   const [error, setError] = useState('');
   const [dialog, setDialog] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -397,18 +399,33 @@ export default function PortTool({ active }: { active: boolean }) {
 
   const refreshPorts = useCallback(async () => {
     const revision = ++scanRevision.current;
+    portsRequest.current?.cancel();
+    setPortsCanceled(false);
     setLoading(true);
     setPorts([]);
     setError('');
+    const request = ListPorts(source);
+    portsRequest.current = request;
     try {
-      const result = await ListPorts(source);
+      const result = await request;
       if (revision === scanRevision.current) setPorts(result ?? []);
     } catch (cause) {
       if (revision === scanRevision.current) setError(formatBackendError(cause));
     } finally {
+      if (portsRequest.current === request) portsRequest.current = null;
       if (revision === scanRevision.current) setLoading(false);
     }
   }, [source]);
+  const cancelPorts = () => {
+    const request = portsRequest.current;
+    if (!request) return;
+    portsRequest.current = null;
+    scanRevision.current++;
+    void request.cancel();
+    setLoading(false);
+    setPortsCanceled(true);
+    setError('');
+  };
   const refreshForwards = useCallback(async () => {
     try {
       setForwards((await GetForwards()) ?? []);
@@ -417,7 +434,14 @@ export default function PortTool({ active }: { active: boolean }) {
     }
   }, []);
   useEffect(() => {
-    if (active) void refreshPorts();
+    if (!active) {
+      scanRevision.current++;
+      const request = portsRequest.current;
+      portsRequest.current = null;
+      void request?.cancel();
+      return;
+    }
+    void refreshPorts();
   }, [active, refreshPorts]);
   useEffect(() => {
     if (!active) return;
@@ -771,15 +795,17 @@ export default function PortTool({ active }: { active: boolean }) {
                   },
                 ]}
               />
-              <Button
-                variant="outline"
-                className="ml-auto"
-                disabled={loading}
-                onClick={() => void refreshPorts()}
-              >
-                <ArrowsClockwise data-icon="inline-start" weight="duotone" />
-                {t('portTool.refresh')}
-              </Button>
+              {loading ? (
+                <Button variant="outline" className="ml-auto" onClick={cancelPorts}>
+                  <XCircle data-icon="inline-start" weight="duotone" />
+                  {t('common.cancel')}
+                </Button>
+              ) : (
+                <Button variant="outline" className="ml-auto" onClick={() => void refreshPorts()}>
+                  <ArrowsClockwise data-icon="inline-start" weight="duotone" />
+                  {t('portTool.refresh')}
+                </Button>
+              )}
             </div>
             <ScrollArea
               className="min-h-0 flex-1"
@@ -847,7 +873,25 @@ export default function PortTool({ active }: { active: boolean }) {
               {loading && (
                 <p className="py-8 text-center text-muted-foreground">{t('portTool.loading')}</p>
               )}
-              {!loading && visiblePortData.length === 0 && (
+              {!loading && portsCanceled && visiblePortData.length === 0 && (
+                <div className="flex flex-col items-center gap-2 py-8 text-center">
+                  <XCircle size={16} weight="duotone" className="text-muted-foreground" />
+                  <p className="m-0 text-muted-foreground">{t('portTool.loadCanceled')}</p>
+                  <p className="m-0 text-xs text-muted-foreground">
+                    {t('portTool.loadCanceledHint')}
+                  </p>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 px-2 text-xs"
+                    onClick={() => void refreshPorts()}
+                  >
+                    <ArrowsClockwise data-icon="inline-start" size={14} />
+                    {t('common.retry')}
+                  </Button>
+                </div>
+              )}
+              {!loading && !portsCanceled && visiblePortData.length === 0 && (
                 <p className="py-8 text-center text-muted-foreground">
                   {t(ports.length ? 'portTool.noMatches' : 'portTool.emptyPorts')}
                 </p>

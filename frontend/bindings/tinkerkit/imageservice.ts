@@ -51,6 +51,9 @@ export function GetSSHConfigHosts(): $CancellablePromise<$models.SSHConfigHost[]
     return $Call.ByID(1181045935);
 }
 
+/**
+ * InspectDockerImage 的 ctx 来自 Wails 绑定调用；前端取消时中断镜像详情查询。
+ */
 export function InspectDockerImage(sourceID: string, imageID: string): $CancellablePromise<$models.DockerImageDetail> {
     return $Call.ByID(2414893713, sourceID, imageID);
 }

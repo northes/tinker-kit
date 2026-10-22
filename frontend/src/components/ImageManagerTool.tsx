@@ -12,6 +12,7 @@ import {
   PencilSimple,
   Trash,
   UploadSimple,
+  XCircle,
 } from '@phosphor-icons/react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { CancelError } from '@wailsio/runtime';
@@ -175,6 +176,9 @@ export default function ImageManagerTool({
   });
   const {
     connectionPending,
+    watchCanceled,
+    cancelWatch,
+    restartWatch,
     loadError,
     status,
     watchSourceId,
@@ -1196,34 +1200,62 @@ export default function ImageManagerTool({
                 disabled={actionBlocked || importStarting}
                 onPress={() => void runImport()}
               />
-              <ToolActionButton
-                variant="secondary"
-                label={t('imageManagerTool.refresh')}
-                leading={
-                  sourceViewState === 'connecting' ? (
-                    <Spinner className="size-3.5" />
-                  ) : (
-                    <ArrowsClockwise className="size-3.5" weight="duotone" aria-hidden />
-                  )
-                }
-                disabled={busy !== null || sourceProfileMissing}
-                onPress={() => {
-                  refreshList();
-                  record(
-                    'image-manager',
-                    t('imageManagerTool.refreshed'),
-                    sourceDisplayName(source, t, profiles),
-                    source.id,
-                  );
-                }}
-              />
+              {sourceViewState === 'connecting' ? (
+                <ToolActionButton
+                  variant="secondary"
+                  icon={XCircle}
+                  label={t('common.cancel')}
+                  onPress={cancelWatch}
+                />
+              ) : (
+                <ToolActionButton
+                  variant="secondary"
+                  label={t('imageManagerTool.refresh')}
+                  leading={<ArrowsClockwise className="size-3.5" weight="duotone" aria-hidden />}
+                  disabled={busy !== null || sourceProfileMissing}
+                  onPress={() => {
+                    refreshList();
+                    record(
+                      'image-manager',
+                      t('imageManagerTool.refreshed'),
+                      sourceDisplayName(source, t, profiles),
+                      source.id,
+                    );
+                  }}
+                />
+              )}
             </div>
           }
         />
         <ToolLayoutContent className="flex min-h-0 flex-col">
-          {contentViewState === 'loading' ? (
-            <div className="flex min-h-0 flex-1 items-center justify-center">
+          {watchCanceled ? (
+            <div className="flex h-auto min-h-0 flex-1 flex-col items-center justify-center gap-2 text-center">
+              <XCircle size={16} weight="duotone" className="text-muted-foreground" />
+              <div className="text-sm text-muted-foreground">
+                {t('imageManagerTool.watchCanceled')}
+              </div>
+              <div className="text-xs text-muted-foreground">
+                {t('imageManagerTool.watchCanceledHint')}
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                className="mt-2 h-[30px] px-[11px] text-[11px]"
+                onClick={restartWatch}
+              >
+                <ArrowsClockwise data-icon="inline-start" weight="duotone" />
+                {t('common.retry')}
+              </Button>
+            </div>
+          ) : contentViewState === 'loading' ? (
+            <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-2">
               <Spinner />
+              {sourceViewState === 'connecting' ? null : (
+                <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={cancelWatch}>
+                  <XCircle data-icon="inline-start" size={14} />
+                  {t('common.cancel')}
+                </Button>
+              )}
             </div>
           ) : contentViewState === 'error' ? (
             <div className="flex h-auto min-h-0 flex-1 flex-col items-center justify-center gap-2 text-center">

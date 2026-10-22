@@ -591,7 +591,7 @@ func TestListAndInspectDockerImagesUseStructuredOutput(t *testing.T) {
 	if err != nil || len(images) != 1 || images[0].Name != "repo:latest" || images[0].SizeBytes != 10*1000*1000 {
 		t.Fatalf("镜像列表为 %#v，错误 %v", images, err)
 	}
-	detail, err := service.InspectDockerImage("local", "sha256:long")
+	detail, err := service.InspectDockerImage(context.Background(), "local", "sha256:long")
 	if err != nil || detail.ID != "sha256:long" || detail.Architecture != "arm64" || detail.Labels["a"] != "b" {
 		t.Fatalf("镜像详情为 %#v，错误 %v", detail, err)
 	}
@@ -600,6 +600,26 @@ func TestListAndInspectDockerImagesUseStructuredOutput(t *testing.T) {
 	}
 	if detail.Runtime.User != "1000" || detail.Runtime.WorkingDir != "/app" || len(detail.Runtime.Env) != 1 || detail.Runtime.Healthcheck == nil || detail.Runtime.Healthcheck.Interval != "1s" {
 		t.Fatalf("Docker runtime 配置为 %#v", detail.Runtime)
+	}
+}
+
+func TestInspectDockerImageReportsCanceledTask(t *testing.T) {
+	config := &ConfigService{cfg: normalizeConfig(defaultConfig())}
+	service := &ImageService{
+		config: config,
+		runner: func(ctx context.Context, _ string, _ ...string) ([]byte, error) {
+			return nil, ctx.Err()
+		},
+	}
+	// 模拟前端取消绑定调用：Go 侧应停止查询并把详情任务标记为已取消。
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := service.InspectDockerImage(ctx, "local", "sha256:"+strings.Repeat("a", 64)); !errors.Is(err, context.Canceled) {
+		t.Fatalf("镜像详情查询应返回取消错误: %v", err)
+	}
+	tasks := service.GetImageTasks().Tasks
+	if len(tasks) != 1 || tasks[0].Type != imageTaskTypeDetail || tasks[0].Status != imageTaskCanceled {
+		t.Fatalf("详情任务应标记为已取消: %#v", tasks)
 	}
 }
 
@@ -690,7 +710,7 @@ func TestRegistryListDetailAndDeleteUseDigest(t *testing.T) {
 	if !status.Available || status.Version != "Registry" {
 		t.Fatalf("Registry 状态为 %#v", status)
 	}
-	detail, err := service.InspectDockerImage("reg", images[0].ID)
+	detail, err := service.InspectDockerImage(context.Background(), "reg", images[0].ID)
 	if err != nil || detail.Manifest == nil || detail.Digest != digest || detail.Size != int64(len(configBlob)+1234) || detail.Architecture != "amd64" || detail.Labels["app"] != "demo" {
 		t.Fatalf("Registry 详情为 %#v，错误 %v", detail, err)
 	}
@@ -815,10 +835,10 @@ func TestImageDetailCacheIsolatedAndInvalidated(t *testing.T) {
 		}
 		return []byte("deleted"), nil
 	}
-	if _, err := service.InspectDockerImage("local", imageID); err != nil {
+	if _, err := service.InspectDockerImage(context.Background(), "local", imageID); err != nil {
 		t.Fatalf("首次读取详情失败: %v", err)
 	}
-	if _, err := service.InspectDockerImage("local", imageID); err != nil {
+	if _, err := service.InspectDockerImage(context.Background(), "local", imageID); err != nil {
 		t.Fatalf("缓存读取详情失败: %v", err)
 	}
 	if calls != 1 {
@@ -826,7 +846,7 @@ func TestImageDetailCacheIsolatedAndInvalidated(t *testing.T) {
 	}
 	fingerprint := imageSourceFingerprint(config.Get().ImageSources[0], config.Get().DockerCLIPath)
 	service.updateImageInventory("local", fingerprint, config.Get().ImageSources[0], []DockerImage{{ID: imageID, Name: "repo", Tags: []string{"repo:updated"}}})
-	updated, err := service.InspectDockerImage("local", imageID)
+	updated, err := service.InspectDockerImage(context.Background(), "local", imageID)
 	if err != nil || updated.Name != "repo" || !reflect.DeepEqual(updated.Tags, []string{"repo:updated"}) {
 		t.Fatalf("缓存详情未使用最新 inventory: %#v，错误 %v", updated, err)
 	}
@@ -835,7 +855,7 @@ func TestImageDetailCacheIsolatedAndInvalidated(t *testing.T) {
 	if err := config.Save(changed); err != nil {
 		t.Fatalf("切换来源配置失败: %v", err)
 	}
-	if _, err := service.InspectDockerImage("local", imageID); err != nil {
+	if _, err := service.InspectDockerImage(context.Background(), "local", imageID); err != nil {
 		t.Fatalf("来源切换后读取详情失败: %v", err)
 	}
 	if _, ok := service.currentInventory("local", fingerprint, imageID, ""); ok {
@@ -848,7 +868,7 @@ func TestImageDetailCacheIsolatedAndInvalidated(t *testing.T) {
 	if len(deleted.Deleted) != 1 {
 		t.Fatalf("删除缓存镜像失败: %#v", deleted)
 	}
-	if _, err := service.InspectDockerImage("local", imageID); err != nil {
+	if _, err := service.InspectDockerImage(context.Background(), "local", imageID); err != nil {
 		t.Fatalf("删除后重新读取详情失败: %v", err)
 	}
 	if calls != 4 {
@@ -859,7 +879,7 @@ func TestImageDetailCacheIsolatedAndInvalidated(t *testing.T) {
 		t.Fatalf("创建缓存写入失败测试文件失败: %v", err)
 	}
 	service.cacheDir = badCache
-	if _, err := service.InspectDockerImage("local", imageID); err != nil {
+	if _, err := service.InspectDockerImage(context.Background(), "local", imageID); err != nil {
 		t.Fatalf("缓存写入失败不应影响网络详情: %v", err)
 	}
 	service.shutdown()
@@ -1163,7 +1183,7 @@ func TestCancelledPrewarmReleasesPermitForNewSource(t *testing.T) {
 	remoteImage := "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
 	done := make(chan error, 1)
 	go func() {
-		_, inspectErr := service.InspectDockerImage("remote", remoteImage)
+		_, inspectErr := service.InspectDockerImage(context.Background(), "remote", remoteImage)
 		done <- inspectErr
 	}()
 	select {
@@ -1212,7 +1232,7 @@ func TestImageDetailConcurrencyIsBoundedAcrossRequests(t *testing.T) {
 		wg.Add(1)
 		go func(imageID string) {
 			defer wg.Done()
-			if _, err := service.InspectDockerImage("local", imageID); err != nil {
+			if _, err := service.InspectDockerImage(context.Background(), "local", imageID); err != nil {
 				t.Errorf("读取镜像详情失败: %v", err)
 			}
 		}(imageID)
@@ -1289,7 +1309,7 @@ func TestBackgroundImageDetailsLeaveForegroundPermit(t *testing.T) {
 	foregroundID := "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
 	foregroundDone := make(chan error, 1)
 	go func() {
-		_, err := service.InspectDockerImage("local", foregroundID)
+		_, err := service.InspectDockerImage(context.Background(), "local", foregroundID)
 		foregroundDone <- err
 	}()
 	select {
@@ -1358,7 +1378,7 @@ func TestForegroundImageDetailReusesBackgroundRequest(t *testing.T) {
 
 	foregroundDone := make(chan error, 1)
 	go func() {
-		_, err := service.InspectDockerImage("local", imageID)
+		_, err := service.InspectDockerImage(context.Background(), "local", imageID)
 		foregroundDone <- err
 	}()
 	select {

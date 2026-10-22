@@ -29,6 +29,10 @@ export function GetPM2ProcessDetail(targetID: string, id: string): $CancellableP
     return $Call.ByID(3326226124, targetID, id);
 }
 
+/**
+ * GetServiceInventory 的 ctx 来自 Wails 绑定调用；前端取消时会中断正在连接的
+ * Docker、PM2 与 systemd 查询，而不是继续占用 SSH 会话。
+ */
 export function GetServiceInventory(targetID: string): $CancellablePromise<$models.ServiceInventory> {
     return $Call.ByID(3946829964, targetID);
 }
@@ -51,6 +55,9 @@ export function GetSystemdUnitDetail(targetID: string, id: string, scope: string
     return $Call.ByID(2397776011, targetID, id, scope);
 }
 
+/**
+ * PerformServiceAction 的 ctx 来自 Wails 绑定调用；前端取消时终止正在执行的远端命令。
+ */
 export function PerformServiceAction(req: $models.ServiceActionRequest): $CancellablePromise<$models.ServiceActionResult> {
     return $Call.ByID(3907040841, req);
 }

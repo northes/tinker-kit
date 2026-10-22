@@ -174,6 +174,7 @@ func remoteSearchEntries(ctx context.Context, client *sftp.Client, output []byte
 // searchScope 为 current（仅当前目录）或 recursive（从当前目录开始递归）。
 // 搜索结果只在远端生成，当前设备不读取远程文件内容。
 func (s *FileService) SearchRemoteFiles(
+	ctx context.Context,
 	sourceID, currentPath, query, searchMode, searchScope string,
 	showHidden bool,
 ) ([]RemoteFileEntry, error) {
@@ -193,7 +194,7 @@ func (s *FileService) SearchRemoteFiles(
 	if err != nil {
 		return nil, err
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), remoteFileSearchTimeout)
+	ctx, cancel := context.WithTimeout(ctx, remoteFileSearchTimeout)
 	defer cancel()
 	sshClient, client, err := s.dialSFTP(ctx, conn)
 	if err != nil {

@@ -34,6 +34,9 @@ export function GetPortSources(): $CancellablePromise<$models.PortSource[] | nul
     return $Call.ByID(1899297833);
 }
 
+/**
+ * ListPorts 的 ctx 来自 Wails 绑定调用；前端取消时中断本地扫描或远端 SSH 会话。
+ */
 export function ListPorts(profileID: string): $CancellablePromise<$models.PortEntry[] | null> {
     return $Call.ByID(2476916090, profileID);
 }

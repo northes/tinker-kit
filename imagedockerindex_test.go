@@ -79,7 +79,7 @@ func TestDockerIndexPlatformAvailabilityDoesNotUseImmutableCache(t *testing.T) {
 	s.cacheDir = t.TempDir()
 	s.runner = func(context.Context, string, ...string) ([]byte, error) { return []byte("[" + body + "]"), nil }
 	id := "sha256:" + strings.Repeat("a", 64)
-	first, err := s.InspectDockerImage("local", id)
+	first, err := s.InspectDockerImage(context.Background(), "local", id)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -96,7 +96,7 @@ func TestDockerIndexPlatformAvailabilityDoesNotUseImmutableCache(t *testing.T) {
 	if err := os.WriteFile(cliPath, script, 0700); err != nil {
 		t.Fatal(err)
 	}
-	second, err := s.InspectDockerImage("local", id)
+	second, err := s.InspectDockerImage(context.Background(), "local", id)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -464,7 +464,7 @@ func (s *FileService) emitDirectoryLoading(requestID, phase string) {
 }
 
 // GetRemoteCreationTimes 在目录列表返回后补充可选的创建时间元数据。
-func (s *FileService) GetRemoteCreationTimes(sourceID string, remotePaths []string) (map[string]string, error) {
+func (s *FileService) GetRemoteCreationTimes(ctx context.Context, sourceID string, remotePaths []string) (map[string]string, error) {
 	result := make(map[string]string, len(remotePaths))
 	if len(remotePaths) == 0 {
 		return result, nil
@@ -473,7 +473,7 @@ func (s *FileService) GetRemoteCreationTimes(sourceID string, remotePaths []stri
 	if err != nil {
 		return nil, err
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	session, err := s.acquirePersistentSFTP(ctx, sourceID, conn)
 	if err != nil {

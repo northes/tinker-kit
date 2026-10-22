@@ -380,7 +380,7 @@ func (s *ServiceManagerService) run(ctx context.Context, source ImageSource, com
 		}
 		return out, nil
 	}
-	name, label, err := s.remoteCommandLine(source, command, args)
+	name, label, err := s.remoteCommandLine(ctx, source, command, args)
 	if err != nil {
 		return nil, err
 	}
@@ -390,8 +390,8 @@ func (s *ServiceManagerService) run(ctx context.Context, source ImageSource, com
 // remoteCommandLine 返回远端命令的执行串与错误信息用的命令名。它会先用远端
 // 登录 shell 解析出的 PATH 前置，使 nvm/volta 等仅存在于交互式 PATH 的命令
 // 也能被找到；探测失败时退回裸命令，不因探测本身改变可用性。
-func (s *ServiceManagerService) remoteCommandLine(source ImageSource, command string, args []string) (string, string, error) {
-	env, ok := s.remoteCommandEnv(source)
+func (s *ServiceManagerService) remoteCommandLine(ctx context.Context, source ImageSource, command string, args []string) (string, string, error) {
+	env, ok := s.remoteCommandEnv(ctx, source)
 	if !ok || env.path == "" {
 		return shellJoin(append([]string{command}, args...)), command, nil
 	}
@@ -406,7 +406,7 @@ func remoteEnvKey(source ImageSource) string {
 	return source.ID + "|" + source.SSHHost + "|" + source.SSHUsername + "|" + strconv.Itoa(source.SSHPort)
 }
 
-func (s *ServiceManagerService) remoteCommandEnv(source ImageSource) (remoteCommandEnv, bool) {
+func (s *ServiceManagerService) remoteCommandEnv(ctx context.Context, source ImageSource) (remoteCommandEnv, bool) {
 	key := remoteEnvKey(source)
 	s.remoteEnvMu.Lock()
 	cached, ok := s.remoteEnv[key]
@@ -414,7 +414,7 @@ func (s *ServiceManagerService) remoteCommandEnv(source ImageSource) (remoteComm
 	if ok && time.Since(cached.resolvedAt) < remoteEnvTTL {
 		return cached, true
 	}
-	probeCtx, cancel := context.WithTimeout(s.ctx, remoteEnvProbeTimeout)
+	probeCtx, cancel := context.WithTimeout(ctx, remoteEnvProbeTimeout)
 	defer cancel()
 	env, err := probeRemoteCommandEnv(probeCtx, source)
 	if err != nil {
@@ -489,7 +489,9 @@ func parseRemoteEnvProbe(out string) (remoteCommandEnv, error) {
 	return env, nil
 }
 
-func (s *ServiceManagerService) GetServiceInventory(targetID string) ServiceInventory {
+// GetServiceInventory 的 ctx 来自 Wails 绑定调用；前端取消时会中断正在连接的
+// Docker、PM2 与 systemd 查询，而不是继续占用 SSH 会话。
+func (s *ServiceManagerService) GetServiceInventory(ctx context.Context, targetID string) ServiceInventory {
 	target, source, dockerCLI, err := s.targetSnapshot(targetID)
 	if err != nil {
 		return ServiceInventory{Target: ServiceTarget{ID: targetID}, Docker: ServiceRuntimeStatus{Error: err.Error()}, PM2: ServiceRuntimeStatus{Error: err.Error()}, Systemd: ServiceRuntimeStatus{Error: err.Error()}}
@@ -500,9 +502,9 @@ func (s *ServiceManagerService) GetServiceInventory(targetID string) ServiceInve
 	wg.Add(4)
 	go func() {
 		defer wg.Done()
-		ctx, cancel := context.WithTimeout(s.ctx, serviceCommandTimeout)
+		queryCtx, cancel := context.WithTimeout(ctx, serviceCommandTimeout)
 		defer cancel()
-		if containers, e := s.listContainers(ctx, source, dockerCLI); e != nil {
+		if containers, e := s.listContainers(queryCtx, source, dockerCLI); e != nil {
 			result.Docker.Error = e.Error()
 		} else {
 			result.Docker.Available = true
@@ -511,9 +513,9 @@ func (s *ServiceManagerService) GetServiceInventory(targetID string) ServiceInve
 	}()
 	go func() {
 		defer wg.Done()
-		ctx, cancel := context.WithTimeout(s.ctx, serviceCommandTimeout)
+		queryCtx, cancel := context.WithTimeout(ctx, serviceCommandTimeout)
 		defer cancel()
-		if processes, e := s.listPM2(ctx, source); e != nil {
+		if processes, e := s.listPM2(queryCtx, source); e != nil {
 			result.PM2.Error = e.Error()
 		} else {
 			result.PM2.Available = true
@@ -524,9 +526,9 @@ func (s *ServiceManagerService) GetServiceInventory(targetID string) ServiceInve
 	for _, scope := range []string{"system", "user"} {
 		go func(scope string) {
 			defer wg.Done()
-			ctx, cancel := context.WithTimeout(s.ctx, serviceCommandTimeout)
+			queryCtx, cancel := context.WithTimeout(ctx, serviceCommandTimeout)
 			defer cancel()
-			units, e := s.listSystemd(ctx, source, scope)
+			units, e := s.listSystemd(queryCtx, source, scope)
 			status := ServiceRuntimeStatus{Available: e == nil}
 			if e != nil {
 				status.Error = e.Error()
@@ -738,7 +740,7 @@ func (s *ServiceManagerService) listSystemd(ctx context.Context, source ImageSou
 	return units, nil
 }
 
-func (s *ServiceManagerService) GetDockerContainerDetail(targetID, id string) (DockerContainerDetail, error) {
+func (s *ServiceManagerService) GetDockerContainerDetail(ctx context.Context, targetID, id string) (DockerContainerDetail, error) {
 	target, source, cli, err := s.targetSnapshot(targetID)
 	_ = target
 	if err != nil {
@@ -747,9 +749,9 @@ func (s *ServiceManagerService) GetDockerContainerDetail(targetID, id string) (D
 	if !validContainerID(id) {
 		return DockerContainerDetail{}, userError("errors.service.containerIDInvalid")
 	}
-	ctx, cancel := context.WithTimeout(s.ctx, serviceCommandTimeout)
+	queryCtx, cancel := context.WithTimeout(ctx, serviceCommandTimeout)
 	defer cancel()
-	out, err := s.run(ctx, source, cli, "container", "inspect", id)
+	out, err := s.run(queryCtx, source, cli, "container", "inspect", id)
 	if err != nil {
 		return DockerContainerDetail{}, err
 	}
@@ -769,7 +771,7 @@ func (s *ServiceManagerService) GetDockerContainerDetail(targetID, id string) (D
 	return detail, nil
 }
 
-func (s *ServiceManagerService) GetDockerContainerSize(targetID, id string) (DockerContainerSize, error) {
+func (s *ServiceManagerService) GetDockerContainerSize(ctx context.Context, targetID, id string) (DockerContainerSize, error) {
 	target, source, cli, err := s.targetSnapshot(targetID)
 	_ = target
 	if err != nil {
@@ -778,9 +780,9 @@ func (s *ServiceManagerService) GetDockerContainerSize(targetID, id string) (Doc
 	if !validContainerID(id) {
 		return DockerContainerSize{}, userError("errors.service.containerIDInvalid")
 	}
-	ctx, cancel := context.WithTimeout(s.ctx, serviceSizeTimeout)
+	queryCtx, cancel := context.WithTimeout(ctx, serviceSizeTimeout)
 	defer cancel()
-	out, err := s.run(ctx, source, cli, "container", "inspect", "--size", id)
+	out, err := s.run(queryCtx, source, cli, "container", "inspect", "--size", id)
 	if err != nil {
 		return DockerContainerSize{}, err
 	}
@@ -797,9 +799,9 @@ func (s *ServiceManagerService) GetDockerContainerSize(targetID, id string) (Doc
 		}
 		item := DockerContainerMountSize{Type: mount.Type, Name: mount.Name, Source: mount.Source, Destination: mount.Destination}
 		if mount.Type == "bind" {
-			item.Size, item.Available = s.hostPathSize(ctx, source, mount.Source)
+			item.Size, item.Available = s.hostPathSize(queryCtx, source, mount.Source)
 		} else if v.State.Running {
-			item.Size, item.Available = s.containerPathSize(ctx, source, cli, id, mount.Destination)
+			item.Size, item.Available = s.containerPathSize(queryCtx, source, cli, id, mount.Destination)
 			needsVolumeFallback = needsVolumeFallback || !item.Available
 		} else {
 			needsVolumeFallback = true
@@ -809,7 +811,7 @@ func (s *ServiceManagerService) GetDockerContainerSize(targetID, id string) (Doc
 	volumeSizes := map[string]int64{}
 	volumeSizesAvailable := true
 	if needsVolumeFallback {
-		volumeSizes, volumeSizesAvailable = s.dockerVolumeSizes(ctx, source, cli)
+		volumeSizes, volumeSizesAvailable = s.dockerVolumeSizes(queryCtx, source, cli)
 	}
 	for index := range result.Mounts {
 		item := &result.Mounts[index]
@@ -888,7 +890,7 @@ func parseDUSize(out []byte) (int64, bool) {
 	}
 	return blocks * 1024, true
 }
-func (s *ServiceManagerService) GetPM2ProcessDetail(targetID, id string) (PM2ProcessDetail, error) {
+func (s *ServiceManagerService) GetPM2ProcessDetail(ctx context.Context, targetID, id string) (PM2ProcessDetail, error) {
 	target, source, _, err := s.targetSnapshot(targetID)
 	_ = target
 	if err != nil {
@@ -897,9 +899,9 @@ func (s *ServiceManagerService) GetPM2ProcessDetail(targetID, id string) (PM2Pro
 	if _, err = strconv.Atoi(id); err != nil {
 		return PM2ProcessDetail{}, userError("errors.service.pm2IDInvalid")
 	}
-	ctx, cancel := context.WithTimeout(s.ctx, serviceCommandTimeout)
+	queryCtx, cancel := context.WithTimeout(ctx, serviceCommandTimeout)
 	defer cancel()
-	items, err := s.listPM2(ctx, source)
+	items, err := s.listPM2(queryCtx, source)
 	if err != nil {
 		return PM2ProcessDetail{}, err
 	}
@@ -910,7 +912,7 @@ func (s *ServiceManagerService) GetPM2ProcessDetail(targetID, id string) (PM2Pro
 	}
 	return PM2ProcessDetail{}, userError("errors.service.pm2ProcessNotFound")
 }
-func (s *ServiceManagerService) GetSystemdUnitDetail(targetID, id, scope string) (SystemdUnitDetail, error) {
+func (s *ServiceManagerService) GetSystemdUnitDetail(ctx context.Context, targetID, id, scope string) (SystemdUnitDetail, error) {
 	_, source, _, err := s.targetSnapshot(targetID)
 	if err != nil {
 		return SystemdUnitDetail{}, err
@@ -921,9 +923,9 @@ func (s *ServiceManagerService) GetSystemdUnitDetail(targetID, id, scope string)
 	if scope != "user" {
 		scope = "system"
 	}
-	ctx, cancel := context.WithTimeout(s.ctx, serviceCommandTimeout)
+	queryCtx, cancel := context.WithTimeout(ctx, serviceCommandTimeout)
 	defer cancel()
-	units, err := s.listSystemd(ctx, source, scope)
+	units, err := s.listSystemd(queryCtx, source, scope)
 	if err != nil {
 		return SystemdUnitDetail{}, err
 	}
@@ -941,7 +943,7 @@ func (s *ServiceManagerService) GetSystemdUnitDetail(targetID, id, scope string)
 	if scope == "user" {
 		args = append([]string{"--user"}, args...)
 	}
-	out, err := s.run(ctx, source, "systemctl", args...)
+	out, err := s.run(queryCtx, source, "systemctl", args...)
 	if err != nil {
 		return SystemdUnitDetail{}, err
 	}
@@ -970,7 +972,8 @@ func validUnitName(id string) bool {
 	return regexp.MustCompile(`^[A-Za-z0-9_.@:-]+\.service$`).MatchString(id)
 }
 
-func (s *ServiceManagerService) PerformServiceAction(req ServiceActionRequest) ServiceActionResult {
+// PerformServiceAction 的 ctx 来自 Wails 绑定调用；前端取消时终止正在执行的远端命令。
+func (s *ServiceManagerService) PerformServiceAction(ctx context.Context, req ServiceActionRequest) ServiceActionResult {
 	if strings.HasPrefix(req.Action, "update-") && req.Action != "update-pull" && req.Action != "update-start" {
 		return serviceActionFailure(req.Resource, userError("errors.service.dockerActionUnsupported"))
 	}
@@ -982,7 +985,7 @@ func (s *ServiceManagerService) PerformServiceAction(req ServiceActionRequest) S
 	if strings.HasPrefix(req.Action, "update-") {
 		timeout = serviceUpdateTimeout
 	}
-	ctx, cancel := context.WithTimeout(s.ctx, timeout)
+	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
 	// Compose 管理的资源（分组或分组内容器）统一走 compose 命令，不再逐容器调用
@@ -1347,7 +1350,7 @@ func (s *ServiceManagerService) stream(ctx context.Context, source ImageSource, 
 	reader, writer := io.Pipe()
 	done := make(chan error, 1)
 	go func() {
-		commandLine, label, err := s.remoteCommandLine(source, command, args)
+		commandLine, label, err := s.remoteCommandLine(ctx, source, command, args)
 		if err != nil {
 			done <- err
 			_ = writer.Close()

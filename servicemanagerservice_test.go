@@ -217,7 +217,7 @@ func TestRemoteCommandLinePrependsResolvedPath(t *testing.T) {
 		commands:   map[string]bool{"pm2": true},
 		resolvedAt: time.Now(),
 	}
-	line, label, err := service.remoteCommandLine(source, "pm2", []string{"jlist"})
+	line, label, err := service.remoteCommandLine(context.Background(), source, "pm2", []string{"jlist"})
 	if err != nil {
 		t.Fatalf("解析命令失败: %v", err)
 	}
@@ -237,7 +237,7 @@ func TestRemoteCommandLineReportsMissingCommand(t *testing.T) {
 		commands:   map[string]bool{"pm2": false},
 		resolvedAt: time.Now(),
 	}
-	_, _, err := service.remoteCommandLine(source, "pm2", []string{"jlist"})
+	_, _, err := service.remoteCommandLine(context.Background(), source, "pm2", []string{"jlist"})
 	if err == nil || localizedErrorKey(err) != "errors.service.remoteCommandMissing" {
 		t.Fatalf("命令缺失时应给出明确错误: %v", err)
 	}
@@ -246,7 +246,7 @@ func TestRemoteCommandLineReportsMissingCommand(t *testing.T) {
 func TestRemoteCommandLineFallsBackWhenProbeFails(t *testing.T) {
 	service := &ServiceManagerService{ctx: context.Background(), remoteEnv: map[string]remoteCommandEnv{}}
 	source := ImageSource{ID: "ssh:p1", Kind: "ssh", SSHHost: "box"}
-	line, label, err := service.remoteCommandLine(source, "pm2", []string{"jlist"})
+	line, label, err := service.remoteCommandLine(context.Background(), source, "pm2", []string{"jlist"})
 	if err != nil {
 		t.Fatalf("探测失败不应阻断命令: %v", err)
 	}

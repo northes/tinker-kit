@@ -33,6 +33,7 @@ export function useImageManagerWatch({
   const { t } = useTranslation();
   const [reloadNonce, setReloadNonce] = useState(0);
   const [connectionPending, setConnectionPending] = useState(false);
+  const [watchCanceled, setWatchCanceled] = useState(false);
   const [loadError, setLoadError] = useState('');
   const [status, setStatus] = useState<DockerStatus | null>(null);
   const [watchSourceId, setWatchSourceId] = useState<string | null>(null);
@@ -44,6 +45,7 @@ export function useImageManagerWatch({
   const [snapshotUpdatedAt, setSnapshotUpdatedAt] = useState('');
   const watchClientID = useRef<string | null>(null);
   const watchSourceIDRef = useRef<string | null>(null);
+  const watchCallRef = useRef<ReturnType<typeof WatchDockerImages> | null>(null);
   const [taskSnapshot, setTaskSnapshot] = useState<ImageTaskSnapshot | null>(null);
   const tasks = taskSnapshot?.tasks ?? [];
 
@@ -103,6 +105,7 @@ export function useImageManagerWatch({
     flushTasks();
   }, [active, flushImages, flushTasks]);
   const requestWatchReload = useCallback(() => {
+    setWatchCanceled(false);
     if (sourceProfileMissing) {
       setConnectionPending(false);
       setLoadError(t('imageManagerTool.sshProfileMissingHint'));
@@ -120,9 +123,22 @@ export function useImageManagerWatch({
     setReloadNonce((value) => value + 1);
   }, [source.id, sourceProfileMissing, t]);
   const restartWatch = useCallback(() => {
+    setWatchCanceled(false);
     setConnectionPending(true);
     setLoadError('');
     setReloadNonce((value) => value + 1);
+  }, []);
+  // 与 SSH 文件管理一致：中断当前来源的 watch 调用，由用户手动刷新重连。
+  const cancelWatch = useCallback(() => {
+    const call = watchCallRef.current;
+    if (!call) return;
+    watchCallRef.current = null;
+    watchClientID.current = null;
+    watchSourceIDRef.current = null;
+    void call.cancel();
+    setConnectionPending(false);
+    setWatchCanceled(true);
+    setLoadError('');
   }, []);
 
   // 导出与拉取在 Go 侧异步执行，前端只能从任务快照得知结果。首次快照只登记状态，
@@ -162,6 +178,7 @@ export function useImageManagerWatch({
     setWatchSourceId(sourceID);
     setStatus(null);
     setConnectionPending(true);
+    setWatchCanceled(false);
     setLoadError('');
     setIsUpdating(false);
     setIsInitialLoad(false);
@@ -279,6 +296,7 @@ export function useImageManagerWatch({
     });
 
     const watchCall = WatchDockerImages(sourceID, clientID);
+    watchCallRef.current = watchCall;
     void watchCall.catch((error) => {
       if (!mounted || isWatchCancelError(error)) return;
       setConnectionPending(false);
@@ -291,6 +309,7 @@ export function useImageManagerWatch({
       if (watchSourceIDRef.current === sourceID) watchSourceIDRef.current = null;
       if (rebuildImagesRef.current === rebuild) rebuildImagesRef.current = null;
       offWatch();
+      if (watchCallRef.current === watchCall) watchCallRef.current = null;
       if (typeof watchCall?.cancel === 'function') {
         watchCall.cancel();
       }
@@ -308,6 +327,9 @@ export function useImageManagerWatch({
   ]);
   return {
     connectionPending,
+    watchCanceled,
+    cancelWatch,
+    restartWatch,
     loadError,
     status,
     watchSourceId,

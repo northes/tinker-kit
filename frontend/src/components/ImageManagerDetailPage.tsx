@@ -1,3 +1,4 @@
+import { CancelError } from '@wailsio/runtime';
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { InspectDockerImage } from '../../bindings/tinkerkit/imageservice';
@@ -22,18 +23,27 @@ export default function ImageManagerDetailPage({
   const { t } = useTranslation();
   const [detail, setDetail] = useState<DockerImageDetail | null>(null);
   const [loading, setLoading] = useState(true);
+  const [canceled, setCanceled] = useState(false);
   const [error, setError] = useState('');
+  const [reloadToken, setReloadToken] = useState(0);
+  const requestRef = useRef<ReturnType<typeof InspectDockerImage> | null>(null);
+  const requestVersion = useRef(0);
   const recordRef = useRef(record);
   recordRef.current = record;
+  const retry = () => setReloadToken((value) => value + 1);
 
   useEffect(() => {
+    const version = ++requestVersion.current;
     let mounted = true;
     setDetail(null);
     setError('');
+    setCanceled(false);
     setLoading(true);
-    void InspectDockerImage(sourceId, imageId)
+    const request = InspectDockerImage(sourceId, imageId);
+    requestRef.current = request;
+    void request
       .then((next) => {
-        if (!mounted) return;
+        if (!mounted || version !== requestVersion.current) return;
         setDetail(next);
         recordRef.current(
           'image-manager',
@@ -43,16 +53,33 @@ export default function ImageManagerDetailPage({
         );
       })
       .catch((reason) => {
-        if (!mounted) return;
+        if (!mounted || version !== requestVersion.current || reason instanceof CancelError) return;
         setError(errorMessage(reason) || t('imageManagerTool.loadFailed'));
       })
       .finally(() => {
-        if (mounted) setLoading(false);
+        if (requestRef.current === request) requestRef.current = null;
+        if (mounted && version === requestVersion.current) setLoading(false);
       });
     return () => {
       mounted = false;
+      requestVersion.current++;
+      if (requestRef.current === request) {
+        requestRef.current = null;
+        void request.cancel();
+      }
     };
-  }, [imageId, sourceId, t]);
+  }, [imageId, sourceId, t, reloadToken]);
+
+  const cancel = () => {
+    const request = requestRef.current;
+    if (!request) return;
+    requestRef.current = null;
+    requestVersion.current++;
+    void request.cancel();
+    setLoading(false);
+    setCanceled(true);
+    setError('');
+  };
 
   return (
     <ImageManagerDetailView
@@ -60,6 +87,9 @@ export default function ImageManagerDetailPage({
       detail={detail}
       error={error}
       loading={loading}
+      canceled={canceled}
+      onCancel={cancel}
+      onRetry={retry}
       onBack={onBack}
     />
   );

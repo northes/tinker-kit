@@ -7,8 +7,9 @@ import {
   ListBullets,
   Queue,
   Trash,
+  XCircle,
 } from '@phosphor-icons/react';
-import { Events } from '@wailsio/runtime';
+import { CancelError, Events } from '@wailsio/runtime';
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type {
@@ -101,7 +102,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from './ui/select';
-import { Spinner } from './ui/spinner';
 import { toast } from './ui/toast';
 
 export default function ServiceManagerTool({
@@ -131,6 +131,7 @@ export default function ServiceManagerTool({
   const [inventory, setInventory] = useState<ServiceInventory | null>(null);
   const [detailRefreshVersion, setDetailRefreshVersion] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [loadCanceled, setLoadCanceled] = useState(false);
   const [statusFilter, setStatusFilter] = useState<Set<string>>(new Set());
   const [searchDraft, setSearchDraft] = useState('');
   const [search, setSearch] = useState('');
@@ -199,6 +200,7 @@ export default function ServiceManagerTool({
   } | null>(null);
   const [pickSelection, setPickSelection] = useState<Set<string>>(new Set());
   const monitorLoadVersion = useRef(0);
+  const actionRequest = useRef<ReturnType<typeof PerformServiceAction> | null>(null);
   const inventoryRequests = useRef(new Map<string, ReturnType<typeof GetServiceInventory>>());
   const inventoryLoadVersion = useRef(0);
   const requestInventory = (id: string) => {
@@ -212,6 +214,13 @@ export default function ServiceManagerTool({
     void request.then(cleanup, cleanup);
     return request;
   };
+  // 与 SSH 文件管理一致：取消正在连接的清单请求，恢复由用户手动刷新触发。
+  const cancelInventory = (id: string) => {
+    const request = inventoryRequests.current.get(id);
+    if (!request) return;
+    inventoryRequests.current.delete(id);
+    void request.cancel();
+  };
 
   useEffect(() => {
     const media = window.matchMedia('(max-width: 800px)');
@@ -223,6 +232,8 @@ export default function ServiceManagerTool({
   const syncTargets = (next: ServiceTarget[]) => {
     setTargets(next);
     if (next.some((item) => item.id === targetIDRef.current)) return;
+    cancelInventory(targetIDRef.current);
+    inventoryLoadVersion.current++;
     setSelection(null);
     setInventory(null);
     setTargetID('local');
@@ -230,6 +241,7 @@ export default function ServiceManagerTool({
 
   const load = async (nextTarget = targetID, refreshDetails = false) => {
     const version = ++inventoryLoadVersion.current;
+    setLoadCanceled(false);
     setLoading(true);
     try {
       const next = await requestInventory(nextTarget);
@@ -247,6 +259,13 @@ export default function ServiceManagerTool({
       if (targetIDRef.current === nextTarget && version === inventoryLoadVersion.current)
         setLoading(false);
     }
+  };
+  const cancelLoad = () => {
+    if (!inventoryRequests.current.has(targetID)) return;
+    cancelInventory(targetID);
+    inventoryLoadVersion.current++;
+    setLoading(false);
+    setLoadCanceled(true);
   };
   const loadMonitors = async () => {
     const version = ++monitorLoadVersion.current;
@@ -333,16 +352,17 @@ export default function ServiceManagerTool({
   }, [profiles]);
   useEffect(() => {
     setInventory(null);
+    setLoadCanceled(false);
     void load(targetID);
     void loadMonitors();
   }, [targetID]);
   useEffect(() => {
     if (!active) return;
     const timer = window.setInterval(() => {
-      if (!inventoryRequests.current.has(targetID)) void load();
+      if (!loadCanceled && !inventoryRequests.current.has(targetID)) void load();
     }, 5000);
     return () => window.clearInterval(timer);
-  }, [active, targetID]);
+  }, [active, targetID, loadCanceled]);
   useEffect(() => {
     if (view !== 'picked') return;
     const hostIDs = pickedTargetIDs;
@@ -453,6 +473,8 @@ export default function ServiceManagerTool({
 
   const selectTarget = (next: string | null) => {
     if (!next || next === targetID) return;
+    cancelInventory(targetID);
+    inventoryLoadVersion.current++;
     setSelection(null);
     setInventory(null);
     setTargetID(next);
@@ -493,12 +515,14 @@ export default function ServiceManagerTool({
     const actionLabel = t(`serviceManagerTool.actions.${action}`);
     const resourceLabel = resource.name || resource.id;
     setBusy(key);
+    const request = PerformServiceAction({
+      targetID: target,
+      resource,
+      action,
+    } as ServiceActionRequest);
+    actionRequest.current = request;
     try {
-      const result = await PerformServiceAction({
-        targetID: target,
-        resource,
-        action,
-      } as ServiceActionRequest);
+      const result = await request;
       const failed = result.failed ?? [];
       const succeeded = result.succeeded ?? [];
       if (succeeded.length)
@@ -541,6 +565,20 @@ export default function ServiceManagerTool({
         setDetailRefreshVersion((value) => value + 1);
       }
     } catch (error) {
+      if (error instanceof CancelError) {
+        toast.add({
+          title: t('serviceManagerTool.actionCanceled'),
+          description: t('serviceManagerTool.actionCanceledHint', { resource: resourceLabel }),
+          type: 'info',
+        });
+        if (target === targetID) await load(target, view !== 'picked');
+        if (view === 'picked') {
+          const updated = await GetServiceInventory(target);
+          setPickedInventories((current) => ({ ...current, [target]: updated }));
+          setDetailRefreshVersion((value) => value + 1);
+        }
+        return;
+      }
       toast.add({
         title: t('serviceManagerTool.actionFailed', {
           action: actionLabel,
@@ -550,8 +588,15 @@ export default function ServiceManagerTool({
         type: 'error',
       });
     } finally {
+      if (actionRequest.current === request) actionRequest.current = null;
       setBusy('');
     }
+  };
+  const cancelAction = () => {
+    const request = actionRequest.current;
+    if (!request) return;
+    actionRequest.current = null;
+    void request.cancel();
   };
   const startMonitors = async (
     target: string,
@@ -947,44 +992,54 @@ export default function ServiceManagerTool({
                   {pickedMembers.length}
                 </Badge>
               </ToolActionButton>
-              <ToolActionButton
-                variant="secondary"
-                label={t('serviceManagerTool.refresh')}
-                leading={
-                  loading ? (
-                    <Spinner className="size-3.5" />
-                  ) : (
-                    <ArrowsClockwise className="size-3.5" weight="duotone" aria-hidden />
-                  )
-                }
-                disabled={loading}
-                onPress={() =>
-                  void (
-                    view === 'picked'
-                      ? Promise.allSettled(
-                          pickedTargetIDs.map(async (id) => {
-                            try {
-                              const next = await GetServiceInventory(id);
-                              setPickedInventories((current) => ({ ...current, [id]: next }));
-                              setPickedErrors((current) => {
-                                const nextErrors = { ...current };
-                                delete nextErrors[id];
-                                return nextErrors;
-                              });
-                            } catch (error) {
-                              setPickedErrors((current) => ({
-                                ...current,
-                                [id]: formatBackendError(error),
-                              }));
-                            }
-                          }),
-                        )
-                      : load(targetID, true)
-                  ).then(() => {
-                    if (view === 'picked') setDetailRefreshVersion((value) => value + 1);
-                  })
-                }
-              />
+              {loading ? (
+                <ToolActionButton
+                  variant="secondary"
+                  icon={XCircle}
+                  label={t('common.cancel')}
+                  onPress={cancelLoad}
+                />
+              ) : (
+                <ToolActionButton
+                  variant="secondary"
+                  label={t('serviceManagerTool.refresh')}
+                  leading={<ArrowsClockwise className="size-3.5" weight="duotone" aria-hidden />}
+                  onPress={() =>
+                    void (
+                      view === 'picked'
+                        ? Promise.allSettled(
+                            pickedTargetIDs.map(async (id) => {
+                              try {
+                                const next = await GetServiceInventory(id);
+                                setPickedInventories((current) => ({ ...current, [id]: next }));
+                                setPickedErrors((current) => {
+                                  const nextErrors = { ...current };
+                                  delete nextErrors[id];
+                                  return nextErrors;
+                                });
+                              } catch (error) {
+                                setPickedErrors((current) => ({
+                                  ...current,
+                                  [id]: formatBackendError(error),
+                                }));
+                              }
+                            }),
+                          )
+                        : load(targetID, true)
+                    ).then(() => {
+                      if (view === 'picked') setDetailRefreshVersion((value) => value + 1);
+                    })
+                  }
+                />
+              )}
+              {busy && !loading ? (
+                <ToolActionButton
+                  variant="secondary"
+                  icon={XCircle}
+                  label={t('common.cancel')}
+                  onPress={cancelAction}
+                />
+              ) : null}
             </div>
           }
         />
@@ -1129,6 +1184,8 @@ export default function ServiceManagerTool({
                   onAction={act}
                   onPickChange={changePick}
                   busy={busy}
+                  loadingCanceled={loadCanceled}
+                  onRetryLoading={() => void load(targetID)}
                   t={t}
                 />
               )}

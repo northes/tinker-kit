@@ -1,4 +1,4 @@
-import { CodeSimple } from '@phosphor-icons/react';
+import { ArrowsClockwise, CodeSimple, XCircle } from '@phosphor-icons/react';
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import type {
@@ -31,6 +31,8 @@ import { ScrollArea } from '../ui/scroll-area';
 import { Spinner } from '../ui/spinner';
 import { STATUS_GROUPS, statusVariant, targetLabel, type Selection } from './model';
 import { type ContainerInfo } from './ResourcePanel';
+
+type CancellableCall = { cancel: (cause?: unknown) => PromiseLike<void> | void };
 
 function formatMoment(value: string | number) {
   const date = new Date(value);
@@ -119,10 +121,12 @@ function ContainerSizeSpinner() {
 function ContainerSizePopover({
   size,
   loading,
+  canceled,
   error,
 }: {
   size: DockerContainerSize | null;
   loading: boolean;
+  canceled: boolean;
   error: string;
 }) {
   const { t } = useTranslation();
@@ -192,7 +196,13 @@ function ContainerSizePopover({
           </div>
         ) : (
           <div className="flex min-h-12 items-center justify-center text-xs text-muted-foreground">
-            {loading ? <ContainerSizeSpinner /> : t('serviceManagerTool.detail.sizeUnavailable')}
+            {loading ? (
+              <ContainerSizeSpinner />
+            ) : canceled ? (
+              t('serviceManagerTool.loadCanceled')
+            ) : (
+              t('serviceManagerTool.detail.sizeUnavailable')
+            )}
           </div>
         )}
         {error ? <p className="m-0 text-[10px] text-destructive">{error}</p> : null}
@@ -273,12 +283,18 @@ function ContainerInfoView({
   info,
   containerSize,
   sizeLoading,
+  sizeCanceled,
   sizeError,
+  onCancelSize,
+  onRetrySize,
 }: {
   info: ContainerInfo;
   containerSize: DockerContainerSize | null;
   sizeLoading: boolean;
+  sizeCanceled: boolean;
   sizeError: string;
+  onCancelSize: () => void;
+  onRetrySize: () => void;
 }) {
   const { t } = useTranslation();
   if (info.runtime === 'docker') {
@@ -294,7 +310,36 @@ function ContainerInfoView({
               {container.image || '—'}
             </InfoField>
             <InfoField label={t('serviceManagerTool.detail.size')}>
-              <ContainerSizePopover size={containerSize} loading={sizeLoading} error={sizeError} />
+              <span className="inline-flex flex-wrap items-center gap-2">
+                <ContainerSizePopover
+                  size={containerSize}
+                  loading={sizeLoading}
+                  canceled={sizeCanceled}
+                  error={sizeError}
+                />
+                {sizeLoading ? (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-5 px-1 text-[10px]"
+                    onClick={onCancelSize}
+                  >
+                    <XCircle data-icon="inline-start" size={12} />
+                    {t('common.cancel')}
+                  </Button>
+                ) : null}
+                {sizeCanceled && !sizeLoading ? (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-5 px-1 text-[10px]"
+                    onClick={onRetrySize}
+                  >
+                    <ArrowsClockwise data-icon="inline-start" size={12} />
+                    {t('common.retry')}
+                  </Button>
+                ) : null}
+              </span>
             </InfoField>
             <InfoField label={t('serviceManagerTool.status')}>
               <Badge variant={statusVariant(container.status)}>{container.status}</Badge>
@@ -448,51 +493,94 @@ export function ResourceInfoTab({
     value: DockerContainerSize;
   } | null>(null);
   const [sizeLoading, setSizeLoading] = useState(false);
+  const [sizeCanceled, setSizeCanceled] = useState(false);
   const [sizeError, setSizeError] = useState('');
+  const [detailLoading, setDetailLoading] = useState(true);
+  const [detailCanceled, setDetailCanceled] = useState(false);
   const [error, setError] = useState('');
   const [rawOpen, setRawOpen] = useState(false);
+  const [reloadToken, setReloadToken] = useState(0);
   const detailRequestVersion = useRef(0);
   const sizeRequestVersion = useRef(0);
+  const detailRequest = useRef<CancellableCall | null>(null);
+  const sizeRequest = useRef<CancellableCall | null>(null);
   const isGroup = resource.runtime === 'docker-compose';
   const info = infoState?.identity === identity ? infoState.value : null;
   const containerSize = sizeState?.identity === identity ? sizeState.value : null;
+  const retryDetail = () => setReloadToken((value) => value + 1);
+
+  const cancelDetail = () => {
+    const request = detailRequest.current;
+    if (!request) return;
+    detailRequest.current = null;
+    detailRequestVersion.current++;
+    void request.cancel();
+    setDetailLoading(false);
+    setDetailCanceled(true);
+    setError('');
+  };
+  const cancelSize = () => {
+    const request = sizeRequest.current;
+    if (!request) return;
+    sizeRequest.current = null;
+    sizeRequestVersion.current++;
+    void request.cancel();
+    setSizeLoading(false);
+    setSizeCanceled(true);
+    setSizeError('');
+  };
 
   useEffect(() => {
     const detailVersion = ++detailRequestVersion.current;
     const sizeVersion = ++sizeRequestVersion.current;
+    detailRequest.current?.cancel();
+    sizeRequest.current?.cancel();
+    detailRequest.current = null;
+    sizeRequest.current = null;
+    setDetailCanceled(false);
+    setSizeCanceled(false);
     if (isGroup) {
+      setDetailLoading(false);
       setSizeLoading(false);
       return;
     }
     setError('');
-    void (async () => {
-      try {
-        let next: ContainerInfo;
-        if (resource.runtime === 'docker') {
-          next = {
-            runtime: 'docker',
-            detail: await GetDockerContainerDetail(targetID, resource.id),
-          };
-        } else if (resource.runtime === 'pm2') {
-          next = {
-            runtime: 'pm2',
-            detail: await GetPM2ProcessDetail(targetID, resource.id),
-          };
-        } else {
-          next = {
-            runtime: 'systemd',
-            detail: await GetSystemdUnitDetail(targetID, resource.id, resource.scope ?? 'system'),
-          };
-        }
-        if (detailRequestVersion.current === detailVersion) setInfoState({ identity, value: next });
-      } catch (reason) {
-        if (detailRequestVersion.current === detailVersion) setError(formatBackendError(reason));
-      }
-    })();
+    setDetailLoading(true);
+    let detailCall: CancellableCall;
+    let detailResult: Promise<ContainerInfo>;
     if (resource.runtime === 'docker') {
+      const call = GetDockerContainerDetail(targetID, resource.id);
+      detailCall = call;
+      detailResult = call.then((detail) => ({ runtime: 'docker', detail }));
+    } else if (resource.runtime === 'pm2') {
+      const call = GetPM2ProcessDetail(targetID, resource.id);
+      detailCall = call;
+      detailResult = call.then((detail) => ({ runtime: 'pm2', detail }));
+    } else {
+      const call = GetSystemdUnitDetail(targetID, resource.id, resource.scope ?? 'system');
+      detailCall = call;
+      detailResult = call.then((detail) => ({ runtime: 'systemd', detail }));
+    }
+    detailRequest.current = detailCall;
+    void detailResult
+      .then((next) => {
+        if (detailRequestVersion.current === detailVersion) setInfoState({ identity, value: next });
+      })
+      .catch((reason) => {
+        if (detailRequestVersion.current === detailVersion) setError(formatBackendError(reason));
+      })
+      .finally(() => {
+        if (detailRequest.current === detailCall) detailRequest.current = null;
+        if (detailRequestVersion.current === detailVersion) setDetailLoading(false);
+      });
+    let sizeCall: CancellableCall | null = null;
+    if (resource.runtime === 'docker') {
+      const call = GetDockerContainerSize(targetID, resource.id);
+      sizeCall = call;
+      sizeRequest.current = call;
       setSizeLoading(true);
       setSizeError('');
-      void GetDockerContainerSize(targetID, resource.id)
+      void call
         .then((next) => {
           if (sizeRequestVersion.current === sizeVersion) setSizeState({ identity, value: next });
         })
@@ -500,13 +588,26 @@ export function ResourceInfoTab({
           if (sizeRequestVersion.current === sizeVersion) setSizeError(formatBackendError(reason));
         })
         .finally(() => {
+          if (sizeRequest.current === call) sizeRequest.current = null;
           if (sizeRequestVersion.current === sizeVersion) setSizeLoading(false);
         });
     } else {
       setSizeLoading(false);
       setSizeError('');
     }
-  }, [identity, isGroup, refreshToken]);
+    return () => {
+      detailRequestVersion.current++;
+      sizeRequestVersion.current++;
+      if (detailRequest.current === detailCall) {
+        detailRequest.current = null;
+        void detailCall.cancel();
+      }
+      if (sizeCall && sizeRequest.current === sizeCall) {
+        sizeRequest.current = null;
+        void sizeCall.cancel();
+      }
+    };
+  }, [identity, isGroup, refreshToken, reloadToken]);
 
   if (isGroup) {
     return (
@@ -544,17 +645,50 @@ export function ResourceInfoTab({
             <p className="m-0 px-4 py-3 text-xs text-destructive" role="alert">
               {error}
             </p>
+          ) : !info && detailCanceled ? (
+            <div className="flex h-full flex-col items-center justify-center gap-2 p-6 text-center">
+              <XCircle size={16} weight="duotone" className="text-muted-foreground" />
+              <span className="text-sm text-muted-foreground">
+                {t('serviceManagerTool.loadCanceled')}
+              </span>
+              <span className="text-xs text-muted-foreground">
+                {t('serviceManagerTool.loadCanceledHint')}
+              </span>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="mt-1 h-7 px-2 text-xs"
+                onClick={retryDetail}
+              >
+                <ArrowsClockwise data-icon="inline-start" size={14} />
+                {t('serviceManagerTool.refresh')}
+              </Button>
+            </div>
           ) : !info ? (
-            <div className="flex h-full items-center justify-center gap-2 text-xs text-muted-foreground">
+            <div className="flex h-full flex-col items-center justify-center gap-2 text-center text-xs text-muted-foreground">
               <Spinner />
               {t('common.loading')}
+              {detailLoading ? (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 px-2 text-xs"
+                  onClick={cancelDetail}
+                >
+                  <XCircle data-icon="inline-start" size={14} />
+                  {t('common.cancel')}
+                </Button>
+              ) : null}
             </div>
           ) : (
             <ContainerInfoView
               info={info}
               containerSize={containerSize}
               sizeLoading={sizeLoading}
+              sizeCanceled={sizeCanceled}
               sizeError={sizeError}
+              onCancelSize={cancelSize}
+              onRetrySize={retryDetail}
             />
           )}
         </ScrollArea>

@@ -347,8 +347,9 @@ func (s *PortService) dial(ctx context.Context, profile SSHProfile) (*ssh.Client
 	return dialSSHClient(dialCtx, address, &ssh.ClientConfig{User: profile.Username, Auth: auth, HostKeyCallback: callback, Timeout: 15 * time.Second})
 }
 
-func (s *PortService) ListPorts(profileID string) ([]PortEntry, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
+// ListPorts 的 ctx 来自 Wails 绑定调用；前端取消时中断本地扫描或远端 SSH 会话。
+func (s *PortService) ListPorts(ctx context.Context, profileID string) ([]PortEntry, error) {
+	ctx, cancel := context.WithTimeout(ctx, 25*time.Second)
 	defer cancel()
 	if (profileID == "" || profileID == "local") && runtime.GOOS == "windows" {
 		return listWindowsPorts(ctx)
@@ -384,10 +385,27 @@ func (s *PortService) ListPorts(profileID string) ([]PortEntry, error) {
 		}
 		defer session.Close()
 		// 固定命令，不拼接用户输入；标记用于区分扫描器和进程表。
-		output, err := session.Output("if command -v lsof >/dev/null 2>&1; then printf '__PORT_LSOF__\\n'; lsof -nP -iTCP -iUDP -FpcLfnPR || true; elif command -v ss >/dev/null 2>&1; then printf '__PORT_SS__\\n'; ss -H -tunap; else exit 127; fi; printf '__PORT_PS__\\n'; ps -eo pid=,ppid=,user=,comm=")
-		if err != nil {
+		var stdout bytes.Buffer
+		session.Stdout = &stdout
+		const command = "if command -v lsof >/dev/null 2>&1; then printf '__PORT_LSOF__\\n'; lsof -nP -iTCP -iUDP -FpcLfnPR || true; elif command -v ss >/dev/null 2>&1; then printf '__PORT_SS__\\n'; ss -H -tunap; else exit 127; fi; printf '__PORT_PS__\\n'; ps -eo pid=,ppid=,user=,comm="
+		if err := session.Start(command); err != nil {
 			return nil, userErrorCause("errors.port.scanFailed", err)
 		}
+		wait := make(chan error, 1)
+		go func() { wait <- session.Wait() }()
+		select {
+		case err := <-wait:
+			if err != nil {
+				if ctx.Err() != nil {
+					return nil, ctx.Err()
+				}
+				return nil, userErrorCause("errors.port.scanFailed", err)
+			}
+		case <-ctx.Done():
+			_ = session.Close()
+			return nil, ctx.Err()
+		}
+		output := stdout.Bytes()
 		if bytes.HasPrefix(output, []byte("__PORT_SS__\n")) {
 			mode = "ss"
 			output = bytes.TrimPrefix(output, []byte("__PORT_SS__\n"))

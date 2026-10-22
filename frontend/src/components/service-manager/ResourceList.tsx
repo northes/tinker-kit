@@ -10,6 +10,7 @@ import {
   Power,
   Stack,
   Trash,
+  XCircle,
 } from '@phosphor-icons/react';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -55,6 +56,8 @@ export function ResourceList({
   onAction,
   onPickChange,
   busy,
+  loadingCanceled = false,
+  onRetryLoading,
   t,
 }: {
   targetID: string;
@@ -70,6 +73,8 @@ export function ResourceList({
   onAction: (targetID: string, resource: ServiceResourceRef, action: string) => void;
   onPickChange: (targetID: string, resource: ServiceResourceRef) => void;
   busy: string;
+  loadingCanceled?: boolean;
+  onRetryLoading?: () => void;
   t: ReturnType<typeof useTranslation>['t'];
 }) {
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
@@ -80,7 +85,30 @@ export function ResourceList({
       else next.add(id);
       return next;
     });
-  if (!inventory && !pickedResources)
+  if (!inventory && !pickedResources) {
+    if (loadingCanceled)
+      return (
+        <div className="grid h-full place-items-center">
+          <div className="flex flex-col items-center gap-2 text-center">
+            <XCircle size={16} weight="duotone" className="text-muted-foreground" />
+            <span className="text-sm text-muted-foreground">
+              {t('serviceManagerTool.loadCanceled')}
+            </span>
+            <span className="text-xs text-muted-foreground">
+              {t('serviceManagerTool.loadCanceledHint')}
+            </span>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="mt-1 h-7 px-2 text-xs"
+              onClick={onRetryLoading}
+            >
+              <ArrowsClockwise data-icon="inline-start" size={14} />
+              {t('serviceManagerTool.refresh')}
+            </Button>
+          </div>
+        </div>
+      );
     return (
       <div className="grid h-full place-items-center">
         <div className="flex flex-col items-center gap-2 text-center">
@@ -89,6 +117,7 @@ export function ResourceList({
         </div>
       </div>
     );
+  }
   const match = (name: string) => !search || name.toLowerCase().includes(search);
   const containersByID = new Map(
     [
