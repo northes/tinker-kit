@@ -1,5 +1,16 @@
-import { Asterisk, Eraser, GearSix, TextAa, TextB, WarningCircle } from '@phosphor-icons/react';
+import {
+  Asterisk,
+  Copy,
+  DownloadSimple,
+  Eraser,
+  GearSix,
+  TextAa,
+  TextB,
+  WarningCircle,
+} from '@phosphor-icons/react';
 import { useMemo, useState } from 'react';
+import { format } from 'date-fns';
+import { Clipboard } from '@wailsio/runtime';
 import { useTranslation } from 'react-i18next';
 import type {
   DockerContainer,
@@ -10,7 +21,9 @@ import type {
   ServiceTarget,
   SystemdUnitDetail,
 } from '../../../bindings/tinkerkit/models';
+import { ansiPlainText } from '../../lib/ansi';
 import { formatBackendError } from '../../lib/backend-error';
+import { SaveText } from '../../../bindings/tinkerkit/fileservice';
 import { ConfirmDialog } from '../ConfirmDialog';
 import { ServicePickedPerformance } from '../ServicePickedPerformance';
 import { ServiceResourcePerformance } from '../ServiceResourcePerformance';
@@ -20,10 +33,11 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Label } from '../ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs';
 import { ToggleGroup, ToggleGroupItem } from '../ui/toggle-group';
+import { toast } from '../ui/toast';
 import { LogList } from './LogList';
 import { LogFilterHelp } from './LogFilterHelp';
 import { LogFilterHistoryMenu } from './LogFilterHistory';
-import { targetLabel, VISIBLE_LOG_LIMIT, type Selection } from './model';
+import { logTime, targetLabel, VISIBLE_LOG_LIMIT, type Selection } from './model';
 import { ResourceInfoTab, ScopeInfoTab } from './ResourceInfo';
 
 export function RuntimeError({ name, error }: { name: string; error?: string }) {
@@ -137,6 +151,77 @@ export function ResourcePanel({
   );
   const [confirmingClear, setConfirmingClear] = useState(false);
   const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [exportingLogs, setExportingLogs] = useState(false);
+  const logText = useMemo(
+    () =>
+      visibleLines.length === 0
+        ? ''
+        : `${visibleLines
+            .map((line) => {
+              const source = sourceLabels?.get(line.monitorID) ?? line.name;
+              return `${logTime(line)}\t${source}\t${ansiPlainText(line.text)}`;
+            })
+            .join('\n')}\n`,
+    [sourceLabels, visibleLines],
+  );
+  const canExportLogs = visibleLines.length > 0;
+  const exportLogFilename = () => {
+    const target = targets.find((item) => item.id === targetID);
+    const targetName =
+      selection.kind === 'picked'
+        ? t('serviceManagerTool.picked')
+        : target
+          ? targetLabel(target, t)
+          : t('serviceManagerTool.targetUnavailable');
+    const resourceName =
+      selection.kind === 'picked' || selection.kind === 'host'
+        ? t('serviceManagerTool.detailTabs.logs')
+        : resource.name || resource.id || t('serviceManagerTool.detailTabs.logs');
+    const sanitize = (value: string) =>
+      value
+        .replace(/[\\/:*?"<>|\u0000-\u001f]/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim() || t('serviceManagerTool.detailTabs.logs');
+    return `${sanitize(targetName)}-${sanitize(resourceName)}-${format(new Date(), 'yyyyMMdd-HHmmss')}.log`;
+  };
+  const copyLogs = async () => {
+    if (!canExportLogs) return;
+    try {
+      await Clipboard.SetText(logText);
+      toast.add({
+        title: t('serviceManagerTool.logsCopied', { total: visibleLines.length }),
+        type: 'success',
+      });
+    } catch (error) {
+      toast.add({
+        title: t('serviceManagerTool.logsCopyFailed'),
+        description: formatBackendError(error),
+        type: 'error',
+      });
+    }
+  };
+  const exportLogs = async () => {
+    if (!canExportLogs || exportingLogs) return;
+    setExportingLogs(true);
+    try {
+      const path = await SaveText(logText, exportLogFilename());
+      if (!path) return;
+      toast.add({
+        title: t('serviceManagerTool.logsExported', {
+          name: path.split(/[\\/]/).pop() ?? path,
+        }),
+        type: 'success',
+      });
+    } catch (error) {
+      toast.add({
+        title: t('serviceManagerTool.logsExportFailed'),
+        description: formatBackendError(error),
+        type: 'error',
+      });
+    } finally {
+      setExportingLogs(false);
+    }
+  };
   return (
     <>
       <Tabs
@@ -249,19 +334,43 @@ export function ResourcePanel({
                 >
                   <GearSix weight="duotone" />
                 </Button>
-                {!scope ? (
+                <div className="ml-auto flex items-center gap-1">
                   <Button
                     variant="ghost"
                     size="icon-sm"
-                    className="ml-auto flex-none text-muted-foreground hover:text-destructive"
-                    disabled={!monitorIDs.length}
-                    title={t('serviceManagerTool.clearLogs')}
-                    aria-label={t('serviceManagerTool.clearLogs')}
-                    onClick={() => setConfirmingClear(true)}
+                    className="flex-none text-muted-foreground"
+                    disabled={!canExportLogs}
+                    title={t('serviceManagerTool.copyLogs')}
+                    aria-label={t('serviceManagerTool.copyLogs')}
+                    onClick={() => void copyLogs()}
                   >
-                    <Eraser weight="duotone" />
+                    <Copy weight="duotone" />
                   </Button>
-                ) : null}
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    className="flex-none text-muted-foreground"
+                    disabled={!canExportLogs || exportingLogs}
+                    title={t('serviceManagerTool.exportLogs')}
+                    aria-label={t('serviceManagerTool.exportLogs')}
+                    onClick={() => void exportLogs()}
+                  >
+                    <DownloadSimple weight="duotone" />
+                  </Button>
+                  {!scope ? (
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      className="flex-none text-muted-foreground hover:text-destructive"
+                      disabled={!monitorIDs.length}
+                      title={t('serviceManagerTool.clearLogs')}
+                      aria-label={t('serviceManagerTool.clearLogs')}
+                      onClick={() => setConfirmingClear(true)}
+                    >
+                      <Eraser weight="duotone" />
+                    </Button>
+                  ) : null}
+                </div>
               </div>
               {truncated ? (
                 <p className="mt-2 text-xs text-amber-600">

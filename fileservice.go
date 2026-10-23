@@ -84,7 +84,8 @@ func (s *FileService) SaveText(content string, filename string) (string, error) 
 		AddFilter("XML", "*.xml").
 		AddFilter("TOML", "*.toml").
 		AddFilter("YAML", "*.yaml;*.yml").
-		AddFilter("CSV", "*.csv")
+		AddFilter("CSV", "*.csv").
+		AddFilter("Log", "*.log")
 	if window := app.Window.Current(); window != nil {
 		dialog.AttachToWindow(window)
 	}
