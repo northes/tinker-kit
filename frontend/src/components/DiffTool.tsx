@@ -417,7 +417,6 @@ export default function DiffTool({
 }: {
   active: boolean;
   theme: string;
-  record?: unknown;
   pending: PendingAction | null;
   clearPending: () => void;
 }) {
@@ -480,10 +479,6 @@ export default function DiffTool({
     const target = pending.target ?? 'before';
     if (target === 'before') setBefore(pending.input);
     else setAfter(pending.input);
-    if (pending.output !== undefined) {
-      if (target === 'before') setAfter(pending.output);
-      else setBefore(pending.output);
-    }
     setLastFilled(target);
     if (noticeTimer.current !== null) window.clearTimeout(noticeTimer.current);
     noticeTimer.current = window.setTimeout(() => setLastFilled(null), 2200);

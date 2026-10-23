@@ -10,7 +10,7 @@ Go 层是桌面壳层和服务边界。修改这些边界前先确认现有数�
 
 ## 服务与配置
 
-- `main.go` 负责 Wails 应用启动、窗口、系统托盘、服务注册和事件广播；`configservice.go` 的 `ConfigService` 负责应用配置及历史记录服务。
+- `main.go` 负责 Wails 应用启动、窗口、系统托盘、服务注册和事件广播；`configservice.go` 的 `ConfigService` 负责应用配置持久化。
 - 能切换远程来源或主机的工具必须维护自己的来源实体和来源管理，以 SSH 文件管理和镜像管理的模式为准。可以引用共享 SSH 连接的 profile ID 作为连接凭据，但不能直接把 SSH profile 列表当作该工具的来源列表，也不能省略该工具自己的来源名称、类型和关联配置。前端交互规范见 [forms-and-controls.md](../layout-guidance/forms-and-controls.md)。Go 保存接口和配置规范化必须保留前端提交的来源列表顺序；本机来源只在缺失时补入，不得每次保存都强制移到首位。
 - `greetservice.go` 是未使用的模板残留，除非需求明确要求，不要把它重新接入服务列表或围绕它建立新调用链。
 - 应用配置持久化到 `os.UserConfigDir()/TinkerKit/config.json`，窗口位置和大小持久化到同目录的 `window-state.json`。

@@ -16,7 +16,6 @@ import {
   useFocusOnActivate,
   decodeBase64,
   type PendingAction,
-  type ToolId,
 } from './shared';
 import { toast } from './ui/toast';
 import { backendErrorKey } from '../lib/backend-error';
@@ -110,20 +109,11 @@ function TextPane({
 }
 export default function Base64Tool({
   active,
-  record,
   pending,
   clearPending,
 }: {
   active: boolean;
   theme: string;
-  record: (
-    tool: ToolId,
-    action: string,
-    detail: string,
-    input: string,
-    output?: string,
-    meta?: { mode: string; mediaType?: string; name?: string; bytes?: number },
-  ) => void;
   pending: PendingAction | null;
   clearPending: () => void;
 }) {
@@ -240,26 +230,10 @@ export default function Base64Tool({
       toast.add({ title: t('toast.copyFailed'), type: 'error' });
     }
   };
-  const applyFile = useCallback(
-    (info: FileInfo) => {
-      setSourceFile(info);
-      setInput(info.data);
-      record(
-        'base64',
-        t('base64Tool.encoded'),
-        `${info.image ? t('base64Tool.image') : t('base64Tool.file')} · ${bytesLabel(info.size)}`,
-        info.data,
-        info.data.replace(/^data:[^,]+,/, ''),
-        {
-          mode: info.image ? 'image' : 'file',
-          mediaType: info.type,
-          name: info.name,
-          bytes: info.size,
-        },
-      );
-    },
-    [record, t],
-  );
+  const applyFile = useCallback((info: FileInfo) => {
+    setSourceFile(info);
+    setInput(info.data);
+  }, []);
 
   const loadPath = useCallback(
     async (path: string) => {

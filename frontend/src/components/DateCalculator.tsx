@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState, type FocusEvent } from 'react';
+import { useId, useState, type FocusEvent } from 'react';
 import { CalendarBlank, Copy, Minus, Plus } from '@phosphor-icons/react';
 import { useTranslation } from 'react-i18next';
 import { Button } from './ui/button';
@@ -15,23 +15,7 @@ import {
   type DateOperation,
 } from '../utils/dateCalculator';
 import { parseTimeInput } from '../utils/time';
-import type { PendingAction, ToolId } from './shared';
 import { toast } from './ui/toast';
-
-export const dateCalculatorModes = {
-  difference: 'date-difference',
-  calculation: 'date-calculation',
-} as const;
-
-type DateCalculatorMode = (typeof dateCalculatorModes)[keyof typeof dateCalculatorModes];
-type DateCalculatorRecord = (
-  tool: ToolId,
-  action: string,
-  detail: string,
-  input: string,
-  output?: string,
-  meta?: { mode?: string },
-) => void;
 
 const initialDurationValues: Record<DateDurationUnit, string> = {
   years: '0',
@@ -167,70 +151,7 @@ function ResultMessage({ message, invalid }: { message: string; invalid?: boolea
   );
 }
 
-type RestoredDateCalculatorState =
-  | {
-      mode: typeof dateCalculatorModes.difference;
-      start: string;
-      end: string;
-    }
-  | {
-      mode: typeof dateCalculatorModes.calculation;
-      base: string;
-      operation: DateOperation;
-      duration: Record<DateDurationUnit, string>;
-    };
-
-function parseRestoredDateCalculatorState(mode: string | undefined, input: string) {
-  if (mode !== dateCalculatorModes.difference && mode !== dateCalculatorModes.calculation)
-    return null;
-  try {
-    const value = JSON.parse(input) as Record<string, unknown>;
-    if (!value || typeof value !== 'object') return null;
-    if (mode === dateCalculatorModes.difference) {
-      return typeof value.start === 'string' && typeof value.end === 'string'
-        ? ({
-            mode,
-            start: value.start,
-            end: value.end,
-          } satisfies RestoredDateCalculatorState)
-        : null;
-    }
-    if (typeof value.base !== 'string') return null;
-    if (value.operation !== 'add' && value.operation !== 'subtract') return null;
-    if (!value.duration || typeof value.duration !== 'object') return null;
-    const source = value.duration as Record<string, unknown>;
-    const duration = {} as Record<DateDurationUnit, string>;
-    for (const unit of dateDurationUnits) {
-      const unitValue = source[unit];
-      if (
-        typeof unitValue !== 'string' &&
-        (typeof unitValue !== 'number' || !Number.isSafeInteger(unitValue))
-      )
-        return null;
-      duration[unit] = String(unitValue);
-    }
-    return {
-      mode,
-      base: value.base,
-      operation: value.operation,
-      duration,
-    } satisfies RestoredDateCalculatorState;
-  } catch {
-    return null;
-  }
-}
-
-export default function DateCalculator({
-  record,
-  pending,
-  clearPending,
-  onActivate,
-}: {
-  record: DateCalculatorRecord;
-  pending: PendingAction | null;
-  clearPending: () => void;
-  onActivate: () => void;
-}) {
+export default function DateCalculator() {
   const { t } = useTranslation();
   const idPrefix = useId();
   const [initialDateTime] = useState(() => formatDateTimeLocal(new Date()));
@@ -239,34 +160,6 @@ export default function DateCalculator({
   const [baseDate, setBaseDate] = useState(initialDateTime);
   const [operation, setOperation] = useState<DateOperation>('add');
   const [durationValues, setDurationValues] = useState(initialDurationValues);
-  const consumed = useRef<PendingAction | null>(null);
-
-  useEffect(() => {
-    if (
-      !pending ||
-      pending.tool !== 'time' ||
-      pending.action !== 'restore' ||
-      consumed.current === pending
-    )
-      return;
-    const restored = parseRestoredDateCalculatorState(pending.mode, pending.input);
-    if (!restored) {
-      clearPending();
-      return;
-    }
-    consumed.current = pending;
-    clearPending();
-    onActivate();
-    if (restored.mode === dateCalculatorModes.difference) {
-      setDifferenceStart(restored.start);
-      setDifferenceEnd(restored.end);
-    } else {
-      setBaseDate(restored.base);
-      setOperation(restored.operation);
-      setDurationValues(restored.duration);
-    }
-  }, [pending]);
-
   const startDate = parseTimeInput(differenceStart);
   const endDate = parseTimeInput(differenceEnd);
   const difference = startDate && endDate ? calculateDateDifference(startDate, endDate) : null;
@@ -293,16 +186,10 @@ export default function DateCalculator({
   const calculatedDate =
     parsedBaseDate && duration ? calculateDateTime(parsedBaseDate, duration, operation) : null;
   const calculatedDateText = calculatedDate ? formatDateTimeDisplay(calculatedDate) : '';
-  const copyResult = async (
-    value: string,
-    action: string,
-    input: string,
-    mode: DateCalculatorMode,
-  ) => {
+  const copyResult = async (value: string) => {
     try {
       await navigator.clipboard.writeText(value);
       toast.add({ title: t('toast.copied', { value }) });
-      record('time', action, value, input, value, { mode });
     } catch {
       toast.add({ title: t('toast.copyFailed'), type: 'error' });
     }
@@ -318,8 +205,6 @@ export default function DateCalculator({
       : !duration
         ? t('timeTool.dateCalculator.invalidDuration')
         : t('timeTool.dateCalculator.resultOutOfRange');
-  const differenceInput = JSON.stringify({ start: differenceStart, end: differenceEnd });
-  const calculationInput = JSON.stringify({ base: baseDate, operation, duration });
 
   return (
     <div className="min-w-0 px-1.5 pb-4">
@@ -354,14 +239,7 @@ export default function DateCalculator({
               label={t('timeTool.dateCalculator.differenceResult')}
               value={differenceText}
               detail={differenceWeeksText}
-              onCopy={() =>
-                copyResult(
-                  differenceCopyText,
-                  t('timeTool.dateCalculator.copyDifference'),
-                  differenceInput,
-                  dateCalculatorModes.difference,
-                )
-              }
+              onCopy={() => copyResult(differenceCopyText)}
               copyLabel={t('timeTool.dateCalculator.copyResult')}
             />
           ) : (
@@ -428,14 +306,7 @@ export default function DateCalculator({
             <ResultValue
               label={t('timeTool.dateCalculator.calculatedResult')}
               value={calculatedDateText}
-              onCopy={() =>
-                copyResult(
-                  calculatedDateText,
-                  t('timeTool.dateCalculator.copyCalculation'),
-                  calculationInput,
-                  dateCalculatorModes.calculation,
-                )
-              }
+              onCopy={() => copyResult(calculatedDateText)}
               copyLabel={t('timeTool.dateCalculator.copyResult')}
             />
           ) : (

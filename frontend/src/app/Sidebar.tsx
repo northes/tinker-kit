@@ -17,7 +17,6 @@ import {
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import {
-  ClockCounterClockwise,
   Command as CommandIcon,
   DotsSixVertical,
   Eye,
@@ -302,22 +301,6 @@ export function Sidebar({
             )}
           </nav>
         )}
-        <nav className="flex flex-col gap-0.5" aria-label={t('titlebar.history')}>
-          <div className="sidebar-heading my-4 mb-1 px-2 text-[9px] font-medium uppercase tracking-[.08em] text-muted-foreground">
-            {t('titlebar.history')}
-          </div>
-          <Button
-            variant="ghost"
-            className={sidebarItemClassName}
-            aria-current={page === 'history' ? 'page' : undefined}
-            aria-label={t('titlebar.history')}
-            title={t('titlebar.history')}
-            onClick={() => onNavigate('history')}
-          >
-            <ClockCounterClockwise data-icon="inline-start" size={17} weight="duotone" />
-            <span>{t('titlebar.history')}</span>
-          </Button>
-        </nav>
         <nav className="mb-3 flex flex-col gap-0.5" aria-label={t('groups.system')}>
           <div className="sidebar-heading my-4 mb-1 px-2 text-[9px] font-medium uppercase tracking-[.08em] text-muted-foreground">
             {t('groups.system')}

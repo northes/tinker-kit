@@ -9,18 +9,6 @@ import { Call as $Call, CancellablePromise as $CancellablePromise } from "@wails
 // @ts-ignore: Unused imports
 import * as $models from "./models.js";
 
-export function AppendHistory(entry: $models.HistoryEntry): $CancellablePromise<$models.HistoryItem> {
-    return $Call.ByID(2449147677, entry);
-}
-
-export function ClearHistory(): $CancellablePromise<void> {
-    return $Call.ByID(3367000684);
-}
-
-export function DeleteHistory(id: number): $CancellablePromise<void> {
-    return $Call.ByID(566125064, id);
-}
-
 /**
  * DeleteSSHKnownHost 删除应用内保存的 SSH 主机指纹记录。
  */
@@ -48,18 +36,6 @@ export function Get(): $CancellablePromise<$models.Config> {
 
 export function GetAppName(): $CancellablePromise<string> {
     return $Call.ByID(4287382575);
-}
-
-export function GetHistory(): $CancellablePromise<$models.HistoryItem[] | null> {
-    return $Call.ByID(1240509511);
-}
-
-export function GetHistoryContent(id: number): $CancellablePromise<$models.HistoryContent> {
-    return $Call.ByID(3076662128, id);
-}
-
-export function GetHistoryPage(offset: number, limit: number): $CancellablePromise<$models.HistoryPage> {
-    return $Call.ByID(42299820, offset, limit);
 }
 
 /**
@@ -121,10 +97,6 @@ export function IsAutostartEnabled(): $CancellablePromise<boolean> {
  */
 export function LogFilterHistory(action: string, query: string): $CancellablePromise<string[] | null> {
     return $Call.ByID(409181351, action, query);
-}
-
-export function QueryHistory(offset: number, limit: number, filter: $models.HistoryFilter): $CancellablePromise<$models.HistoryPage> {
-    return $Call.ByID(3316423139, offset, limit, filter);
 }
 
 /**

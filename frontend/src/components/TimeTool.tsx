@@ -53,9 +53,8 @@ import {
   useFocusOnActivate,
   useHistory,
   type PendingAction,
-  type ToolId,
 } from './shared';
-import DateCalculator, { dateCalculatorModes } from './DateCalculator';
+import DateCalculator from './DateCalculator';
 import DateTimePickerPopover from './DateTimePickerPopover';
 import RealTimePanel from './RealTimePanel';
 import { TimezonePickerDialog } from './TimezonePickerDialog';
@@ -225,7 +224,6 @@ export default function TimeTool({
   onSaveResults,
   onWeekStartChange,
   onNtpServersChange,
-  record,
   pending,
   clearPending,
 }: {
@@ -237,7 +235,6 @@ export default function TimeTool({
   onSaveResults: (order: string[], hidden: string[]) => void;
   onWeekStartChange: (weekStart: TimeWeekStart) => void;
   onNtpServersChange: (ntpServers: string[]) => void;
-  record: (tool: ToolId, action: string, detail: string, input: string) => void;
   pending: PendingAction | null;
   clearPending: () => void;
 }) {
@@ -284,21 +281,20 @@ export default function TimeTool({
   const order = normalizeOrder(resultOrder),
     hidden = new Set(hiddenResults),
     displayedResults = editing ? draftOrder : order.filter((id) => !hidden.has(id));
+  const applySystemTimeZone = () => {
+    const zone = getSystemTimeZone();
+    setTimeZone(zone);
+    const label = zones.find((item) => item.id === zone)?.shortLabel ?? zone;
+    toast.add({ title: t('timeTool.systemTimezoneSwitched', { zone: label }), type: 'success' });
+  };
   const applyTimePreset = (preset: TimePreset) => {
     const date = resolveTimePreset(preset, new Date(), timeZone, parsed, weekStart);
     if (!date) return;
     const timestamp = Math.floor(date.getTime() / 1000).toString();
     setInput(timestamp, { isolate: true });
-    record('time', t(`timeTool.presets.${preset}`), timestamp, timestamp);
   };
   useEffect(() => {
     if (!pending || pending.tool !== 'time' || consumed.current === pending) return;
-    if (
-      pending.action === 'restore' &&
-      (pending.mode === dateCalculatorModes.difference ||
-        pending.mode === dateCalculatorModes.calculation)
-    )
-      return;
     consumed.current = pending;
     clearPending();
     // 输入框与时区都属于转换页；剪贴板匹配等来源填入数据时若停留在其它 tab，用户看不到结果。
@@ -308,20 +304,16 @@ export default function TimeTool({
       return;
     }
     if (pending.action === 'timezone') {
-      setTimeZone(getSystemTimeZone());
+      applySystemTimeZone();
       return;
     }
     setInput(pending.input, { isolate: true });
-    if (pending.action !== 'restore')
-      record('time', t('timeTool.converted'), pending.input.trim().slice(0, 40), pending.input);
   }, [pending]);
   const copyResult = async (id: TimeResultId) => {
-    const label = t(`timeTool.${id}`),
-      value = values[id];
+    const value = values[id];
     try {
       await navigator.clipboard.writeText(value);
       toast.add({ title: t('toast.copied', { value }) });
-      record('time', t('timeTool.converted'), label, input);
     } catch {
       toast.add({ title: t('toast.copyFailed'), type: 'error' });
     }
@@ -396,15 +388,13 @@ export default function TimeTool({
                   <div className="flex h-[46px] flex-none items-center gap-0.5">
                     <Button
                       variant="ghost"
-                      className="max-w-56 min-w-0 gap-1.5 px-2.5 text-xs font-normal text-muted-foreground"
+                      size="icon"
+                      className="flex-none text-muted-foreground"
                       aria-label={t('timeTool.timezone')}
                       title={t('timeTool.timezone')}
                       onClick={() => setZonePickerOpen(true)}
                     >
-                      <Globe data-icon="inline-start" size={16} weight="duotone" />
-                      <span className="min-w-0 truncate">
-                        {zones.find((zone) => zone.id === timeZone)?.shortLabel ?? timeZone}
-                      </span>
+                      <Globe size={16} weight="duotone" />
                     </Button>
                     <Button
                       variant="ghost"
@@ -412,7 +402,7 @@ export default function TimeTool({
                       className="flex-none text-muted-foreground"
                       aria-label={t('timeTool.useSystemTimezone')}
                       title={t('timeTool.useSystemTimezone')}
-                      onClick={() => setTimeZone(getSystemTimeZone())}
+                      onClick={applySystemTimeZone}
                     >
                       <GpsFix size={15} weight="duotone" />
                     </Button>
@@ -531,7 +521,6 @@ export default function TimeTool({
                       onChange={(date) => {
                         const timestamp = Math.floor(date.getTime() / 1000).toString();
                         setInput(timestamp, { isolate: true });
-                        record('time', t('timeTool.pickDateTime'), timestamp, timestamp);
                       }}
                     />
                   </div>
@@ -548,9 +537,9 @@ export default function TimeTool({
                     {t(editing ? 'timeTool.done' : 'timeTool.edit')}
                   </Button>
                 </div>
-                <ScrollArea className="min-h-0" options={{ overflow: { x: 'hidden' } }}>
-                  {/* 预览和编辑共用上下文，保持拖拽回调注册稳定。 */}
-                  {editing || parsed ? (
+                {editing || parsed ? (
+                  <ScrollArea className="min-h-0" options={{ overflow: { x: 'hidden' } }}>
+                    {/* 预览和编辑共用上下文，保持拖拽回调注册稳定。 */}
                     <DndContext
                       sensors={sensors}
                       collisionDetection={closestCenter}
@@ -585,14 +574,14 @@ export default function TimeTool({
                         </div>
                       </SortableContext>
                     </DndContext>
-                  ) : (
-                    <div className="flex min-h-[140px] flex-col items-center justify-center gap-2 text-center text-muted-foreground">
-                      <Clock size={24} weight="duotone" />
-                      <strong className="text-sm font-semibold">{t('timeTool.emptyTitle')}</strong>
-                      <span className="text-[11px]">{t('timeTool.emptyHint')}</span>
-                    </div>
-                  )}
-                </ScrollArea>
+                  </ScrollArea>
+                ) : (
+                  <div className="flex h-full min-h-[140px] flex-col items-center justify-center gap-2 text-center text-muted-foreground">
+                    <Clock size={24} weight="duotone" />
+                    <strong className="text-sm font-semibold">{t('timeTool.emptyTitle')}</strong>
+                    <span className="text-[11px]">{t('timeTool.emptyHint')}</span>
+                  </div>
+                )}
               </div>
               <TimezonePickerDialog
                 open={zonePickerOpen}
@@ -612,12 +601,7 @@ export default function TimeTool({
                 className="h-full [padding-inline-end:var(--overlay-scrollbar-size)]"
                 options={{ overflow: { x: 'hidden' } }}
               >
-                <DateCalculator
-                  record={record}
-                  pending={pending}
-                  clearPending={clearPending}
-                  onActivate={() => setMode('dateCalculator')}
-                />
+                <DateCalculator />
               </ScrollArea>
             </TabsContent>
             <TabsContent value="realTime" keepMounted className="min-h-0 overflow-hidden">

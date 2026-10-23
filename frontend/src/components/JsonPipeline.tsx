@@ -37,12 +37,19 @@ import {
   SelectValue,
 } from './ui/select';
 import { Switch } from './ui/switch';
-import { ArrowsOut, DotsSixVertical, Table as TableIcon, Trash } from '@phosphor-icons/react';
+import {
+  ArrowsOut,
+  DotsSixVertical,
+  Queue,
+  Table as TableIcon,
+  Trash,
+} from '@phosphor-icons/react';
 import type { Extension } from '@codemirror/state';
 import { backendPathCompletions, backendValueCompletions } from './JsonPathCompletion';
 import type { PipelineCompletionContext, PipelineEvaluation } from './useBackendPipelineEvaluation';
 import { ReadPipelineTablePage } from '../../bindings/tinkerkit/jsonpipelineservice';
 import type { PipelineTablePage } from '../../bindings/tinkerkit/models';
+import { Empty, EmptyHeader, EmptyMedia, EmptyTitle } from './ui/empty';
 import { Spinner } from './ui/spinner';
 import { JsonErrorPanel } from './JsonErrorPanel';
 import { JsonTablePreview } from './JsonTablePreview';
@@ -53,6 +60,7 @@ import '../styles/tools/editor.css';
 import '../styles/tools/json.css';
 import type {
   PipelineDirection,
+  PipelineFilterOperator,
   PipelineItem,
   PipelineItemType,
   PipelineSortMode,
@@ -74,11 +82,36 @@ function newPipelineItem(type: PipelineItemType = 'extract'): PipelineItem {
     direction: 'asc',
     arrayPath: '$',
     itemPath: '$',
+    operator: 'eq',
     filterValue: '',
     template: '{$.name}?token={$.token}',
   };
 }
-const typeOptions: PipelineItemType[] = ['extract', 'sort', 'arraySort', 'filter', 'template'];
+const filterOperators: PipelineFilterOperator[] = [
+  'gt',
+  'gte',
+  'eq',
+  'lt',
+  'lte',
+  'notNull',
+  'notEmpty',
+  'isNull',
+  'isEmpty',
+  'stringLengthGt',
+  'stringLengthGte',
+  'stringLengthEq',
+  'stringLengthLt',
+  'stringLengthLte',
+];
+const unaryFilterOperators: PipelineFilterOperator[] = ['notNull', 'notEmpty', 'isNull', 'isEmpty'];
+const typeOptions: PipelineItemType[] = [
+  'extract',
+  'sort',
+  'arraySort',
+  'filter',
+  'arrayDedupe',
+  'template',
+];
 const configString = (item: Record<string, unknown>, key: string, fallback: string) => {
   const value = item[key];
   if (value === undefined) return fallback;
@@ -113,6 +146,12 @@ export function parsePipelineConfig(source: string): PipelineItem[] {
       throw new PipelineConfigError();
     if (raw.direction !== undefined && raw.direction !== 'asc' && raw.direction !== 'desc')
       throw new PipelineConfigError();
+    if (
+      raw.operator !== undefined &&
+      (typeof raw.operator !== 'string' ||
+        !filterOperators.includes(raw.operator as PipelineFilterOperator))
+    )
+      throw new PipelineConfigError();
     const item: PipelineItem = {
       id: createPipelineId(),
       enabled: raw.enabled ?? true,
@@ -122,6 +161,7 @@ export function parsePipelineConfig(source: string): PipelineItem[] {
       direction: (raw.direction ?? 'asc') as PipelineDirection,
       arrayPath: configString(raw, 'arrayPath', '$'),
       itemPath: configString(raw, 'itemPath', '$'),
+      operator: (raw.operator ?? 'eq') as PipelineFilterOperator,
       filterValue: configString(raw, 'filterValue', ''),
       template: configString(raw, 'template', '{$.name}?token={$.token}'),
     };
@@ -329,14 +369,18 @@ function SelectField({
   value,
   options,
   onSelect,
+  className = '',
 }: {
   label: string;
   value: string;
   options: Array<{ key: string; label: string }>;
   onSelect: (value: string) => void;
+  className?: string;
 }) {
   return (
-    <label className="json-pipeline-field json-pipeline-select-field flex min-w-0 items-center gap-2 @max-[520px]/pipeline-rules:items-stretch @max-[520px]/pipeline-rules:flex-col @max-[520px]/pipeline-rules:gap-[5px]">
+    <label
+      className={`json-pipeline-field json-pipeline-select-field flex min-w-0 items-center gap-2 @max-[520px]/pipeline-rules:items-stretch @max-[520px]/pipeline-rules:flex-col @max-[520px]/pipeline-rules:gap-[5px] ${className}`.trim()}
+    >
       <span className="w-[86px] min-w-[86px] whitespace-nowrap font-mono text-[10px] font-medium leading-none tracking-[.02em] text-muted-foreground @max-[520px]/pipeline-rules:w-auto @max-[520px]/pipeline-rules:min-w-0">
         {label}
       </span>
@@ -523,15 +567,64 @@ function PipelineRuleRow({
               field="itemPath"
               completionRef={completionRef}
             />
+            <SelectField
+              label={t('jsonTool.pipeline.operator')}
+              value={item.operator}
+              options={filterOperators.map((operator) => ({
+                key: operator,
+                label: t(`jsonTool.pipeline.operators.${operator}`),
+              }))}
+              onSelect={(value) => onUpdate(item.id, { operator: value as PipelineFilterOperator })}
+              className={
+                unaryFilterOperators.includes(item.operator)
+                  ? 'col-span-2 @max-[520px]/pipeline-rules:col-span-1'
+                  : ''
+              }
+            />
+            {!unaryFilterOperators.includes(item.operator) ? (
+              <PathField
+                label={
+                  item.operator.startsWith('stringLength')
+                    ? t('jsonTool.pipeline.filterLength')
+                    : t('jsonTool.pipeline.filterValue')
+                }
+                value={item.filterValue}
+                placeholder={
+                  item.operator.startsWith('stringLength')
+                    ? t('jsonTool.pipeline.filterLengthPlaceholder')
+                    : undefined
+                }
+                onChange={(value) => onUpdate(item.id, { filterValue: value })}
+                theme={theme}
+                itemId={item.id}
+                field="filterValue"
+                completionRef={completionRef}
+              />
+            ) : null}
+          </div>
+        )}{' '}
+        {item.type === 'arrayDedupe' && (
+          <div className="json-pipeline-fields grid grid-cols-2 gap-x-2 gap-y-2.5 @max-[520px]/pipeline-rules:grid-cols-1">
             <PathField
-              label={t('jsonTool.pipeline.filterValue')}
-              value={item.filterValue}
-              onChange={(value) => onUpdate(item.id, { filterValue: value })}
+              label={t('jsonTool.pipeline.arrayPath')}
+              value={item.arrayPath}
+              placeholder={t('jsonTool.pipeline.arrayPathPlaceholder')}
+              onChange={(value) => onUpdate(item.id, { arrayPath: value })}
               theme={theme}
               itemId={item.id}
-              field="filterValue"
+              field="arrayPath"
               completionRef={completionRef}
-              className="col-span-2 @max-[520px]/pipeline-rules:col-span-1"
+              onCreate={(view) => onFirstEditorCreate(item.id, view)}
+            />
+            <PathField
+              label={t('jsonTool.pipeline.dedupeItemPath')}
+              value={item.itemPath}
+              placeholder={t('jsonTool.pipeline.dedupeItemPathPlaceholder')}
+              onChange={(value) => onUpdate(item.id, { itemPath: value })}
+              theme={theme}
+              itemId={item.id}
+              field="itemPath"
+              completionRef={completionRef}
             />
           </div>
         )}{' '}
@@ -769,6 +862,7 @@ export function PipelinePanel({
     sort: t('jsonTool.pipeline.types.sort'),
     arraySort: t('jsonTool.pipeline.types.arraySort'),
     filter: t('jsonTool.pipeline.types.filter'),
+    arrayDedupe: t('jsonTool.pipeline.types.arrayDedupe'),
     template: t('jsonTool.pipeline.types.template'),
   };
   const sensors = useSensors(
@@ -815,22 +909,27 @@ export function PipelinePanel({
     if (!focusItemId) return;
     const view = editorViews.current.get(focusItemId);
     if (view) focusAddedItem(focusItemId, view);
-  }, [focusItemId]);
+  }, [focusItemId, listViewport]);
   return (
     <section className="json-pipeline-rules flex h-full min-h-0 min-w-0 flex-col gap-2 [container-name:pipeline-rules] [container-type:inline-size]">
       <span className="json-pane-label flex-none font-mono text-[10px] font-medium leading-none tracking-[.04em] text-muted-foreground uppercase">
         {t('jsonTool.pipeline.rules')}
       </span>
-      <ScrollArea
-        className="json-pipeline-list min-h-0 flex-1 [padding-inline-end:var(--overlay-scrollbar-size)]"
-        options={{ overflow: { x: 'hidden' } }}
-        onViewport={setListViewport}
-      >
-        {rules.length === 0 ? (
-          <div className="json-pipeline-empty flex min-h-[74px] items-center justify-center text-[11px] text-muted-foreground">
-            {t('jsonTool.pipeline.empty')}
-          </div>
-        ) : (
+      {rules.length === 0 ? (
+        <Empty className="json-pipeline-empty min-h-[74px] flex-1">
+          <EmptyHeader>
+            <EmptyMedia variant="icon">
+              <Queue weight="duotone" />
+            </EmptyMedia>
+            <EmptyTitle>{t('jsonTool.pipeline.empty')}</EmptyTitle>
+          </EmptyHeader>
+        </Empty>
+      ) : (
+        <ScrollArea
+          className="json-pipeline-list min-h-0 flex-1 [padding-inline-end:var(--overlay-scrollbar-size)]"
+          options={{ overflow: { x: 'hidden' } }}
+          onViewport={setListViewport}
+        >
           <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
             <SortableContext
               items={rules.map((item) => item.id)}
@@ -852,8 +951,8 @@ export function PipelinePanel({
               ))}
             </SortableContext>
           </DndContext>
-        )}
-      </ScrollArea>
+        </ScrollArea>
+      )}
     </section>
   );
 }

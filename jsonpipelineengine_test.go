@@ -103,6 +103,85 @@ func TestRunPipelineFilter(t *testing.T) {
 	}
 }
 
+func TestRunPipelineFilterOperators(t *testing.T) {
+	doc, err := ParseJSONLoose(`{"items":[{"id":"a","n":1,"s":"ab","v":null,"e":{}},{"id":"b","n":2,"s":"abc","v":"x","e":[]},{"id":"c","n":3,"s":"a","v":0,"e":""},{"id":"d","n":null,"s":"","v":false,"e":null},{"id":"e","n":4,"s":"abcd","v":"","e":"z"}]}`)
+	if err != nil {
+		t.Fatalf("parse failed: %v", err)
+	}
+	cases := []struct {
+		operator string
+		itemPath string
+		value    string
+		want     string
+	}{
+		{operator: "gt", itemPath: "$.n", value: "2", want: `["c","e"]`},
+		{operator: "gte", itemPath: "$.n", value: "2", want: `["b","c","e"]`},
+		{operator: "eq", itemPath: "$.n", value: "2", want: `["b"]`},
+		{operator: "lt", itemPath: "$.n", value: "2", want: `["a"]`},
+		{operator: "lte", itemPath: "$.n", value: "2", want: `["a","b"]`},
+		{operator: "notNull", itemPath: "$.v", value: "", want: `["b","c","d","e"]`},
+		{operator: "notEmpty", itemPath: "$.e", value: "", want: `["e"]`},
+		{operator: "isNull", itemPath: "$.v", value: "", want: `["a"]`},
+		{operator: "isEmpty", itemPath: "$.v", value: "", want: `["a","e"]`},
+		{operator: "stringLengthGt", itemPath: "$.s", value: "2", want: `["b","e"]`},
+		{operator: "stringLengthGte", itemPath: "$.s", value: "2", want: `["a","b","e"]`},
+		{operator: "stringLengthEq", itemPath: "$.s", value: "2", want: `["a"]`},
+		{operator: "stringLengthLt", itemPath: "$.s", value: "2", want: `["c","d"]`},
+		{operator: "stringLengthLte", itemPath: "$.s", value: "2", want: `["a","c","d"]`},
+	}
+	for _, testCase := range cases {
+		run := runPipeline(context.Background(), doc, pipelineItems(t, []PipelineItem{
+			{ID: "f", Enabled: true, Type: "filter", ArrayPath: "$.items", ItemPath: testCase.itemPath, Operator: testCase.operator, FilterValue: testCase.value},
+			{ID: "e", Enabled: true, Type: "extract", Path: "$.items[*].id"},
+		}), nil)
+		if run.Error != nil {
+			t.Fatalf("operator %s returned error: %#v", testCase.operator, run.Error)
+		}
+		if got := StringifyJSON(run.Output, ""); got != testCase.want {
+			t.Fatalf("operator %s = %s, want %s", testCase.operator, got, testCase.want)
+		}
+	}
+	for _, value := range []string{`"2"`, "-1", "1.5"} {
+		run := runPipeline(context.Background(), doc, pipelineItems(t, []PipelineItem{
+			{ID: "f", Enabled: true, Type: "filter", ArrayPath: "$.items", ItemPath: "$.s", Operator: "stringLengthEq", FilterValue: value},
+		}), nil)
+		if run.Error == nil || run.Error.Code != "filterLengthInvalid" {
+			t.Fatalf("string length value %s: expected filterLengthInvalid, got %#v", value, run.Error)
+		}
+	}
+}
+
+func TestRunPipelineArrayDedupe(t *testing.T) {
+	doc, err := ParseJSONLoose(`{"items":[{"id":1,"name":"first"},{"id":2,"name":"second"},{"id":1,"name":"third"},{"name":"no-id"},{"id":{"a":1,"b":2},"name":"object"},{"id":{"b":2,"a":1},"name":"same-object"}]}`)
+	if err != nil {
+		t.Fatalf("parse failed: %v", err)
+	}
+	run := runPipeline(context.Background(), doc, pipelineItems(t, []PipelineItem{
+		{ID: "d", Enabled: true, Type: "arrayDedupe", ArrayPath: "$.items", ItemPath: "$.id"},
+	}), nil)
+	if run.Error != nil {
+		t.Fatalf("unexpected error: %#v", run.Error)
+	}
+	want := `{"items":[{"id":1,"name":"first"},{"id":2,"name":"second"},{"name":"no-id"},{"id":{"a":1,"b":2},"name":"object"}]}`
+	if got := StringifyJSON(run.Output, ""); got != want {
+		t.Fatalf("unexpected deduped output: %s", got)
+	}
+
+	scalars, err := ParseJSONLoose(`[1,2,1,"1",true,true,null,null]`)
+	if err != nil {
+		t.Fatalf("parse failed: %v", err)
+	}
+	run = runPipeline(context.Background(), scalars, pipelineItems(t, []PipelineItem{
+		{ID: "s", Enabled: true, Type: "arrayDedupe", ArrayPath: "$", ItemPath: "$"},
+	}), nil)
+	if run.Error != nil {
+		t.Fatalf("unexpected error: %#v", run.Error)
+	}
+	if got := StringifyJSON(run.Output, ""); got != `[1,2,"1",true,null]` {
+		t.Fatalf("unexpected scalar dedupe output: %s", got)
+	}
+}
+
 func TestRunPipelineTemplate(t *testing.T) {
 	doc, _ := ParseJSONLoose(`{"name":"n","token":"t"}`)
 	items := pipelineItems(t, []PipelineItem{

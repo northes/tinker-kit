@@ -45,7 +45,6 @@ import {
     type PendingAction,
     Reveal,
     ToolActionBar,
-    type ToolId,
     ToolLayout,
     ToolLayoutContent,
     ToolLayoutFooter,
@@ -462,12 +461,10 @@ function usePointerSession() {
 
 export default function ImageTool({
                                       active,
-                                      record,
                                       pending,
                                       clearPending,
                                   }: {
     active: boolean;
-    record: (tool: ToolId, action: string, detail: string, input: string, output?: string) => void;
     pending: PendingAction | null;
     clearPending: () => void;
 }) {
@@ -765,16 +762,12 @@ export default function ImageTool({
         const format = outputFormat === 'svg' && !svgAllowed ? 'png' : outputFormat;
         try {
             let dataUrl: string;
-            let width = out.w;
-            let height = out.h;
             if (format === 'svg') {
                 const bytes = dataUrlToBytes(source.dataUrl);
                 const buffer = new ArrayBuffer(bytes.byteLength);
                 new Uint8Array(buffer).set(bytes);
                 const blob = new Blob([buffer], {type: IMAGE_OUTPUT_FORMATS.svg.mime});
                 dataUrl = await blobToDataUrl(blob);
-                width = source.width;
-                height = source.height;
             } else {
                 const canvas = await renderComposite({
                     source,
@@ -784,8 +777,6 @@ export default function ImageTool({
                     fillTransparent,
                     fillColor,
                 });
-                width = canvas.width;
-                height = canvas.height;
                 const blob = await encodeRasterBlob(canvas, format, quality, jpgFlattenColor);
                 dataUrl = await blobToDataUrl(blob);
             }
@@ -803,8 +794,6 @@ export default function ImageTool({
             });
             if (!path) return;
             await SaveBase64File(path, dataUrl);
-            const detail = t('imageTool.dimensions', {width, height});
-            record('image', t('imageTool.export'), detail, source.name, filename);
             toast.add({title: t('imageTool.exported')});
         } catch (error) {
             toast.add({
@@ -846,13 +835,11 @@ export default function ImageTool({
             let lo = 1;
             let hi = 100;
             let bestQuality = -1;
-            let bestBytes = 0;
             while (lo <= hi) {
                 const mid = (lo + hi) >> 1;
                 const blob = await encodeRasterBlob(canvas, outputFormat, mid, jpgFlattenColor);
                 if (blob.size <= targetBytes) {
                     bestQuality = mid;
-                    bestBytes = blob.size;
                     lo = mid + 1;
                 } else {
                     hi = mid - 1;
@@ -863,7 +850,6 @@ export default function ImageTool({
                 return;
             }
             setQuality(bestQuality);
-            record('image', t('imageTool.compress'), formatBytes(bestBytes), source.name);
             toast.add({title: t('imageTool.compressDone', {quality: bestQuality})});
         } catch (error) {
             toast.add({

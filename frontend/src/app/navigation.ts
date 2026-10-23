@@ -30,11 +30,9 @@ export function imageManagerDetailRoute(
 
 function pageFromPath(path: string): Page {
   const value = path.replace(/^\/+/, '');
-  if (value === 'settings' || value === 'history' || tools.some((tool) => tool.id === value))
-    return value as Page;
+  if (value === 'settings' || tools.some((tool) => tool.id === value)) return value as Page;
   const last = loadValue<string>('devutils.lastPage', '');
-  if (last === 'settings' || last === 'history' || tools.some((tool) => tool.id === last))
-    return last as Page;
+  if (last === 'settings' || tools.some((tool) => tool.id === last)) return last as Page;
   return tools[0].id as Page;
 }
 
@@ -54,7 +52,7 @@ export function routeMatchesPage(pathname: string, search: string, page: Page) {
 }
 
 export function isPage(value: unknown): value is Page {
-  return value === 'settings' || value === 'history' || tools.some((tool) => tool.id === value);
+  return value === 'settings' || tools.some((tool) => tool.id === value);
 }
 
 export function isToolId(value: string): value is ToolId {
@@ -78,7 +76,7 @@ export function resolveSidebarTools(
 }
 
 export function availablePage(page: Page, sidebarTools: SidebarToolConfig[]): Page {
-  if (page === 'settings' || page === 'history' || page === 'image-manager-detail') return page;
+  if (page === 'settings' || page === 'image-manager-detail') return page;
   if (sidebarTools.some((item) => item.id === page && item.enabled)) return page;
   const firstEnabled = sidebarTools.find((item) => item.enabled && isToolId(item.id));
   return firstEnabled ? (firstEnabled.id as ToolId) : 'settings';
@@ -100,12 +98,7 @@ export function moveSidebarToolBy(
 
 export function paletteToolId(item: PaletteItem): ToolId | null {
   if (item.tool) return item.tool;
-  if (
-    item.page &&
-    item.page !== 'settings' &&
-    item.page !== 'history' &&
-    item.page !== 'image-manager-detail'
-  )
+  if (item.page && item.page !== 'settings' && item.page !== 'image-manager-detail')
     return item.page;
   return null;
 }

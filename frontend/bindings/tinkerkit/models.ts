@@ -259,46 +259,6 @@ export interface FileTaskSnapshot {
     "tasks": FileTask[] | null;
 }
 
-export interface HistoryContent {
-    "input": string;
-    "output": string;
-}
-
-export interface HistoryEntry {
-    "tool": string;
-    "action": string;
-    "detail": string;
-    "mode": string;
-    "mediaType": string;
-    "name": string;
-    "bytes": number;
-    "input": string;
-    "output": string;
-}
-
-export interface HistoryFilter {
-    "tool": string;
-    "from": number;
-    "to": number;
-}
-
-export interface HistoryItem {
-    "id": number;
-    "tool": string;
-    "action": string;
-    "detail": string;
-    "at": string;
-    "mode": string;
-    "mediaType": string;
-    "name": string;
-    "bytes": number;
-}
-
-export interface HistoryPage {
-    "items": HistoryItem[] | null;
-    "total": number;
-}
-
 export interface ImageExportResult {
     "started": number;
     "snapshot": ImageTaskSnapshot;
@@ -572,6 +532,7 @@ export interface PipelineItem {
     "direction": string;
     "arrayPath": string;
     "itemPath": string;
+    "operator": string;
     "filterValue": string;
     "template": string;
 }

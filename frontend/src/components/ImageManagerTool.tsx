@@ -101,7 +101,6 @@ import {
   ToolLayoutToolbar,
   useCheckboxDragSelect,
   type PendingAction,
-  type ToolId,
 } from './shared';
 import { SSHProfileFormField } from './SSHProfileFormField';
 import { useSSHProfiles } from './SSHProfileManagerDialog';
@@ -147,7 +146,6 @@ export default function ImageManagerTool({
   settings,
   onSettingsChange,
   onOpenDetail,
-  record,
   pending,
   clearPending,
 }: {
@@ -155,7 +153,6 @@ export default function ImageManagerTool({
   settings: Settings;
   onSettingsChange: (patch: Pick<Settings, 'dockerCLIPath' | 'imageSources'>) => Promise<void>;
   onOpenDetail: (sourceId: string, imageId: string) => void;
-  record: (tool: ToolId, action: string, detail: string, input: string, output?: string) => void;
   pending: PendingAction | null;
   clearPending: () => void;
 }) {
@@ -248,14 +245,8 @@ export default function ImageManagerTool({
     clearPending();
     if (pending.action === 'refresh') {
       refreshList();
-      record(
-        'image-manager',
-        t('imageManagerTool.refreshed'),
-        sourceDisplayName(source, t, profiles),
-        source.id,
-      );
     }
-  }, [clearPending, pending, record, refreshList, source, t]);
+  }, [clearPending, pending, refreshList]);
 
   const unnamed = t('imageManagerTool.unnamed');
   const indexedRows = useMemo<IndexedImage[]>(
@@ -567,12 +558,6 @@ export default function ImageManagerTool({
         requestWatchReload();
       }
       if (failures.length === 0) setSelected(new Set());
-      record(
-        'image-manager',
-        t('imageManagerTool.push'),
-        changes.map((change) => `${change.source} → ${change.target}`).join('\n'),
-        source.id,
-      );
     } catch (error) {
       toast.add({
         title: t('imageManagerTool.pushFailed'),
@@ -596,12 +581,6 @@ export default function ImageManagerTool({
       if (result.started > 0) {
         applyTasks(result.snapshot);
         openTaskCenter('image-manager');
-        record(
-          'image-manager',
-          t(removeSource ? 'imageManagerTool.rename' : 'imageManagerTool.copyTagAction'),
-          changes.map((change) => `${change.source} → ${change.target}`).join('\n'),
-          source.id,
-        );
         setSelected(new Set());
       }
     } catch (error) {
@@ -907,7 +886,6 @@ export default function ImageManagerTool({
       } else {
         toast.add({ title: t('imageManagerTool.deleted') });
       }
-      record('image-manager', t('imageManagerTool.delete'), name, ids.join('\n'));
       setSelected(new Set());
       requestWatchReload();
     } catch (error) {
@@ -973,12 +951,6 @@ export default function ImageManagerTool({
       if (result.started > 0) {
         applyTasks(result.snapshot);
         openTaskCenter('image-manager');
-        record(
-          'image-manager',
-          t('imageManagerTool.batchExport'),
-          t('imageManagerTool.selectedCount', { count: result.started }),
-          imageIDs.join('\n'),
-        );
       }
     } catch (error) {
       toast.add({
@@ -1000,12 +972,6 @@ export default function ImageManagerTool({
       if (result.started > 0) {
         applyTasks(result.snapshot);
         openTaskCenter('image-manager');
-        record(
-          'image-manager',
-          t('imageManagerTool.exportTar'),
-          imageRowLabel(row, unnamed),
-          row.image.id,
-        );
       }
     } catch (error) {
       toast.add({
@@ -1028,12 +994,6 @@ export default function ImageManagerTool({
         // 只放入后台任务队列，不弹出任务面板；进度由底栏的后台任务入口展示。
         // 拉取在后台异步执行，开始时就刷新只会拿到旧结果；完成后由 Go 侧重扫并推送 diff。
         applyTasks(result.snapshot);
-        record(
-          'image-manager',
-          t('imageManagerTool.pullUpdate'),
-          t('imageManagerTool.selectedCount', { count: result.started }),
-          refs.join('\n'),
-        );
       }
     } catch (error) {
       toast.add({
@@ -1064,7 +1024,6 @@ export default function ImageManagerTool({
       );
       applyTasks(result.snapshot);
       if (currentSourceConfigKey.current === key) setOperationDialog(null);
-      record('image-manager', t('imageManagerTool.pull'), `${reference} → ${target}`, source.id);
     } catch (reason) {
       if (currentSourceConfigKey.current === key) setOperationError(errorMessage(reason));
     } finally {
@@ -1104,12 +1063,6 @@ export default function ImageManagerTool({
     const key = sourceConfigKey;
     const result = await StartImageImports(source.id, entries);
     applyTasks(result.snapshot);
-    record(
-      'image-manager',
-      t('imageManagerTool.importTar'),
-      t('imageManagerTool.importTasksStarted', { total: result.started }),
-      source.id,
-    );
     if (currentSourceConfigKey.current === key) setImportPlan(null);
   };
 
@@ -1215,12 +1168,6 @@ export default function ImageManagerTool({
                   disabled={busy !== null || sourceProfileMissing}
                   onPress={() => {
                     refreshList();
-                    record(
-                      'image-manager',
-                      t('imageManagerTool.refreshed'),
-                      sourceDisplayName(source, t, profiles),
-                      source.id,
-                    );
                   }}
                 />
               )}
@@ -1251,7 +1198,12 @@ export default function ImageManagerTool({
             <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-2">
               <Spinner />
               {sourceViewState === 'connecting' ? null : (
-                <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={cancelWatch}>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 px-2 text-xs"
+                  onClick={cancelWatch}
+                >
                   <XCircle data-icon="inline-start" size={14} />
                   {t('common.cancel')}
                 </Button>

@@ -14,7 +14,7 @@
 
 - 只加载 description 直接命中当前变更边界的 skill；禁止因“相关领域”顺带加载相邻 skill。
 - `project-validation` 仅在实现完成后按 diff 执行一次；实现过程中不要加载。
-- 修改现有工具的局部行为或样式，且不改变工具 ID、注册、导航、历史、托盘、配置、事件或 bindings 时，不要加载 `tool-development`。
+- 修改现有工具的局部行为或样式，且不改变工具 ID、注册、导航、托盘、配置、事件或 bindings 时，不要加载 `tool-development`。
 - 仅在持久化 Config、Wails 事件、托盘、Go 服务或 bindings 实际受影响时，才加载 `wails-integration`。
 - 不要因为普通样式、布局或现有组件 `className` 调整加载 `shadcn`；仅在安装、更新、添加 shadcn 组件或修改 `components.json` 时加载。
 - `migrate-radix-to-base` 仅在用户明确要求 Radix 到 Base UI 迁移时加载。

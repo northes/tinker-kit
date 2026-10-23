@@ -16,7 +16,6 @@ import {
   ToolLayout,
   useFocusOnActivate,
   type PendingAction,
-  type ToolId,
 } from './shared';
 import { toast } from './ui/toast';
 import { backendErrorKey } from '../lib/backend-error';
@@ -106,19 +105,10 @@ function QrTextPane({
 
 export default function QrCodeTool({
   active,
-  record,
   pending,
   clearPending,
 }: {
   active: boolean;
-  record: (
-    tool: ToolId,
-    action: string,
-    detail: string,
-    input: string,
-    output?: string,
-    meta?: { mode?: string; mediaType?: string; name?: string; bytes?: number },
-  ) => void;
   pending: PendingAction | null;
   clearPending: () => void;
 }) {
@@ -129,9 +119,6 @@ export default function QrCodeTool({
   const inputView = useRef<EditorView | null>(null);
   const emptyRef = useRef<HTMLButtonElement>(null);
   const consumed = useRef<PendingAction | null>(null);
-  const lastRecorded = useRef('');
-  const skipRecord = useRef(false);
-  const recordTimer = useRef<number | null>(null);
   const exportRef = useRef<() => Promise<void>>(async () => {});
   const textBytes = new TextEncoder().encode(text).length;
   useFocusOnActivate(active, () => inputView.current?.focus());
@@ -167,56 +154,27 @@ export default function QrCodeTool({
     };
   }, [text]);
 
-  useEffect(() => {
-    if (recordTimer.current !== null) {
-      window.clearTimeout(recordTimer.current);
-      recordTimer.current = null;
-    }
-    if (skipRecord.current) {
-      skipRecord.current = false;
-      return;
-    }
-    const token = text.trim();
-    if (text && qr?.key === text && lastRecorded.current !== token)
-      recordTimer.current = window.setTimeout(() => {
-        recordTimer.current = null;
-        lastRecorded.current = token;
-        record('qrcode', t('qrTool.generated'), `${bytesLabel(textBytes)}`, text);
-      }, 1500);
-    else if (!text) lastRecorded.current = '';
-    return () => {
-      if (recordTimer.current !== null) window.clearTimeout(recordTimer.current);
-    };
-  }, [text, qr, textBytes, record, t]);
-
   const applyDecodedImage = useCallback(
-    async (dataUrl: string, name: string, mimeType: string, bytes: number) => {
+    async (dataUrl: string) => {
       try {
         const decoded = await decodeQrFromDataUrl(dataUrl);
         if (decoded === null) {
           toast.add({ title: t('qrTool.noQr'), type: 'warning' });
           return;
         }
-        skipRecord.current = true;
         setText(decoded);
-        record('qrcode', t('qrTool.decoded'), bytesLabel(bytes), decoded, '', {
-          mode: 'image',
-          mediaType: mimeType,
-          name,
-          bytes,
-        });
       } catch {
         toast.add({ title: t('qrTool.decodeFailed'), type: 'error' });
       }
     },
-    [record, t],
+    [t],
   );
 
   const decodeImagePath = useCallback(
     async (path: string) => {
       try {
         const data = await readLocalFile(path, MAX_BYTES);
-        await applyDecodedImage(data.dataURL, data.name, data.mimeType, data.size);
+        await applyDecodedImage(data.dataURL);
       } catch (error) {
         const tooLarge = backendErrorKey(error) === 'errors.file.tooLarge';
         toast.add({
@@ -257,7 +215,7 @@ export default function QrCodeTool({
       void fileToDataUrl(file)
         .then(async (dataUrl) => {
           if (dataUrl) {
-            await applyDecodedImage(dataUrl, file.name, file.type, file.size);
+            await applyDecodedImage(dataUrl);
             return;
           }
           toast.add({ title: t('qrTool.imageReadFailed'), type: 'error' });
@@ -271,7 +229,6 @@ export default function QrCodeTool({
     try {
       await navigator.clipboard.writeText(text);
       toast.add({ title: t('toast.copied', { value: bytesLabel(textBytes) }) });
-      record('qrcode', t('qrTool.copy'), bytesLabel(textBytes), text);
     } catch {
       toast.add({ title: t('toast.copyFailed'), type: 'error' });
     }
@@ -292,8 +249,6 @@ export default function QrCodeTool({
       });
       if (!path) return;
       await SaveBase64File(path, qr.url);
-      const detail = `PNG · ${bytesLabel(Math.round(((qr.url.length - 'data:image/png;base64,'.length) * 3) / 4))}`;
-      record('qrcode', t('qrTool.exported'), detail, text);
       toast.add({ title: t('qrTool.exportedToast') });
     } catch {
       toast.add({ title: t('qrTool.exportFailed'), type: 'error' });
@@ -323,7 +278,6 @@ export default function QrCodeTool({
       void exportRef.current();
       return;
     }
-    skipRecord.current = pending.action === 'restore';
     setText(pending.input);
   }, [pending, text]);
 

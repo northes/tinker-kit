@@ -129,9 +129,9 @@ func hasEnabledAfter(items []PipelineItem, index int) bool {
 // completionRoot 返回该步骤用于路径补全的输入节点。
 func (stage *pipelineStage) completionRoot() *JSONValue { return stage.Input }
 
-// completionItemRoot 返回数组排序/筛选的数组项代表节点。
+// completionItemRoot 返回数组排序/筛选/去重的数组项代表节点。
 func (stage *pipelineStage) completionItemRoot() *JSONValue {
-	if stage.Item.Type != pipelineTypeArraySort && stage.Item.Type != pipelineTypeFilter {
+	if stage.Item.Type != pipelineTypeArraySort && stage.Item.Type != pipelineTypeFilter && stage.Item.Type != pipelineTypeArrayDedupe {
 		return stage.Input
 	}
 	tokens, err := parsePipelinePath(stage.Item.ArrayPath)

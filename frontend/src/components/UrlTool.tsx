@@ -19,7 +19,6 @@ import {
   ToolLayout,
   useFocusOnActivate,
   type PendingAction,
-  type ToolId,
 } from './shared';
 import { toast } from './ui/toast';
 import {
@@ -90,13 +89,11 @@ function UrlPart({
 
 export default function UrlTool({
   active,
-  record,
   pending,
   clearPending,
 }: {
   active: boolean;
   theme: string;
-  record: (tool: ToolId, action: string, detail: string, input: string, output?: string) => void;
   pending: PendingAction | null;
   clearPending: () => void;
 }) {
@@ -105,35 +102,10 @@ export default function UrlTool({
   const [editResults, setEditResults] = useState(false);
   const inputView = useRef<EditorView | null>(null);
   const consumed = useRef<PendingAction | null>(null);
-  const lastRecorded = useRef('');
-  const recordTimer = useRef<number | null>(null);
   const parts = useMemo(() => parseSupportedUrl(input), [input]);
   const invalid = !!input.trim() && !parts;
   useFocusOnActivate(active, () => inputView.current?.focus());
   const output = parts ? JSON.stringify(parts, null, 2) : '';
-  useEffect(() => {
-    const value = input.trim();
-    if (recordTimer.current !== null) {
-      window.clearTimeout(recordTimer.current);
-      recordTimer.current = null;
-    }
-    if (parts && value && lastRecorded.current !== value)
-      recordTimer.current = window.setTimeout(() => {
-        recordTimer.current = null;
-        lastRecorded.current = value;
-        record(
-          'url',
-          t('urlTool.analyzed'),
-          t('urlTool.paramCount', { count: parts.params.length }),
-          input,
-          output,
-        );
-      }, 1500);
-    else if (!value) lastRecorded.current = '';
-    return () => {
-      if (recordTimer.current !== null) window.clearTimeout(recordTimer.current);
-    };
-  }, [parts, input, output, record, t]);
   const copyValue = async (value: string, label: string) => {
     try {
       await navigator.clipboard.writeText(value);
@@ -146,14 +118,7 @@ export default function UrlTool({
   };
   const copy = async () => {
     if (!parts) return;
-    if (!(await copyValue(output, t('urlTool.copied')))) return;
-    record(
-      'url',
-      t('urlTool.copy'),
-      t('urlTool.paramCount', { count: parts.params.length }),
-      input,
-      output,
-    );
+    await copyValue(output, t('urlTool.copied'));
   };
   const convert = (mode: string) => {
     if (!input) return;
@@ -174,7 +139,6 @@ export default function UrlTool({
     }
     if (next === input) return;
     setInput(next);
-    record('url', t('urlTool.encodeDecode'), t(`urlTool.${mode}`), input, next);
   };
   useEffect(() => {
     if (!pending || pending.tool !== 'url' || consumed.current === pending) return;

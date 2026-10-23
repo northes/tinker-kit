@@ -16,7 +16,6 @@
     "unknown": "Unknown"
   },
   "titlebar": {
-    "history": "History",
     "settings": "Settings",
     "back": "Back",
     "forward": "Forward"
@@ -49,8 +48,7 @@
     "empty": "No matching commands"
   },
   "nav": {
-    "settings": "Open settings",
-    "history": "Open history"
+    "settings": "Open settings"
   },
   "groups": {
     "nav": "Navigation",
@@ -176,7 +174,6 @@
     "clearComments": "Clear comments",
     "minifyClear": "Clear",
     "bytes": "bytes",
-    "copied": "Copied",
     "invalid": "Invalid JSON",
     "schema": "Schema",
     "input": "Input",
@@ -218,9 +215,6 @@
     "schemaPathPlaceholder": "Enter a JSONPath, e.g. $.owner.team",
     "foldObject": "... {{count}} keys",
     "foldArray": "... {{count}} items",
-    "validated": "Validate JSON",
-    "minified": "Minify JSON",
-    "formatted": "Format JSON",
     "formatFailed": "Format failed",
     "minifyFailed": "Minify failed",
     "sortByKey": "By key",
@@ -259,23 +253,44 @@
       "arrayPathPlaceholder": "e.g. $ or $.users",
       "itemPath": "Item path",
       "itemPathPlaceholder": "e.g. $.profile.age; leave blank or use $ for scalar arrays",
+      "operator": "Operator",
+      "dedupeItemPath": "Dedupe path",
+      "dedupeItemPathPlaceholder": "e.g. $.id; use $ for scalar arrays",
       "filterValue": "Match value",
+      "filterLength": "Length",
+      "filterLengthPlaceholder": "Match by character count, e.g. 6",
       "template": "Template",
       "templatePlaceholder": "e.g. {$.name}?token={$.token}",
       "expandField": "Edit in dialog",
       "copyFailed": "Unable to read pipeline result",
       "loadMore": "Load more",
       "truncated": "Preview truncated · {{bytes}} bytes / {{lines}} lines",
-      "copy": "Copy pipeline output",
       "errorTitle": "Output unavailable",
       "errorItem": "Step {{item}}",
       "errorPath": "Path",
       "types": {
-        "extract": "Match / Extract",
+        "extract": "Schema",
         "sort": "Sort",
         "arraySort": "Array sort",
         "filter": "Array filter",
+        "arrayDedupe": "Array dedupe",
         "template": "Template"
+      },
+      "operators": {
+        "gt": "Greater than",
+        "gte": "Greater than or equal",
+        "eq": "Equal",
+        "lt": "Less than",
+        "lte": "Less than or equal",
+        "notNull": "Not null",
+        "notEmpty": "Not empty",
+        "isNull": "Is null",
+        "isEmpty": "Is empty",
+        "stringLengthGt": "String length greater than",
+        "stringLengthGte": "String length greater than or equal",
+        "stringLengthEq": "String length equals",
+        "stringLengthLt": "String length less than",
+        "stringLengthLte": "String length less than or equal"
       },
       "errors": {
         "invalidJson": "Input is not valid JSON",
@@ -295,6 +310,7 @@
         "sortRequiresContainer": "Only objects or arrays are supported",
         "filterValueRequired": "Enter a match value",
         "filterValueInvalid": "The match value must be a JSON scalar",
+        "filterLengthInvalid": "String length must be a non-negative integer",
         "templateNotLast": "The template step must be the last enabled step",
         "templateRequiresObject": "A template supports one JSON object, not an array",
         "templatePathNotFound": "The template path was not found",
@@ -430,6 +446,7 @@
     "timezonePlaceholder": "Search timezone",
     "timezoneNoResults": "No timezones found",
     "useSystemTimezone": "Use system time zone",
+    "systemTimezoneSwitched": "Switched to system time zone: {{zone}}",
     "local": "Local time",
     "dateTime": "Date and time",
     "dateOnly": "Date",
@@ -449,7 +466,6 @@
     "showResult": "Show {{label}}",
     "hideResult": "Hide {{label}}",
     "copy": "Copy {{label}}",
-    "converted": "Convert timestamp",
     "emptyTitle": "Enter a valid time",
     "emptyHint": "e.g. 1786358400 or 2026-08-10T12:00:00Z",
     "subtitle": "Convert dates and timestamps without guessing the format",
@@ -571,8 +587,7 @@
     "deleteTitle": "Delete custom source",
     "deleteDescription": "Delete “{{name}}”?",
     "selectOneSet": "Select at least one character set",
-    "emptySource": "The selected source has no usable content",
-    "historyDetail": "{{source}} · {{total}} items"
+    "emptySource": "The selected source has no usable content"
   },
   "base64Tool": {
     "title": "Base64",
@@ -584,15 +599,12 @@
     "imageOutput": "Image result",
     "fileOutput": "File result",
     "text": "Text",
-    "image": "Image",
-    "file": "File",
     "copy": "Copy result",
     "clear": "Clear",
     "chooseFile": "Choose file",
     "emptyTitle": "Import a file",
     "fileHint": "Drop, paste, or choose a file",
     "detected": "Detected",
-    "encoded": "Base64 encoded",
     "conversionFailed": "Base64 conversion failed. Check the input.",
     "fileReadFailed": "Failed to read file contents",
     "filePickerFailed": "Could not open the file picker",
@@ -639,7 +651,6 @@
     "valid": "Valid JWT",
     "invalid": "Invalid JWT",
     "detected": "Decoded",
-    "decoded": "Decoded",
     "characters": "characters",
     "emptyHint": "Paste a full JWT to decode header, payload, and signature"
   },
@@ -667,7 +678,6 @@
     "emptyHint": "Supports HTTP, HTTPS, RTSP, WS, and WSS",
     "invalid": "Invalid URL",
     "invalidHint": "Enter a complete URL with a supported protocol, for example https://example.com",
-    "analyzed": "Analyzed",
     "paramCount": "{{count}} parameters",
     "clear": "Clear",
     "encodeDecode": "Encode / decode",
@@ -697,12 +707,9 @@
     "decodeFailed": "Failed to decode the QR code",
     "imageReadFailed": "Failed to read the image",
     "imagePickerFailed": "Could not open the image picker",
-    "generated": "QR generated",
-    "decoded": "QR decoded",
     "clear": "Clear",
     "copy": "Copy text",
     "export": "Export PNG",
-    "exported": "Export QR code",
     "exportedToast": "Exported",
     "exportFailed": "Failed to export the QR code",
     "save": "Save",
@@ -1047,7 +1054,6 @@
     "rawManifestEmpty": "The source did not provide a raw Registry manifest",
     "emptyValue": "—",
     "inspected": "Inspect image",
-    "refreshed": "Refresh image list",
     "exportTar": "Export tar",
     "batchExport": "Export selected as tar",
     "exportFailed": "Failed to export image",
@@ -1253,6 +1259,12 @@
     "clearLogs": "Clear logs",
     "clearLogsTitle": "Clear logs?",
     "clearLogsConfirm": "This clears the log buffer for this resource and cannot be undone.",
+    "copyLogs": "Copy logs",
+    "exportLogs": "Export logs",
+    "logsCopied": "Copied {{total}} log lines",
+    "logsCopyFailed": "Failed to copy logs",
+    "logsExported": "Logs exported: {{name}}",
+    "logsExportFailed": "Failed to export logs",
     "logFilter": "Filter logs and press Enter",
     "logTime": "Time",
     "logService": "Service",
@@ -1557,8 +1569,6 @@
     "sshKnownHostsDeleteDesc": "Delete the fingerprint record for “{{hosts}}”. The host key must be confirmed again on the next connection.",
     "sshKnownHostsDeleteConfirm": "Delete",
     "sshKnownHostsDeleteFailed": "Failed to delete SSH host key",
-    "history": "Recent activity",
-    "clearHistory": "Clear history",
     "about": "About",
     "projectLink": "Project home",
     "openProject": "Open project",
@@ -1567,26 +1577,6 @@
     "quitAction": "Quit app",
     "quitFailed": "Could not quit the application",
     "quitFailedDesc": "TinkerKit is still running. Try again in a moment."
-  },
-  "history": {
-    "title": "History",
-    "subtitle": "Content is stored on this device and large entries load on demand.",
-    "clear": "Clear",
-    "emptyTitle": "No activity yet",
-    "emptyHint": "After you run a tool, its actions will show here.",
-    "filterTool": "Tool",
-    "filterRange": "Date range",
-    "allTools": "All tools",
-    "clearRange": "Clear date range",
-    "columnTool": "Tool",
-    "columnAction": "Action",
-    "columnDetail": "Detail",
-    "columnTime": "Time",
-    "summary": "{{start}}–{{end}} of {{total}}",
-    "prev": "Previous",
-    "next": "Next",
-    "loadFailed": "Failed to load",
-    "loadFailedHint": "Click to retry"
   },
   "types": {
     "json": "JSON",
@@ -1603,9 +1593,6 @@
     "clipboardEmptyDesc": "Copy some content before running this command",
     "copied": "Copied {{value}}",
     "copyFailed": "Copy failed",
-    "historyAppendFailed": "Failed to save history",
-    "historyReadFailed": "Failed to read history",
-    "historyClearFailed": "Failed to clear history",
     "settingsFailed": "Failed to save settings",
     "settingsCanonicalMismatch": "The source configuration changed during save. Check it and try again.",
     "pasteTarget": "Focus an input to paste into"
@@ -1943,15 +1930,9 @@
     "cancel": "Cancel",
     "responseFailed": "Host key confirmation failed"
   },
-  "clearHistoryDialog": {
-    "title": "Clear history?",
-    "body": "This will delete all local history and cannot be undone.",
-    "confirm": "Clear",
-    "cancel": "Cancel"
-  },
   "quitDialog": {
     "title": "Quit TinkerKit?",
-    "body": "The window will close and the tray service will stop. Local history and settings are kept.",
+    "body": "The window will close and the tray service will stop. Local settings are kept.",
     "confirm": "Quit",
     "cancel": "Cancel"
   },
@@ -2039,7 +2020,6 @@
       "imageSourceInvalidUnnamed": "Invalid image source (item {{index}}): {{detail}}",
       "imageSourceMissingSSHProfile": "Image source \"{{name}}\" must select an SSH profile",
       "imageSourceSSHProfileNotFound": "The SSH profile referenced by image source \"{{name}}\" does not exist",
-      "historyEntryNotFound": "History entry not found",
       "decodedFileTooLarge": "Decoded file exceeds 100 MiB",
       "exportFailed": "Failed to export configuration: {{detail}}",
       "importFailed": "Failed to read the configuration file: {{detail}}",
@@ -2744,7 +2724,7 @@
       "run": "Start test",
       "cancel": "Cancel test"
     },
-    "empty": "Enter a target address to start. Bare HTTP targets default to http://; WebSocket targets default to wss://; RTSP uses port 554 and probes with OPTIONS then DESCRIBE, and the address may embed a username and password for Digest authentication; set the UDP payload in Advanced options; NTP defaults to port 123.",
+    "empty": "Enter a target address to start. HTTP/WebSocket prefixes and RTSP/NTP ports are filled in automatically; set the UDP payload in Advanced options.",
     "running": "Test in progress · {{elapsed}} elapsed",
     "duration": {
       "milliseconds": "{{value}} ms",
@@ -2787,8 +2767,6 @@
       "rtsp-describe": "Send RTSP DESCRIBE",
       "tls-probe": "TLS endpoint probe"
     },
-    "runFailed": "The test could not run: {{error}}",
-    "recordAction": "Network test",
-    "historyDetail": "{{protocol}} · {{target}}"
+    "runFailed": "The test could not run: {{error}}"
   }
 }

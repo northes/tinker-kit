@@ -67,7 +67,6 @@ import {
   UpdateSSHKnownHost,
 } from '../../bindings/tinkerkit/configservice';
 import { CheckForUpdates, GetCurrentVersion } from '../../bindings/tinkerkit/updateservice';
-import { ClearHistoryDialog } from './HistoryPage';
 import { ToolLayout, ToolLayoutContent, type Icon, type ToolId } from './shared';
 import { toast } from './ui/toast';
 import { GITHUB_REPO_URL } from '../repositoryUrl';
@@ -643,7 +642,6 @@ export default function SettingsPage({
   settings,
   setSettings,
   setThemeMode: setThemeModeWithTransition,
-  clearHistory,
   tools,
   sidebarManaging,
   onToggleSidebarManage,
@@ -655,7 +653,6 @@ export default function SettingsPage({
   settings: Settings;
   setSettings: React.Dispatch<React.SetStateAction<Settings>>;
   setThemeMode: (update: React.SetStateAction<Settings>) => void;
-  clearHistory: () => void;
   tools: ToolDefinition[];
   sidebarManaging: boolean;
   onToggleSidebarManage: () => void;
@@ -666,7 +663,6 @@ export default function SettingsPage({
 }) {
   const { t } = useTranslation();
   const { openManager } = useSSHProfiles();
-  const [confirmClear, setConfirmClear] = useState(false);
   const [confirmQuit, setConfirmQuit] = useState(false);
   const [configAction, setConfigAction] = useState<'export' | 'import' | 'reset' | null>(null);
   const [configBusy, setConfigBusy] = useState(false);
@@ -1140,17 +1136,7 @@ export default function SettingsPage({
         case 'data':
           return (
             <>
-              <SettingsGroup divider={false} title={t('settings.history')}>
-                <div className={settingControlClass}>
-                  <Setting>
-                    <Button variant="destructive" onClick={() => setConfirmClear(true)}>
-                      <Trash data-icon="inline-start" weight="duotone" />
-                      {t('settings.clearHistory')}
-                    </Button>
-                  </Setting>
-                </div>
-              </SettingsGroup>
-              <SettingsGroup title={t('settings.configManagement')}>
+              <SettingsGroup divider={false} title={t('settings.configManagement')}>
                 <div className={settingStackClass}>
                   <Setting label={t('settings.exportConfig')}>
                     <Button variant="outline" onClick={() => setConfigAction('export')}>
@@ -1300,11 +1286,6 @@ export default function SettingsPage({
           </Tabs>
         </ToolLayoutContent>
       </ToolLayout>
-      <ClearHistoryDialog
-        open={confirmClear}
-        onClose={() => setConfirmClear(false)}
-        onConfirm={clearHistory}
-      />
       <SSHKnownHostsDialog open={sshKnownHostsOpen} onOpenChange={setSSHKnownHostsOpen} />
       <ConfirmDialog
         open={configAction !== null}

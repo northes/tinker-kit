@@ -49,6 +49,7 @@ export function TimezonePickerDialog({
                 <CommandItem
                   key={zone.id}
                   value={zone.id}
+                  data-checked={zone.id === currentId}
                   keywords={[
                     zone.label,
                     ...(zone.keywords ?? []),

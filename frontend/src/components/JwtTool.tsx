@@ -15,7 +15,6 @@ import {
   decodeBase64Text,
   useFocusOnActivate,
   type PendingAction,
-  type ToolId,
 } from './shared';
 import { toast } from './ui/toast';
 import '../styles/tools/editor.css';
@@ -121,12 +120,10 @@ function JwtPane({
 }
 export default function JwtTool({
   active,
-  record,
   pending,
   clearPending,
 }: {
   active: boolean;
-  record: (tool: ToolId, action: string, detail: string, input: string, output?: string) => void;
   pending: PendingAction | null;
   clearPending: () => void;
 }) {
@@ -134,34 +131,8 @@ export default function JwtTool({
   const [input, setInput] = useState('');
   const consumed = useRef<PendingAction | null>(null);
   const inputView = useRef<EditorView | null>(null);
-  const lastRecorded = useRef('');
-  const skipRecord = useRef(false);
-  const recordTimer = useRef<number | null>(null);
   useFocusOnActivate(active, () => inputView.current?.focus());
   const decoded = useMemo(() => decodeJwt(input), [input]);
-  useEffect(() => {
-    const token = input.trim();
-    if (recordTimer.current !== null) {
-      window.clearTimeout(recordTimer.current);
-      recordTimer.current = null;
-    }
-    if (skipRecord.current) {
-      skipRecord.current = false;
-      return;
-    }
-    if (decoded && token && lastRecorded.current !== token)
-      recordTimer.current = window.setTimeout(() => {
-        recordTimer.current = null;
-        lastRecorded.current = token;
-        const output = `${decoded.header}\n${decoded.payload}\n${decoded.signature}`,
-          bytes = new TextEncoder().encode(output).length;
-        record('jwt', t('jwtTool.decoded'), `${bytes} B`, token, output);
-      }, 1500);
-    else if (!decoded) lastRecorded.current = '';
-    return () => {
-      if (recordTimer.current !== null) window.clearTimeout(recordTimer.current);
-    };
-  }, [decoded, input, record, t]);
   const copy = async (kind: 'header' | 'payload' | 'signature') => {
     if (!decoded) return;
     const value = decoded[kind];
@@ -173,19 +144,6 @@ export default function JwtTool({
     }
     const bytes = new TextEncoder().encode(value).length;
     toast.add({ title: t('toast.copied', { value: `${bytes} B` }) });
-    record(
-      'jwt',
-      t(
-        kind === 'header'
-          ? 'jwtTool.copyHeader'
-          : kind === 'payload'
-            ? 'jwtTool.copyPayload'
-            : 'jwtTool.copySignature',
-      ),
-      `${bytes} B`,
-      input,
-      value,
-    );
   };
   useEffect(() => {
     if (!pending || pending.tool !== 'jwt' || consumed.current === pending) return;
@@ -213,7 +171,6 @@ export default function JwtTool({
       );
       return;
     }
-    skipRecord.current = pending.action === 'restore';
     setInput(pending.input);
   }, [pending, decoded]);
   return (

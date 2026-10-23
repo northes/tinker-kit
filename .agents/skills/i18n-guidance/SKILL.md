@@ -17,7 +17,7 @@ user-invocable: false
 
 ## 组件与文案
 
-- React 组件、`App.tsx`、命令面板、历史记录和设置页使用 `useTranslation()` 或 `t()`。
+- React 组件、`App.tsx`、命令面板和设置页使用 `useTranslation()` 或 `t()`。
 - 新增或修改用户可见文案时先定义稳定的 key，再同步更新 `zh-CN.json` 和 `en-US.json`；不得只修改单一语言资源。
 - 命令面板的 `labelKey` 复用实际界面按钮文案；只有切换型命令才使用独立的 `commands.toggleXxx` key。
 - locale key 按领域组织，例如 `tools.<id>`、`<tool>Tool.*`、`commands.*`、`settings.*`；不要为同一文案建立重复 key。

@@ -1,7 +1,6 @@
 package main
 
 import (
-	"compress/gzip"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -10,10 +9,8 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
 )
@@ -184,37 +181,6 @@ func defaultSidebarTools() []SidebarToolConfig {
 		tools = append(tools, SidebarToolConfig{ID: id, Enabled: true})
 	}
 	return tools
-}
-
-type HistoryItem struct {
-	ID        int64  `json:"id"`
-	Tool      string `json:"tool"`
-	Action    string `json:"action"`
-	Detail    string `json:"detail"`
-	At        string `json:"at"`
-	Mode      string `json:"mode"`
-	MediaType string `json:"mediaType"`
-	Name      string `json:"name"`
-	Bytes     int64  `json:"bytes"`
-}
-type HistoryContent struct {
-	Input  string `json:"input"`
-	Output string `json:"output"`
-}
-type HistoryEntry struct {
-	Tool      string `json:"tool"`
-	Action    string `json:"action"`
-	Detail    string `json:"detail"`
-	Mode      string `json:"mode"`
-	MediaType string `json:"mediaType"`
-	Name      string `json:"name"`
-	Bytes     int64  `json:"bytes"`
-	Input     string `json:"input"`
-	Output    string `json:"output"`
-}
-type historyStored struct {
-	Item HistoryItem `json:"item"`
-	File string      `json:"file"`
 }
 
 func defaultConfig() Config {
@@ -869,18 +835,13 @@ func userConfigBaseDir() string {
 
 func appDataDir() string { return filepath.Join(userConfigBaseDir(), appDataDirName) }
 
-func configPath() string     { return filepath.Join(appDataDir(), "config.json") }
-func historyPath() string    { return filepath.Join(appDataDir(), "history.json") }
-func historyDataDir() string { return filepath.Join(appDataDir(), "history-data") }
+func configPath() string { return filepath.Join(appDataDir(), "config.json") }
 
 type ConfigService struct {
-	mu          sync.Mutex
-	path        string
-	historyPath string
-	historyDir  string
-	cfg         Config
-	history     []historyStored
-	onChange    func(Config)
+	mu       sync.Mutex
+	path     string
+	cfg      Config
+	onChange func(Config)
 }
 
 func NewConfigService() *ConfigService {
@@ -890,11 +851,7 @@ func NewConfigService() *ConfigService {
 		_ = json.Unmarshal(b, &cfg)
 	}
 	cfg = normalizeConfig(cfg)
-	s := &ConfigService{path: path, historyPath: historyPath(), historyDir: historyDataDir(), cfg: cfg}
-	if b, err := os.ReadFile(s.historyPath); err == nil {
-		_ = json.Unmarshal(b, &s.history)
-	}
-	return s
+	return &ConfigService{path: path, cfg: cfg}
 }
 
 func (s *ConfigService) ServiceName() string { return "ConfigService" }
@@ -1346,165 +1303,6 @@ func writeConfigAtomically(path string, data []byte) error {
 	}
 	return nil
 }
-func (s *ConfigService) writeIndexLocked() {
-	b, err := json.Marshal(s.history)
-	if err != nil {
-		return
-	}
-	_ = os.MkdirAll(filepath.Dir(s.historyPath), 0o755)
-	_ = os.WriteFile(s.historyPath, b, 0o600)
-}
-func (s *ConfigService) GetHistory() []HistoryItem {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.enabledHistoryItemsLocked()
-}
-
-type HistoryPage struct {
-	Items []HistoryItem `json:"items"`
-	Total int           `json:"total"`
-}
-
-func (s *ConfigService) GetHistoryPage(offset int, limit int) (HistoryPage, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if offset < 0 {
-		offset = 0
-	}
-	if limit < 1 || limit > 100 {
-		limit = 20
-	}
-	items := s.enabledHistoryItemsLocked()
-	total := len(items)
-	if offset >= total {
-		return HistoryPage{Items: []HistoryItem{}, Total: total}, nil
-	}
-	end := offset + limit
-	if end > total {
-		end = total
-	}
-	return HistoryPage{Items: items[offset:end], Total: total}, nil
-}
-
-type HistoryFilter struct {
-	Tool string `json:"tool"`
-	From int64  `json:"from"`
-	To   int64  `json:"to"`
-}
-
-func (s *ConfigService) sidebarToolEnabledLocked(toolID string) bool {
-	for _, tool := range s.cfg.SidebarTools {
-		if tool.ID == toolID {
-			return tool.Enabled
-		}
-	}
-	return false
-}
-
-func (s *ConfigService) enabledHistoryItemsLocked() []HistoryItem {
-	items := make([]HistoryItem, 0, len(s.history))
-	for _, entry := range s.history {
-		if s.sidebarToolEnabledLocked(entry.Item.Tool) {
-			items = append(items, entry.Item)
-		}
-	}
-	return items
-}
-
-func (s *ConfigService) QueryHistory(offset int, limit int, filter HistoryFilter) (HistoryPage, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if offset < 0 {
-		offset = 0
-	}
-	if limit < 1 || limit > 100 {
-		limit = 20
-	}
-	items := s.enabledHistoryItemsLocked()
-	filtered := make([]HistoryItem, 0, len(items))
-	for _, item := range items {
-		if filter.Tool != "" && item.Tool != filter.Tool {
-			continue
-		}
-		if filter.From != 0 || filter.To != 0 {
-			t, err := time.Parse(time.RFC3339Nano, item.At)
-			if err != nil {
-				continue
-			}
-			ms := t.UnixMilli()
-			if filter.From != 0 && ms < filter.From {
-				continue
-			}
-			if filter.To != 0 && ms > filter.To {
-				continue
-			}
-		}
-		filtered = append(filtered, item)
-	}
-	total := len(filtered)
-	if offset >= total {
-		return HistoryPage{Items: []HistoryItem{}, Total: total}, nil
-	}
-	end := offset + limit
-	if end > total {
-		end = total
-	}
-	return HistoryPage{Items: filtered[offset:end], Total: total}, nil
-}
-func (s *ConfigService) AppendHistory(entry HistoryEntry) (HistoryItem, error) {
-	if entry.Tool == "" {
-		return HistoryItem{}, errors.New("missing history tool")
-	}
-	if detail := []rune(entry.Detail); len(detail) > 120 {
-		entry.Detail = string(detail[:120])
-	}
-	id := time.Now().UnixNano()
-	item := HistoryItem{ID: id, Tool: entry.Tool, Action: entry.Action, Detail: entry.Detail, At: time.Now().UTC().Format(time.RFC3339Nano), Mode: entry.Mode, MediaType: entry.MediaType, Name: entry.Name, Bytes: entry.Bytes}
-	file := filepath.Join(s.historyDir, "entry-"+time.Unix(0, id).UTC().Format("20060102150405.000000000")+".json.gz")
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if err := writeGzipJSON(file, HistoryContent{Input: entry.Input, Output: entry.Output}); err != nil {
-		return HistoryItem{}, err
-	}
-	s.history = append([]historyStored{{Item: item, File: file}}, s.history...)
-	sort.SliceStable(s.history, func(i, j int) bool { return s.history[i].Item.ID > s.history[j].Item.ID })
-	s.writeIndexLocked()
-	return item, nil
-}
-func (s *ConfigService) GetHistoryContent(id int64) (HistoryContent, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	for _, entry := range s.history {
-		if entry.Item.ID == id {
-			if !s.sidebarToolEnabledLocked(entry.Item.Tool) {
-				return HistoryContent{}, userError("errors.config.historyEntryNotFound")
-			}
-			return readGzipJSON(entry.File)
-		}
-	}
-	return HistoryContent{}, userError("errors.config.historyEntryNotFound")
-}
-func (s *ConfigService) DeleteHistory(id int64) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	for i, entry := range s.history {
-		if entry.Item.ID == id {
-			_ = os.Remove(entry.File)
-			s.history = append(s.history[:i], s.history[i+1:]...)
-			s.writeIndexLocked()
-			return
-		}
-	}
-}
-func (s *ConfigService) ClearHistory() {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	for _, entry := range s.history {
-		_ = os.Remove(entry.File)
-	}
-	s.history = nil
-	s.writeIndexLocked()
-}
 func (s *ConfigService) SaveBase64File(path string, data string) error {
 	if path == "" {
 		return errors.New("missing save path")
@@ -1549,35 +1347,4 @@ func (s *ConfigService) SaveBase64File(path string, data string) error {
 		return err
 	}
 	return os.Rename(tmpPath, path)
-}
-func writeGzipJSON(path string, value any) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		return err
-	}
-	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-	z := gzip.NewWriter(f)
-	if err := json.NewEncoder(z).Encode(value); err != nil {
-		_ = z.Close()
-		return err
-	}
-	return z.Close()
-}
-func readGzipJSON(path string) (HistoryContent, error) {
-	f, err := os.Open(path)
-	if err != nil {
-		return HistoryContent{}, err
-	}
-	defer f.Close()
-	z, err := gzip.NewReader(f)
-	if err != nil {
-		return HistoryContent{}, err
-	}
-	defer z.Close()
-	var content HistoryContent
-	err = json.NewDecoder(io.LimitReader(z, 256<<20)).Decode(&content)
-	return content, err
 }

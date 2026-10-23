@@ -81,7 +81,6 @@ import {
   useFocusOnActivate,
   type PendingAction,
   type ToolBarAction,
-  type ToolId,
 } from './shared';
 import { toast } from './ui/toast';
 import { JsonErrorPanel } from './JsonErrorPanel';
@@ -103,7 +102,6 @@ import {
   InspectJSON,
   RepairJSON,
   TransformJSON,
-  ValidateJSON,
 } from '../../bindings/tinkerkit/jsonpipelineservice';
 import { backendJSONPathCompletions } from './JsonPathCompletion';
 import { dataUrlToText, readLocalFile, useFileDrop } from './fileDrop';
@@ -116,10 +114,6 @@ const CONVERT_EXTENSIONS: Record<JsonConvertFormat, string> = {
   toml: 'toml',
   csv: 'csv',
 };
-
-function isConvertFormat(value: string | undefined): value is JsonConvertFormat {
-  return value === 'yaml' || value === 'xml' || value === 'toml' || value === 'csv';
-}
 
 type JsonPageMode = 'plain' | 'schema' | 'pipeline' | 'convert';
 function modeHostHidden(visible: boolean) {
@@ -419,7 +413,6 @@ export default function JsonTool({
   theme,
   autoFormatOnFill,
   onAutoFormatOnFillChange,
-  record,
   pending,
   clearPending,
 }: {
@@ -427,14 +420,6 @@ export default function JsonTool({
   theme: string;
   autoFormatOnFill: boolean;
   onAutoFormatOnFillChange: (value: boolean) => void;
-  record: (
-    tool: ToolId,
-    action: string,
-    detail: string,
-    input: string,
-    output?: string,
-    meta?: { mode?: string; mediaType?: string; name?: string; bytes?: number },
-  ) => void;
   pending: PendingAction | null;
   clearPending: () => void;
 }) {
@@ -480,8 +465,6 @@ export default function JsonTool({
   const commentInspectionRequestRef = useRef<ReturnType<typeof InspectJSON> | null>(null);
   const autoFormatRevisionRef = useRef(0);
   const autoFormatRequestRef = useRef<ReturnType<typeof TransformJSON> | null>(null);
-  const validateRevisionRef = useRef(0);
-  const validateRequestRef = useRef<ReturnType<typeof ValidateJSON> | null>(null);
   const autoFormatRef = useRef(autoFormatOnFill);
   autoFormatRef.current = autoFormatOnFill;
   const schemaEvaluation = useJsonSchemaEvaluation(schema && active, input, path);
@@ -496,8 +479,6 @@ export default function JsonTool({
       if (commentInspectionRequestRef.current) void commentInspectionRequestRef.current.cancel();
       autoFormatRevisionRef.current++;
       if (autoFormatRequestRef.current) void autoFormatRequestRef.current.cancel();
-      validateRevisionRef.current++;
-      if (validateRequestRef.current) void validateRequestRef.current.cancel();
     },
     [],
   );
@@ -654,12 +635,6 @@ export default function JsonTool({
           return;
         }
         set(response.text);
-        record(
-          'json',
-          minify ? t('jsonTool.minified') : t('jsonTool.formatted'),
-          summary(response.text),
-          response.text,
-        );
       })
       .catch(() => {
         if (revision === transformRevisionRef.current) reportTransformFailure(pane, minify);
@@ -720,14 +695,6 @@ export default function JsonTool({
         }
         setInput(response.text);
         toast.add({ title: t('jsonTool.repaired') });
-        record(
-          'json',
-          t('jsonTool.repaired'),
-          `${response.lines} ${t('jsonTool.lines')} · ${response.characters} ${t('jsonTool.characters')}`,
-          response.text,
-          '',
-          { bytes: response.bytes },
-        );
       })
       .catch(() => {
         if (revision !== repairRevisionRef.current) return;
@@ -839,9 +806,6 @@ export default function JsonTool({
     }
     const bytes = new TextEncoder().encode(text).length;
     toast.add({ title: t('toast.copied', { value: `${bytes} ${t('jsonTool.bytes')}` }) });
-    record('json', t('jsonTool.copied'), `${bytes} ${t('jsonTool.bytes')}`, input, text, {
-      mode: convertFormat,
-    });
   };
   const exportConvert = async () => {
     if (
@@ -856,9 +820,6 @@ export default function JsonTool({
       const path = await SaveText(text, filename);
       if (!path) return;
       toast.add({ title: t('jsonTool.convert.exported', { name: filename }) });
-      record('json', t('jsonTool.convert.export'), filename, input, text, {
-        mode: convertFormat,
-      });
     } catch {
       toast.add({ title: t('jsonTool.convert.exportFailed'), type: 'error' });
     }
@@ -962,7 +923,6 @@ export default function JsonTool({
     }
     const bytes = new TextEncoder().encode(text).length;
     toast.add({ title: t('toast.copied', { value: `${bytes} ${t('jsonTool.bytes')}` }) });
-    record('json', t('jsonTool.pipeline.copy'), `${bytes} ${t('jsonTool.bytes')}`, input, text);
   };
   const copyPane = async (pane: 'input' | 'result') => {
     const value = pane === 'input' ? input : result;
@@ -1182,48 +1142,14 @@ export default function JsonTool({
           await navigator.clipboard.writeText(toCopy);
           const bytes = new TextEncoder().encode(toCopy).length;
           toast.add({ title: t('toast.copied', { value: `${bytes} ${t('jsonTool.bytes')}` }) });
-          record('json', t('jsonTool.copied'), `${bytes} ${t('jsonTool.bytes')}`, toCopy);
         } catch {
           toast.add({ title: t('toast.copyFailed'), type: 'error' });
         }
       })();
       return;
     }
-    if (pending.action === 'restore') {
-      changeInput(pending.input);
-      if (pending.output !== undefined) setResult(pending.output);
-      if (isConvertFormat(pending.mode)) {
-        setConvertFormat(pending.mode);
-        setMode('convert');
-        if (pending.output !== undefined) {
-          setDisplayedConvert({ text: pending.output, format: pending.mode });
-        }
-      }
-      return;
-    }
     if (pending.action === 'validate') {
       changeInput(pending.input);
-      const revision = ++validateRevisionRef.current;
-      if (validateRequestRef.current) void validateRequestRef.current.cancel();
-      const request = ValidateJSON(pending.input);
-      validateRequestRef.current = request;
-      void request
-        .then((response) => {
-          if (revision !== validateRevisionRef.current) return;
-          record(
-            'json',
-            response.valid ? t('jsonTool.validated') : t('jsonTool.invalid'),
-            summary(pending.input),
-            pending.input,
-          );
-        })
-        .catch(() => {
-          if (revision === validateRevisionRef.current)
-            record('json', t('jsonTool.invalid'), summary(pending.input), pending.input);
-        })
-        .finally(() => {
-          if (validateRequestRef.current === request) validateRequestRef.current = null;
-        });
       return;
     }
     if (!autoFormatRef.current) {
@@ -1233,7 +1159,6 @@ export default function JsonTool({
     void requestAutoFormat(pending.input).then((next) => {
       if (next === null || inputRef.current !== pending.input) return;
       changeInput(next);
-      if (next !== pending.input) record('json', t('jsonTool.formatted'), summary(next), next);
     });
   }, [pending, pipeline, requestAutoFormat]);
   useEffect(() => {

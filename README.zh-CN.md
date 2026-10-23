@@ -19,8 +19,7 @@ Built with [Wails v3](https://v3.wails.io/), TinkerKit gathers the high-frequenc
 - **Menu-bar resident, always on call** — TinkerKit lives in the menu bar; closing the window hides it to the tray (the Dock icon reappears while the window is shown). Copy anything, right-click the tray icon, and TinkerKit auto-detects JSON / timestamps / URL / JWT / Base64 / text and jumps to the matching tool (asks for confirmation by default; enable “auto fill” to skip it).
 - **Command palette, keyboard-first** — Press `⌘K` / `Ctrl+K` to search every command with fuzzy matching, including pinyin and initial letters for Chinese, filtered by the current context. Nearly everything can be done without touching the mouse.
 - **Remote and container debugging** — SSH file management, port forwarding, containers and services, image management and network tests share one set of connection profiles, so you don’t have to switch between the terminal and several GUIs.
-- **History kept on-device** — Tool activity is recorded locally, filterable by tool and time range, with pagination, on-demand loading for large entries, and one-click restore.
-- **Portable configuration** — Settings, custom sources and connection credentials can be exported, imported and reset, and history can be cleared in one click; launch at login and background notifications are supported.
+- **Portable configuration** — Settings, custom sources and connection credentials can be exported, imported and reset; launch at login and background notifications are supported.
 - **Simplified Chinese first, i18n-ready** — The UI defaults to Simplified Chinese with English built in, and the locale structure is easy to extend with more languages.
 - **Auto-update** — Distributed through GitHub Releases; checks silently on launch and every 24 hours, prompts only when a new version is found, then downloads and restarts in one click.
 
@@ -73,7 +72,7 @@ brew upgrade --cask --greedy northes/tinker-kit/tinker-kit
 brew uninstall --cask northes/tinker-kit/tinker-kit
 ```
 
-应用支持内置更新，因此通过 Homebrew 升级时使用 `--greedy`。卸载保留本地配置和历史记录。首次启动遇到安全提示时，按下方说明处理。
+应用支持内置更新，因此通过 Homebrew 升级时使用 `--greedy`。卸载保留本地配置。首次启动遇到安全提示时，按下方说明处理。
 
 ### DMG 安装
 
@@ -97,7 +96,7 @@ Download the latest `TinkerKit-<version>-darwin-universal.dmg` from [GitHub Rele
 - Local tools (formatting, conversion, parsing, comparison, images and QR codes) run fully offline and make no network requests; the app has no accounts and no telemetry.
 - The only automatic background network activity is “Check for updates”: it runs silently after launch and every 24 hours, and can be turned off or triggered manually under “Settings → About”.
 - Debugging tools only connect to the targets you specify when you trigger an operation; credentials such as SSH passwords, key passphrases and registry passwords are stored in your local configuration file.
-- Configuration, history and sources live in `~/Library/Application Support/TinkerKit/` (`config.json`, `history.json` and `history-data/`). Clear history or export / import / reset the configuration under “Settings → Data & security” (reset restores defaults and removes all custom sources and connection credentials).
+- Configuration and sources live in `~/Library/Application Support/TinkerKit/` (`config.json`). Export / import / reset the configuration under “Settings → Data & security” (reset restores defaults and removes all custom sources and connection credentials).
 
 ## Development
 
@@ -149,7 +148,7 @@ Frontend dependencies are installed only inside `frontend/`; the frontend build 
 ```
 ├── main.go                # Go entrypoint: window, system tray, service registration, update scheduler
 ├── appmenu_*.go           # Application menu and localized menu copy
-├── configservice*.go      # Settings and history persistence (ConfigService)
+├── configservice*.go      # Settings persistence (ConfigService)
 ├── updateservice.go       # Update polling and scheduling (Wails updater + GitHub Releases)
 ├── fileservice.go         # Local file reading and save-as
 ├── json*.go               # JSON parsing, repair, pipeline transforms and validation
@@ -204,7 +203,7 @@ Issues and pull requests are welcome — report bugs or request features via [Is
 
 - Before submitting, run `npx tsc --noEmit` and `npm run format:check` inside `frontend/`, and `wails3 task test:go` from the repository root;
 - Keep the existing code style, and use English Conventional Commits prefixes in commit messages (see `AGENTS.md`);
-- When adding a new tool, follow `.agents/skills/tool-development/SKILL.md` so the command palette, history and tray matching stay in sync;
+- When adding a new tool, follow `.agents/skills/tool-development/SKILL.md` so the command palette and tray matching stay in sync;
 - User-facing copy goes through locale files — no hardcoded strings.
 
 ## License

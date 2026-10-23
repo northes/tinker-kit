@@ -42,7 +42,6 @@ export type PendingAction = {
   tool: ToolId;
   action: string;
   input: string;
-  output?: string;
   mode?: string;
   target?: 'before' | 'after';
   pane?: 'input' | 'result';

@@ -16,7 +16,6 @@
     "unknown": "未知"
   },
   "titlebar": {
-    "history": "历史记录",
     "settings": "设置",
     "back": "后退",
     "forward": "前进"
@@ -49,8 +48,7 @@
     "empty": "未找到匹配命令"
   },
   "nav": {
-    "settings": "打开设置",
-    "history": "打开历史"
+    "settings": "打开设置"
   },
   "groups": {
     "nav": "导航",
@@ -178,7 +176,6 @@
     "bytes": "字节",
     "lines": "行",
     "characters": "字符",
-    "copied": "已复制",
     "invalid": "JSON 无效",
     "schema": "Schema",
     "input": "输入",
@@ -220,9 +217,6 @@
     "schemaPathPlaceholder": "输入 JSONPath，例如 $.owner.team",
     "foldObject": "... {{count}}个键",
     "foldArray": "... {{count}}项",
-    "validated": "校验 JSON",
-    "minified": "压缩 JSON",
-    "formatted": "格式化 JSON",
     "formatFailed": "格式化失败",
     "minifyFailed": "压缩失败",
     "sortByKey": "按键",
@@ -261,23 +255,44 @@
       "arrayPathPlaceholder": "例如 $ 或 $.users",
       "itemPath": "数组项路径",
       "itemPathPlaceholder": "对象数组例如 $.profile.age；值数组可留空或填 $",
+      "operator": "运算符",
+      "dedupeItemPath": "去重项路径",
+      "dedupeItemPathPlaceholder": "例如 $.id；标量数组可填 $",
       "filterValue": "匹配值",
+      "filterLength": "长度",
+      "filterLengthPlaceholder": "按字符数匹配，例如 6",
       "template": "模板",
       "templatePlaceholder": "例如 {$.name}?token={$.token}",
       "expandField": "在弹窗中编辑",
       "copyFailed": "无法读取流水线结果",
       "loadMore": "加载更多",
       "truncated": "预览已截断，共 {{bytes}} 字节 / {{lines}} 行",
-      "copy": "复制流水线输出",
       "errorTitle": "无法生成输出",
       "errorItem": "步骤 {{item}}",
       "errorPath": "路径",
       "types": {
-        "extract": "匹配 / 提取",
+        "extract": "Schema",
         "sort": "排序",
         "arraySort": "数组排序",
         "filter": "数组筛选",
+        "arrayDedupe": "数组去重",
         "template": "模板"
+      },
+      "operators": {
+        "gt": "大于",
+        "gte": "大于等于",
+        "eq": "等于",
+        "lt": "小于",
+        "lte": "小于等于",
+        "notNull": "非 null",
+        "notEmpty": "非空",
+        "isNull": "为 null",
+        "isEmpty": "为空",
+        "stringLengthGt": "字符串长度大于",
+        "stringLengthGte": "字符串长度大于等于",
+        "stringLengthEq": "字符串长度等于",
+        "stringLengthLt": "字符串长度小于",
+        "stringLengthLte": "字符串长度小于等于"
       },
       "errors": {
         "invalidJson": "输入不是有效 JSON",
@@ -297,6 +312,7 @@
         "sortRequiresContainer": "只支持处理对象或数组",
         "filterValueRequired": "请输入匹配值",
         "filterValueInvalid": "匹配值必须是 JSON 基本类型",
+        "filterLengthInvalid": "字符串长度必须是非负整数",
         "templateNotLast": "模板步骤必须是最后一个启用的步骤",
         "templateRequiresObject": "模板只支持单个 JSON 对象，不支持数组",
         "templatePathNotFound": "模板路径未找到",
@@ -430,6 +446,7 @@
     "timezonePlaceholder": "搜索时区",
     "timezoneNoResults": "没有匹配的时区",
     "useSystemTimezone": "使用本机时区",
+    "systemTimezoneSwitched": "已切换到本机时区：{{zone}}",
     "local": "本地时间",
     "dateTime": "日期时间",
     "dateOnly": "日期",
@@ -449,7 +466,6 @@
     "showResult": "显示 {{label}}",
     "hideResult": "隐藏 {{label}}",
     "copy": "复制 {{label}}",
-    "converted": "转换时间戳",
     "emptyTitle": "请输入有效时间",
     "emptyHint": "例如：1786358400、08/07 13:54:10 或 2026-08-10T12:00:00Z",
     "subtitle": "无需猜测格式即可转换日期与时间戳",
@@ -571,8 +587,7 @@
     "deleteTitle": "删除自定义源",
     "deleteDescription": "确定删除“{{name}}”吗？",
     "selectOneSet": "请至少选择一种字符",
-    "emptySource": "当前来源没有可用内容",
-    "historyDetail": "{{source}} · {{total}} 个"
+    "emptySource": "当前来源没有可用内容"
   },
   "base64Tool": {
     "title": "Base64 编解码",
@@ -584,15 +599,12 @@
     "imageOutput": "图片结果",
     "fileOutput": "文件结果",
     "text": "文本",
-    "image": "图片",
-    "file": "文件",
     "copy": "复制结果",
     "clear": "清空",
     "chooseFile": "选择文件",
     "emptyTitle": "导入文件",
     "fileHint": "拖入、粘贴或选择文件",
     "detected": "识别结果",
-    "encoded": "Base64 编码",
     "conversionFailed": "Base64 转换失败，请检查输入内容",
     "fileReadFailed": "读取文件内容失败",
     "filePickerFailed": "无法打开文件选择器",
@@ -639,7 +651,6 @@
     "valid": "有效 JWT",
     "invalid": "无效 JWT",
     "detected": "解析结果",
-    "decoded": "解析",
     "characters": "字符",
     "emptyHint": "粘贴完整的 JWT，自动解析头部、载荷与签名"
   },
@@ -667,7 +678,6 @@
     "emptyHint": "支持 HTTP、HTTPS、RTSP、WS 与 WSS",
     "invalid": "URL 无效",
     "invalidHint": "请输入支持协议的完整地址，例如 https://example.com",
-    "analyzed": "分析",
     "paramCount": "{{count}} 个参数",
     "clear": "清空",
     "encodeDecode": "编解码",
@@ -697,12 +707,9 @@
     "decodeFailed": "二维码解析失败",
     "imageReadFailed": "读取图片失败",
     "imagePickerFailed": "无法打开图片选择器",
-    "generated": "二维码生成",
-    "decoded": "二维码解析",
     "clear": "清空",
     "copy": "复制文本",
     "export": "导出 PNG",
-    "exported": "导出二维码",
     "exportedToast": "已导出",
     "exportFailed": "二维码导出失败",
     "save": "保存",
@@ -1047,7 +1054,6 @@
     "rawManifestEmpty": "当前来源未提供原始 Registry manifest",
     "emptyValue": "—",
     "inspected": "查看镜像",
-    "refreshed": "刷新镜像列表",
     "exportTar": "导出 tar",
     "batchExport": "批量导出 tar",
     "exportFailed": "镜像导出失败",
@@ -1253,6 +1259,12 @@
     "clearLogs": "清空日志",
     "clearLogsTitle": "清空日志？",
     "clearLogsConfirm": "将清空该资源的日志缓冲，此操作无法撤销。",
+    "copyLogs": "复制日志",
+    "exportLogs": "导出日志",
+    "logsCopied": "已复制 {{total}} 行日志",
+    "logsCopyFailed": "复制日志失败",
+    "logsExported": "日志已导出：{{name}}",
+    "logsExportFailed": "导出日志失败",
     "logFilter": "过滤日志，按回车应用",
     "logTime": "时间",
     "logService": "服务",
@@ -1557,8 +1569,6 @@
     "sshKnownHostsDeleteDesc": "删除“{{hosts}}”的指纹记录。下次连接时需要重新确认主机指纹。",
     "sshKnownHostsDeleteConfirm": "删除",
     "sshKnownHostsDeleteFailed": "删除 SSH 指纹失败",
-    "history": "最近活动",
-    "clearHistory": "清除历史",
     "about": "关于",
     "projectLink": "项目主页",
     "openProject": "打开项目",
@@ -1567,26 +1577,6 @@
     "quitAction": "退出应用",
     "quitFailed": "退出应用失败",
     "quitFailedDesc": "应用仍在运行，可稍后重试。"
-  },
-  "history": {
-    "title": "历史记录",
-    "subtitle": "完整内容保存在本机；大内容按需加载。",
-    "clear": "清空",
-    "emptyTitle": "暂无活动",
-    "emptyHint": "运行工具后，其操作会显示在这里。",
-    "loadFailed": "加载失败",
-    "loadFailedHint": "点击重试",
-    "filterTool": "工具",
-    "filterRange": "时间范围",
-    "allTools": "全部工具",
-    "clearRange": "清除时间范围",
-    "columnTool": "工具",
-    "columnAction": "操作",
-    "columnDetail": "详情",
-    "columnTime": "时间",
-    "summary": "第 {{start}}–{{end}} 条 / 共 {{total}} 条",
-    "prev": "上一页",
-    "next": "下一页"
   },
   "types": {
     "json": "JSON",
@@ -1603,9 +1593,6 @@
     "clipboardEmptyDesc": "请先复制内容后再执行该命令",
     "copied": "已复制 {{value}}",
     "copyFailed": "复制失败",
-    "historyAppendFailed": "保存历史记录失败",
-    "historyReadFailed": "读取历史记录失败",
-    "historyClearFailed": "清空历史记录失败",
     "settingsFailed": "设置保存失败",
     "settingsCanonicalMismatch": "来源配置未按提交内容保存，请检查后重试",
     "pasteTarget": "请先聚焦要粘贴的输入框"
@@ -1943,15 +1930,9 @@
     "cancel": "取消",
     "responseFailed": "主机指纹确认失败"
   },
-  "clearHistoryDialog": {
-    "title": "清空历史记录？",
-    "body": "此操作将删除本机所有历史记录，无法撤销。",
-    "confirm": "清空",
-    "cancel": "取消"
-  },
   "quitDialog": {
     "title": "退出 TinkerKit？",
-    "body": "应用窗口将关闭，托盘服务也会停止。本机历史和设置会保留。",
+    "body": "应用窗口将关闭，托盘服务也会停止。本机设置会保留。",
     "confirm": "退出",
     "cancel": "取消"
   },
@@ -2039,7 +2020,6 @@
       "imageSourceInvalidUnnamed": "镜像来源无效（第 {{index}} 项）：{{detail}}",
       "imageSourceMissingSSHProfile": "镜像来源 \"{{name}}\" 必须选择 SSH 配置",
       "imageSourceSSHProfileNotFound": "镜像来源 \"{{name}}\" 引用的 SSH 配置不存在",
-      "historyEntryNotFound": "历史记录不存在",
       "decodedFileTooLarge": "解码后的文件超过 100 MiB",
       "exportFailed": "导出配置失败：{{detail}}",
       "importFailed": "读取配置文件失败：{{detail}}",
@@ -2744,7 +2724,7 @@
       "run": "开始测试",
       "cancel": "取消测试"
     },
-    "empty": "输入目标地址后开始测试。HTTP 默认使用 http://；WebSocket 默认使用 wss://；RTSP 默认端口 554，依次发送 OPTIONS 与 DESCRIBE 探测，地址中可内嵌用户名和密码（Digest 认证）；UDP 可在高级选项设置探测内容，NTP 默认端口为 123。",
+    "empty": "输入目标地址即可开始测试；HTTP/WebSocket 自动补全协议前缀，RTSP/NTP 使用默认端口，UDP 探测内容可在高级选项设置。",
     "running": "测试进行中 · 已用时 {{elapsed}}",
     "duration": {
       "milliseconds": "{{value}} 毫秒",
@@ -2787,8 +2767,6 @@
       "rtsp-describe": "发送 RTSP DESCRIBE",
       "tls-probe": "加密端点探测"
     },
-    "runFailed": "测试未能执行：{{error}}",
-    "recordAction": "网络测试",
-    "historyDetail": "{{protocol}} · {{target}}"
+    "runFailed": "测试未能执行：{{error}}"
   }
 }

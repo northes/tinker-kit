@@ -22,7 +22,6 @@ import {
   ToolActionBar,
   ToolLayoutContent,
   ToolLayoutFooter,
-  type ToolId,
   ToolLayout,
   useFocusOnActivate,
 } from './shared';
@@ -166,7 +165,6 @@ export default function TextTool({
   active,
   alwaysShowSearch,
   onAlwaysShowSearchChange,
-  record,
   pending,
   clearPending,
 }: {
@@ -174,7 +172,6 @@ export default function TextTool({
   theme: string;
   alwaysShowSearch: boolean;
   onAlwaysShowSearchChange: (value: boolean) => void;
-  record: (tool: ToolId, action: string, detail: string, input: string) => void;
   pending: PendingAction | null;
   clearPending: () => void;
 }) {
@@ -254,10 +251,8 @@ export default function TextTool({
   });
   useFocusOnActivate(active, () => inputView.current?.focus());
   const stats = useMemo(() => analyzeText(value), [value]);
-  const apply = (action: string, fn: (input: string) => string) => {
-    const next = fn(value);
-    setValue(next);
-    record('text', action, `${[...next].length} ${t('textTool.characters')}`, next);
+  const apply = (fn: (input: string) => string) => {
+    setValue(fn(value));
   };
   const copy = async () => {
     try {
@@ -265,7 +260,6 @@ export default function TextTool({
       toast.add({
         title: t('toast.copied', { value: `${[...value].length} ${t('textTool.characters')}` }),
       });
-      record('text', t('textTool.copy'), `${[...value].length} ${t('textTool.characters')}`, value);
     } catch {
       toast.add({ title: t('toast.copyFailed'), type: 'error' });
     }
@@ -466,10 +460,7 @@ export default function TextTool({
                     group: String(index),
                   })),
                 ),
-                onSelect: (mode) =>
-                  apply(t(`textTool.caseModes.${mode}`), (input) =>
-                    transformCase(input, mode as CaseMode),
-                  ),
+                onSelect: (mode) => apply((input) => transformCase(input, mode as CaseMode)),
               },
               {
                 key: 'spaces',
@@ -481,7 +472,7 @@ export default function TextTool({
                   key,
                   label: t(`textTool.${key}`),
                 })),
-                onSelect: (mode) => apply(t(`textTool.${mode}`), spaceTransforms[mode]),
+                onSelect: (mode) => apply(spaceTransforms[mode]),
               },
               {
                 key: 'compressLine',
@@ -494,7 +485,7 @@ export default function TextTool({
                 onMenuToggle: () => setRemoveTrailingBackslash((checked) => !checked),
                 variant: 'secondary',
                 disabled: !value,
-                onPress: () => apply(t('textTool.compressedLine'), compressLine),
+                onPress: () => apply(compressLine),
               },
               {
                 key: 'copy',

@@ -4,7 +4,6 @@ import {
   ArrowsClockwise,
   BracketsCurly,
   Clock,
-  ClockCounterClockwise,
   Copy,
   FileCode,
   FolderSimple,
@@ -30,7 +29,7 @@ import {
 import type { ToolDefinition } from '../components/SettingsPage';
 import { type Icon, type ToolId } from '../components/shared';
 
-export type Page = 'settings' | 'history' | ToolId | 'image-manager-detail';
+export type Page = 'settings' | ToolId | 'image-manager-detail';
 
 export type SidebarMode = 'full' | 'icon' | 'hidden';
 
@@ -211,14 +210,6 @@ export const paletteItems: PaletteItem[] = [
     icon: GearSix,
     keywords: 'settings preferences options 设置 配置 选项',
     page: 'settings',
-  },
-  {
-    id: 'nav:history',
-    labelKey: 'nav.history',
-    groupKey: 'groups.nav',
-    icon: ClockCounterClockwise,
-    keywords: 'history recent log activity 历史 记录',
-    page: 'history',
   },
   {
     id: 'settings:quit',

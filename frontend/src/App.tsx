@@ -10,10 +10,7 @@ import { flushSync } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import { useLocation, useNavigate, useNavigationType } from 'react-router';
 import {
-  AppendHistory,
-  ClearHistory,
   Get as GetConfig,
-  GetHistoryContent,
   ResolveSSHHostKeyPrompt,
   Save as SaveConfig,
   SaveImageSources,
@@ -48,7 +45,6 @@ import {
 } from './app/navigation';
 import { buildIndex } from './app/palette-search';
 import { Sidebar } from './app/Sidebar';
-import { normalizeHistoryDetail, type HistoryItem } from './components/HistoryPage';
 import { parseJsonLoose, type PendingAction, type ToolId } from './components/shared';
 import { TaskCenter } from './components/TaskCenter';
 import {
@@ -186,8 +182,6 @@ const NetworkTestTool = lazy(() => import('./components/NetworkTestTool'));
 
 const SettingsPage = lazy(() => import('./components/SettingsPage'));
 
-const HistoryPage = lazy(() => import('./components/HistoryPage'));
-
 function toolSlotClass(active: boolean) {
   return active
     ? 'tool-slot relative isolate z-10 h-full min-h-0 overflow-hidden bg-background'
@@ -227,7 +221,6 @@ function AppShell() {
   }>(null);
   const [settings, setSettings] = useState<Settings>(defaultSettings);
   const [sidebarManaging, setSidebarManaging] = useState(false);
-  const [historyRevision, setHistoryRevision] = useState(0);
   const [sshHostKeyPrompt, setSSHHostKeyPrompt] = useState<SSHHostKeyPrompt | null>(null);
   const sshHostKeyPromptResponseRef = useRef<string | null>(null);
   const [systemDark, setSystemDark] = useState(
@@ -518,7 +511,6 @@ function AppShell() {
             continue;
           }
           void SetAutoCheckEnabled(cfg.autoCheckUpdates);
-          setHistoryRevision((current) => current + 1);
         } catch (error) {
           toast.add({ title: t('toast.settingsFailed'), type: 'error' });
           const failed = saveWaiters.current.filter((waiter) => waiter.target === cfg);
@@ -656,47 +648,6 @@ function AppShell() {
     settings.language,
     settings.codeEditorFontSize,
   ]);
-  const record = (
-    tool: ToolId,
-    action: string,
-    detail: string,
-    input: string,
-    output = '',
-    meta?: { mode?: string; mediaType?: string; name?: string; bytes?: number },
-  ) => {
-    void AppendHistory({
-      tool,
-      action,
-      detail: normalizeHistoryDetail(detail),
-      mode: meta?.mode ?? '',
-      mediaType: meta?.mediaType ?? '',
-      name: meta?.name ?? '',
-      bytes: meta?.bytes ?? new TextEncoder().encode(input).length,
-      input,
-      output,
-    }).catch(() => toast.add({ title: t('toast.historyAppendFailed'), type: 'error' }));
-  };
-  const openHistory = async (item: HistoryItem) => {
-    if (!enabledToolSet.has(item.tool)) return;
-    try {
-      const content = await GetHistoryContent(item.id);
-      setPending({
-        tool: item.tool,
-        action: 'restore',
-        input: content.input,
-        output: content.output,
-        mode: item.mode,
-      });
-      navigate(item.tool);
-    } catch {
-      toast.add({ title: t('toast.historyReadFailed'), type: 'error' });
-    }
-  };
-  const clearHistory = () => {
-    void ClearHistory().catch(() =>
-      toast.add({ title: t('toast.historyClearFailed'), type: 'error' }),
-    );
-  };
   const cycleSidebar = () => {
     if (sidebarManaging) return;
     setSettings((s) => ({
@@ -988,11 +939,7 @@ function AppShell() {
           <div className="pointer-events-none flex min-w-0 items-center justify-center">
             <h1 className="m-0 truncate text-sm font-semibold text-foreground">
               {t(
-                sidebarPage === 'settings'
-                  ? 'settings.title'
-                  : sidebarPage === 'history'
-                    ? 'history.title'
-                    : `tools.${sidebarPage}.name`,
+                sidebarPage === 'settings' ? 'settings.title' : `tools.${sidebarPage}.name`,
               )}
             </h1>
           </div>
@@ -1013,7 +960,7 @@ function AppShell() {
             onExitManage={() => setSidebarManaging(false)}
           />
           <main
-            className={`workspace relative min-h-0 w-full overflow-x-hidden overflow-y-auto bg-background${tools.some((tool) => tool.id === page) || page === 'history' || page === 'settings' || page === 'image-manager-detail' ? ' overflow-y-hidden' : ''}`}
+            className={`workspace relative min-h-0 w-full overflow-x-hidden overflow-y-auto bg-background${tools.some((tool) => tool.id === page) || page === 'settings' || page === 'image-manager-detail' ? ' overflow-y-hidden' : ''}`}
             ref={workspaceRef}
           >
             {' '}
@@ -1027,7 +974,6 @@ function AppShell() {
                     onAutoFormatOnFillChange={(jsonAutoFormatOnFill) =>
                       setSettings((current) => ({ ...current, jsonAutoFormatOnFill }))
                     }
-                    record={record}
                     pending={pending}
                     clearPending={() => setPending(null)}
                   />
@@ -1052,7 +998,6 @@ function AppShell() {
                     onNtpServersChange={(ntpServers) =>
                       setSettings((current) => ({ ...current, ntpServers }))
                     }
-                    record={record}
                     pending={pending}
                     clearPending={() => setPending(null)}
                   />
@@ -1069,7 +1014,6 @@ function AppShell() {
                     onAlwaysShowSearchChange={(textAlwaysShowSearch) =>
                       setSettings((current) => ({ ...current, textAlwaysShowSearch }))
                     }
-                    record={record}
                     pending={pending}
                     clearPending={() => setPending(null)}
                   />
@@ -1085,7 +1029,6 @@ function AppShell() {
                     onSourcesChange={(textGeneratorSources) =>
                       setSettings((current) => ({ ...current, textGeneratorSources }))
                     }
-                    record={record}
                     pending={pending}
                     clearPending={() => setPending(null)}
                   />
@@ -1098,7 +1041,6 @@ function AppShell() {
                   <Base64Tool
                     active={page === 'base64'}
                     theme={theme}
-                    record={record}
                     pending={pending}
                     clearPending={() => setPending(null)}
                   />
@@ -1111,7 +1053,6 @@ function AppShell() {
                   <DiffTool
                     active={page === 'diff'}
                     theme={theme}
-                    record={record}
                     pending={pending}
                     clearPending={() => setPending(null)}
                   />
@@ -1123,7 +1064,6 @@ function AppShell() {
                 <Suspense fallback={null}>
                   <JwtTool
                     active={page === 'jwt'}
-                    record={record}
                     pending={pending}
                     clearPending={() => setPending(null)}
                   />
@@ -1136,7 +1076,6 @@ function AppShell() {
                   <UrlTool
                     active={page === 'url'}
                     theme={theme}
-                    record={record}
                     pending={pending}
                     clearPending={() => setPending(null)}
                   />
@@ -1148,7 +1087,6 @@ function AppShell() {
                 <Suspense fallback={null}>
                   <QrCodeTool
                     active={page === 'qrcode'}
-                    record={record}
                     pending={pending}
                     clearPending={() => setPending(null)}
                   />
@@ -1160,7 +1098,6 @@ function AppShell() {
                 <Suspense fallback={null}>
                   <ImageTool
                     active={page === 'image'}
-                    record={record}
                     pending={pending}
                     clearPending={() => setPending(null)}
                   />
@@ -1175,7 +1112,6 @@ function AppShell() {
                     settings={settings}
                     onSettingsChange={saveImageManagerSettings}
                     onOpenDetail={openImageManagerDetail}
-                    record={record}
                     pending={pending}
                     clearPending={() => setPending(null)}
                   />
@@ -1189,7 +1125,6 @@ function AppShell() {
                     active={page === 'image-manager-detail'}
                     imageId={imageDetailRoute.imageId}
                     onBack={() => routerNavigate(-1)}
-                    record={record}
                     sourceId={imageDetailRoute.sourceId}
                   />
                 </Suspense>
@@ -1200,7 +1135,6 @@ function AppShell() {
                 <Suspense fallback={null}>
                   <ServiceManagerTool
                     active={page === 'service-manager'}
-                    record={record}
                     highlightLevels={settings.serviceLogHighlightLevels}
                     setHighlightLevels={(value) =>
                       setSettings((current) => ({ ...current, serviceLogHighlightLevels: value }))
@@ -1219,12 +1153,7 @@ function AppShell() {
             <div className={toolSlotClass(page === 'network-test')}>
               {visited.has('network-test') && (
                 <Suspense fallback={null}>
-                  <NetworkTestTool
-                    active={page === 'network-test'}
-                    record={record}
-                    pending={pending}
-                    clearPending={() => setPending(null)}
-                  />
+                  <NetworkTestTool active={page === 'network-test'} />
                 </Suspense>
               )}
             </div>
@@ -1248,7 +1177,6 @@ function AppShell() {
                       void SetAutoCheckEnabled(config.autoCheckUpdates);
                     }}
                     tools={tools}
-                    clearHistory={clearHistory}
                     sidebarManaging={sidebarManaging}
                     onToggleSidebarManage={toggleSidebarManage}
                     commandRequest={settingsCommandRequest}
@@ -1256,19 +1184,6 @@ function AppShell() {
                       setSettingsCommandRequest((current) => (current?.id === id ? null : current))
                     }
                     flushSettingsSave={flushSettingsSave}
-                  />
-                </Suspense>
-              )}
-            </div>
-            <div className={toolSlotClass(page === 'history')}>
-              {visited.has('history') && (
-                <Suspense fallback={null}>
-                  <HistoryPage
-                    active={page === 'history'}
-                    openHistory={openHistory}
-                    clear={clearHistory}
-                    enabledToolIds={enabledToolIds}
-                    historyRevision={historyRevision}
                   />
                 </Suspense>
               )}

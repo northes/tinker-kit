@@ -381,84 +381,32 @@ func TestDiffClipboardTargetOffNormalization(t *testing.T) {
 
 }
 
-func TestHistoryAccessHonorsDisabledSidebarTool(t *testing.T) {
+func TestExistingHistoryFilesAreLeftUntouched(t *testing.T) {
 	root := t.TempDir()
-	service := &ConfigService{
-		path:        filepath.Join(root, "config.json"),
-		historyPath: filepath.Join(root, "history.json"),
-		historyDir:  filepath.Join(root, "history-data"),
-		cfg:         normalizeConfig(defaultConfig()),
+	historyPath := filepath.Join(root, "history.json")
+	historyDir := filepath.Join(root, "history-data")
+	entryPath := filepath.Join(historyDir, "entry-old.json.gz")
+	if err := os.MkdirAll(historyDir, 0o755); err != nil {
+		t.Fatal(err)
 	}
-
-	enabledItem, err := service.AppendHistory(HistoryEntry{
-		Tool:   "json",
-		Input:  "enabled input",
-		Output: "enabled output",
-	})
-	if err != nil {
-		t.Fatalf("追加启用工具历史失败: %v", err)
+	if err := os.WriteFile(historyPath, []byte("legacy-index"), 0o600); err != nil {
+		t.Fatal(err)
 	}
-	disabledItem, err := service.AppendHistory(HistoryEntry{
-		Tool:   "time",
-		Input:  "disabled input",
-		Output: "disabled output",
-	})
-	if err != nil {
-		t.Fatalf("追加待禁用工具历史失败: %v", err)
+	if err := os.WriteFile(entryPath, []byte("legacy-entry"), 0o600); err != nil {
+		t.Fatal(err)
 	}
-
-	cfg := service.Get()
-	for i := range cfg.SidebarTools {
-		if cfg.SidebarTools[i].ID == "time" {
-			cfg.SidebarTools[i].Enabled = false
+	service := &ConfigService{path: filepath.Join(root, "config.json"), cfg: normalizeConfig(defaultConfig())}
+	if err := service.Save(service.Get()); err != nil {
+		t.Fatalf("保存配置失败: %v", err)
+	}
+	for path, want := range map[string]string{historyPath: "legacy-index", entryPath: "legacy-entry"} {
+		got, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("旧历史文件 %s 不应被删除: %v", path, err)
 		}
-	}
-	if err := service.Save(cfg); err != nil {
-		t.Fatalf("保存禁用工具配置失败: %v", err)
-	}
-
-	history := service.GetHistory()
-	if len(history) != 1 || history[0].ID != enabledItem.ID {
-		t.Fatalf("GetHistory 未过滤禁用工具历史: %#v", history)
-	}
-	page, err := service.GetHistoryPage(0, 20)
-	if err != nil {
-		t.Fatalf("分页查询历史失败: %v", err)
-	}
-	if page.Total != 1 || len(page.Items) != 1 || page.Items[0].ID != enabledItem.ID {
-		t.Fatalf("GetHistoryPage 未过滤禁用工具历史: %#v", page)
-	}
-
-	page, err = service.QueryHistory(0, 20, HistoryFilter{})
-	if err != nil {
-		t.Fatalf("查询历史失败: %v", err)
-	}
-	if page.Total != 1 || len(page.Items) != 1 || page.Items[0].ID != enabledItem.ID {
-		t.Fatalf("禁用工具历史仍可查询: %#v", page)
-	}
-
-	page, err = service.QueryHistory(0, 20, HistoryFilter{Tool: "time"})
-	if err != nil {
-		t.Fatalf("按禁用工具查询历史失败: %v", err)
-	}
-	if page.Total != 0 || len(page.Items) != 0 {
-		t.Fatalf("按禁用工具查询应返回空结果: %#v", page)
-	}
-
-	content, err := service.GetHistoryContent(disabledItem.ID)
-	if err == nil || localizedErrorKey(err) != "errors.config.historyEntryNotFound" {
-		t.Fatalf("读取禁用工具历史错误为 %v，期望错误 key errors.config.historyEntryNotFound", err)
-	}
-	if content != (HistoryContent{}) {
-		t.Fatalf("禁用工具历史不应返回内容: %#v", content)
-	}
-
-	content, err = service.GetHistoryContent(enabledItem.ID)
-	if err != nil {
-		t.Fatalf("读取启用工具历史失败: %v", err)
-	}
-	if content.Input != "enabled input" || content.Output != "enabled output" {
-		t.Fatalf("启用工具历史内容错误: %#v", content)
+		if string(got) != want {
+			t.Fatalf("旧历史文件 %s 内容被改写: %q", path, got)
+		}
 	}
 }
 

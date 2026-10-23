@@ -39,8 +39,6 @@ import {
   ToolLayoutContent,
   ToolLayoutFooter,
   ToolLayoutToolbar,
-  type PendingAction,
-  type ToolId,
 } from './shared';
 import { Input } from './ui/input';
 import { Switch } from './ui/switch';
@@ -214,14 +212,6 @@ function sortedStages(stages: NetworkTestStage[]) {
   });
 }
 
-function parseHistoryValue<T>(value: string): T | null {
-  try {
-    return JSON.parse(value) as T;
-  } catch {
-    return null;
-  }
-}
-
 // 阶段行的说明文字可能长于行宽：横向可滚、不显示滚动条、两端按实际溢出量渐隐，不再截断成省略号。
 // 这里不复用 ScrollArea：它会固定给内容加 4px 内边距（为边缘控件的焦点环预留），而用负 margin 抵消
 // 会把文字压到裁切边缘并让左端出现假渐隐；这些提示行本身没有可聚焦控件，用 .no-scrollbar 隐藏滚动条
@@ -258,24 +248,7 @@ function StageHintLine({ text, className }: { text: string; className: string })
   );
 }
 
-export default function NetworkTestTool({
-  active,
-  record,
-  pending,
-  clearPending,
-}: {
-  active: boolean;
-  record: (
-    tool: ToolId,
-    action: string,
-    detail: string,
-    input: string,
-    output?: string,
-    meta?: { mode?: string; mediaType?: string; name?: string; bytes?: number },
-  ) => void;
-  pending: PendingAction | null;
-  clearPending: () => void;
-}) {
+export default function NetworkTestTool({ active }: { active: boolean }) {
   const { t } = useTranslation();
   const { profiles } = useSSHProfiles();
   const [protocolSelection, setProtocolSelection] = useState<ProtocolSelection>('auto');
@@ -528,47 +501,6 @@ export default function NetworkTestTool({
     return () => window.clearInterval(timer);
   }, [active, running]);
 
-  useEffect(() => {
-    if (pending?.tool !== 'network-test' || pending.action !== 'restore') return;
-    const restoredRequest = parseHistoryValue<NetworkTestRequest>(pending.input);
-    const restoredResult = parseHistoryValue<DisplayResult>(pending.output ?? '');
-    if (restoredRequest) {
-      setProtocolSelection(restoredRequest.protocol as Protocol);
-      setTarget(restoredRequest.target);
-      setUserAgentSelection(userAgentSelectionFor(restoredRequest.userAgent ?? ''));
-      updateNetworkSettings(
-        {
-          payload: restoredRequest.payload || 'ping',
-          timeoutSeconds: String(Math.max(1, Math.round(restoredRequest.timeoutMillis / 1000))),
-          skipTLSVerify: restoredRequest.skipTLSVerify ?? false,
-          maxRedirects: String(restoredRequest.maxRedirects ?? 10),
-          method: restoredRequest.method ?? 'GET',
-          headers: restoredRequest.headers || '',
-          body: restoredRequest.body || '',
-          hasBody: restoredRequest.hasBody ?? Boolean(restoredRequest.body),
-          sourceID: restoredRequest.sourceID || 'local',
-          userAgent: restoredRequest.userAgent ?? '',
-          proxyType: (restoredRequest.proxyType || '') as ProxyType,
-          proxyAddress: restoredRequest.proxyAddress,
-          dnsMode: (restoredRequest.dnsMode || 'system') as DNSMode,
-          dnsAddress: restoredRequest.dnsAddress,
-          interfaceName: restoredRequest.interfaceName,
-        },
-        false,
-      );
-    }
-    if (restoredResult) {
-      activeRunID.current = '';
-      const restoredStages = restoredResult.stages ?? [];
-      stageMap.current = new Map(restoredStages.map((stage) => [stage.id, stage]));
-      setStages(sortedStages(restoredStages));
-      setResult({ ...restoredResult, stages: restoredStages });
-      setRunning(false);
-      setTestStartedAt(restoredResult.startedAt);
-    }
-    clearPending();
-  }, [pending, clearPending]);
-
   const startTest = async () => {
     const duration = Number(timeoutSeconds);
     if (
@@ -629,17 +561,6 @@ export default function NetworkTestTool({
       setResult(complete);
       setStages(complete.stages);
       setRunning(false);
-      record(
-        'network-test',
-        t('networkTestTool.recordAction'),
-        t('networkTestTool.historyDetail', {
-          protocol: t(`networkTestTool.protocol.${effectiveProtocol}`),
-          target: request.target,
-        }),
-        JSON.stringify(request),
-        JSON.stringify(complete),
-        { mode: effectiveProtocol },
-      );
     } catch (error) {
       if (activeRunID.current !== request.runID) return;
       // footer 只显示状态与耗时：调用层失败（没有任何阶段）时用 toast 说明原因，

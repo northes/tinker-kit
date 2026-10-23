@@ -1,4 +1,20 @@
-export type PipelineItemType = 'extract' | 'sort' | 'arraySort' | 'filter' | 'template';
+export type PipelineItemType =
+  'extract' | 'sort' | 'arraySort' | 'filter' | 'arrayDedupe' | 'template';
+export type PipelineFilterOperator =
+  | 'gt'
+  | 'gte'
+  | 'eq'
+  | 'lt'
+  | 'lte'
+  | 'notNull'
+  | 'notEmpty'
+  | 'isNull'
+  | 'isEmpty'
+  | 'stringLengthGt'
+  | 'stringLengthGte'
+  | 'stringLengthEq'
+  | 'stringLengthLt'
+  | 'stringLengthLte';
 export type PipelineSortMode = 'key' | 'value';
 export type PipelineDirection = 'asc' | 'desc';
 export type PipelineItem = {
@@ -10,6 +26,7 @@ export type PipelineItem = {
   direction: PipelineDirection;
   arrayPath: string;
   itemPath: string;
+  operator: PipelineFilterOperator;
   filterValue: string;
   template: string;
 };
@@ -23,7 +40,30 @@ class PipelineConfigError extends Error {
   }
 }
 
-const typeOptions: PipelineItemType[] = ['extract', 'sort', 'arraySort', 'filter', 'template'];
+const filterOperators: PipelineFilterOperator[] = [
+  'gt',
+  'gte',
+  'eq',
+  'lt',
+  'lte',
+  'notNull',
+  'notEmpty',
+  'isNull',
+  'isEmpty',
+  'stringLengthGt',
+  'stringLengthGte',
+  'stringLengthEq',
+  'stringLengthLt',
+  'stringLengthLte',
+];
+const typeOptions: PipelineItemType[] = [
+  'extract',
+  'sort',
+  'arraySort',
+  'filter',
+  'arrayDedupe',
+  'template',
+];
 const configString = (item: Record<string, unknown>, key: string, fallback: string) => {
   const value = item[key];
   if (value === undefined) return fallback;
@@ -61,6 +101,12 @@ export function parsePipelineConfig(source: string): PipelineItem[] {
       throw new PipelineConfigError();
     if (raw.direction !== undefined && raw.direction !== 'asc' && raw.direction !== 'desc')
       throw new PipelineConfigError();
+    if (
+      raw.operator !== undefined &&
+      (typeof raw.operator !== 'string' ||
+        !filterOperators.includes(raw.operator as PipelineFilterOperator))
+    )
+      throw new PipelineConfigError();
     const item: PipelineItem = {
       id: createPipelineId(),
       enabled: raw.enabled ?? true,
@@ -70,6 +116,7 @@ export function parsePipelineConfig(source: string): PipelineItem[] {
       direction: (raw.direction ?? 'asc') as PipelineDirection,
       arrayPath: configString(raw, 'arrayPath', '$'),
       itemPath: configString(raw, 'itemPath', '$'),
+      operator: (raw.operator ?? 'eq') as PipelineFilterOperator,
       filterValue: configString(raw, 'filterValue', ''),
       template: configString(raw, 'template', '{$.name}?token={$.token}'),
     };

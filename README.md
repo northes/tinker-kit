@@ -29,8 +29,7 @@ Look inside JSON, timestamps, JWT, SSH hosts, containers and network calls: 15 t
 - **Menu-bar resident, always on call** — TinkerKit lives in the menu bar; closing the window hides it to the tray (the Dock icon reappears while the window is shown). Copy anything, right-click the tray icon, and TinkerKit auto-detects JSON / timestamps / URL / JWT / Base64 / text and jumps to the matching tool (asks for confirmation by default; enable “auto fill” to skip it).
 - **Command palette, keyboard-first** — Press `⌘K` / `Ctrl+K` to search every command with fuzzy matching, including pinyin and initial letters for Chinese, filtered by the current context. Nearly everything can be done without touching the mouse.
 - **Remote and container debugging** — SSH file management, port forwarding, containers and services, image management and network tests share one set of connection profiles, so you don’t have to switch between the terminal and several GUIs.
-- **History kept on-device** — Tool activity is recorded locally, filterable by tool and time range, with pagination, on-demand loading for large entries, and one-click restore.
-- **Portable configuration** — Settings, custom sources and connection credentials can be exported, imported and reset, and history can be cleared in one click; launch at login and background notifications are supported.
+- **Portable configuration** — Settings, custom sources and connection credentials can be exported, imported and reset; launch at login and background notifications are supported.
 - **Simplified Chinese first, i18n-ready** — The UI defaults to Simplified Chinese with English built in, and the locale structure is easy to extend with more languages.
 - **Auto-update** — Distributed through GitHub Releases; checks silently on launch and every 24 hours, prompts only when a new version is found, then downloads and restarts in one click.
 
@@ -83,7 +82,7 @@ brew upgrade --cask --greedy northes/tinker-kit/tinker-kit
 brew uninstall --cask northes/tinker-kit/tinker-kit
 ```
 
-The app also updates itself, so Homebrew upgrades use `--greedy`. Uninstalling preserves local configuration and history. For first-launch security warnings, follow the instructions below.
+The app also updates itself, so Homebrew upgrades use `--greedy`. Uninstalling preserves local configuration. For first-launch security warnings, follow the instructions below.
 
 ### DMG installation
 
@@ -107,7 +106,7 @@ Download the latest `TinkerKit-<version>-darwin-universal.dmg` from [GitHub Rele
 - Local tools (formatting, conversion, parsing, comparison, images and QR codes) run fully offline and make no network requests; the app has no accounts and no telemetry.
 - The only automatic background network activity is “Check for updates”: it runs silently after launch and every 24 hours, and can be turned off or triggered manually under “Settings → About”.
 - Debugging tools only connect to the targets you specify when you trigger an operation; credentials such as SSH passwords, key passphrases and registry passwords are stored in your local configuration file.
-- Configuration, history and sources live in `~/Library/Application Support/TinkerKit/` (`config.json`, `history.json` and `history-data/`). Clear history or export / import / reset the configuration under “Settings → Data & security” (reset restores defaults and removes all custom sources and connection credentials).
+- Configuration and sources live in `~/Library/Application Support/TinkerKit/` (`config.json`). Export / import / reset the configuration under “Settings → Data & security” (reset restores defaults and removes all custom sources and connection credentials).
 
 ## License
 

@@ -9,7 +9,7 @@ user-invocable: false
 网络测试工具的每个阶段既是进度也是结论：用户只看阶段列表与时间线来判断「这次成功意味着什么」。
 新增协议时，先保证阶段的语义、顺序与时间都成立，再考虑功能本身。
 
-现有协议：`http`、`websocket`、`tcp`、`udp`、`ntp`、`rtsp`。工具级接线（`ToolId`、导航、历史、托盘）
+现有协议：`http`、`websocket`、`tcp`、`udp`、`ntp`、`rtsp`。工具级接线（`ToolId`、导航、托盘）
 与协议扩展无关，见 [tool-development](../tool-development/SKILL.md)；布局细节见
 [layout-guidance](../layout-guidance/SKILL.md)。
 

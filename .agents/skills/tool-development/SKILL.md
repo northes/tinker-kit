@@ -1,16 +1,16 @@
 ---
 name: tool-development
-description: 仅在新增开发者工具，或改变 ToolId、工具注册、导航、常驻挂载、命令面板、历史记录或托盘识别时使用。现有工具的算法、文案或样式修改不要使用本 skill。
+description: 仅在新增开发者工具，或改变 ToolId、工具注册、导航、常驻挂载、命令面板或托盘识别时使用。现有工具的算法、文案或样式修改不要使用本 skill。
 user-invocable: false
 ---
 
 # 新增工具
 
-新增工具必须完成完整接线，不能只新增一个组件并把导航或历史逻辑留在旧代码中。工具组件使用 `ToolLayout`、`ToolActionBar` 和共享类型，遵循现有工具的数据流。
+新增工具必须完成完整接线，不能只新增一个组件并把导航逻辑留在旧代码中。工具组件使用 `ToolLayout`、`ToolActionBar` 和共享类型，遵循现有工具的数据流。
 
 新工具支持本机与 SSH 来源切换时，按 [forms-and-controls.md](../layout-guidance/forms-and-controls.md) 接入来源 UI，按 [wails-integration 的服务与配置](../wails-integration/SKILL.md#服务与配置) 接入来源模型与持久化。
 
-调查发现变更跨越 `ToolId`、注册、导航、常驻挂载、命令、历史或托盘识别时，再升级到完整接线清单。编解码类工具（例如 JWT）的产品特例见 [examples.md](./examples.md)，仅在新增同类工具时读取。
+调查发现变更跨越 `ToolId`、注册、导航、常驻挂载、命令或托盘识别时，再升级到完整接线清单。编解码类工具（例如 JWT）的产品特例见 [examples.md](./examples.md)，仅在新增同类工具时读取。
 
 在**已有工具内部**新增协议、算法或数据格式分支（例如网络测试工具新增协议）不属于本清单，见 [network-test-protocol](../network-test-protocol/SKILL.md)。
 
@@ -31,12 +31,9 @@ user-invocable: false
    - `tools` 数组加入侧栏和路由定义。
    - 加入常驻 `tool-slot` 渲染，切页只隐藏不卸载。
    - `paletteItems` 加入 `open:<id>` 导航命令和实际存在的工具动作命令。
-4. `frontend/src/components/HistoryPage.tsx`
-   - 同步更新 `toHistoryItem`、`HistoryIcon` 和 `historyTools`。
-   - 否则工具记录会被过滤或显示缺少图标。
-5. locale
+4. locale
    - `frontend/src/locales/zh-CN.json` 和 `frontend/src/locales/en-US.json` 同步增加 `tools.<id>`、导航命令和工具文案。
-6. 页面恢复
+5. 页面恢复
    - 不要为新工具新增设置类 localStorage；页面恢复 key 见 `AGENTS.md`。
 
 ## 命令面板

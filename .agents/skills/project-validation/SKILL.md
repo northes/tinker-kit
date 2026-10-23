@@ -30,7 +30,7 @@ Go 测试前确保 `frontend/dist` 存在；需要更新产物时先完成前端
 - 只改 Markdown 或 skill：运行差异检查；检查 frontmatter、相对链接、任务名和架构描述，不运行应用构建。
 - 改 React 组件、locale、样式或现有工具内部行为：运行前端生产构建（含类型检查），命中现有行为测试时执行对应任务，必要时格式检查。
 - 删除或移除操作：按 [forms-and-controls.md](../layout-guidance/forms-and-controls.md) 核对确认边界。
-- 工具注册、导航、命令、历史或托盘识别：前端验证，并按 [tool-development](../tool-development/SKILL.md) 的接线清单验收。
+- 工具注册、导航、命令或托盘识别：前端验证，并按 [tool-development](../tool-development/SKILL.md) 的接线清单验收。
 - 布局、编辑器、浮层或滚动容器：前端验证，并按 [layout-guidance](../layout-guidance/SKILL.md) 路由到实际命中的参考验收。
 - Go 服务、配置、窗口、托盘或事件：Go 测试与前端构建；按 [wails-integration](../wails-integration/SKILL.md) 核对配置、生命周期和绑定同步。
 - WebView 重计算迁移到 Go：按 wails-integration 的后台任务规则核对实现；Go 行为测试覆盖原始大输入、取消、过期结果保护、返回文本和统计字段，不以类型检查替代行为测试。

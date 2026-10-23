@@ -108,18 +108,10 @@ export default function ServiceManagerTool({
   active,
   highlightLevels,
   setHighlightLevels,
-  record,
 }: {
   active: boolean;
   highlightLevels: boolean;
   setHighlightLevels: (value: boolean) => void;
-  record: (
-    tool: 'service-manager',
-    action: string,
-    detail: string,
-    input: string,
-    output?: string,
-  ) => void;
 }) {
   const { t } = useTranslation();
   const targetLabelId = useId();
@@ -128,6 +120,7 @@ export default function ServiceManagerTool({
   const [targetID, setTargetID] = useState('local');
   const targetIDRef = useRef(targetID);
   targetIDRef.current = targetID;
+  const targetInitialized = useRef(false);
   const [inventory, setInventory] = useState<ServiceInventory | null>(null);
   const [detailRefreshVersion, setDetailRefreshVersion] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -228,15 +221,20 @@ export default function ServiceManagerTool({
     media.addEventListener('change', update);
     return () => media.removeEventListener('change', update);
   }, []);
-  // 浏览位置与监控会话独立；移除当前浏览的主机时返回本机。
+  // 浏览位置与监控会话独立；首次加载默认选中列表中的第一个目标，
+  // 之后保留当前目标，目标被移除时回退到第一个可用的目标。
   const syncTargets = (next: ServiceTarget[]) => {
     setTargets(next);
-    if (next.some((item) => item.id === targetIDRef.current)) return;
-    cancelInventory(targetIDRef.current);
+    const current = targetIDRef.current;
+    if (targetInitialized.current && next.some((item) => item.id === current)) return;
+    targetInitialized.current = true;
+    const fallback = next[0]?.id ?? 'local';
+    if (fallback === current) return;
+    cancelInventory(current);
     inventoryLoadVersion.current++;
     setSelection(null);
     setInventory(null);
-    setTargetID('local');
+    setTargetID(fallback);
   };
 
   const load = async (nextTarget = targetID, refreshDetails = false) => {
@@ -473,6 +471,7 @@ export default function ServiceManagerTool({
 
   const selectTarget = (next: string | null) => {
     if (!next || next === targetID) return;
+    targetInitialized.current = true;
     cancelInventory(targetID);
     inventoryLoadVersion.current++;
     setSelection(null);
@@ -525,14 +524,6 @@ export default function ServiceManagerTool({
       const result = await request;
       const failed = result.failed ?? [];
       const succeeded = result.succeeded ?? [];
-      if (succeeded.length)
-        record(
-          'service-manager',
-          action,
-          `${targets.find((item) => item.id === target)?.name ?? target} · ${resource.name || resource.id}`,
-          '',
-          failed.map((item) => formatBackendError(item.error)).join('\n'),
-        );
       if (failed.length) {
         const partial = succeeded.length > 0;
         toast.add({

@@ -36,7 +36,6 @@ import {
   ToolLayoutFooter,
   ToolLayoutToolbar,
   type PendingAction,
-  type ToolId,
 } from './shared';
 import {
   DIGITS,
@@ -65,14 +64,12 @@ export default function TextGeneratorTool({
   active,
   sources,
   onSourcesChange,
-  record,
   pending,
   clearPending,
 }: {
   active: boolean;
   sources: TextGeneratorSource[];
   onSourcesChange: (sources: TextGeneratorSource[]) => void;
-  record: (tool: ToolId, action: string, detail: string, input: string, output?: string) => void;
   pending: PendingAction | null;
   clearPending: () => void;
 }) {
@@ -84,7 +81,6 @@ export default function TextGeneratorTool({
   const [separator, setSeparator] = useState(',\\n');
   const [quote, setQuote] = useState<QuoteMode>('none');
   const [items, setItems] = useState<string[]>([]);
-  const [restoredOutput, setRestoredOutput] = useState<string | null>(null);
   const [managerOpen, setManagerOpen] = useState(false);
   const [editing, setEditing] = useState<TextGeneratorSource | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<TextGeneratorSource | null>(null);
@@ -122,10 +118,8 @@ export default function TextGeneratorTool({
       : Array.from(selectedCustom.content);
   }, [selectedCustom, sets, source]);
   const output = useMemo(
-    () =>
-      restoredOutput ??
-      items.map((item) => quoteValue(item, quote)).join(parseSeparator(separator)),
-    [items, quote, restoredOutput, separator],
+    () => items.map((item) => quoteValue(item, quote)).join(parseSeparator(separator)),
+    [items, quote, separator],
   );
 
   const generate = () => {
@@ -144,14 +138,6 @@ export default function TextGeneratorTool({
       quantity,
     });
     setItems(next);
-    setRestoredOutput(null);
-    record(
-      'text-generator',
-      t('textGeneratorTool.generate'),
-      t('textGeneratorTool.historyDetail', { source: sourceLabel, total: quantity }),
-      '',
-      next.map((item) => quoteValue(item, quote)).join(parseSeparator(separator)),
-    );
   };
 
   useEffect(() => {
@@ -161,7 +147,6 @@ export default function TextGeneratorTool({
     if (pending.action === 'generate') generate();
     else if (pending.action === 'clear') {
       setItems([]);
-      setRestoredOutput(null);
     } else if (pending.action === 'copy' && output) {
       void (async () => {
         try {
@@ -171,9 +156,6 @@ export default function TextGeneratorTool({
           toast.add({ title: t('toast.copyFailed'), type: 'error' });
         }
       })();
-    } else if (pending.action === 'restore') {
-      setItems([]);
-      setRestoredOutput(pending.output ?? '');
     }
   }, [pending, pool, source, sets, length, quantity, separator, quote, output, t]);
 
@@ -381,10 +363,7 @@ export default function TextGeneratorTool({
                 icon: Trash,
                 variant: 'tertiary',
                 disabled: !output,
-                onPress: () => {
-                  setItems([]);
-                  setRestoredOutput(null);
-                },
+                onPress: () => setItems([]),
               },
               {
                 key: 'copy',

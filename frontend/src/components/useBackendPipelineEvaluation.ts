@@ -76,6 +76,7 @@ const rulesSignature = (rules: PipelineItem[]) =>
       rule.direction,
       rule.arrayPath,
       rule.itemPath,
+      rule.operator,
       rule.filterValue,
       rule.template,
     ]),
