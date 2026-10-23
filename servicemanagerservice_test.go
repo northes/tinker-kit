@@ -164,6 +164,25 @@ func TestServiceResourceValidationRejectsUnsafeValues(t *testing.T) {
 	}
 }
 
+func TestServiceDetailCallsEndCleanlyWhenCanceled(t *testing.T) {
+	service := &ServiceManagerService{ctx: context.Background(), config: &ConfigService{cfg: normalizeConfig(defaultConfig())}}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	id := strings.Repeat("a", 12)
+	if _, err := service.GetDockerContainerDetail(ctx, "local", id); err != nil {
+		t.Fatalf("取消后的容器详情应正常结束: %v", err)
+	}
+	if _, err := service.GetDockerContainerSize(ctx, "local", id); err != nil {
+		t.Fatalf("取消后的容器大小应正常结束: %v", err)
+	}
+	if _, err := service.GetPM2ProcessDetail(ctx, "local", "0"); err != nil {
+		t.Fatalf("取消后的 PM2 详情应正常结束: %v", err)
+	}
+	if _, err := service.GetSystemdUnitDetail(ctx, "local", "nginx.service", "system"); err != nil {
+		t.Fatalf("取消后的 systemd 详情应正常结束: %v", err)
+	}
+}
+
 func TestSaveServiceTargetsRequiresGlobalSSHProfile(t *testing.T) {
 	profile := SSHProfile{ID: "profile-1", Name: "生产", Host: "prod.example.com", Username: "deploy", Password: "secret"}
 	config := &ConfigService{

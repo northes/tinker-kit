@@ -381,7 +381,12 @@ func (s *ImageService) importConflicts(ctx context.Context, source ImageSource, 
 }
 
 // PrepareImageImports 只选择和检查文件，确认目标引用前不修改 Docker 或 Registry。
-func (s *ImageService) PrepareImageImports(ctx context.Context, sourceID string) ([]ImageImportEntry, error) {
+func (s *ImageService) PrepareImageImports(ctx context.Context, sourceID string) (result []ImageImportEntry, err error) {
+	defer func() {
+		if errors.Is(ctx.Err(), context.Canceled) {
+			result, err = nil, nil
+		}
+	}()
 	if _, _, _, err := s.sourceSnapshot(sourceID); err != nil {
 		return nil, err
 	}

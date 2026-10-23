@@ -740,7 +740,15 @@ func (s *ServiceManagerService) listSystemd(ctx context.Context, source ImageSou
 	return units, nil
 }
 
-func (s *ServiceManagerService) GetDockerContainerDetail(ctx context.Context, targetID, id string) (DockerContainerDetail, error) {
+func (s *ServiceManagerService) GetDockerContainerDetail(ctx context.Context, targetID, id string) (result DockerContainerDetail, err error) {
+	defer func() {
+		if errors.Is(ctx.Err(), context.Canceled) {
+			result, err = DockerContainerDetail{}, nil
+		}
+	}()
+	if errors.Is(ctx.Err(), context.Canceled) {
+		return DockerContainerDetail{}, nil
+	}
 	target, source, cli, err := s.targetSnapshot(targetID)
 	_ = target
 	if err != nil {
@@ -753,6 +761,9 @@ func (s *ServiceManagerService) GetDockerContainerDetail(ctx context.Context, ta
 	defer cancel()
 	out, err := s.run(queryCtx, source, cli, "container", "inspect", id)
 	if err != nil {
+		if errors.Is(queryCtx.Err(), context.Canceled) {
+			return DockerContainerDetail{}, nil
+		}
 		return DockerContainerDetail{}, err
 	}
 	var raw []dockerInspect
@@ -771,7 +782,15 @@ func (s *ServiceManagerService) GetDockerContainerDetail(ctx context.Context, ta
 	return detail, nil
 }
 
-func (s *ServiceManagerService) GetDockerContainerSize(ctx context.Context, targetID, id string) (DockerContainerSize, error) {
+func (s *ServiceManagerService) GetDockerContainerSize(ctx context.Context, targetID, id string) (size DockerContainerSize, err error) {
+	defer func() {
+		if errors.Is(ctx.Err(), context.Canceled) {
+			size, err = DockerContainerSize{}, nil
+		}
+	}()
+	if errors.Is(ctx.Err(), context.Canceled) {
+		return DockerContainerSize{}, nil
+	}
 	target, source, cli, err := s.targetSnapshot(targetID)
 	_ = target
 	if err != nil {
@@ -784,6 +803,9 @@ func (s *ServiceManagerService) GetDockerContainerSize(ctx context.Context, targ
 	defer cancel()
 	out, err := s.run(queryCtx, source, cli, "container", "inspect", "--size", id)
 	if err != nil {
+		if errors.Is(queryCtx.Err(), context.Canceled) {
+			return DockerContainerSize{}, nil
+		}
 		return DockerContainerSize{}, err
 	}
 	var raw []dockerInspect
@@ -890,7 +912,15 @@ func parseDUSize(out []byte) (int64, bool) {
 	}
 	return blocks * 1024, true
 }
-func (s *ServiceManagerService) GetPM2ProcessDetail(ctx context.Context, targetID, id string) (PM2ProcessDetail, error) {
+func (s *ServiceManagerService) GetPM2ProcessDetail(ctx context.Context, targetID, id string) (result PM2ProcessDetail, err error) {
+	defer func() {
+		if errors.Is(ctx.Err(), context.Canceled) {
+			result, err = PM2ProcessDetail{}, nil
+		}
+	}()
+	if errors.Is(ctx.Err(), context.Canceled) {
+		return PM2ProcessDetail{}, nil
+	}
 	target, source, _, err := s.targetSnapshot(targetID)
 	_ = target
 	if err != nil {
@@ -903,6 +933,9 @@ func (s *ServiceManagerService) GetPM2ProcessDetail(ctx context.Context, targetI
 	defer cancel()
 	items, err := s.listPM2(queryCtx, source)
 	if err != nil {
+		if errors.Is(queryCtx.Err(), context.Canceled) {
+			return PM2ProcessDetail{}, nil
+		}
 		return PM2ProcessDetail{}, err
 	}
 	for _, item := range items {
@@ -912,7 +945,15 @@ func (s *ServiceManagerService) GetPM2ProcessDetail(ctx context.Context, targetI
 	}
 	return PM2ProcessDetail{}, userError("errors.service.pm2ProcessNotFound")
 }
-func (s *ServiceManagerService) GetSystemdUnitDetail(ctx context.Context, targetID, id, scope string) (SystemdUnitDetail, error) {
+func (s *ServiceManagerService) GetSystemdUnitDetail(ctx context.Context, targetID, id, scope string) (result SystemdUnitDetail, err error) {
+	defer func() {
+		if errors.Is(ctx.Err(), context.Canceled) {
+			result, err = SystemdUnitDetail{}, nil
+		}
+	}()
+	if errors.Is(ctx.Err(), context.Canceled) {
+		return SystemdUnitDetail{}, nil
+	}
 	_, source, _, err := s.targetSnapshot(targetID)
 	if err != nil {
 		return SystemdUnitDetail{}, err
@@ -927,6 +968,9 @@ func (s *ServiceManagerService) GetSystemdUnitDetail(ctx context.Context, target
 	defer cancel()
 	units, err := s.listSystemd(queryCtx, source, scope)
 	if err != nil {
+		if errors.Is(queryCtx.Err(), context.Canceled) {
+			return SystemdUnitDetail{}, nil
+		}
 		return SystemdUnitDetail{}, err
 	}
 	var unit SystemdUnit
@@ -945,6 +989,9 @@ func (s *ServiceManagerService) GetSystemdUnitDetail(ctx context.Context, target
 	}
 	out, err := s.run(queryCtx, source, "systemctl", args...)
 	if err != nil {
+		if errors.Is(queryCtx.Err(), context.Canceled) {
+			return SystemdUnitDetail{}, nil
+		}
 		return SystemdUnitDetail{}, err
 	}
 	d := SystemdUnitDetail{Unit: unit}

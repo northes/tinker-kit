@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"errors"
 	"sort"
 	"strings"
 
@@ -177,12 +178,12 @@ func (s *FileService) SearchRemoteFiles(
 	ctx context.Context,
 	sourceID, currentPath, query, searchMode, searchScope string,
 	showHidden bool,
-) ([]RemoteFileEntry, error) {
+) (entries []RemoteFileEntry, err error) {
 	query = strings.TrimSpace(query)
 	if !validTextValue(query, 4096) {
 		return nil, userError("errors.sshFile.searchQueryInvalid")
 	}
-	searchMode, err := normalizeRemoteSearchMode(searchMode)
+	searchMode, err = normalizeRemoteSearchMode(searchMode)
 	if err != nil {
 		return nil, err
 	}
@@ -196,6 +197,11 @@ func (s *FileService) SearchRemoteFiles(
 	}
 	ctx, cancel := context.WithTimeout(ctx, remoteFileSearchTimeout)
 	defer cancel()
+	defer func() {
+		if errors.Is(ctx.Err(), context.Canceled) {
+			entries, err = nil, nil
+		}
+	}()
 	sshClient, client, err := s.dialSFTP(ctx, conn)
 	if err != nil {
 		return nil, err

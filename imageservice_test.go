@@ -614,8 +614,10 @@ func TestInspectDockerImageReportsCanceledTask(t *testing.T) {
 	// 模拟前端取消绑定调用：Go 侧应停止查询并把详情任务标记为已取消。
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	if _, err := service.InspectDockerImage(ctx, "local", "sha256:"+strings.Repeat("a", 64)); !errors.Is(err, context.Canceled) {
-		t.Fatalf("镜像详情查询应返回取消错误: %v", err)
+	// 取消是正常控制流：绑定层已经拒绝该调用，Go 侧不应再返回错误，避免 Wails
+	// 把取消后的迟到错误包装成 CancelledRejectionError。
+	if _, err := service.InspectDockerImage(ctx, "local", "sha256:"+strings.Repeat("a", 64)); err != nil {
+		t.Fatalf("取消后的镜像详情查询应正常结束: %v", err)
 	}
 	tasks := service.GetImageTasks().Tasks
 	if len(tasks) != 1 || tasks[0].Type != imageTaskTypeDetail || tasks[0].Status != imageTaskCanceled {

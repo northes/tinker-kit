@@ -348,9 +348,14 @@ func (s *PortService) dial(ctx context.Context, profile SSHProfile) (*ssh.Client
 }
 
 // ListPorts 的 ctx 来自 Wails 绑定调用；前端取消时中断本地扫描或远端 SSH 会话。
-func (s *PortService) ListPorts(ctx context.Context, profileID string) ([]PortEntry, error) {
+func (s *PortService) ListPorts(ctx context.Context, profileID string) (entries []PortEntry, err error) {
 	ctx, cancel := context.WithTimeout(ctx, 25*time.Second)
 	defer cancel()
+	defer func() {
+		if errors.Is(ctx.Err(), context.Canceled) {
+			entries, err = nil, nil
+		}
+	}()
 	if (profileID == "" || profileID == "local") && runtime.GOOS == "windows" {
 		return listWindowsPorts(ctx)
 	}

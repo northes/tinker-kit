@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"sort"
 	"time"
@@ -187,7 +188,12 @@ func (s *ImageService) pullOrigin(reference name.Reference, target ImageSource, 
 }
 
 // ResolveImagePullPlatforms 仅由显式操作调用；SSH 使用远端 CLI 的认证配置。
-func (s *ImageService) ResolveImagePullPlatforms(ctx context.Context, sourceID, image string, options ImagePullOptions) ([]string, error) {
+func (s *ImageService) ResolveImagePullPlatforms(ctx context.Context, sourceID, image string, options ImagePullOptions) (result []string, err error) {
+	defer func() {
+		if errors.Is(ctx.Err(), context.Canceled) {
+			result, err = nil, nil
+		}
+	}()
 	source, cliPath, _, err := s.sourceSnapshot(sourceID)
 	if err != nil {
 		return nil, err

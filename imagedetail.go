@@ -479,7 +479,7 @@ func (s *ImageService) InspectDockerImage(ctx context.Context, sourceID string, 
 	})
 	finish := func(detail DockerImageDetail, err error) (DockerImageDetail, error) {
 		if err != nil {
-			canceled := errors.Is(err, context.Canceled)
+			canceled := errors.Is(err, context.Canceled) || errors.Is(ctx.Err(), context.Canceled)
 			s.updateTask(taskID, func(task *imageTaskState) {
 				if canceled {
 					task.Status, task.Stage = imageTaskCanceled, imageTaskCanceled
@@ -489,6 +489,9 @@ func (s *ImageService) InspectDockerImage(ctx context.Context, sourceID string, 
 				task.Stage = "failed"
 				task.Error = err.Error()
 			})
+			if canceled {
+				return DockerImageDetail{}, nil
+			}
 		} else {
 			s.updateTask(taskID, func(task *imageTaskState) {
 				task.Status = imageTaskSuccess
