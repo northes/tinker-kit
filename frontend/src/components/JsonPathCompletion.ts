@@ -137,8 +137,8 @@ export function backendJSONPathCompletions(getSource: () => string) {
 
 export function valueCompletions(values: unknown[] | (() => unknown[])) {
   const source = (context: CompletionContext): CompletionResult | null => {
-    const match = context.matchBefore(/[^\s,]*/);
-    const typed = (match?.text ?? '').toLowerCase();
+    const bounds = valueCompletionBounds(context);
+    const typed = bounds.prefix.toLowerCase();
     const current = typeof values === 'function' ? values() : values;
     const options = [
       ...new Set(
@@ -157,7 +157,7 @@ export function valueCompletions(values: unknown[] | (() => unknown[])) {
       .filter((value) => !typed || fuzzyCompletionMatch(value, typed))
       .map((value) => ({ label: value, apply: value, type: 'value' }));
     if (!options.length) return null;
-    return { from: match?.from ?? context.pos, to: context.pos, options, filter: false };
+    return { from: bounds.from, to: bounds.to, options, filter: false };
   };
   return [
     ...editorCompletions({
@@ -258,10 +258,50 @@ export function backendPathCompletions(
   ];
 }
 
+// valueCompletionBounds 算出当前逗号分隔段的完整范围，包含已输入的引号。
+// 否则在 `"xxx"` 中双击选中 xxx 后继续输入并应用补全时，会只替换引号内的
+// 一部分，留下原来的收尾引号，最终得到 `"bbbb""`。
+function valueCompletionBounds(context: CompletionContext) {
+  const line = context.state.doc.lineAt(context.pos);
+  const text = line.text;
+  const offset = context.pos - line.from;
+  let quote: '"' | "'" | null = null;
+  let escaped = false;
+  let segmentStart = 0;
+  let from = 0;
+  let to = 0;
+  for (let index = 0; index <= text.length; index++) {
+    const ch = index < text.length ? text[index] : ',';
+    if (quote) {
+      if (escaped) escaped = false;
+      else if (ch === '\\') escaped = true;
+      else if (ch === quote) quote = null;
+    } else if (ch === '"' || ch === "'") {
+      quote = ch;
+    } else if (ch === ',') {
+      if (offset >= segmentStart && offset <= index) {
+        from = segmentStart;
+        to = index;
+        break;
+      }
+      segmentStart = index + 1;
+    }
+  }
+  while (from < to && /\s/.test(text[from])) from++;
+  while (to > from && /\s/.test(text[to - 1])) to--;
+  from = Math.min(from, offset);
+  to = Math.max(to, offset);
+  return {
+    from: line.from + from,
+    to: line.from + to,
+    prefix: text.slice(from, offset),
+  };
+}
+
 export function backendValueCompletions(getContext: BackendContextGetter, itemId: string) {
   const source = async (context: CompletionContext): Promise<CompletionResult | null> => {
-    const match = context.matchBefore(/[^\s,]*/);
-    const typed = match?.text ?? '';
+    const bounds = valueCompletionBounds(context);
+    const typed = bounds.prefix;
     const pipeline = getContext();
     if (!pipeline) return null;
     const request = QueryPipelineCompletion({
@@ -278,8 +318,8 @@ export function backendValueCompletions(getContext: BackendContextGetter, itemId
       const response = await request;
       if (context.aborted || response.stale || !response.items?.length) return null;
       return {
-        from: match?.from ?? context.pos,
-        to: context.pos,
+        from: bounds.from,
+        to: bounds.to,
         options: response.items.map((option) => ({
           label: option.label,
           apply: option.apply,
