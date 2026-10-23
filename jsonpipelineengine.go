@@ -22,6 +22,7 @@ type PipelineItem struct {
 	ArrayPath   string `json:"arrayPath"`
 	ItemPath    string `json:"itemPath"`
 	Operator    string `json:"operator"`
+	MatchMode   string `json:"matchMode"`
 	FilterValue string `json:"filterValue"`
 	Template    string `json:"template"`
 }
@@ -32,6 +33,7 @@ const (
 	pipelineTypeArraySort   = "arraySort"
 	pipelineTypeFilter      = "filter"
 	pipelineTypeArrayDedupe = "arrayDedupe"
+	pipelineTypeArrayTrim   = "arrayTrim"
 	pipelineTypeTemplate    = "template"
 )
 
@@ -41,6 +43,8 @@ const (
 	filterOperatorEQ              = "eq"
 	filterOperatorLT              = "lt"
 	filterOperatorLTE             = "lte"
+	filterOperatorIncludes        = "includes"
+	filterOperatorExcludes        = "excludes"
 	filterOperatorNotNull         = "notNull"
 	filterOperatorNotEmpty        = "notEmpty"
 	filterOperatorIsNull          = "isNull"
@@ -72,7 +76,7 @@ func pipelinePathError(code string, item int, path string) *PipelineError {
 
 func validPipelineType(value string) bool {
 	switch value {
-	case pipelineTypeExtract, pipelineTypeSort, pipelineTypeArraySort, pipelineTypeFilter, pipelineTypeArrayDedupe, pipelineTypeTemplate:
+	case pipelineTypeExtract, pipelineTypeSort, pipelineTypeArraySort, pipelineTypeFilter, pipelineTypeArrayDedupe, pipelineTypeArrayTrim, pipelineTypeTemplate:
 		return true
 	default:
 		return false
@@ -99,6 +103,9 @@ func normalizePipelineItem(item PipelineItem) PipelineItem {
 		item.ItemPath = "$"
 	}
 	item.Operator = normalizeFilterOperator(item.Operator)
+	if item.MatchMode != "value" {
+		item.MatchMode = "key"
+	}
 	return item
 }
 
@@ -112,6 +119,7 @@ func samePipelineExecution(a, b PipelineItem) bool {
 		a.ArrayPath == b.ArrayPath &&
 		a.ItemPath == b.ItemPath &&
 		a.Operator == b.Operator &&
+		a.MatchMode == b.MatchMode &&
 		a.FilterValue == b.FilterValue &&
 		a.Template == b.Template
 }
@@ -650,7 +658,8 @@ func executeArrayDedupe(value *JSONValue, item PipelineItem, index int) (*JSONVa
 func normalizeFilterOperator(value string) string {
 	switch value {
 	case filterOperatorGT, filterOperatorGTE, filterOperatorEQ, filterOperatorLT, filterOperatorLTE,
-		filterOperatorNotNull, filterOperatorNotEmpty, filterOperatorIsNull, filterOperatorIsEmpty,
+		filterOperatorIncludes, filterOperatorExcludes, filterOperatorNotNull, filterOperatorNotEmpty,
+		filterOperatorIsNull, filterOperatorIsEmpty,
 		filterOperatorStringLengthGT, filterOperatorStringLengthGTE, filterOperatorStringLengthEQ,
 		filterOperatorStringLengthLT, filterOperatorStringLengthLTE:
 		return value
@@ -726,6 +735,104 @@ func isFilterUnaryOperator(operator string) bool {
 	}
 }
 
+func isFilterListOperator(operator string) bool {
+	return operator == filterOperatorIncludes || operator == filterOperatorExcludes
+}
+
+// parseFilterList 解析英文逗号分隔的值列表。合法 JSON 标量按原类型匹配，
+// 其余片段按字符串处理，便于直接输入 active,pending 这类值。
+func parseFilterList(raw string, index int) ([]*JSONValue, *PipelineError) {
+	if strings.TrimSpace(raw) == "" {
+		return nil, pipelineError("filterValueRequired", index)
+	}
+	parts := strings.Split(raw, ",")
+	values := make([]*JSONValue, 0, len(parts))
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		if value, err := ParseJSONLoose(part); err == nil && value.IsScalar() {
+			values = append(values, value)
+			continue
+		}
+		values = append(values, newJSONString(part))
+	}
+	if len(values) == 0 {
+		return nil, pipelineError("filterValueRequired", index)
+	}
+	return values, nil
+}
+
+func filterListText(value *JSONValue) string {
+	if value.Kind == JSONString {
+		return value.Str
+	}
+	return StringifyJSON(value, "")
+}
+
+func executeArrayTrim(value *JSONValue, item PipelineItem, index int) (*JSONValue, *PipelineError) {
+	arrayTokens, failure := pathTokens(item.ArrayPath, index, "arrayPath")
+	if failure != nil {
+		return nil, failure
+	}
+	values, failure := parseFilterList(item.FilterValue, index)
+	if failure != nil {
+		return nil, failure
+	}
+	target, err := readTokens(value, arrayTokens, 0)
+	if err != nil {
+		return nil, pipelinePathError("arrayPathNotFound", index, item.ArrayPath)
+	}
+	if !target.IsArray() {
+		return nil, pipelinePathError("arrayPathInvalid", index, item.ArrayPath)
+	}
+	matchMode := item.MatchMode
+	if matchMode != "value" {
+		matchMode = "key"
+	}
+	keys := make(map[string]bool, len(values))
+	if matchMode == "key" {
+		for _, candidate := range values {
+			keys[filterListText(candidate)] = true
+		}
+	}
+	trimmed := make([]*JSONValue, 0, len(target.Arr))
+	for _, entry := range target.Arr {
+		if !entry.IsObject() {
+			trimmed = append(trimmed, entry)
+			continue
+		}
+		kept := make([]JSONMember, 0, len(entry.Obj))
+		for _, member := range entry.Obj {
+			keep := false
+			if matchMode == "value" {
+				if member.Value.IsScalar() {
+					for _, candidate := range values {
+						if member.Value.Kind == candidate.Kind && compareScalars(member.Value, candidate) == 0 {
+							keep = true
+							break
+						}
+					}
+				}
+			} else {
+				keep = keys[member.Key]
+			}
+			if keep {
+				kept = append(kept, member)
+			}
+		}
+		trimmed = append(trimmed, newJSONObject(kept))
+	}
+	next, err := updatePath(value, arrayTokens, 0, func(*JSONValue) *JSONValue {
+		return newJSONArray(trimmed)
+	})
+	if err != nil {
+		return nil, pipelinePathError("arrayPathNotFound", index, item.ArrayPath)
+	}
+	return next, nil
+}
+
 func parseFilterValue(raw string, index int) (*JSONValue, *PipelineError) {
 	if strings.TrimSpace(raw) == "" {
 		return nil, pipelineError("filterValueRequired", index)
@@ -758,7 +865,13 @@ func executeFilter(value *JSONValue, item PipelineItem, index int) (*JSONValue, 
 	}
 	operator := normalizeFilterOperator(item.Operator)
 	var expected *JSONValue
-	if !isFilterUnaryOperator(operator) {
+	var expectedList []*JSONValue
+	if isFilterListOperator(operator) {
+		expectedList, failure = parseFilterList(item.FilterValue, index)
+		if failure != nil {
+			return nil, failure
+		}
+	} else if !isFilterUnaryOperator(operator) {
 		expected, failure = parseFilterValue(item.FilterValue, index)
 		if failure != nil {
 			return nil, failure
@@ -772,10 +885,29 @@ func executeFilter(value *JSONValue, item PipelineItem, index int) (*JSONValue, 
 	for _, entry := range target.Arr {
 		matched, ok := readOptionalTokens(entry, itemTokens)
 		if !ok {
+			// 排除列表不应丢弃无法读取筛选键的项；它们不可能命中被排除的值。
+			if operator == filterOperatorExcludes {
+				filtered = append(filtered, entry)
+			}
 			continue
 		}
 		matchedOperator := false
 		switch operator {
+		case filterOperatorIncludes, filterOperatorExcludes:
+			included := false
+			if matched.IsScalar() {
+				for _, candidate := range expectedList {
+					if matched.Kind == candidate.Kind && compareScalars(matched, candidate) == 0 {
+						included = true
+						break
+					}
+				}
+			}
+			if operator == filterOperatorIncludes {
+				matchedOperator = included
+			} else {
+				matchedOperator = !included
+			}
 		case filterOperatorNotNull:
 			matchedOperator = matched.Kind != JSONNull
 		case filterOperatorNotEmpty:
@@ -872,6 +1004,9 @@ func executePipelineItem(value *JSONValue, item PipelineItem, index int) (*JSONV
 		return result, false, failure
 	case pipelineTypeArrayDedupe:
 		result, failure := executeArrayDedupe(value, item, index)
+		return result, false, failure
+	case pipelineTypeArrayTrim:
+		result, failure := executeArrayTrim(value, item, index)
 		return result, false, failure
 	default:
 		result, failure := executeTemplate(value, item.Template, index)

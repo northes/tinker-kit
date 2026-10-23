@@ -151,6 +151,99 @@ func TestRunPipelineFilterOperators(t *testing.T) {
 	}
 }
 
+func TestRunPipelineArrayTrim(t *testing.T) {
+	doc, err := ParseJSONLoose(`{"items":[{"a":1,"b":2,"c":"x"},{"a":3,"d":4},"keep",["a"],{"1":"one","a":2}]}`)
+	if err != nil {
+		t.Fatalf("parse failed: %v", err)
+	}
+	cases := []struct {
+		mode  string
+		value string
+		want  string
+	}{
+		{mode: "key", value: "a,c", want: `{"items":[{"a":1,"c":"x"},{"a":3},"keep",["a"],{"a":2}]}`},
+		{mode: "value", value: "1,x,4", want: `{"items":[{"a":1,"c":"x"},{"d":4},"keep",["a"],{}]}`},
+		{mode: "key", value: "1", want: `{"items":[{},{}, "keep",["a"],{"1":"one"}]}`},
+	}
+	for _, testCase := range cases {
+		run := runPipeline(context.Background(), doc, pipelineItems(t, []PipelineItem{
+			{ID: "t", Enabled: true, Type: "arrayTrim", ArrayPath: "$.items", MatchMode: testCase.mode, FilterValue: testCase.value},
+		}), nil)
+		if run.Error != nil {
+			t.Fatalf("mode %s value %q returned error: %#v", testCase.mode, testCase.value, run.Error)
+		}
+		got := StringifyJSON(run.Output, "")
+		// 统一比较时去掉空白差异，避免手写期望中的空格影响结果。
+		got = strings.ReplaceAll(got, " ", "")
+		want := strings.ReplaceAll(testCase.want, " ", "")
+		if got != want {
+			t.Fatalf("mode %s value %q = %s, want %s", testCase.mode, testCase.value, got, want)
+		}
+	}
+	run := runPipeline(context.Background(), doc, pipelineItems(t, []PipelineItem{
+		{ID: "t", Enabled: true, Type: "arrayTrim", ArrayPath: "$.items", MatchMode: "key", FilterValue: ""},
+	}), nil)
+	if run.Error == nil || run.Error.Code != "filterValueRequired" {
+		t.Fatalf("empty trim list: expected filterValueRequired, got %#v", run.Error)
+	}
+}
+
+func TestRunPipelineExtractThenArrayTrim(t *testing.T) {
+	doc, err := ParseJSONLoose(`{"Result":{"data":[{"floor_name":"L4","uuid":"a"},{"floor_name":"L2","uuid":"b"}]}}`)
+	if err != nil {
+		t.Fatalf("parse failed: %v", err)
+	}
+	run := runPipeline(context.Background(), doc, pipelineItems(t, []PipelineItem{
+		{ID: "e", Enabled: true, Type: "extract", Path: "$.Result.data"},
+		{ID: "t", Enabled: true, Type: "arrayTrim", ArrayPath: "$", MatchMode: "key", FilterValue: "floor_name"},
+	}), nil)
+	if run.Error != nil {
+		t.Fatalf("unexpected error: %#v", run.Error)
+	}
+	if got := StringifyJSON(run.Output, ""); got != `[{"floor_name":"L4"},{"floor_name":"L2"}]` {
+		t.Fatalf("unexpected trim output: %s", got)
+	}
+}
+
+func TestRunPipelineFilterIncludesExcludes(t *testing.T) {
+	doc, err := ParseJSONLoose(`{"items":[{"id":"a","color":"red"},{"id":"b","color":"green"},{"id":"c","color":"blue"},{"id":"d"},{"id":"e","color":1},{"id":"f","color":"1"},{"id":"g","color":null},{"id":"h","color":{"x":1}}]}`)
+	if err != nil {
+		t.Fatalf("parse failed: %v", err)
+	}
+	cases := []struct {
+		operator string
+		value    string
+		want     string
+	}{
+		{operator: "includes", value: "red, blue", want: `["a","c"]`},
+		{operator: "includes", value: "1", want: `["e"]`},
+		{operator: "includes", value: `"1"`, want: `["f"]`},
+		{operator: "excludes", value: "red,green", want: `["c","d","e","f","g","h"]`},
+		{operator: "excludes", value: "null", want: `["a","b","c","d","e","f","h"]`},
+		{operator: "excludes", value: "red,green,blue,1,\"1\",null", want: `["d","h"]`},
+	}
+	for _, testCase := range cases {
+		run := runPipeline(context.Background(), doc, pipelineItems(t, []PipelineItem{
+			{ID: "f", Enabled: true, Type: "filter", ArrayPath: "$.items", ItemPath: "$.color", Operator: testCase.operator, FilterValue: testCase.value},
+			{ID: "e", Enabled: true, Type: "extract", Path: "$.items[*].id"},
+		}), nil)
+		if run.Error != nil {
+			t.Fatalf("operator %s value %q returned error: %#v", testCase.operator, testCase.value, run.Error)
+		}
+		if got := StringifyJSON(run.Output, ""); got != testCase.want {
+			t.Fatalf("operator %s value %q = %s, want %s", testCase.operator, testCase.value, got, testCase.want)
+		}
+	}
+	for _, value := range []string{"", " , "} {
+		run := runPipeline(context.Background(), doc, pipelineItems(t, []PipelineItem{
+			{ID: "f", Enabled: true, Type: "filter", ArrayPath: "$.items", ItemPath: "$.color", Operator: "includes", FilterValue: value},
+		}), nil)
+		if run.Error == nil || run.Error.Code != "filterValueRequired" {
+			t.Fatalf("empty list %q: expected filterValueRequired, got %#v", value, run.Error)
+		}
+	}
+}
+
 func TestRunPipelineArrayDedupe(t *testing.T) {
 	doc, err := ParseJSONLoose(`{"items":[{"id":1,"name":"first"},{"id":2,"name":"second"},{"id":1,"name":"third"},{"name":"no-id"},{"id":{"a":1,"b":2},"name":"object"},{"id":{"b":2,"a":1},"name":"same-object"}]}`)
 	if err != nil {
@@ -396,6 +489,54 @@ func TestQueryPipelineCompletionOnErroredFilterStage(t *testing.T) {
 	}
 	if !labels["active"] || !labels["name"] {
 		t.Fatalf("itemPath completion missing keys: %#v", item.Items)
+	}
+}
+
+func TestQueryPipelineCompletionForArrayTrim(t *testing.T) {
+	source := `{"items":[{"a":1,"b":"x"},{"b":"y","c":2}]}`
+	cases := []struct {
+		mode   string
+		prefix string
+		want   []string
+	}{
+		{mode: "key", prefix: "", want: []string{"a", "b", "c"}},
+		{mode: "key", prefix: "b", want: []string{"b"}},
+		{mode: "value", prefix: "", want: []string{`1`, `"x"`, `"y"`, `2`}},
+	}
+	for _, testCase := range cases {
+		service := NewJSONPipelineService()
+		t.Cleanup(service.shutdown)
+		events := make(chan PipelineResultPayload, 8)
+		service.setEventEmitter(func(_ string, data any) {
+			if payload, ok := data.(PipelineResultPayload); ok {
+				events <- payload
+			}
+		})
+		info := service.OpenPipelineSession()
+		update := service.UpdatePipelineState(UpdatePipelineStateRequest{
+			SessionID: info.SessionID, MutationID: 1, Source: &source,
+			Pipeline: []PipelineItem{
+				{ID: "e", Enabled: true, Type: "extract", Path: "$.items"},
+				{ID: "t", Enabled: true, Type: "arrayTrim", ArrayPath: "$", MatchMode: testCase.mode, FilterValue: "a"},
+			},
+		})
+		if !update.Accepted {
+			t.Fatalf("update rejected: %#v", update)
+		}
+		waitForResult(t, events)
+		response := service.QueryPipelineCompletion(QueryPipelineCompletionRequest{
+			SessionID: info.SessionID, DocID: update.DocID, PipelineID: update.PipelineID,
+			ItemID: "t", Field: "filterValue", Prefix: testCase.prefix,
+		})
+		labels := map[string]bool{}
+		for _, option := range response.Items {
+			labels[option.Label] = true
+		}
+		for _, want := range testCase.want {
+			if !labels[want] {
+				t.Fatalf("mode %s prefix %q missing %q: %#v", testCase.mode, testCase.prefix, want, response.Items)
+			}
+		}
 	}
 }
 

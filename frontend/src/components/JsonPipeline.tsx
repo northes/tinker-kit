@@ -62,6 +62,7 @@ import type {
   PipelineDirection,
   PipelineFilterOperator,
   PipelineItem,
+  PipelineMatchMode,
   PipelineItemType,
   PipelineSortMode,
 } from './JsonPipelineEngine';
@@ -83,6 +84,7 @@ function newPipelineItem(type: PipelineItemType = 'extract'): PipelineItem {
     arrayPath: '$',
     itemPath: '$',
     operator: 'eq',
+    matchMode: 'key',
     filterValue: '',
     template: '{$.name}?token={$.token}',
   };
@@ -93,6 +95,8 @@ const filterOperators: PipelineFilterOperator[] = [
   'eq',
   'lt',
   'lte',
+  'includes',
+  'excludes',
   'notNull',
   'notEmpty',
   'isNull',
@@ -110,6 +114,7 @@ const typeOptions: PipelineItemType[] = [
   'arraySort',
   'filter',
   'arrayDedupe',
+  'arrayTrim',
   'template',
 ];
 const configString = (item: Record<string, unknown>, key: string, fallback: string) => {
@@ -152,6 +157,8 @@ export function parsePipelineConfig(source: string): PipelineItem[] {
         !filterOperators.includes(raw.operator as PipelineFilterOperator))
     )
       throw new PipelineConfigError();
+    if (raw.matchMode !== undefined && raw.matchMode !== 'key' && raw.matchMode !== 'value')
+      throw new PipelineConfigError();
     const item: PipelineItem = {
       id: createPipelineId(),
       enabled: raw.enabled ?? true,
@@ -162,6 +169,7 @@ export function parsePipelineConfig(source: string): PipelineItem[] {
       arrayPath: configString(raw, 'arrayPath', '$'),
       itemPath: configString(raw, 'itemPath', '$'),
       operator: (raw.operator ?? 'eq') as PipelineFilterOperator,
+      matchMode: (raw.matchMode ?? 'key') as PipelineMatchMode,
       filterValue: configString(raw, 'filterValue', ''),
       template: configString(raw, 'template', '{$.name}?token={$.token}'),
     };
@@ -411,6 +419,7 @@ function PipelineRuleRow({
   onFirstEditorCreate: (id: string, view: EditorView) => void;
 }) {
   const { t } = useTranslation();
+  const listOperator = item.operator === 'includes' || item.operator === 'excludes';
   const {
     attributes,
     listeners,
@@ -586,13 +595,17 @@ function PipelineRuleRow({
                 label={
                   item.operator.startsWith('stringLength')
                     ? t('jsonTool.pipeline.filterLength')
-                    : t('jsonTool.pipeline.filterValue')
+                    : listOperator
+                      ? t('jsonTool.pipeline.filterList')
+                      : t('jsonTool.pipeline.filterValue')
                 }
                 value={item.filterValue}
                 placeholder={
                   item.operator.startsWith('stringLength')
                     ? t('jsonTool.pipeline.filterLengthPlaceholder')
-                    : undefined
+                    : listOperator
+                      ? t('jsonTool.pipeline.filterListPlaceholder')
+                      : undefined
                 }
                 onChange={(value) => onUpdate(item.id, { filterValue: value })}
                 theme={theme}
@@ -625,6 +638,45 @@ function PipelineRuleRow({
               itemId={item.id}
               field="itemPath"
               completionRef={completionRef}
+            />
+          </div>
+        )}{' '}
+        {item.type === 'arrayTrim' && (
+          <div className="json-pipeline-fields grid grid-cols-2 gap-x-2 gap-y-2.5 @max-[520px]/pipeline-rules:grid-cols-1">
+            <PathField
+              label={t('jsonTool.pipeline.arrayPath')}
+              value={item.arrayPath}
+              placeholder={t('jsonTool.pipeline.arrayPathPlaceholder')}
+              onChange={(value) => onUpdate(item.id, { arrayPath: value })}
+              theme={theme}
+              itemId={item.id}
+              field="arrayPath"
+              completionRef={completionRef}
+              onCreate={(view) => onFirstEditorCreate(item.id, view)}
+            />
+            <SelectField
+              label={t('jsonTool.pipeline.matchMode')}
+              value={item.matchMode}
+              options={[
+                { key: 'key', label: t('jsonTool.pipeline.matchModes.key') },
+                { key: 'value', label: t('jsonTool.pipeline.matchModes.value') },
+              ]}
+              onSelect={(value) => onUpdate(item.id, { matchMode: value as PipelineMatchMode })}
+            />
+            <PathField
+              label={
+                item.matchMode === 'value'
+                  ? t('jsonTool.pipeline.trimValues')
+                  : t('jsonTool.pipeline.trimKeys')
+              }
+              value={item.filterValue}
+              placeholder={t('jsonTool.pipeline.trimValuesPlaceholder')}
+              onChange={(value) => onUpdate(item.id, { filterValue: value })}
+              theme={theme}
+              itemId={item.id}
+              field="filterValue"
+              completionRef={completionRef}
+              className="col-span-2 @max-[520px]/pipeline-rules:col-span-1"
             />
           </div>
         )}{' '}
@@ -863,6 +915,7 @@ export function PipelinePanel({
     arraySort: t('jsonTool.pipeline.types.arraySort'),
     filter: t('jsonTool.pipeline.types.filter'),
     arrayDedupe: t('jsonTool.pipeline.types.arrayDedupe'),
+    arrayTrim: t('jsonTool.pipeline.types.arrayTrim'),
     template: t('jsonTool.pipeline.types.template'),
   };
   const sensors = useSensors(

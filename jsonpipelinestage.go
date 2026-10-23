@@ -157,6 +157,55 @@ func (stage *pipelineStage) completionItemRoot() *JSONValue {
 	return firstNonNull
 }
 
+// completionTrimValues 返回数组修剪的补全候选：按 key 时汇总数组项对象的键，
+// 按 value 时汇总数组项对象内的标量值。
+func (stage *pipelineStage) completionTrimValues(prefix string, limit int) ([]CompletionOption, bool) {
+	if stage.Item.Type != pipelineTypeArrayTrim {
+		return nil, false
+	}
+	tokens, err := parsePipelinePath(stage.Item.ArrayPath)
+	if err != nil {
+		return nil, true
+	}
+	target, err := readTokens(stage.Input, tokens, 0)
+	if err != nil || !target.IsArray() {
+		return nil, true
+	}
+	if strings.TrimSpace(stage.Item.MatchMode) == "value" {
+		values := make([]*JSONValue, 0)
+		for _, entry := range target.Arr {
+			if !entry.IsObject() {
+				continue
+			}
+			for _, member := range entry.Obj {
+				if member.Value.IsScalar() {
+					values = append(values, member.Value)
+				}
+			}
+		}
+		return valueCompletionOptions(values, prefix, limit), true
+	}
+	seen := make(map[string]bool)
+	options := make([]CompletionOption, 0)
+	for _, entry := range target.Arr {
+		if !entry.IsObject() {
+			continue
+		}
+		for _, member := range entry.Obj {
+			if seen[member.Key] {
+				continue
+			}
+			seen[member.Key] = true
+			options = append(options, CompletionOption{Label: member.Key, Apply: member.Key, Type: "property"})
+		}
+	}
+	options = filterCompletionOptions(options, normalizeCompletionText(strings.TrimSpace(prefix)))
+	if len(options) > limit {
+		options = options[:limit]
+	}
+	return options, true
+}
+
 // completionFilterValues 返回筛选值补全的标量候选（未去重）。
 func (stage *pipelineStage) completionFilterValues() []*JSONValue {
 	if stage.Item.Type != pipelineTypeFilter {

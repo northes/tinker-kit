@@ -259,6 +259,16 @@
       "dedupeItemPath": "去重项路径",
       "dedupeItemPathPlaceholder": "例如 $.id；标量数组可填 $",
       "filterValue": "匹配值",
+      "filterList": "值列表",
+      "filterListPlaceholder": "多个值用英文逗号分隔，例如 active,pending",
+      "matchMode": "匹配方式",
+      "matchModes": {
+        "key": "按 key",
+        "value": "按 value"
+      },
+      "trimKeys": "保留的 key",
+      "trimValues": "保留的值",
+      "trimValuesPlaceholder": "多个值用英文逗号分隔，例如 a,b,c",
       "filterLength": "长度",
       "filterLengthPlaceholder": "按字符数匹配，例如 6",
       "template": "模板",
@@ -276,6 +286,7 @@
         "arraySort": "数组排序",
         "filter": "数组筛选",
         "arrayDedupe": "数组去重",
+        "arrayTrim": "数组修剪",
         "template": "模板"
       },
       "operators": {
@@ -284,6 +295,8 @@
         "eq": "等于",
         "lt": "小于",
         "lte": "小于等于",
+        "includes": "包括",
+        "excludes": "排除",
         "notNull": "非 null",
         "notEmpty": "非空",
         "isNull": "为 null",

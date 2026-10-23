@@ -533,6 +533,7 @@ export interface PipelineItem {
     "arrayPath": string;
     "itemPath": string;
     "operator": string;
+    "matchMode": string;
     "filterValue": string;
     "template": string;
 }

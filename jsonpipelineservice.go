@@ -569,6 +569,10 @@ func (s *JSONPipelineService) QueryPipelineCompletion(req QueryPipelineCompletio
 	}
 	switch req.Field {
 	case "filterValue":
+		if options, handled := stage.completionTrimValues(req.Prefix, limit); handled {
+			response.Items = options
+			break
+		}
 		options := valueCompletionOptions(stage.completionFilterValues(), req.Prefix, limit)
 		response.Items = options
 	default:

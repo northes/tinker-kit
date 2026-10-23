@@ -257,6 +257,16 @@
       "dedupeItemPath": "Dedupe path",
       "dedupeItemPathPlaceholder": "e.g. $.id; use $ for scalar arrays",
       "filterValue": "Match value",
+      "filterList": "Value list",
+      "filterListPlaceholder": "Separate values with commas, e.g. active,pending",
+      "matchMode": "Match by",
+      "matchModes": {
+        "key": "Key",
+        "value": "Value"
+      },
+      "trimKeys": "Keys to keep",
+      "trimValues": "Values to keep",
+      "trimValuesPlaceholder": "Separate values with commas, e.g. a,b,c",
       "filterLength": "Length",
       "filterLengthPlaceholder": "Match by character count, e.g. 6",
       "template": "Template",
@@ -274,6 +284,7 @@
         "arraySort": "Array sort",
         "filter": "Array filter",
         "arrayDedupe": "Array dedupe",
+        "arrayTrim": "Array trim",
         "template": "Template"
       },
       "operators": {
@@ -282,6 +293,8 @@
         "eq": "Equal",
         "lt": "Less than",
         "lte": "Less than or equal",
+        "includes": "Includes",
+        "excludes": "Excludes",
         "notNull": "Not null",
         "notEmpty": "Not empty",
         "isNull": "Is null",

@@ -1,11 +1,13 @@
 export type PipelineItemType =
-  'extract' | 'sort' | 'arraySort' | 'filter' | 'arrayDedupe' | 'template';
+  'extract' | 'sort' | 'arraySort' | 'filter' | 'arrayDedupe' | 'arrayTrim' | 'template';
 export type PipelineFilterOperator =
   | 'gt'
   | 'gte'
   | 'eq'
   | 'lt'
   | 'lte'
+  | 'includes'
+  | 'excludes'
   | 'notNull'
   | 'notEmpty'
   | 'isNull'
@@ -16,6 +18,7 @@ export type PipelineFilterOperator =
   | 'stringLengthLt'
   | 'stringLengthLte';
 export type PipelineSortMode = 'key' | 'value';
+export type PipelineMatchMode = 'key' | 'value';
 export type PipelineDirection = 'asc' | 'desc';
 export type PipelineItem = {
   id: string;
@@ -27,6 +30,7 @@ export type PipelineItem = {
   arrayPath: string;
   itemPath: string;
   operator: PipelineFilterOperator;
+  matchMode: PipelineMatchMode;
   filterValue: string;
   template: string;
 };
@@ -46,6 +50,8 @@ const filterOperators: PipelineFilterOperator[] = [
   'eq',
   'lt',
   'lte',
+  'includes',
+  'excludes',
   'notNull',
   'notEmpty',
   'isNull',
@@ -62,6 +68,7 @@ const typeOptions: PipelineItemType[] = [
   'arraySort',
   'filter',
   'arrayDedupe',
+  'arrayTrim',
   'template',
 ];
 const configString = (item: Record<string, unknown>, key: string, fallback: string) => {
@@ -107,6 +114,8 @@ export function parsePipelineConfig(source: string): PipelineItem[] {
         !filterOperators.includes(raw.operator as PipelineFilterOperator))
     )
       throw new PipelineConfigError();
+    if (raw.matchMode !== undefined && raw.matchMode !== 'key' && raw.matchMode !== 'value')
+      throw new PipelineConfigError();
     const item: PipelineItem = {
       id: createPipelineId(),
       enabled: raw.enabled ?? true,
@@ -117,6 +126,7 @@ export function parsePipelineConfig(source: string): PipelineItem[] {
       arrayPath: configString(raw, 'arrayPath', '$'),
       itemPath: configString(raw, 'itemPath', '$'),
       operator: (raw.operator ?? 'eq') as PipelineFilterOperator,
+      matchMode: (raw.matchMode ?? 'key') as PipelineMatchMode,
       filterValue: configString(raw, 'filterValue', ''),
       template: configString(raw, 'template', '{$.name}?token={$.token}'),
     };
