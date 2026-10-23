@@ -440,7 +440,7 @@ function PipelineRuleRow({
     <div
       ref={setNodeRef}
       style={style}
-      className={`json-pipeline-item border-b border-border px-3 pt-3.5 pb-6${item.enabled ? '' : ' opacity-[.55]'}${isDragging ? ' bg-[color-mix(in_oklch,var(--primary)_12%,transparent)]' : ''}`}
+      className={`json-pipeline-item min-w-0 rounded-lg bg-muted/70 p-3${item.enabled ? '' : ' opacity-[.55]'}${isDragging ? ' shadow-md' : ''}`}
     >
       <div className="json-pipeline-item-header grid min-w-0 select-none grid-cols-[28px_24px_minmax(0,1fr)_28px_28px] items-center gap-2">
         <Button
@@ -483,7 +483,7 @@ function PipelineRuleRow({
           <Trash size={14} weight="duotone" />
         </Button>
       </div>
-      <div className="json-pipeline-item-body min-w-0 pt-2.5 pl-[66px] @max-[520px]/pipeline-rules:pl-0">
+      <div className="json-pipeline-item-body min-w-0 pt-3">
         {item.type === 'extract' && (
           <PathField
             label={t('jsonTool.pipeline.path')}
@@ -980,6 +980,7 @@ export function PipelinePanel({
       ) : (
         <ScrollArea
           className="json-pipeline-list min-h-0 flex-1 [padding-inline-end:var(--overlay-scrollbar-size)]"
+          scrollFade="y"
           options={{ overflow: { x: 'hidden' } }}
           onViewport={setListViewport}
         >
@@ -988,20 +989,22 @@ export function PipelinePanel({
               items={rules.map((item) => item.id)}
               strategy={verticalListSortingStrategy}
             >
-              {rules.map((item, index) => (
-                <PipelineRuleRow
-                  key={item.id}
-                  item={item}
-                  index={index}
-                  labels={labels}
-                  theme={theme}
-                  completionRef={completionRef}
-                  onUpdate={update}
-                  onTypeChange={updateType}
-                  onRemove={onRemove}
-                  onFirstEditorCreate={focusAddedItem}
-                />
-              ))}
+              <div className="flex flex-col gap-2">
+                {rules.map((item, index) => (
+                  <PipelineRuleRow
+                    key={item.id}
+                    item={item}
+                    index={index}
+                    labels={labels}
+                    theme={theme}
+                    completionRef={completionRef}
+                    onUpdate={update}
+                    onTypeChange={updateType}
+                    onRemove={onRemove}
+                    onFirstEditorCreate={focusAddedItem}
+                  />
+                ))}
+              </div>
             </SortableContext>
           </DndContext>
         </ScrollArea>
