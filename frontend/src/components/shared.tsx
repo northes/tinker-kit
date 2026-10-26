@@ -75,6 +75,11 @@ export function decodeBase64Text(raw: string): string | null {
   }
 }
 
+// 粘贴 Authorization 头内容时，去掉可选的 Bearer 前缀，只保留裸 token。
+export function stripBearerToken(raw: string): string {
+  return raw.trim().replace(/^bearer\s+/i, '');
+}
+
 export const samples = {
   json: '{"project":"TinkerKit","version":1,"features":["search","clipboard","privacy"],"owner":{"team":"developer experience","active":true}}',
   text: '  Build tools that stay out of the way.\nShip faster, keep data local.  ',

@@ -1,4 +1,4 @@
-import { decodeBase64, decodeBase64Text } from '../components/shared';
+import { decodeBase64, decodeBase64Text, stripBearerToken } from '../components/shared';
 
 export function detectBase64(s: string): 'text' | 'image' | null {
   const data = /^data:[^,]+;base64,([A-Za-z0-9+/_=-]+)$/i.exec(s);
@@ -29,7 +29,7 @@ export function detectBase64(s: string): 'text' | 'image' | null {
 }
 
 export function detectJwt(s: string): boolean {
-  const parts = s.trim().split('.');
+  const parts = stripBearerToken(s).split('.');
   if (parts.length !== 3) return false;
   const object = (seg: string) => {
     const d = decodeBase64Text(seg);

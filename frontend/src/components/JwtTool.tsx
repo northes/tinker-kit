@@ -14,6 +14,7 @@ import {
   ToolLayout,
   decodeBase64Text,
   useFocusOnActivate,
+  stripBearerToken,
   type PendingAction,
 } from './shared';
 import { toast } from './ui/toast';
@@ -171,7 +172,7 @@ export default function JwtTool({
       );
       return;
     }
-    setInput(pending.input);
+    setInput(stripBearerToken(pending.input));
   }, [pending, decoded]);
   return (
     <Reveal index={0} fill active={active}>
