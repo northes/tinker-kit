@@ -66,7 +66,7 @@
       "description": "Convert times, calculate dates, and view real time"
     },
     "text": {
-      "name": "Text Toolkit",
+      "name": "Text Tool",
       "description": "Count, trim and normalize text"
     },
     "text-generator": {
@@ -126,7 +126,7 @@
     "toggleFontSize": "Toggle font size (current: {{current}})",
     "openJson": "JSON Workspace",
     "openTime": "Time Tools",
-    "openText": "Text Toolkit",
+    "openText": "Text Tool",
     "openTextGenerator": "Text Generator",
     "openBase64": "Base64",
     "openDiff": "Diff Compare",
@@ -514,7 +514,7 @@
     }
   },
   "textTool": {
-    "title": "Text Toolkit",
+    "title": "Text Tool",
     "actions": "Text actions",
     "input": "Input",
     "placeholder": "Paste, <open>open</open>, or drop a file",
