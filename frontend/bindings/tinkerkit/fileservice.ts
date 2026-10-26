@@ -43,6 +43,13 @@ export function CreateRemoteDirectory(sourceID: string, remotePath: string): $Ca
     return $Call.ByID(2186448508, sourceID, remotePath);
 }
 
+/**
+ * CreateRemoteTextFile 创建空白纯文本文件，不覆盖已有项目，也不隐式创建父目录。
+ */
+export function CreateRemoteTextFile(sourceID: string, remotePath: string): $CancellablePromise<void> {
+    return $Call.ByID(2974099572, sourceID, remotePath);
+}
+
 export function GetFileSources(): $CancellablePromise<$models.FileSource[] | null> {
     return $Call.ByID(814763423);
 }

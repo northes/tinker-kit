@@ -25,7 +25,7 @@ type RemoteTextFile struct {
 }
 
 func remoteTextPath(value string) (string, error) {
-	if strings.TrimSpace(value) == "" {
+	if strings.TrimSpace(value) == "" || strings.ContainsRune(value, '\x00') {
 		return "", userError("errors.sshFile.textPathInvalid")
 	}
 	value = normalizedRemotePath(value)
@@ -33,6 +33,41 @@ func remoteTextPath(value string) (string, error) {
 		return "", userError("errors.sshFile.textPathInvalid")
 	}
 	return value, nil
+}
+
+func createRemoteText(client *sftp.Client, remotePath string) error {
+	if err := ensureRemotePathAbsent(client, remotePath); err != nil {
+		return err
+	}
+	// 排他创建防止检查后目标被其他客户端建立，不截断文件或跟随同名符号链接。
+	file, err := client.OpenFile(remotePath, os.O_WRONLY|os.O_CREATE|os.O_EXCL)
+	if err != nil {
+		return userErrorCause("errors.sshFile.createTextFailed", err)
+	}
+	if err := file.Close(); err != nil {
+		return userErrorCause("errors.sshFile.createTextFailed", err)
+	}
+	return nil
+}
+
+// CreateRemoteTextFile 创建空白纯文本文件，不覆盖已有项目，也不隐式创建父目录。
+func (s *FileService) CreateRemoteTextFile(sourceID, remotePath string) error {
+	remotePath, err := remoteTextPath(remotePath)
+	if err != nil {
+		return err
+	}
+	_, connection, err := s.sourceSnapshot(sourceID)
+	if err != nil {
+		return err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	session, err := s.acquirePersistentSFTP(ctx, sourceID, connection)
+	if err != nil {
+		return err
+	}
+	defer s.releasePersistentSFTP(session)
+	return createRemoteText(session.sftp, remotePath)
 }
 
 func readRemoteText(client *sftp.Client, remotePath string) (RemoteTextFile, os.FileMode, error) {

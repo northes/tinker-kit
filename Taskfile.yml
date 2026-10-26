@@ -65,6 +65,13 @@ tasks:
     cmds:
       - node --experimental-strip-types --test frontend/src/components/JsonTool.test.mjs frontend/src/lib/json-table-expansion.test.mjs frontend/src/lib/json-time-format.test.mjs
 
+  format:go:files:
+    summary: Formats selected Go files
+    requires:
+      vars: [FILES]
+    cmds:
+      - gofmt -w {{.FILES}}
+
   format:frontend:files:
     summary: Formats selected frontend files
     dir: frontend
@@ -72,6 +79,11 @@ tasks:
       vars: [FILES]
     cmds:
       - npx --no-install prettier --write {{.FILES}}
+
+  test:ssh-file-create:
+    summary: Checks SSH file creation dialogs and refresh scopes
+    cmds:
+      - node --experimental-strip-types --test frontend/src/components/ssh-files/CreateEntryDialog.test.mjs
 
   test:json-repair:
     summary: Checks JSON repair handling

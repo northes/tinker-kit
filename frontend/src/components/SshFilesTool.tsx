@@ -12,6 +12,7 @@ import {
   DownloadSimple,
   File,
   FileArchive,
+  FilePlus,
   Folder,
   FolderSimplePlus,
   GearSix,
@@ -42,6 +43,7 @@ import {
   CalculateRemoteSize,
   CancelFileTask,
   CreateRemoteDirectory,
+  CreateRemoteTextFile,
   GetFileTasks,
   GetRemoteFileEntry,
   ListRemoteFiles,
@@ -93,6 +95,7 @@ import {
   type SortDirection,
 } from './ssh-files/model';
 import { TaskProgressMeter } from './ssh-files/TaskProgressMeter';
+import { CreateEntryDialog, type CreateEntryKind } from './ssh-files/CreateEntryDialog';
 import { useRemoteFileBrowser } from './ssh-files/useRemoteFileBrowser';
 import { SSHProfileFormField } from './SSHProfileFormField';
 import { useSSHProfiles } from './SSHProfileManagerDialog';
@@ -158,6 +161,14 @@ const RemoteTextEditorDialog = lazy(async () => ({
 }));
 
 type Props = { active: boolean };
+type CreateEntryTarget = {
+  kind: CreateEntryKind;
+  sourceID: string;
+  parentPath: string;
+  showHidden: boolean;
+  viewKey: string;
+  cacheScope: string;
+};
 
 export default function SshFilesTool({ active }: Props) {
   const { t, i18n } = useTranslation();
@@ -191,7 +202,7 @@ export default function SshFilesTool({ active }: Props) {
   const treePositionPendingRef = useRef(false);
   const treeLoadingRef = useRef(treeLoading);
   treeLoadingRef.current = treeLoading;
-  const [createFolderOpen, setCreateFolderOpen] = useState(false);
+  const [createEntryTarget, setCreateEntryTarget] = useState<CreateEntryTarget | null>(null);
   const [treeCreateFolderOpen, setTreeCreateFolderOpen] = useState(false);
   const [createFolderName, setCreateFolderName] = useState('');
   const [createFolderError, setCreateFolderError] = useState('');
@@ -260,6 +271,14 @@ export default function SshFilesTool({ active }: Props) {
     directoryCache,
   } = useRemoteFileBrowser({ active, profiles, manageOpen });
   const currentPathRef = useRef(currentPath);
+  const creationViewKeyRef = useRef('');
+  creationViewKeyRef.current = directoryListingKey(
+    sourceID,
+    activeSourceProfileID,
+    profileListingKey,
+    currentPath,
+    showHidden,
+  );
 
   const applyTaskSnapshot = useCallback((snapshot: FileTaskSnapshot) => {
     if (snapshot.revision < taskRevisionRef.current) return;
@@ -567,39 +586,41 @@ export default function SshFilesTool({ active }: Props) {
     }
   };
 
-  const requestCreateFolder = () => {
+  const requestCreateEntry = (kind: CreateEntryKind) => {
     if (!sourceUsable || isLoading) return;
-    setCreateFolderName('');
-    setCreateFolderError('');
-    setCreateFolderOpen(true);
+    setCreateEntryTarget({
+      kind,
+      sourceID,
+      parentPath: currentPath,
+      showHidden,
+      viewKey: creationViewKeyRef.current,
+      cacheScope: [sourceID, activeSourceProfileID, profileListingKey].join('\0') + '\0',
+    });
   };
 
-  const executeCreateFolder = async () => {
-    if (!sourceUsable || creatingFolder) return;
-    const name = createFolderName.trim();
-    if (!name) {
-      setCreateFolderError(t('sshFilesTool.folderNameRequired'));
-      return;
+  const executeCreateEntry = async (name: string) => {
+    const target = createEntryTarget;
+    if (!target || !sourceUsable || target.viewKey !== creationViewKeyRef.current) {
+      throw new Error(t('sshFilesTool.createContextChanged'));
     }
-    if (name === '.' || name === '..' || /[\\/]/.test(name)) {
-      setCreateFolderError(t('sshFilesTool.folderNameInvalid'));
-      return;
+    const remotePath = normalizeRemotePath(`${target.parentPath}/${name}`);
+    if (target.kind === 'file') await CreateRemoteTextFile(target.sourceID, remotePath);
+    else await CreateRemoteDirectory(target.sourceID, remotePath);
+
+    // 失效原始目录的所有可见性缓存，异步完成后不能将用户带回旧来源或旧目录。
+    for (const [key, listing] of directoryCache) {
+      if (key.startsWith(target.cacheScope) && listing.path === target.parentPath) {
+        directoryCache.delete(key);
+      }
     }
-    setCreatingFolder(true);
-    setCreateFolderError('');
-    try {
-      const target = normalizeRemotePath(`${currentPath}/${name}`);
-      await CreateRemoteDirectory(sourceID, target);
-      setCreateFolderOpen(false);
-      setCreateFolderName('');
+    if (target.viewKey === creationViewKeyRef.current) {
       resetSearchState();
-      await loadDirectory(sourceID, currentPath, showHidden, true);
-      toast.add({ title: t('sshFilesTool.folderCreated'), type: 'success' });
-    } catch (reason) {
-      setCreateFolderError(errorMessage(reason));
-    } finally {
-      setCreatingFolder(false);
+      await loadDirectory(target.sourceID, target.parentPath, target.showHidden, true);
     }
+    toast.add({
+      title: t(target.kind === 'file' ? 'sshFilesTool.fileCreated' : 'sshFilesTool.folderCreated'),
+      type: 'success',
+    });
   };
 
   const requestFileOperation = (operation: RemoteFileOperation, paths: string[]) => {
@@ -2097,7 +2118,17 @@ export default function SshFilesTool({ active }: Props) {
                 <Copy size={14} weight="duotone" aria-hidden="true" />
                 {t('sshFilesTool.copyPath')}
               </ContextMenuItem>
-              <ContextMenuItem disabled={!sourceUsable || isLoading} onClick={requestCreateFolder}>
+              <ContextMenuItem
+                disabled={!sourceUsable || isLoading}
+                onClick={() => requestCreateEntry('file')}
+              >
+                <FilePlus size={14} weight="duotone" aria-hidden="true" />
+                {t('sshFilesTool.createFile')}
+              </ContextMenuItem>
+              <ContextMenuItem
+                disabled={!sourceUsable || isLoading}
+                onClick={() => requestCreateEntry('folder')}
+              >
                 <FolderSimplePlus size={14} weight="duotone" aria-hidden="true" />
                 {t('sshFilesTool.createFolder')}
               </ContextMenuItem>
@@ -2431,79 +2462,14 @@ export default function SshFilesTool({ active }: Props) {
         </DialogContent>
       </Dialog>
 
-      <Dialog
-        open={createFolderOpen}
-        onOpenChange={(open) => {
-          if (!open && !creatingFolder) {
-            setCreateFolderOpen(false);
-            setCreateFolderError('');
-          }
-        }}
-      >
-        <DialogContent className="flex w-[min(420px,calc(100vw-32px))] max-w-none flex-col gap-5 sm:max-w-none">
-          <DialogHeader>
-            <DialogTitle className="text-base">{t('sshFilesTool.createFolderTitle')}</DialogTitle>
-            <DialogDescription className="text-xs leading-5">
-              {t('sshFilesTool.createFolderDesc', { path: currentPath })}
-            </DialogDescription>
-          </DialogHeader>
-          <form
-            className="grid gap-1.5"
-            id="ssh-create-folder-form"
-            onSubmit={(event) => {
-              event.preventDefault();
-              void executeCreateFolder();
-            }}
-          >
-            <Label htmlFor="ssh-create-folder-name" className="text-xs text-muted-foreground">
-              {t('sshFilesTool.folderName')}
-            </Label>
-            <Input
-              id="ssh-create-folder-name"
-              value={createFolderName}
-              onChange={(event) => setCreateFolderName(event.target.value)}
-              className="font-mono text-xs"
-              disabled={creatingFolder}
-              autoFocus
-            />
-            <p className="m-0 text-[10px] leading-4 text-muted-foreground">
-              {t('sshFilesTool.folderNameHint')}
-            </p>
-            {createFolderError ? (
-              <div
-                className="flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive"
-                role="alert"
-              >
-                <XCircle className="mt-0.5 size-4 shrink-0" />
-                <span className="min-w-0 break-words">
-                  {t('sshFilesTool.folderCreateFailed')}: {createFolderError}
-                </span>
-              </div>
-            ) : null}
-          </form>
-          <DialogFooter>
-            <Button
-              variant="outline"
-              disabled={creatingFolder}
-              onClick={() => setCreateFolderOpen(false)}
-            >
-              {t('common.cancel')}
-            </Button>
-            <Button
-              type="submit"
-              form="ssh-create-folder-form"
-              disabled={creatingFolder || !sourceUsable}
-            >
-              {creatingFolder ? (
-                <Spinner data-icon="inline-start" />
-              ) : (
-                <FolderSimplePlus data-icon="inline-start" size={14} />
-              )}
-              {t('sshFilesTool.createFolderAction')}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {createEntryTarget ? (
+        <CreateEntryDialog
+          kind={createEntryTarget.kind}
+          parentPath={createEntryTarget.parentPath}
+          onCreate={executeCreateEntry}
+          onClose={() => setCreateEntryTarget(null)}
+        />
+      ) : null}
 
       <Dialog
         open={operationDialog !== null}
