@@ -53,6 +53,7 @@ import { Empty, EmptyHeader, EmptyMedia, EmptyTitle } from './ui/empty';
 import { Spinner } from './ui/spinner';
 import { JsonErrorPanel } from './JsonErrorPanel';
 import { JsonTablePreview } from './JsonTablePreview';
+import { formatJsonTimeValue, type JsonTimeFormat } from '../lib/json-time-format';
 import { isObject } from './JsonPipelineEngine';
 import { parseJsonLoose } from './shared';
 import { toast } from './ui/toast';
@@ -703,10 +704,14 @@ export function PipelineOutputPane({
   evaluation,
   theme,
   foldExt,
+  active,
+  timeFormat,
 }: {
   evaluation: PipelineEvaluation;
   theme: Extension;
   foldExt: Extension;
+  active: boolean;
+  timeFormat: JsonTimeFormat;
 }) {
   const { t } = useTranslation();
   const [outputTableMode, setOutputTableMode] = useState(false);
@@ -820,7 +825,12 @@ export function PipelineOutputPane({
             {...(!outputTableMode ? { inert: true } : {})}
           >
             {smallOutput && smallPreview.valid ? (
-              <JsonTablePreview value={smallPreview.value} t={t} />
+              <JsonTablePreview
+                value={smallPreview.value}
+                t={t}
+                active={active && outputTableMode}
+                timeFormat={timeFormat}
+              />
             ) : (
               <div className="json-table-scroll">
                 <table className="json-table-data">
@@ -836,13 +846,24 @@ export function PipelineOutputPane({
                   <tbody>
                     {tableRows.map((row, rowIndex) => (
                       <tr key={rowIndex}>
-                        {(tablePage?.columns ?? []).map((column) => (
-                          <td key={column}>
-                            {typeof (row as Record<string, unknown>)?.[column] === 'string'
-                              ? ((row as Record<string, unknown>)[column] as string)
-                              : JSON.stringify((row as Record<string, unknown>)?.[column], null, 0)}
-                          </td>
-                        ))}
+                        {(tablePage?.columns ?? []).map((column) => {
+                          const value = (row as Record<string, unknown>)?.[column];
+                          const formattedTime =
+                            active && outputTableMode
+                              ? formatJsonTimeValue(column, value, timeFormat)
+                              : null;
+                          return (
+                            <td
+                              key={column}
+                              title={formattedTime !== null ? String(value) : undefined}
+                            >
+                              {formattedTime ??
+                                (typeof value === 'string'
+                                  ? value
+                                  : JSON.stringify(value, null, 0))}
+                            </td>
+                          );
+                        })}
                       </tr>
                     ))}
                   </tbody>

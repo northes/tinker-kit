@@ -162,6 +162,16 @@
     "repairFailedDesc": "The content still can't be parsed as JSON",
     "repairPrompt": "The content is not valid JSON. Try to repair it?",
     "autoFormatOnFill": "Auto-format after fill",
+    "displaySettings": "Display settings",
+    "formatTime": "Format time",
+    "formatTimeHint": "Only changes table previews, not the original JSON. Date formats use the system time zone; ISO 8601 uses UTC.",
+    "timeFormats": {
+      "none": "Do not format",
+      "datetime": "yyyy-MM-dd HH:mm:ss",
+      "milliseconds": "yyyy-MM-dd HH:mm:ss.SSS",
+      "date": "yyyy-MM-dd",
+      "iso": "ISO 8601 (UTC)"
+    },
     "minify": "Minify",
     "copy": "Copy",
     "clear": "Clear",

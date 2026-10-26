@@ -60,6 +60,19 @@ tasks:
     cmds:
       - node --experimental-strip-types --test frontend/src/lib/network-test-user-agent.test.mjs
 
+  test:json-preview:
+    summary: Checks JSON preview and expansion state across tool switches
+    cmds:
+      - node --experimental-strip-types --test frontend/src/components/JsonTool.test.mjs frontend/src/lib/json-table-expansion.test.mjs frontend/src/lib/json-time-format.test.mjs
+
+  format:frontend:files:
+    summary: Formats selected frontend files
+    dir: frontend
+    requires:
+      vars: [FILES]
+    cmds:
+      - npx --no-install prettier --write {{.FILES}}
+
   test:json-repair:
     summary: Checks JSON repair handling
     cmds:

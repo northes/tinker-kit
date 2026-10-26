@@ -162,6 +162,16 @@
     "repairFailedDesc": "仍无法将内容解析为 JSON",
     "repairPrompt": "内容不是有效的 JSON，是否尝试修复？",
     "autoFormatOnFill": "填入后自动格式化",
+    "displaySettings": "显示设置",
+    "formatTime": "格式化时间",
+    "formatTimeHint": "仅影响表格预览，不修改原始 JSON。普通格式使用系统时区，ISO 8601 使用 UTC。",
+    "timeFormats": {
+      "none": "不格式化",
+      "datetime": "yyyy-MM-dd HH:mm:ss",
+      "milliseconds": "yyyy-MM-dd HH:mm:ss.SSS",
+      "date": "yyyy-MM-dd",
+      "iso": "ISO 8601（UTC）"
+    },
     "minify": "压缩",
     "copy": "复制",
     "clear": "清空",

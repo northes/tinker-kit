@@ -1,10 +1,24 @@
-import { Fragment, useMemo, useState, type MouseEvent } from 'react';
+import {
+  Fragment,
+  createContext,
+  useCallback,
+  useContext,
+  useMemo,
+  useState,
+  useSyncExternalStore,
+  type MouseEvent,
+} from 'react';
 import { flexRender, getCoreRowModel, useReactTable, type ColumnDef } from '@tanstack/react-table';
 import { CaretDown, CaretRight } from '@phosphor-icons/react';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
 import { Button } from './ui/button';
+import { createJsonTableExpansion, jsonTableChildPath } from '../lib/json-table-expansion';
+import { formatJsonTimeValue, type JsonTimeFormat } from '../lib/json-time-format';
 
 type Props = { value: unknown; t: (key: string) => string };
+type ValueProps = Props & { path: string };
+const ExpansionContext = createContext<ReturnType<typeof createJsonTableExpansion> | null>(null);
+const TimeFormatContext = createContext<JsonTimeFormat>('none');
 const isContainer = (value: unknown): value is Record<string, unknown> | unknown[] =>
   value !== null && typeof value === 'object';
 
@@ -30,25 +44,49 @@ function stopToggle(event: MouseEvent) {
 function ValueCell({
   value,
   t,
+  path,
   depth = 0,
   numeric = false,
-}: Props & { depth?: number; numeric?: boolean }) {
-  const collapsible = isContainer(value);
-  const [expanded, setExpanded] = useState(false);
+  fieldKey,
+}: ValueProps & { depth?: number; numeric?: boolean; fieldKey?: string }) {
+  const timeFormat = useContext(TimeFormatContext);
+  if (!isContainer(value)) {
+    const formattedTime = formatJsonTimeValue(fieldKey, value, timeFormat);
+    return (
+      <TableCell
+        className={numeric && formattedTime === null ? 'is-numeric' : undefined}
+        title={formattedTime !== null ? String(value) : undefined}
+      >
+        {formattedTime ?? scalar(value, t)}
+      </TableCell>
+    );
+  }
+  return <ContainerCell value={value} t={t} path={path} depth={depth} />;
+}
+
+function ContainerCell({ value, t, path, depth }: ValueProps & { depth: number }) {
+  const expansion = useContext(ExpansionContext);
+  if (!expansion) throw new Error('JSON 表格缺少展开状态上下文');
+  const subscribe = useCallback(
+    (listener: () => void) => expansion.subscribe(path, listener),
+    [expansion, path],
+  );
+  const getSnapshot = () => expansion.isExpanded(path);
+  const expanded = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
   const toggle = (event: MouseEvent) => {
     stopToggle(event);
-    setExpanded((current) => !current);
+    expansion.toggle(path);
   };
   return (
-    <TableCell
-      className={collapsible ? 'json-table-collapsible' : numeric ? 'is-numeric' : undefined}
-      onClick={collapsible ? toggle : undefined}
-    >
-      {collapsible ? (
-        <NestedValue value={value} t={t} depth={depth} expanded={expanded} onToggle={toggle} />
-      ) : (
-        scalar(value, t)
-      )}
+    <TableCell className="json-table-collapsible" onClick={toggle}>
+      <NestedValue
+        value={value}
+        t={t}
+        path={path}
+        depth={depth}
+        expanded={expanded}
+        onToggle={toggle}
+      />
     </TableCell>
   );
 }
@@ -56,17 +94,16 @@ function ValueCell({
 function NestedValue({
   value,
   t,
+  path,
   depth = 0,
   expanded,
   onToggle,
-}: Props & { depth?: number; expanded: boolean; onToggle: (event: MouseEvent) => void }) {
+}: ValueProps & { depth?: number; expanded: boolean; onToggle: (event: MouseEvent) => void }) {
   const isArray = Array.isArray(value);
-  const entries = isArray
-    ? value.map((item, i) => [String(i), item] as const)
-    : Object.entries(value as Record<string, unknown>);
+  const size = isArray ? value.length : Object.keys(value as Record<string, unknown>).length;
   const label = isArray
-    ? `[${(value as unknown[]).length} ${t('jsonTool.tablePreviewItems')}]`
-    : `{${Object.keys(value as Record<string, unknown>).length} ${t('jsonTool.tablePreviewKeys')}}`;
+    ? `[${size} ${t('jsonTool.tablePreviewItems')}]`
+    : `{${size} ${t('jsonTool.tablePreviewKeys')}}`;
   return (
     <div className="json-table-nested">
       <Button
@@ -83,12 +120,17 @@ function NestedValue({
         {expanded ? <CaretDown /> : <CaretRight />}
       </Button>
       <span className="json-table-container-label">{label}</span>
-      {expanded && entries.length > 0 && (
+      {expanded && size > 0 && (
         <div className="json-table-child" onClick={stopToggle}>
           {isArray && isObjectArray(value) ? (
-            <ObjectArray value={value as Record<string, unknown>[]} t={t} stickyHeader={false} />
+            <ObjectArray
+              value={value as Record<string, unknown>[]}
+              t={t}
+              path={path}
+              stickyHeader={false}
+            />
           ) : (
-            <KeyValue value={value} t={t} depth={depth + 1} />
+            <KeyValue value={value} t={t} path={path} depth={depth + 1} />
           )}
         </div>
       )}
@@ -96,7 +138,7 @@ function NestedValue({
   );
 }
 
-function KeyValue({ value, t, depth = 0 }: Props & { depth?: number }) {
+function KeyValue({ value, t, path, depth = 0 }: ValueProps & { depth?: number }) {
   const entries = Array.isArray(value)
     ? value.map((item, i) => [String(i), item] as const)
     : Object.entries(value as Record<string, unknown>);
@@ -106,7 +148,13 @@ function KeyValue({ value, t, depth = 0 }: Props & { depth?: number }) {
         {entries.map(([key, item]) => (
           <TableRow key={key}>
             <TableHead className="json-table-key">{key}</TableHead>
-            <ValueCell value={item} t={t} depth={depth} />
+            <ValueCell
+              value={item}
+              t={t}
+              path={jsonTableChildPath(path, key)}
+              depth={depth}
+              fieldKey={Array.isArray(value) ? undefined : key}
+            />
           </TableRow>
         ))}
       </TableBody>
@@ -117,8 +165,9 @@ function KeyValue({ value, t, depth = 0 }: Props & { depth?: number }) {
 function ObjectArray({
   value,
   t,
+  path,
   stickyHeader = true,
-}: Props & { value: Record<string, unknown>[]; stickyHeader?: boolean }) {
+}: ValueProps & { value: Record<string, unknown>[]; stickyHeader?: boolean }) {
   const keys = useMemo(() => [...new Set(value.flatMap((row) => Object.keys(row)))], [value]);
   const numericKeys = useMemo(() => {
     const numeric = new Set<string>();
@@ -152,11 +201,17 @@ function ObjectArray({
         accessorKey: key,
         header: key,
         cell: ({ row }) => (
-          <ValueCell value={row.original[key]} t={t} numeric={numericKeys.has(key)} />
+          <ValueCell
+            value={row.original[key]}
+            t={t}
+            path={jsonTableChildPath(jsonTableChildPath(path, row.index), key)}
+            numeric={numericKeys.has(key)}
+            fieldKey={key}
+          />
         ),
       })),
     ],
-    [keys, numericKeys, t],
+    [keys, numericKeys, path, t],
   );
   const table = useReactTable({ data: value, columns, getCoreRowModel: getCoreRowModel() });
   return (
@@ -200,7 +255,7 @@ function ObjectArray({
   );
 }
 
-export function JsonTablePreview({ value, t }: Props) {
+function TableValue({ value, t }: Props) {
   if (value === null || typeof value !== 'object')
     return <div className="json-table-preview json-table-scalar">{scalar(value, t)}</div>;
   if (Array.isArray(value)) {
@@ -210,10 +265,10 @@ export function JsonTablePreview({ value, t }: Props) {
           {t('jsonTool.tablePreviewEmptyArray')}
         </div>
       );
-    if (isObjectArray(value)) return <ObjectArray value={value} t={t} />;
+    if (isObjectArray(value)) return <ObjectArray value={value} t={t} path="" />;
     return (
       <div className="json-table-preview">
-        <KeyValue value={value} t={t} />
+        <KeyValue value={value} t={t} path="" />
       </div>
     );
   }
@@ -225,7 +280,25 @@ export function JsonTablePreview({ value, t }: Props) {
     );
   return (
     <div className="json-table-preview">
-      <KeyValue value={value} t={t} />
+      <KeyValue value={value} t={t} path="" />
     </div>
+  );
+}
+
+export function JsonTablePreview({
+  value,
+  t,
+  active,
+  timeFormat,
+}: Props & { active: boolean; timeFormat: JsonTimeFormat }) {
+  const [expansion] = useState(createJsonTableExpansion);
+  // 只保留轻量展开记录，隐藏和等待检测时不构建表格及其行模型。
+  if (!active) return null;
+  return (
+    <ExpansionContext.Provider value={expansion}>
+      <TimeFormatContext.Provider value={timeFormat}>
+        <TableValue value={value} t={t} />
+      </TimeFormatContext.Provider>
+    </ExpansionContext.Provider>
   );
 }

@@ -19,6 +19,7 @@ import {
 } from './ui/alert-dialog';
 import { Button } from './ui/button';
 import { Checkbox } from './ui/checkbox';
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from './ui/dialog';
 import { Label } from './ui/label';
 import {
   Select,
@@ -52,6 +53,7 @@ import {
 import { RangeSetBuilder } from '@codemirror/state';
 import { SaveText } from '../../bindings/tinkerkit/fileservice';
 import { JSON_CONVERT_FORMATS, type JsonConvertFormat } from '../lib/json-converter';
+import { JSON_TIME_FORMATS, type JsonTimeFormat } from '../lib/json-time-format';
 import { useDebouncedJsonConversion } from '../hooks/useDebouncedJsonConversion';
 import { useJsonInspection } from '../hooks/useJsonInspection';
 import { useJsonSchemaEvaluation } from '../hooks/useJsonSchemaEvaluation';
@@ -63,6 +65,7 @@ import {
   Copy,
   DownloadSimple,
   Plus,
+  SlidersHorizontal,
   Table as TableIcon,
   TreeStructure,
   Trash,
@@ -437,6 +440,12 @@ export default function JsonTool({
   const [convertFormat, setConvertFormat] = useState<JsonConvertFormat>('yaml');
   const [input, setInput] = useState('');
   const [showInvisibleChars, setShowInvisibleChars] = useState(false);
+  const [displaySettingsOpen, setDisplaySettingsOpen] = useState(false);
+  const [timeFormat, setTimeFormat] = useState<JsonTimeFormat>('none');
+  const timeFormatOptions = useMemo(
+    () => JSON_TIME_FORMATS.map((value) => ({ value, label: t(`jsonTool.timeFormats.${value}`) })),
+    [t],
+  );
   const [path, setPath] = useState('$');
   const [result, setResult] = useState('');
   const [pathError, setPathError] = useState('');
@@ -529,20 +538,33 @@ export default function JsonTool({
       return { valid: false, value: null };
     }
   }, [resultInspection]);
-  // Auto-exit table mode when content becomes empty or invalid
+  // idle / pending 只表示检测暂停或尚未完成，不能据此清除用户选择的预览模式。
   useEffect(() => {
-    if (inputTableMode && (inputInspection.status !== 'ok' || !inputPreview.valid)) {
+    if (
+      inputTableMode &&
+      (inputInspection.status === 'empty' ||
+        inputInspection.status === 'invalid' ||
+        (inputInspection.status === 'ok' && !inputPreview.valid))
+    ) {
       setInputTableMode(false);
     }
   }, [inputInspection.status, inputPreview.valid, inputTableMode]);
   useEffect(() => {
-    if (inputSchemaPreviewMode && !inputIsSchema) setInputSchemaPreviewMode(false);
-  }, [inputIsSchema, inputSchemaPreviewMode]);
+    if (
+      inputSchemaPreviewMode &&
+      (inputInspection.status === 'empty' ||
+        inputInspection.status === 'invalid' ||
+        (inputInspection.status === 'ok' && !inputIsSchema))
+    ) {
+      setInputSchemaPreviewMode(false);
+    }
+  }, [inputInspection.status, inputIsSchema, inputSchemaPreviewMode]);
   useEffect(() => {
     if (
       resultTableMode &&
       (!result.trim() ||
-        (resultInspection.status !== 'pending' && resultInspection.status !== 'ok'))
+        resultInspection.status === 'empty' ||
+        resultInspection.status === 'invalid')
     ) {
       setResultTableMode(false);
     }
@@ -1229,20 +1251,12 @@ export default function JsonTool({
                 label={t('jsonTool.openFile')}
                 onPress={() => void fileDrop.pick()}
               />
-              <Label className="flex h-8 flex-none items-center gap-2 border border-transparent bg-transparent py-0 pr-1.5 text-[11px] text-muted-foreground">
-                <Checkbox
-                  checked={autoFormatOnFill}
-                  onCheckedChange={(checked) => onAutoFormatOnFillChange(checked)}
-                />
-                <span>{t('jsonTool.autoFormatOnFill')}</span>
-              </Label>
-              <Label className="flex h-8 flex-none items-center gap-2 border border-transparent bg-transparent py-0 pr-1.5 text-[11px] text-muted-foreground">
-                <Checkbox
-                  checked={showInvisibleChars}
-                  onCheckedChange={(checked) => setShowInvisibleChars(checked === true)}
-                />
-                <span>{t('jsonTool.showInvisibleChars')}</span>
-              </Label>
+              <ToolActionButton
+                variant="secondary"
+                icon={SlidersHorizontal}
+                label={t('jsonTool.displaySettings')}
+                onPress={() => setDisplaySettingsOpen(true)}
+              />
             </>
           }
           right={
@@ -1330,8 +1344,13 @@ export default function JsonTool({
                           tableHint={t('jsonTool.tablePreviewInvalid')}
                           onToggleTable={toggleInputTable}
                           tablePreview={
-                            inputTableMode && active ? (
-                              <JsonTablePreview value={inputPreview.value} t={t} />
+                            inputTableMode ? (
+                              <JsonTablePreview
+                                value={inputPreview.value}
+                                t={t}
+                                active={active && inputInspection.status === 'ok'}
+                                timeFormat={timeFormat}
+                              />
                             ) : null
                           }
                           schemaMode={inputSchemaPreviewMode}
@@ -1369,6 +1388,8 @@ export default function JsonTool({
                           evaluation={pipeline.evaluation}
                           theme={cmTheme}
                           foldExt={foldExt}
+                          active={active && pipelineMode}
+                          timeFormat={timeFormat}
                         />
                       </div>
                     </ResizablePanel>
@@ -1539,9 +1560,14 @@ export default function JsonTool({
                                 />
                               </div>
                             ) : null}
-                            {!pathError && resultTableMode && active && (
+                            {!pathError && resultTableMode && (
                               <div className="json-table-layer is-visible">
-                                <JsonTablePreview value={resultPreview.value} t={t} />
+                                <JsonTablePreview
+                                  value={resultPreview.value}
+                                  t={t}
+                                  active={active && schema && resultInspection.status === 'ok'}
+                                  timeFormat={timeFormat}
+                                />
                               </div>
                             )}
                             {!pathError && (
@@ -1637,6 +1663,55 @@ export default function JsonTool({
           </div>
         </ToolLayoutFooter>
       </ToolLayout>
+      <Dialog open={displaySettingsOpen} onOpenChange={setDisplaySettingsOpen}>
+        <DialogContent aria-describedby={undefined}>
+          <DialogHeader>
+            <DialogTitle>{t('jsonTool.displaySettings')}</DialogTitle>
+          </DialogHeader>
+          <div className="flex flex-col gap-4">
+            <Label className="flex items-center justify-between gap-4">
+              <span>{t('jsonTool.autoFormatOnFill')}</span>
+              <Checkbox checked={autoFormatOnFill} onCheckedChange={onAutoFormatOnFillChange} />
+            </Label>
+            <Label className="flex items-center justify-between gap-4">
+              <span>{t('jsonTool.showInvisibleChars')}</span>
+              <Checkbox checked={showInvisibleChars} onCheckedChange={setShowInvisibleChars} />
+            </Label>
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="json-time-format">{t('jsonTool.formatTime')}</Label>
+              <Select
+                items={timeFormatOptions}
+                value={timeFormat}
+                onValueChange={(value) => {
+                  const selected = JSON_TIME_FORMATS.find((format) => format === value);
+                  if (selected) setTimeFormat(selected);
+                }}
+              >
+                <SelectTrigger
+                  id="json-time-format"
+                  className="w-full"
+                  aria-describedby="json-time-format-hint"
+                >
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectGroup>
+                    {timeFormatOptions.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
+                </SelectContent>
+              </Select>
+              <p id="json-time-format-hint" className="text-sm text-muted-foreground">
+                {t('jsonTool.formatTimeHint')}
+              </p>
+            </div>
+          </div>
+          <DialogFooter showCloseButton />
+        </DialogContent>
+      </Dialog>
       <AlertDialog
         open={commentDialog !== null}
         onOpenChange={(open) => {
