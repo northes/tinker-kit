@@ -41,6 +41,7 @@ export interface Config {
     "fileSources": FileSource[] | null;
     "serviceTargets": ServiceTarget[] | null;
     "serviceLogHighlightLevels": boolean;
+    "serviceLogCollapseLines": number;
     "portSources": PortSource[] | null;
     "portForwards": PortForwardConfig[] | null;
     "portColumnWidths": PortColumnWidths;
