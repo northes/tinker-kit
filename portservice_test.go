@@ -55,6 +55,29 @@ func TestParseSSPorts(t *testing.T) {
 	}
 }
 
+// 重启后 counter 从 0 重新计数，生成的新 ID 必须避开配置里已持久化的定义，
+// 否则新定义会被当成重复项丢弃，并把隧道状态挂到旧的同 ID 定义上。
+func TestNextForwardIDSkipsPersistedAndRunningIDs(t *testing.T) {
+	cfg := defaultConfig()
+	cfg.PortForwards = []PortForwardConfig{
+		{ID: "port-forward-1", SourceID: "remote", Direction: "local", ListenPort: 8080, TargetPort: 80},
+		{ID: "port-forward-2", SourceID: "remote", Direction: "local", ListenPort: 8081, TargetPort: 80},
+	}
+	config := &ConfigService{path: filepath.Join(t.TempDir(), "config.json"), cfg: normalizeConfig(cfg)}
+	service := NewPortService(config)
+
+	if id := service.nextForwardID(); id != "port-forward-3" {
+		t.Fatalf("nextForwardID() = %q, want port-forward-3", id)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	service.tunnels["port-forward-4"] = &portTunnel{PortForward: PortForward{ID: "port-forward-4"}, ctx: ctx, cancel: cancel}
+	if id := service.nextForwardID(); id != "port-forward-5" {
+		t.Fatalf("nextForwardID() = %q, want port-forward-5", id)
+	}
+}
+
 func TestNormalizeForward(t *testing.T) {
 	request, err := normalizeForward(PortForwardRequest{Name: "  web  ", SourceID: " source ", Direction: "local", ListenPort: 8080, TargetPort: 80})
 	if err != nil || request.Name != "web" || request.SourceID != "source" || request.ListenHost != "127.0.0.1" || request.TargetHost != "127.0.0.1" {
@@ -116,5 +139,70 @@ func TestListenUnavailableClassification(t *testing.T) {
 	}
 	if key := localizedErrorKey(listenUnavailableReason(definition, errors.New("denied"))); key != "errors.port.listenDenied" {
 		t.Fatalf("unexpected listen-denied reason key: %q", key)
+	}
+}
+
+// 转发自身的增删改由 PortService 显式处理；配置变更回调只应停掉定义被外部
+// 删除或改写的隧道，不能牵连其它仍在使用的隧道。
+func TestSyncForwardTunnelsStopsOnlyStaleDefinitions(t *testing.T) {
+	cfg := defaultConfig()
+	cfg.PortForwards = []PortForwardConfig{
+		{ID: "keep", SourceID: "remote", Direction: "local", ListenPort: 8080, TargetPort: 80},
+		{ID: "changed", SourceID: "remote", Direction: "local", ListenPort: 8081, TargetPort: 80},
+	}
+	config := &ConfigService{path: filepath.Join(t.TempDir(), "config.json"), cfg: normalizeConfig(cfg)}
+	service := NewPortService(config)
+	definitions := config.Get().PortForwards
+
+	keep := newPortTunnel(definitions[0], SSHProfile{})
+	changed := newPortTunnel(definitions[1], SSHProfile{})
+	changed.ListenPort = 9999
+	gone := newPortTunnel(PortForwardConfig{ID: "gone", SourceID: "remote", Direction: "local", ListenHost: "127.0.0.1", ListenPort: 9000, TargetHost: "127.0.0.1", TargetPort: 9000}, SSHProfile{})
+	service.tunnels["keep"] = keep
+	service.tunnels["changed"] = changed
+	service.tunnels["gone"] = gone
+
+	next := append(append([]PortForwardConfig(nil), definitions...), PortForwardConfig{ID: "added", SourceID: "remote", Direction: "local", ListenHost: "127.0.0.1", ListenPort: 8082, TargetHost: "127.0.0.1", TargetPort: 80})
+	service.syncForwardTunnels(next)
+
+	select {
+	case <-keep.ctx.Done():
+		t.Fatal("adding a forward must not stop an unrelated running tunnel")
+	default:
+	}
+	for name, tunnel := range map[string]*portTunnel{"changed": changed, "gone": gone} {
+		select {
+		case <-tunnel.ctx.Done():
+		default:
+			t.Fatalf("%s tunnel with an outdated definition should be stopped", name)
+		}
+	}
+	service.mu.Lock()
+	defer service.mu.Unlock()
+	if len(service.tunnels) != 1 {
+		t.Fatalf("unexpected tunnels after sync: %+v", service.tunnels)
+	}
+}
+
+// 拖动排序只改变定义顺序：未出现的 ID 不能丢，顺序要落库。
+func TestReorderForwardsPersistsOrderWithoutDroppingDefinitions(t *testing.T) {
+	cfg := defaultConfig()
+	cfg.PortForwards = []PortForwardConfig{
+		{ID: "a", SourceID: "remote", Direction: "local", ListenPort: 8080, TargetPort: 80},
+		{ID: "b", SourceID: "remote", Direction: "local", ListenPort: 8081, TargetPort: 80},
+		{ID: "c", SourceID: "remote", Direction: "local", ListenPort: 8082, TargetPort: 80},
+	}
+	config := &ConfigService{path: filepath.Join(t.TempDir(), "config.json"), cfg: normalizeConfig(cfg)}
+	service := NewPortService(config)
+
+	if err := service.ReorderForwards([]string{"c", "unknown", "a"}); err != nil {
+		t.Fatalf("ReorderForwards() error = %v", err)
+	}
+	ids := make([]string, 0, 3)
+	for _, forward := range config.Get().PortForwards {
+		ids = append(ids, forward.ID)
+	}
+	if got, want := strings.Join(ids, ","), "c,a,b"; got != want {
+		t.Fatalf("forward order after reorder = %q, want %q", got, want)
 	}
 }

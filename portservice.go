@@ -100,13 +100,17 @@ func NewPortService(config *ConfigService) *PortService {
 		var snapshotMu sync.Mutex
 		config.setOnChange(func(current Config) {
 			snapshotMu.Lock()
-			changed := !reflect.DeepEqual(previous.SSHProfiles, current.SSHProfiles) ||
-				!reflect.DeepEqual(previous.PortSources, current.PortSources) ||
-				!reflect.DeepEqual(previous.PortForwards, current.PortForwards)
+			sourcesChanged := !reflect.DeepEqual(previous.SSHProfiles, current.SSHProfiles) ||
+				!reflect.DeepEqual(previous.PortSources, current.PortSources)
+			forwardsChanged := !reflect.DeepEqual(previous.PortForwards, current.PortForwards)
 			previous = current
 			snapshotMu.Unlock()
-			if changed {
+			if sourcesChanged {
 				service.shutdown()
+				return
+			}
+			if forwardsChanged {
+				service.syncForwardTunnels(current.PortForwards)
 			}
 		})
 	}
@@ -559,6 +563,14 @@ func newPortTunnel(definition PortForwardConfig, profile SSHProfile) *portTunnel
 	}
 }
 
+// matches 判断隧道是否仍对应当前持久化的转发定义。
+func (t *portTunnel) matches(definition PortForwardConfig) bool {
+	return t.ID == definition.ID && t.Name == definition.Name && t.SourceID == definition.SourceID &&
+		t.Direction == definition.Direction && t.ListenHost == definition.ListenHost &&
+		t.ListenPort == definition.ListenPort && t.TargetHost == definition.TargetHost &&
+		t.TargetPort == definition.TargetPort
+}
+
 // persistForwards 在配置锁内改写转发定义并持久化，避免读取到过期快照。
 func (s *PortService) persistForwards(mutate func([]PortForwardConfig) []PortForwardConfig) error {
 	if s == nil || s.config == nil {
@@ -619,6 +631,24 @@ func (s *PortService) startForwardDefinition(
 	return tunnel.PortForward, nil
 }
 
+// nextForwardID 生成未被占用的转发 ID。counter 只在当前进程内递增，而转发定义
+// 会跨重启持久化；不跳过已存在的 ID，新定义会被 normalizePortForwards 当成重复项
+// 静默丢弃，新隧道还会顶替同 ID 的已有定义状态。
+func (s *PortService) nextForwardID() string {
+	for {
+		id := fmt.Sprintf("port-forward-%d", s.counter.Add(1))
+		if _, exists := s.forwardDefinition(id); exists {
+			continue
+		}
+		s.mu.Lock()
+		_, running := s.tunnels[id]
+		s.mu.Unlock()
+		if !running {
+			return id
+		}
+	}
+}
+
 // AddForward 创建一条转发定义并立即启动；监听端口已被占用时仍然创建，只是不启动。
 func (s *PortService) AddForward(request PortForwardRequest) (PortForward, error) {
 	request, err := normalizeForward(request)
@@ -630,7 +660,7 @@ func (s *PortService) AddForward(request PortForwardRequest) (PortForward, error
 		return PortForward{}, err
 	}
 	definition := PortForwardConfig{
-		ID:         fmt.Sprintf("port-forward-%d", s.counter.Add(1)),
+		ID:         s.nextForwardID(),
 		Name:       request.Name,
 		SourceID:   request.SourceID,
 		Direction:  request.Direction,
@@ -680,6 +710,37 @@ func (s *PortService) UpdateForward(id string, request PortForwardRequest) (Port
 				result[index] = definition
 			} else {
 				result[index] = forward
+			}
+		}
+		return result
+	})
+}
+
+// ReorderForwards 按给定 ID 顺序保存转发定义，用于列表拖动排序。
+// 未出现在 ids 中的定义（例如并发新增）保持原有相对顺序追加在末尾，不丢弃任何定义。
+func (s *PortService) ReorderForwards(ids []string) error {
+	if s == nil || s.config == nil {
+		return userError("errors.common.configNotInitialized")
+	}
+	return s.persistForwards(func(defs []PortForwardConfig) []PortForwardConfig {
+		byID := make(map[string]PortForwardConfig, len(defs))
+		for _, definition := range defs {
+			byID[definition.ID] = definition
+		}
+		result := make([]PortForwardConfig, 0, len(defs))
+		placed := make(map[string]bool, len(defs))
+		for _, id := range ids {
+			id = strings.TrimSpace(id)
+			definition, ok := byID[id]
+			if !ok || placed[id] {
+				continue
+			}
+			placed[id] = true
+			result = append(result, definition)
+		}
+		for _, definition := range defs {
+			if !placed[definition.ID] {
+				result = append(result, definition)
 			}
 		}
 		return result
@@ -997,6 +1058,27 @@ func (s *PortService) shutdown() {
 	}
 	s.mu.Unlock()
 	for _, id := range ids {
+		_ = s.StopForward(id)
+	}
+}
+
+// syncForwardTunnels 停止定义已被外部删除或改写的隧道。转发自身的增删改由
+// PortService 显式处理，配置变更回调不应因此停掉仍在使用的其它隧道。
+func (s *PortService) syncForwardTunnels(definitions []PortForwardConfig) {
+	byID := make(map[string]PortForwardConfig, len(definitions))
+	for _, definition := range definitions {
+		byID[definition.ID] = definition
+	}
+	s.mu.Lock()
+	stale := make([]string, 0, len(s.tunnels))
+	for id, tunnel := range s.tunnels {
+		definition, ok := byID[id]
+		if !ok || !tunnel.matches(definition) {
+			stale = append(stale, id)
+		}
+	}
+	s.mu.Unlock()
+	for _, id := range stale {
 		_ = s.StopForward(id)
 	}
 }
