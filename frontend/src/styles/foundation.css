@@ -5,6 +5,10 @@
   --app-titlebar-toggle-offset: 1px;
   --code-editor-font-size: 16px;
   --overlay-scrollbar-size: 12px;
+  /* 统一过渡：项目内的所有过渡共用这一组时长与缓动；Tailwind 的默认过渡值
+     由 index.css 的 @theme 引用这两个变量，局部 CSS 也直接引用它们。 */
+  --motion-duration: 120ms;
+  --motion-ease: ease-out;
   font-synthesis: none;
   -webkit-font-smoothing: antialiased;
 }

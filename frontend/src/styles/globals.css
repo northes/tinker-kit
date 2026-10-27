@@ -29,6 +29,11 @@
   /* 功能语义色（shadcn 未提供，项目功能所需） */
   --success: oklch(73.29% 0.1941 150.81);
   --warning: oklch(78.19% 0.159 72.33);
+  /* 状态色文本：在状态底色或浅色背景上可读的深色版本 */
+  --success-foreground: oklch(0.5 0.13 152);
+  --warning-foreground: oklch(0.5 0.115 66);
+  /* 进行中/信息态（蓝）：状态色里唯一的非结果色，只用于表示进行中。 */
+  --info: oklch(0.52 0.17 256);
   --shadow-x: 0;
   --shadow-y: 1px;
   --shadow-blur: 3px;
@@ -70,6 +75,9 @@
   --chart-5: oklch(0.645 0.246 16.439);
   --success: oklch(73.29% 0.1941 150.81);
   --warning: oklch(82.03% 0.1392 76.34);
+  --success-foreground: oklch(0.84 0.17 152);
+  --warning-foreground: oklch(0.88 0.14 78);
+  --info: oklch(0.72 0.14 254);
   --shadow-x: 0;
   --shadow-y: 1px;
   --shadow-blur: 3px;
