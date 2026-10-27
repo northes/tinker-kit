@@ -11,10 +11,9 @@
   border: 1px dashed var(--border);
   border-radius: var(--radius);
   color: var(--muted-foreground);
-  transition:
-    border-color 160ms ease,
-    background-color 160ms ease,
-    color 160ms ease;
+  transition-property: border-color, background-color, color;
+  transition-duration: var(--motion-duration);
+  transition-timing-function: var(--motion-ease);
 }
 
 .file-drop-empty[data-over='true'] {
@@ -40,7 +39,7 @@
 .file-drop-empty-icon {
   flex: none;
   color: var(--muted-foreground);
-  transition: color 160ms ease;
+  transition: color var(--motion-duration) var(--motion-ease);
 }
 
 .file-drop-empty[data-over='true'] .file-drop-empty-icon {

@@ -120,7 +120,7 @@ export function Reveal({
   return (
     <div
       ref={ref}
-      className={`${fill ? 'h-full min-h-0 ' : ''}transition-opacity duration-200 ease-out ${visible ? 'opacity-100' : 'opacity-0'}`}
+      className={`${fill ? 'h-full min-h-0 ' : ''}transition-opacity ${visible ? 'opacity-100' : 'opacity-0'}`}
       style={{ transitionDelay: `${(index ?? 0) * 80}ms` }}
     >
       {children}

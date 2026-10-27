@@ -150,7 +150,7 @@
   height: 14px;
 }
 .cm-app-search-caret svg {
-  transition: transform 120ms ease;
+  transition: transform var(--motion-duration) var(--motion-ease);
 }
 .cm-app-search-caret[aria-expanded='true'] svg {
   transform: rotate(90deg);
