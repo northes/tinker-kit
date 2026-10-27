@@ -8,6 +8,7 @@ import type {
   ServiceTarget,
 } from '../../../bindings/tinkerkit/models';
 import { backendErrorKey } from '../../lib/backend-error';
+import { sourceLabel } from '../../lib/local-source';
 
 export const MANAGE_TARGETS_VALUE = '__manage-targets__';
 
@@ -155,5 +156,5 @@ export function logDayKey(line: ServiceLogLine) {
 }
 
 export function targetLabel(target: ServiceTarget, t: ReturnType<typeof useTranslation>['t']) {
-  return target.kind === 'local' ? t('serviceManagerTool.localTarget') : target.name;
+  return sourceLabel(target, t('serviceManagerTool.localTarget'));
 }

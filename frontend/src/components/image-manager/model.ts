@@ -8,9 +8,10 @@ import type {
   SSHProfile,
 } from '../../../bindings/tinkerkit/models';
 import { formatBackendError } from '../../lib/backend-error';
+import { LOCAL_SOURCE_ID, isLocalSource } from '../../lib/local-source';
 import { type ImageRenameForm, imageRepository, imageTag } from './rename';
 
-export const LOCAL_SOURCE_ID = 'local';
+export { LOCAL_SOURCE_ID, isLocalSource };
 
 export const MANAGE_SOURCES_VALUE = '__manage-sources__';
 
@@ -148,10 +149,6 @@ export function resolveContentViewState(
 
 export function isWatchCancelError(error: unknown) {
   return error instanceof CancelError || (error instanceof Error && error.name === 'CancelError');
-}
-
-export function isLocalSource(source: ImageSource) {
-  return source.id === LOCAL_SOURCE_ID || source.kind === 'local';
 }
 
 export function resolveSources(sources: ImageSource[] | null | undefined): ImageSource[] {

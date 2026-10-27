@@ -356,7 +356,7 @@ func (s *ServiceManagerService) targetSnapshot(id string) (ServiceTarget, ImageS
 		if s != nil && s.config != nil && s.config.Get().DockerCLIPath != "" {
 			cli = s.config.Get().DockerCLIPath
 		}
-		return ServiceTarget{ID: "local", Name: "local", Kind: "local"}, ImageSource{ID: "local", Name: "本机", Kind: "local"}, cli, nil
+		return ServiceTarget{ID: "local", Name: "本机", Kind: "local"}, ImageSource{ID: "local", Name: "本机", Kind: "local"}, cli, nil
 	}
 	if !strings.HasPrefix(id, "ssh:") || s == nil || s.config == nil {
 		return ServiceTarget{}, ImageSource{}, "", userError("errors.service.targetNotFound")

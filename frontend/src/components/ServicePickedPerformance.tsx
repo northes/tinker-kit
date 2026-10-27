@@ -8,6 +8,7 @@ import type {
 import { useServiceMetricTrend } from '../hooks/useServiceMetricTrend';
 import { formatMetricBytes as formatBytes } from '../lib/byte-format';
 import { ScrollArea } from './ui/scroll-area';
+import { targetLabel } from './service-manager/model';
 import { Spinner } from './ui/spinner';
 
 function metricKey(monitor: LogMonitor) {
@@ -35,12 +36,7 @@ export function ServicePickedPerformance({
         samples.set(`${sample.targetID}|resource|${sample.runtime}|${sample.id}`, sample);
     }
   }
-  const targetNames = new Map(
-    targets.map((item) => [
-      item.id,
-      item.kind === 'local' ? t('serviceManagerTool.localTarget') : item.name,
-    ]),
-  );
+  const targetNames = new Map(targets.map((item) => [item.id, targetLabel(item, t)]));
   const cpu = (value: number | null | undefined) =>
     typeof value === 'number' && Number.isFinite(value) ? `${value.toFixed(1)}%` : '—';
 

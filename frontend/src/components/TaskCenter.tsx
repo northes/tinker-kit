@@ -49,6 +49,7 @@ import {
   formatTaskDuration,
 } from '../lib/task-format';
 import { formatBackendError } from '../lib/backend-error';
+import { sourceLabel } from '../lib/local-source';
 import { Badge } from './ui/badge';
 import { Button } from './ui/button';
 import { Label } from './ui/label';
@@ -205,8 +206,7 @@ export function TaskCenter({
   const imageSourceNames = useMemo(() => {
     const names: Record<string, string> = {};
     for (const source of settings.imageSources ?? [])
-      names[source.id] =
-        source.name || (source.kind === 'local' ? t('taskCenter.localSource') : '');
+      names[source.id] = sourceLabel(source, t('taskCenter.localSource'));
     return names;
   }, [settings.imageSources, t]);
   const [now, setNow] = useState(Date.now());

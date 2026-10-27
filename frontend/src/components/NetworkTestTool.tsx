@@ -22,6 +22,7 @@ import {
   SaveNetworkTestSources,
 } from '../../bindings/tinkerkit/configservice';
 import { formatBackendError } from '../lib/backend-error';
+import { isLocalSource, sourceLabel } from '../lib/local-source';
 import {
   automaticTarget,
   detectTargetProtocol,
@@ -386,9 +387,9 @@ export default function NetworkTestTool({ active }: { active: boolean }) {
     remoteSourceSelected && !profiles.some((profile) => profile.id === selectedSource.sshProfileID);
   const unsupportedRemoteProtocol =
     remoteSourceSelected && effectiveProtocol !== null && effectiveProtocol !== 'http';
-  const sourceLabel = useCallback(
+  const sourceDisplayName = useCallback(
     (source: NetworkTestSource) =>
-      source.id === 'local'
+      isLocalSource(source)
         ? t('networkTestTool.source.local')
         : `${source.name}${
             source.kind === 'ssh' && !profiles.some((profile) => profile.id === source.sshProfileID)
@@ -401,11 +402,11 @@ export default function NetworkTestTool({ active }: { active: boolean }) {
     () => [
       ...networkTestSources.map((source) => ({
         value: source.id,
-        label: sourceLabel(source),
+        label: sourceDisplayName(source),
       })),
       { value: MANAGE_NETWORK_SOURCES, label: t('networkTestTool.source.manage') },
     ],
-    [networkTestSources, sourceLabel],
+    [networkTestSources, sourceDisplayName],
   );
   // 高级选项全部展示、不按协议过滤：字段是否生效只影响校验，不影响可见性。
   const supportsRedirectSettings =
@@ -715,7 +716,7 @@ export default function NetworkTestTool({ active }: { active: boolean }) {
                       <SelectGroup>
                         {networkTestSources.map((source) => (
                           <SelectItem key={source.id} value={source.id}>
-                            {sourceLabel(source)}
+                            {sourceDisplayName(source)}
                           </SelectItem>
                         ))}
                       </SelectGroup>
@@ -1502,12 +1503,8 @@ export default function NetworkTestTool({ active }: { active: boolean }) {
         onOpenChange={setSourceManagerOpen}
         items={networkTestSources}
         itemKey={(item) => item.id}
-        itemName={(item) =>
-          item.id === 'local' || item.kind === 'local'
-            ? t('networkTestTool.source.local')
-            : item.name
-        }
-        itemDisabled={(item) => item.id === 'local' || item.kind === 'local'}
+        itemName={(item) => sourceLabel(item, t('networkTestTool.source.local'))}
+        itemDisabled={isLocalSource}
         createDraft={() => ({
           id: '',
           name: '',
