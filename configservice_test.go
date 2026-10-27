@@ -47,6 +47,28 @@ func TestServiceLogHighlightConfig(t *testing.T) {
 	}
 }
 
+func TestServiceLogCollapseLinesConfig(t *testing.T) {
+	cases := []struct {
+		data string
+		want int
+	}{
+		{`{}`, defaultServiceLogCollapseLines},
+		{`{"serviceLogCollapseLines":20}`, 20},
+		{`{"serviceLogCollapseLines":0}`, defaultServiceLogCollapseLines},
+		{`{"serviceLogCollapseLines":-3}`, defaultServiceLogCollapseLines},
+		{`{"serviceLogCollapseLines":1000}`, defaultServiceLogCollapseLines},
+	}
+	for _, c := range cases {
+		cfg, err := decodeImportedConfig([]byte(c.data))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if cfg.ServiceLogCollapseLines != c.want {
+			t.Fatalf("折叠行数为 %d，期望 %d：%s", cfg.ServiceLogCollapseLines, c.want, c.data)
+		}
+	}
+}
+
 func TestDecodeImportedConfigFillsDefaultsAndKeepsCredentials(t *testing.T) {
 	cfg, err := decodeImportedConfig([]byte(`{"language":"en-US","sshProfiles":[{"id":"profile-1","name":"prod","origin":"manual","host":"example.com","port":22,"username":"deploy","password":"secret"}]}`))
 	if err != nil {

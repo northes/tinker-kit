@@ -46,6 +46,7 @@ type Config struct {
 	FileSources             []FileSource          `json:"fileSources"`
 	ServiceTargets          []ServiceTarget       `json:"serviceTargets"`
 	ServiceLogHighlight     bool                  `json:"serviceLogHighlightLevels"`
+	ServiceLogCollapseLines int                   `json:"serviceLogCollapseLines"`
 	PortSources             []PortSource          `json:"portSources"`
 	PortForwards            []PortForwardConfig   `json:"portForwards"`
 	PortColumnWidths        PortColumnWidths      `json:"portColumnWidths"`
@@ -102,6 +103,13 @@ func defaultNetworkTestSettings() NetworkTestSettings {
 		DNSMode: "system",
 	}
 }
+
+// 服务日志折叠行数：单条日志渲染超过该行数时折叠，可在日志高级设置里选择或输入。
+const (
+	defaultServiceLogCollapseLines = 5
+	minServiceLogCollapseLines     = 1
+	maxServiceLogCollapseLines     = 200
+)
 
 var defaultSidebarToolIDs = []string{"json", "time", "text", "base64", "jwt", "url", "qrcode", "image", "diff", "text-generator", "image-manager", "ssh-files", "service-manager", "ports", "network-test"}
 
@@ -192,7 +200,7 @@ func defaultSidebarTools() []SidebarToolConfig {
 }
 
 func defaultConfig() Config {
-	return Config{TrayMatchEnabled: true, TrayMatchTools: []string{"json", "time", "text", "base64", "diff", "jwt", "url"}, AutoOverwrite: true, AutoCheckUpdates: true, TaskConcurrency: 4, TaskChunkConcurrency: 4, TaskNotificationMode: "unfocused", Language: "zh-CN", SidebarMode: "full", SidebarTools: defaultSidebarTools(), ThemeMode: "dark", LightTheme: "default-light", DarkTheme: "default-dark", DiffClipboardTargetMode: "alternate", CodeEditorFontSize: 16, TimeResultOrder: []string{"local", "dateTime", "dateOnly", "timeOnly", "zonedIso8601", "rfc3339", "utc", "compact", "underscore", "unixSeconds", "unixMilliseconds", "unixNanoseconds"}, TimeWeekStart: "monday", NtpServers: defaultNtpServers(), NetworkTestSettings: defaultNetworkTestSettings(), NetworkTestSources: defaultNetworkTestSources(), JsonAutoFormatOnFill: true, ImageSources: defaultImageSources(), SSHProfiles: []SSHProfile{}, FileSources: []FileSource{}, ServiceTargets: defaultServiceTargets(), ServiceLogHighlight: true, PortSources: defaultPortSources(), PortForwards: []PortForwardConfig{}, PortColumnWidths: PortColumnWidths{Ports: map[string][]int{}}}
+	return Config{TrayMatchEnabled: true, TrayMatchTools: []string{"json", "time", "text", "base64", "diff", "jwt", "url"}, AutoOverwrite: true, AutoCheckUpdates: true, TaskConcurrency: 4, TaskChunkConcurrency: 4, TaskNotificationMode: "unfocused", Language: "zh-CN", SidebarMode: "full", SidebarTools: defaultSidebarTools(), ThemeMode: "dark", LightTheme: "default-light", DarkTheme: "default-dark", DiffClipboardTargetMode: "alternate", CodeEditorFontSize: 16, TimeResultOrder: []string{"local", "dateTime", "dateOnly", "timeOnly", "zonedIso8601", "rfc3339", "utc", "compact", "underscore", "unixSeconds", "unixMilliseconds", "unixNanoseconds"}, TimeWeekStart: "monday", NtpServers: defaultNtpServers(), NetworkTestSettings: defaultNetworkTestSettings(), NetworkTestSources: defaultNetworkTestSources(), JsonAutoFormatOnFill: true, ImageSources: defaultImageSources(), SSHProfiles: []SSHProfile{}, FileSources: []FileSource{}, ServiceTargets: defaultServiceTargets(), ServiceLogHighlight: true, ServiceLogCollapseLines: defaultServiceLogCollapseLines, PortSources: defaultPortSources(), PortForwards: []PortForwardConfig{}, PortColumnWidths: PortColumnWidths{Ports: map[string][]int{}}}
 }
 
 func normalizeThemeID(theme string, defaultID string) string {
@@ -639,6 +647,10 @@ func normalizeConfig(cfg Config) Config {
 	}
 	if cfg.TaskChunkConcurrency < 1 || cfg.TaskChunkConcurrency > 16 {
 		cfg.TaskChunkConcurrency = 4
+	}
+	// 缺失或越界（含旧配置文件里的 0）都回退默认值，避免出现折叠 0 行的非法状态。
+	if cfg.ServiceLogCollapseLines < minServiceLogCollapseLines || cfg.ServiceLogCollapseLines > maxServiceLogCollapseLines {
+		cfg.ServiceLogCollapseLines = defaultServiceLogCollapseLines
 	}
 	switch cfg.TaskNotificationMode {
 	case "off", "always", "unfocused":
