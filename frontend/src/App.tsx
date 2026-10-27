@@ -1139,6 +1139,10 @@ function AppShell() {
                     setHighlightLevels={(value) =>
                       setSettings((current) => ({ ...current, serviceLogHighlightLevels: value }))
                     }
+                    collapseLines={settings.serviceLogCollapseLines}
+                    setCollapseLines={(value) =>
+                      setSettings((current) => ({ ...current, serviceLogCollapseLines: value }))
+                    }
                   />
                 </Suspense>
               )}

@@ -8,7 +8,7 @@ import {
   TextB,
   WarningCircle,
 } from '@phosphor-icons/react';
-import { useMemo, useState } from 'react';
+import { useId, useMemo, useState } from 'react';
 import { format } from 'date-fns';
 import { Clipboard } from '@wailsio/runtime';
 import { useTranslation } from 'react-i18next';
@@ -29,6 +29,14 @@ import { ServicePickedPerformance } from '../ServicePickedPerformance';
 import { ServiceResourcePerformance } from '../ServiceResourcePerformance';
 import { Button } from '../ui/button';
 import { Checkbox } from '../ui/checkbox';
+import {
+  Combobox,
+  ComboboxContent,
+  ComboboxEmpty,
+  ComboboxInput,
+  ComboboxItem,
+  ComboboxList,
+} from '../ui/combobox';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '../ui/dialog';
 import { Label } from '../ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs';
@@ -37,7 +45,15 @@ import { toast } from '../ui/toast';
 import { LogList } from './LogList';
 import { LogFilterHelp } from './LogFilterHelp';
 import { LogFilterHistoryMenu } from './LogFilterHistory';
-import { logTime, targetLabel, VISIBLE_LOG_LIMIT, type Selection } from './model';
+import {
+  COLLAPSE_LINES_MAX,
+  COLLAPSE_LINES_MIN,
+  COLLAPSE_LINE_PRESETS,
+  logTime,
+  targetLabel,
+  VISIBLE_LOG_LIMIT,
+  type Selection,
+} from './model';
 import { ResourceInfoTab, ScopeInfoTab } from './ResourceInfo';
 
 export function RuntimeError({ name, error }: { name: string; error?: string }) {
@@ -46,6 +62,67 @@ export function RuntimeError({ name, error }: { name: string; error?: string }) 
       <WarningCircle className="mr-1 inline size-3.5" />
       {name}: {error ? formatBackendError(error) : '—'}
     </div>
+  );
+}
+
+// 折叠行数既可从预设中选择，也可直接输入任意行数；输入合法值时立即写入配置。
+function CollapseLinesCombobox({
+  inputId,
+  label,
+  value,
+  onValueChange,
+}: {
+  inputId: string;
+  label: string;
+  value: number;
+  onValueChange: (value: number) => void;
+}) {
+  const { t } = useTranslation();
+  const [inputValue, setInputValue] = useState(() => String(value));
+  // 把输入中的合法行数并入候选，否则输入的数字在列表里无匹配项，无法回填到已选值。
+  const options = useMemo(() => {
+    const values = [...COLLAPSE_LINE_PRESETS];
+    const typed = Number(inputValue.trim());
+    if (Number.isInteger(typed) && typed >= COLLAPSE_LINES_MIN && typed <= COLLAPSE_LINES_MAX)
+      values.push(typed);
+    return [...new Set(values)].sort((left, right) => left - right);
+  }, [inputValue]);
+  return (
+    <Combobox
+      items={options}
+      value={value}
+      onValueChange={(next) => {
+        if (typeof next === 'number') onValueChange(next);
+      }}
+      inputValue={inputValue}
+      onInputValueChange={(next) => {
+        setInputValue(next);
+        const typed = Number(next.trim());
+        if (Number.isInteger(typed) && typed >= COLLAPSE_LINES_MIN && typed <= COLLAPSE_LINES_MAX)
+          onValueChange(typed);
+      }}
+      itemToStringLabel={(item) => String(item)}
+      filter={(item, query) => String(item).includes(query.trim())}
+    >
+      <ComboboxInput
+        id={inputId}
+        className="w-20"
+        inputMode="numeric"
+        aria-label={label}
+        triggerLabel={label}
+        onBlur={() => setInputValue(String(value))}
+      />
+      <ComboboxContent>
+        <ComboboxList>
+          {(item: number) => (
+            <ComboboxItem key={item} value={item}>
+              {item}
+            </ComboboxItem>
+          )}
+        </ComboboxList>
+        <ComboboxEmpty>{t('serviceManagerTool.collapseLinesNoMatch')}</ComboboxEmpty>
+      </ComboboxContent>
+    </Combobox>
   );
 }
 
@@ -74,6 +151,8 @@ export function ResourcePanel({
   setWholeWord,
   highlightLevels,
   setHighlightLevels,
+  collapseLines,
+  setCollapseLines,
   caseSensitive,
   setCaseSensitive,
   onClear,
@@ -106,6 +185,8 @@ export function ResourcePanel({
   setWholeWord: (value: boolean) => void;
   highlightLevels: boolean;
   setHighlightLevels: (value: boolean) => void;
+  collapseLines: number;
+  setCollapseLines: (value: number) => void;
   caseSensitive: boolean;
   setCaseSensitive: (value: boolean) => void;
   onClear: () => void;
@@ -151,6 +232,7 @@ export function ResourcePanel({
   );
   const [confirmingClear, setConfirmingClear] = useState(false);
   const [advancedOpen, setAdvancedOpen] = useState(false);
+  const collapseLinesInputId = useId();
   const [exportingLogs, setExportingLogs] = useState(false);
   const logText = useMemo(
     () =>
@@ -389,6 +471,7 @@ export function ResourcePanel({
               highlightPatterns={highlightPatterns}
               regex
               highlightLevels={highlightLevels}
+              collapseLines={collapseLines}
               caseSensitive={caseSensitive}
               sourceLabels={sourceLabels}
             />
@@ -400,16 +483,34 @@ export function ResourcePanel({
           <DialogHeader>
             <DialogTitle>{t('serviceManagerTool.advancedSettings')}</DialogTitle>
           </DialogHeader>
-          <Label className="flex items-center gap-2">
-            <Checkbox
-              checked={highlightLevels}
-              onCheckedChange={(checked) => setHighlightLevels(checked === true)}
-            />
-            {t('serviceManagerTool.highlightLevels')}
-          </Label>
-          <DialogDescription>
-            {t('serviceManagerTool.highlightLevelsDescription')}
-          </DialogDescription>
+          <div className="grid gap-1">
+            <Label className="flex w-fit items-center gap-2">
+              <Checkbox
+                checked={highlightLevels}
+                onCheckedChange={(checked) => setHighlightLevels(checked === true)}
+              />
+              {t('serviceManagerTool.highlightLevels')}
+            </Label>
+            <DialogDescription>
+              {t('serviceManagerTool.highlightLevelsDescription')}
+            </DialogDescription>
+          </div>
+          <div className="grid gap-1">
+            <div className="flex items-center justify-between gap-3">
+              <Label htmlFor={collapseLinesInputId}>
+                {t('serviceManagerTool.collapseLogLines')}
+              </Label>
+              <CollapseLinesCombobox
+                inputId={collapseLinesInputId}
+                label={t('serviceManagerTool.collapseLogLines')}
+                value={collapseLines}
+                onValueChange={setCollapseLines}
+              />
+            </div>
+            <p className="text-sm text-muted-foreground">
+              {t('serviceManagerTool.collapseLogLinesDescription')}
+            </p>
+          </div>
         </DialogContent>
       </Dialog>
       <ConfirmDialog

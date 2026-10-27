@@ -87,6 +87,7 @@ export const defaultSettings: Settings = {
   serviceTargets: [{ id: 'local', name: '本机', kind: 'local', sshProfileID: '' }],
   portSources: [{ id: 'local', name: '本机', kind: 'local', sshProfileID: '' }],
   serviceLogHighlightLevels: true,
+  serviceLogCollapseLines: 5,
   portForwards: [],
   portColumnWidths: { ports: {}, forwards: [] },
 };

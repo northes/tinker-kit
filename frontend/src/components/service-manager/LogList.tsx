@@ -1,6 +1,15 @@
 import { CaretDown } from '@phosphor-icons/react';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react';
 import { useTranslation } from 'react-i18next';
 import type { ServiceLogLine } from '../../../bindings/tinkerkit/models';
 import { ansiPlainText, parseAnsi, type AnsiSpan } from '../../lib/ansi';
@@ -20,6 +29,7 @@ export function LogList({
   caseSensitive,
   sourceLabels,
   highlightLevels,
+  collapseLines,
 }: {
   lines: ServiceLogLine[];
   query: string;
@@ -28,6 +38,7 @@ export function LogList({
   caseSensitive: boolean;
   sourceLabels?: Map<string, string>;
   highlightLevels: boolean;
+  collapseLines: number;
 }) {
   const { t } = useTranslation();
   const [viewport, setViewport] = useState<HTMLElement | null>(null);
@@ -147,14 +158,13 @@ export function LogList({
                   <WheelText className="text-primary">
                     {sourceLabels?.get(line.monitorID) ?? line.name}
                   </WheelText>
-                  <span className="break-all whitespace-pre-wrap">
-                    {renderLogText(
-                      line.text,
-                      highlightPatterns[line.name] ?? query,
-                      regex,
-                      caseSensitive,
-                    )}
-                  </span>
+                  <LogText
+                    text={line.text}
+                    query={highlightPatterns[line.name] ?? query}
+                    regex={regex}
+                    caseSensitive={caseSensitive}
+                    collapseLines={collapseLines}
+                  />
                 </div>
               );
             })}
@@ -182,6 +192,72 @@ export function LogList({
           </Button>
         ) : null}
       </div>
+    </div>
+  );
+}
+
+function LogText({
+  text,
+  query,
+  regex,
+  caseSensitive,
+  collapseLines,
+}: {
+  text: string;
+  query: string;
+  regex: boolean;
+  caseSensitive: boolean;
+  collapseLines: number;
+}) {
+  const { t } = useTranslation();
+  const contentId = useId();
+  const [expanded, setExpanded] = useState(false);
+  const [clipHeight, setClipHeight] = useState<number | null>(null);
+  const [overflowing, setOverflowing] = useState(false);
+  const contentRef = useRef<HTMLDivElement | null>(null);
+  const folded = !expanded && collapseLines > 0;
+  // 按行高换算折叠高度的上限：正文不参与裁剪，滚动高度始终是完整内容高度，
+  // 因此在 WebKit 下也能可靠判断是否溢出（-webkit-line-clamp 不保留被隐行的布局）。
+  useLayoutEffect(() => {
+    const content = contentRef.current;
+    if (!content || !folded) return;
+    const update = () => {
+      const lineHeight = Number.parseFloat(getComputedStyle(content).lineHeight);
+      if (!Number.isFinite(lineHeight) || lineHeight <= 0) return;
+      const limit = Math.floor(lineHeight * collapseLines);
+      setClipHeight(limit);
+      setOverflowing(content.scrollHeight > limit + 1);
+    };
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(content);
+    return () => observer.disconnect();
+  }, [folded, collapseLines, text]);
+  return (
+    <div className="min-w-0">
+      <div
+        id={contentId}
+        style={
+          folded && clipHeight !== null ? { maxHeight: clipHeight, overflow: 'hidden' } : undefined
+        }
+      >
+        <div ref={contentRef} className="break-all whitespace-pre-wrap">
+          {renderLogText(text, query, regex, caseSensitive)}
+        </div>
+      </div>
+      {overflowing ? (
+        <button
+          type="button"
+          aria-expanded={expanded}
+          aria-controls={contentId}
+          className="mt-0.5 text-[11px] text-primary hover:underline"
+          onClick={() => setExpanded((current) => !current)}
+        >
+          {expanded
+            ? t('serviceManagerTool.collapseLogText')
+            : t('serviceManagerTool.expandLogText')}
+        </button>
+      ) : null}
     </div>
   );
 }

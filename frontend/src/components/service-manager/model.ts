@@ -14,6 +14,12 @@ export const MANAGE_TARGETS_VALUE = '__manage-targets__';
 
 export const VISIBLE_LOG_LIMIT = 5000;
 
+// 单条日志折叠行数的可选值与合法区间；区间与 configservice.go 的
+// min/maxServiceLogCollapseLines 保持一致，越界值由 Go 端回退默认值。
+export const COLLAPSE_LINE_PRESETS = [3, 5, 10, 20, 50];
+export const COLLAPSE_LINES_MIN = 1;
+export const COLLAPSE_LINES_MAX = 200;
+
 const LOG_LIMIT_ERROR_KEY = 'errors.service.logMonitorLimitReached';
 
 export const LOCAL_TARGET: ServiceTarget = { id: 'local', name: '本机', kind: 'local' };

@@ -109,10 +109,14 @@ export default function ServiceManagerTool({
   active,
   highlightLevels,
   setHighlightLevels,
+  collapseLines,
+  setCollapseLines,
 }: {
   active: boolean;
   highlightLevels: boolean;
   setHighlightLevels: (value: boolean) => void;
+  collapseLines: number;
+  setCollapseLines: (value: number) => void;
 }) {
   const { t } = useTranslation();
   const targetLabelId = useId();
@@ -1221,6 +1225,8 @@ export default function ServiceManagerTool({
                     setWholeWord={setWholeWord}
                     highlightLevels={highlightLevels}
                     setHighlightLevels={setHighlightLevels}
+                    collapseLines={collapseLines}
+                    setCollapseLines={setCollapseLines}
                     setRegex={setRegex}
                     caseSensitive={caseSensitive}
                     setCaseSensitive={setCaseSensitive}
