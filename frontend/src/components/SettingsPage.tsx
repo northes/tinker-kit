@@ -561,7 +561,7 @@ function SSHKnownHostsDialog({
                       <Button
                         variant="ghost"
                         size="sm"
-                        className="h-7 px-2 text-[11px]"
+                        className="text-[11px]"
                         onClick={() => {
                           setError('');
                           setEditing({ ...entry });
@@ -573,7 +573,7 @@ function SSHKnownHostsDialog({
                       <Button
                         variant="ghost"
                         size="sm"
-                        className="h-7 px-2 text-[11px] text-destructive hover:text-destructive"
+                        className="text-[11px] text-destructive hover:text-destructive"
                         onClick={() => {
                           setDeleteError('');
                           setDeleteTarget(entry);

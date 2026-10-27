@@ -900,9 +900,7 @@ export default function ServiceManagerTool({
                   </SelectContent>
                 </Select>
                 {selectedTargetMissing ? (
-                  <Badge variant="destructive" className="h-5 text-[10px]">
-                    {t('serviceManagerTool.sshProfileMissing')}
-                  </Badge>
+                  <Badge variant="destructive">{t('serviceManagerTool.sshProfileMissing')}</Badge>
                 ) : null}
               </ToolHeaderField>
               <div className="flex min-w-0 flex-col gap-1 max-[700px]:w-full">
@@ -920,9 +918,12 @@ export default function ServiceManagerTool({
                         ? t('serviceManagerTool.statusAll')
                         : t('serviceManagerTool.statusSelected', { count: statusFilter.size })}
                     </span>
-                    <CaretDown data-icon="inline-end" aria-hidden="true" />
+                    <CaretDown weight="duotone" data-icon="inline-end" aria-hidden="true" />
                   </DropdownMenuTrigger>
-                  <DropdownMenuContent align="start" className="max-h-80 w-56 overflow-y-auto">
+                  <DropdownMenuContent
+                    align="start"
+                    className="no-scrollbar max-h-80 w-56 overflow-y-auto"
+                  >
                     {STATUS_GROUPS.map((group) => (
                       <DropdownMenuGroup key={group.runtime}>
                         <DropdownMenuLabel>
@@ -1296,9 +1297,7 @@ export default function ServiceManagerTool({
             <>
               <span>{t('serviceManagerTool.targetKindSsh')}</span>
               {!profiles.some((profile) => profile.id === item.sshProfileID) ? (
-                <Badge variant="destructive" className="h-4 text-[9px]">
-                  {t('serviceManagerTool.sshProfileMissing')}
-                </Badge>
+                <Badge variant="destructive">{t('serviceManagerTool.sshProfileMissing')}</Badge>
               ) : null}
             </>
           )

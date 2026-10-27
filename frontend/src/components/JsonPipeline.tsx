@@ -786,7 +786,7 @@ export function PipelineOutputPane({
             setOutputTableMode((current) => !current);
           }}
         >
-          <TableIcon />
+          <TableIcon weight="duotone" />
         </Button>
         {error ? (
           <JsonErrorPanel

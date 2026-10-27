@@ -443,7 +443,7 @@ export default function TimeTool({
                                   />
                                 }
                               >
-                                <CaretDown aria-hidden="true" />
+                                <CaretDown weight="duotone" aria-hidden="true" />
                               </DropdownMenuTrigger>
                               <DropdownMenuContent align="end">
                                 {group.options.map((option) => (

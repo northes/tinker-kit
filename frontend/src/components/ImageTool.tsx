@@ -1390,7 +1390,7 @@ export default function ImageTool({
                                                 onPressedChange={() => beginSizeEdit('crop')}
                                                 aria-label={t('imageTool.crop')}
                                             >
-                                                <Crop data-icon="inline-start"/>
+                                                <Crop weight="duotone" data-icon="inline-start" />
                                                 {t('imageTool.crop')}
                                             </Toggle>
                                             <Toggle
@@ -1402,7 +1402,7 @@ export default function ImageTool({
                                                 onPressedChange={() => beginSizeEdit('expand')}
                                                 aria-label={t('imageTool.expand')}
                                             >
-                                                <ArrowsOut data-icon="inline-start"/>
+                                                <ArrowsOut weight="duotone" data-icon="inline-start" />
                                                 {t('imageTool.expand')}
                                             </Toggle>
                                         </div>

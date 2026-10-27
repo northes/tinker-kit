@@ -399,9 +399,9 @@ export default function ImageManagerTool({
         {label}
         {activeSort ? (
           sortDirection === 'asc' ? (
-            <CaretUp data-icon="inline-end" aria-hidden="true" />
+            <CaretUp weight="duotone" data-icon="inline-end" aria-hidden="true" />
           ) : (
-            <CaretDown data-icon="inline-end" aria-hidden="true" />
+            <CaretDown weight="duotone" data-icon="inline-end" aria-hidden="true" />
           )
         ) : null}
       </Button>
@@ -1114,9 +1114,7 @@ export default function ImageManagerTool({
                   </SelectContent>
                 </Select>
                 {sourceProfileMissing ? (
-                  <Badge variant="destructive" className="h-5 text-[10px]">
-                    {t('imageManagerTool.sshProfileMissing')}
-                  </Badge>
+                  <Badge variant="destructive">{t('imageManagerTool.sshProfileMissing')}</Badge>
                 ) : null}
               </ToolHeaderField>
               <ImageSearchField
@@ -2070,9 +2068,7 @@ export default function ImageManagerTool({
                   : t('imageManagerTool.kindSsh')}
               </span>
               {sourceMissingSSHProfile(item, profiles) ? (
-                <Badge variant="destructive" className="h-4 text-[9px]">
-                  {t('imageManagerTool.sshProfileMissing')}
-                </Badge>
+                <Badge variant="destructive">{t('imageManagerTool.sshProfileMissing')}</Badge>
               ) : null}
             </>
           )
@@ -2284,7 +2280,7 @@ export default function ImageManagerTool({
                           aria-label={t('imageManagerTool.copyDigest')}
                           onClick={() => void copyDigest(digest)}
                         >
-                          <Copy aria-hidden="true" />
+                          <Copy weight="duotone" aria-hidden="true" />
                         </Button>
                       </div>
                     ))}

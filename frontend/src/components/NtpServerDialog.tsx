@@ -93,7 +93,7 @@ export function NtpServerDialog({
         </DialogHeader>
         <form
           id="ntp-servers-form"
-          className="-m-1 grid min-h-0 gap-3 overflow-y-auto p-1"
+          className="no-scrollbar -m-1 grid min-h-0 gap-3 overflow-y-auto p-1"
           onSubmit={(event) => {
             event.preventDefault();
             save();

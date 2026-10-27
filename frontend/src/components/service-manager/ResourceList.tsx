@@ -103,7 +103,7 @@ export function ResourceList({
               className="mt-1 h-7 px-2 text-xs"
               onClick={onRetryLoading}
             >
-              <ArrowsClockwise data-icon="inline-start" size={14} />
+              <ArrowsClockwise weight="duotone" data-icon="inline-start" size={14} />
               {t('serviceManagerTool.refresh')}
             </Button>
           </div>

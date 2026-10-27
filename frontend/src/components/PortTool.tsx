@@ -1169,7 +1169,7 @@ export default function PortTool({ active }: { active: boolean }) {
                     className="h-7 px-2 text-xs"
                     onClick={() => void refreshPorts()}
                   >
-                    <ArrowsClockwise data-icon="inline-start" size={14} />
+                    <ArrowsClockwise weight="duotone" data-icon="inline-start" size={14} />
                     {t('common.retry')}
                   </Button>
                 </div>
@@ -1239,7 +1239,7 @@ export default function PortTool({ active }: { active: boolean }) {
                   className="h-7 px-2 text-xs"
                   onClick={() => setForwardSort(null)}
                 >
-                  <ArrowCounterClockwise data-icon="inline-start" size={14} />
+                  <ArrowCounterClockwise weight="duotone" data-icon="inline-start" size={14} />
                   {t('portTool.defaultOrder')}
                 </Button>
               )}
@@ -1602,9 +1602,7 @@ export default function PortTool({ active }: { active: boolean }) {
             <>
               <span>{t('portTool.sourceKindSsh')}</span>
               {!profiles.some((profile) => profile.id === item.sshProfileID) ? (
-                <Badge variant="destructive" className="h-4 text-[9px]">
-                  {t('portTool.sshProfileMissing')}
-                </Badge>
+                <Badge variant="destructive">{t('portTool.sshProfileMissing')}</Badge>
               ) : null}
             </>
           )

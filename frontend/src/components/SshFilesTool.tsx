@@ -799,7 +799,7 @@ export default function SshFilesTool({ active }: Props) {
             {treeLoading.includes(path) ? (
               <Spinner />
             ) : expanded ? (
-              <CaretDown size={14} />
+              <CaretDown weight="duotone" size={14} />
             ) : (
               <CaretRight size={14} />
             )}
@@ -1276,9 +1276,9 @@ export default function SshFilesTool({ active }: Props) {
         {label}
         {activeSort ? (
           sortDirection === 'asc' ? (
-            <CaretUp data-icon="inline-end" aria-hidden="true" />
+            <CaretUp weight="duotone" data-icon="inline-end" aria-hidden="true" />
           ) : (
-            <CaretDown data-icon="inline-end" aria-hidden="true" />
+            <CaretDown weight="duotone" data-icon="inline-end" aria-hidden="true" />
           )
         ) : null}
       </Button>
@@ -1325,9 +1325,7 @@ export default function SshFilesTool({ active }: Props) {
                 <SelectContent>{sourceOptions}</SelectContent>
               </Select>
               {source && !sourceUsable ? (
-                <Badge variant="destructive" className="h-5 text-[10px]">
-                  {t('sshFilesTool.sshProfileMissing')}
-                </Badge>
+                <Badge variant="destructive">{t('sshFilesTool.sshProfileMissing')}</Badge>
               ) : null}
             </ToolHeaderField>
             <label className="flex items-center gap-2 pb-1.5 text-xs text-muted-foreground">
@@ -1376,7 +1374,7 @@ export default function SshFilesTool({ active }: Props) {
                     scope: searchScopeLabel,
                   })}
                 </span>
-                <CaretDown data-icon="inline-end" aria-hidden="true" />
+                <CaretDown weight="duotone" data-icon="inline-end" aria-hidden="true" />
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-64">
                 <DropdownMenuGroup>
@@ -1436,7 +1434,7 @@ export default function SshFilesTool({ active }: Props) {
           aria-label={t('sshFilesTool.path')}
         >
           {searchActive ? (
-            <Badge variant="secondary" className="h-6 flex-none px-2 text-[10px]">
+            <Badge variant="secondary" className="flex-none">
               {t('sshFilesTool.searchResults')}
             </Badge>
           ) : null}
@@ -1470,7 +1468,7 @@ export default function SshFilesTool({ active }: Props) {
                 disabled={!sourceUsable || isLoading}
                 aria-label={t('sshFilesTool.navigatePath')}
               >
-                <CheckCircle size={14} />
+                <CheckCircle weight="duotone" size={14} />
               </Button>
               <Button
                 type="button"
@@ -1484,7 +1482,7 @@ export default function SshFilesTool({ active }: Props) {
                   setPathEditing(false);
                 }}
               >
-                <XCircle size={14} />
+                <XCircle weight="duotone" size={14} />
               </Button>
             </form>
           ) : (
@@ -1526,7 +1524,7 @@ export default function SshFilesTool({ active }: Props) {
                   setPathEditing(true);
                 }}
               >
-                <PencilSimple size={14} />
+                <PencilSimple weight="duotone" size={14} />
               </Button>
             </>
           )}
@@ -1552,7 +1550,7 @@ export default function SshFilesTool({ active }: Props) {
                 />
               )}
               <span>{t('sshFilesTool.favorites')}</span>
-              <CaretDown data-icon="inline-end" aria-hidden="true" />
+              <CaretDown weight="duotone" data-icon="inline-end" aria-hidden="true" />
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-72 max-w-[calc(100vw-32px)]">
               <DropdownMenuGroup>
@@ -1583,6 +1581,7 @@ export default function SshFilesTool({ active }: Props) {
                           }
                         >
                           <Trash
+                            weight="duotone"
                             size={14}
                             className="opacity-60 group-hover/favorite-remove:opacity-80 group-focus-visible/favorite-remove:opacity-80"
                             aria-hidden="true"
@@ -1605,7 +1604,7 @@ export default function SshFilesTool({ active }: Props) {
             onClick={reloadCurrentView}
             aria-label={t('sshFilesTool.refresh')}
           >
-            <ArrowClockwise size={14} />
+            <ArrowClockwise weight="duotone" size={14} />
           </Button>
         </div>
         <ContextMenu>
@@ -1649,7 +1648,7 @@ export default function SshFilesTool({ active }: Props) {
                     className="mt-1 h-7 px-2 text-xs"
                     onClick={cancelLoading}
                   >
-                    <XCircle data-icon="inline-start" size={14} />
+                    <XCircle weight="duotone" data-icon="inline-start" size={14} />
                     {t('common.cancel')}
                   </Button>
                 </div>
@@ -1670,7 +1669,7 @@ export default function SshFilesTool({ active }: Props) {
                     className="mt-1 h-7 px-2 text-xs"
                     onClick={cancelLoading}
                   >
-                    <XCircle data-icon="inline-start" size={14} />
+                    <XCircle weight="duotone" data-icon="inline-start" size={14} />
                     {t('common.cancel')}
                   </Button>
                 </div>
@@ -1689,7 +1688,7 @@ export default function SshFilesTool({ active }: Props) {
                     className="mt-1 h-7 px-2 text-xs"
                     onClick={retryCanceledLoading}
                   >
-                    <ArrowClockwise data-icon="inline-start" size={14} />
+                    <ArrowClockwise weight="duotone" data-icon="inline-start" size={14} />
                     {t('sshFilesTool.refresh')}
                   </Button>
                 </div>
@@ -1732,7 +1731,7 @@ export default function SshFilesTool({ active }: Props) {
                     className="mt-1 h-8 text-xs"
                     onClick={reloadCurrentView}
                   >
-                    <ArrowClockwise data-icon="inline-start" size={14} />
+                    <ArrowClockwise weight="duotone" data-icon="inline-start" size={14} />
                     {t('sshFilesTool.refresh')}
                   </Button>
                 </div>
@@ -2197,7 +2196,7 @@ export default function SshFilesTool({ active }: Props) {
                 {linkedProfile?.name || t('sshFilesTool.sshProfileMissing')}
               </span>
               {!linkedProfile ? (
-                <Badge variant="destructive" className="h-4 shrink-0 text-[9px]">
+                <Badge variant="destructive" className="shrink-0">
                   {t('sshFilesTool.sshProfileMissing')}
                 </Badge>
               ) : null}
@@ -2423,7 +2422,7 @@ export default function SshFilesTool({ active }: Props) {
               {uploadStarting ? (
                 <Spinner data-icon="inline-start" />
               ) : (
-                <UploadSimple data-icon="inline-start" size={14} />
+                <UploadSimple weight="duotone" data-icon="inline-start" size={14} />
               )}
               {t('sshFilesTool.startUpload')}
             </Button>

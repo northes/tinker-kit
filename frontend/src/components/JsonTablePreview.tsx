@@ -117,7 +117,7 @@ function NestedValue({
         title={expanded ? t('jsonTool.tablePreviewCollapse') : t('jsonTool.tablePreviewExpand')}
         onClick={onToggle}
       >
-        {expanded ? <CaretDown /> : <CaretRight />}
+        {expanded ? <CaretDown weight="duotone" /> : <CaretRight />}
       </Button>
       <span className="json-table-container-label">{label}</span>
       {expanded && size > 0 && (

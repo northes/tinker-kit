@@ -482,7 +482,6 @@ function SSHProfileManagerDialog({
                                 </span>
                                 <Badge
                                   variant={profileIsImported(profile) ? 'secondary' : 'outline'}
-                                  className="h-5 text-[10px]"
                                 >
                                   {profileIsImported(profile)
                                     ? t('sshProfiles.originLocal')

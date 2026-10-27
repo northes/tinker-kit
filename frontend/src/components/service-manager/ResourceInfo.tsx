@@ -318,24 +318,14 @@ function ContainerInfoView({
                   error={sizeError}
                 />
                 {sizeLoading ? (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-5 px-1 text-[10px]"
-                    onClick={onCancelSize}
-                  >
-                    <XCircle data-icon="inline-start" size={12} />
+                  <Button variant="ghost" size="xs" className="text-[10px]" onClick={onCancelSize}>
+                    <XCircle weight="duotone" data-icon="inline-start" size={12} />
                     {t('common.cancel')}
                   </Button>
                 ) : null}
                 {sizeCanceled && !sizeLoading ? (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-5 px-1 text-[10px]"
-                    onClick={onRetrySize}
-                  >
-                    <ArrowsClockwise data-icon="inline-start" size={12} />
+                  <Button variant="ghost" size="xs" className="text-[10px]" onClick={onRetrySize}>
+                    <ArrowsClockwise weight="duotone" data-icon="inline-start" size={12} />
                     {t('common.retry')}
                   </Button>
                 ) : null}
@@ -660,7 +650,7 @@ export function ResourceInfoTab({
                 className="mt-1 h-7 px-2 text-xs"
                 onClick={retryDetail}
               >
-                <ArrowsClockwise data-icon="inline-start" size={14} />
+                <ArrowsClockwise weight="duotone" data-icon="inline-start" size={14} />
                 {t('serviceManagerTool.refresh')}
               </Button>
             </div>
@@ -675,7 +665,7 @@ export function ResourceInfoTab({
                   className="h-7 px-2 text-xs"
                   onClick={cancelDetail}
                 >
-                  <XCircle data-icon="inline-start" size={14} />
+                  <XCircle weight="duotone" data-icon="inline-start" size={14} />
                   {t('common.cancel')}
                 </Button>
               ) : null}
@@ -694,7 +684,7 @@ export function ResourceInfoTab({
         </ScrollArea>
         <div className="flex items-center justify-end border-t px-4 py-2">
           <Button variant="outline" size="sm" disabled={!info} onClick={() => setRawOpen(true)}>
-            <CodeSimple data-icon="inline-start" />
+            <CodeSimple weight="duotone" data-icon="inline-start" />
             {t('serviceManagerTool.detail.viewRaw')}
           </Button>
         </div>

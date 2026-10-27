@@ -1589,7 +1589,7 @@ export default function JsonTool({
                                 }
                                 onClick={() => setResultTableMode((current) => !current)}
                               >
-                                <TableIcon />
+                                <TableIcon weight="duotone" />
                               </Button>
                             )}
                           </div>

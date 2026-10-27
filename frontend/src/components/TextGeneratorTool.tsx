@@ -409,7 +409,7 @@ export default function TextGeneratorTool({
           {editing ? (
             <form
               id="text-generator-source-form"
-              className="grid min-h-0 gap-4 overflow-y-auto"
+              className="no-scrollbar grid min-h-0 gap-4 overflow-y-auto"
               onSubmit={saveSource}
             >
               <Label className="grid gap-1.5">
@@ -453,7 +453,7 @@ export default function TextGeneratorTool({
               </Label>
             </form>
           ) : (
-            <div className="min-h-28 overflow-y-auto divide-y divide-border">
+            <div className="no-scrollbar min-h-28 overflow-y-auto divide-y divide-border">
               {sources.length === 0 ? (
                 <p className="py-8 text-center text-muted-foreground">
                   {t('textGeneratorTool.noCustomSources')}

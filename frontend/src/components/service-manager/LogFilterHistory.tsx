@@ -181,7 +181,7 @@ export function LogFilterHistoryMenu({
                   onMouseDown={(event) => event.preventDefault()}
                   onClick={() => onDelete(item)}
                 >
-                  <Trash />
+                  <Trash weight="duotone" />
                 </Button>
               </div>
             ))
