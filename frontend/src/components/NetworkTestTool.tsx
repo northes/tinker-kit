@@ -184,8 +184,7 @@ function stageSortValue(stage: NetworkTestStage) {
 }
 
 function httpResponseTone(statusCode: number) {
-  if (statusCode >= 200 && statusCode < 300)
-    return { text: 'text-emerald-500', bar: 'bg-emerald-500' };
+  if (statusCode >= 200 && statusCode < 300) return { text: 'text-success', bar: 'bg-success' };
   if (statusCode >= 500 && statusCode < 600)
     return { text: 'text-destructive', bar: 'bg-destructive' };
   return { text: 'text-warning', bar: 'bg-warning' };
@@ -902,7 +901,7 @@ export default function NetworkTestTool({ active }: { active: boolean }) {
                           reachabilityTone?.text ??
                           responseTone?.text ??
                           (stage.status === 'success'
-                            ? 'text-emerald-500'
+                            ? 'text-success'
                             : stage.status === 'running'
                               ? 'text-primary'
                               : 'text-destructive');
@@ -910,7 +909,7 @@ export default function NetworkTestTool({ active }: { active: boolean }) {
                           reachabilityTone?.bar ??
                           responseTone?.bar ??
                           (stage.status === 'success'
-                            ? 'bg-emerald-500'
+                            ? 'bg-success'
                             : stage.status === 'running'
                               ? 'bg-primary'
                               : 'bg-destructive');
@@ -951,7 +950,7 @@ export default function NetworkTestTool({ active }: { active: boolean }) {
                             <div className="relative mx-1.5 min-h-8 self-center rounded-sm bg-muted/35">
                               <div className="absolute inset-x-2 inset-y-0">
                                 <div
-                                  className={`absolute top-1/2 h-2 -translate-y-1/2 rounded-sm ${color} ${stage.status === 'running' ? 'animate-pulse' : ''}`}
+                                  className={`absolute top-1/2 h-2 -translate-y-1/2 rounded-sm ${color} ${stage.status === 'running' ? 'animate-pulse motion-reduce:animate-none' : ''}`}
                                   style={{ left: `${left}%`, width: `${width}%` }}
                                 />
                               </div>
@@ -1038,7 +1037,7 @@ export default function NetworkTestTool({ active }: { active: boolean }) {
               {result ? (
                 <div className="flex min-w-0 flex-1 items-center gap-x-3 text-xs">
                   <span
-                    className={`shrink-0 font-medium ${result.status === 'success' ? (footerHTTPResponseTone?.text ?? 'text-emerald-500') : result.status === 'canceled' ? 'text-muted-foreground' : 'text-destructive'}`}
+                    className={`shrink-0 font-medium ${result.status === 'success' ? (footerHTTPResponseTone?.text ?? 'text-success') : result.status === 'canceled' ? 'text-muted-foreground' : 'text-destructive'}`}
                   >
                     {t(`networkTestTool.status.${result.status}`)}
                   </span>
@@ -1051,7 +1050,7 @@ export default function NetworkTestTool({ active }: { active: boolean }) {
                   className="flex min-w-0 flex-1 items-center gap-2 text-xs text-muted-foreground"
                   aria-live="polite"
                 >
-                  <span className="size-1.5 animate-pulse rounded-full bg-primary" />
+                  <span className="size-1.5 animate-pulse rounded-full bg-primary motion-reduce:animate-none" />
                   <span>{t('networkTestTool.running', { elapsed: durationText(elapsed) })}</span>
                 </div>
               ) : null}
@@ -1103,7 +1102,7 @@ export default function NetworkTestTool({ active }: { active: boolean }) {
           <DialogHeader>
             <DialogTitle>{t('networkTestTool.advanced.title')}</DialogTitle>
           </DialogHeader>
-          <div className="-m-1 grid min-h-0 grid-cols-2 gap-x-5 gap-y-3 overflow-y-auto p-1 max-[450px]:grid-cols-1">
+          <div className="no-scrollbar -m-1 grid min-h-0 grid-cols-2 gap-x-5 gap-y-3 overflow-y-auto p-1 max-[450px]:grid-cols-1">
             {remoteSourceSelected ? (
               <p className="col-span-2 m-0 text-[10px] leading-relaxed text-muted-foreground max-[450px]:col-span-1">
                 {t('networkTestTool.source.remoteRoutingNote')}
@@ -1532,9 +1531,7 @@ export default function NetworkTestTool({ active }: { active: boolean }) {
             <>
               <span>{t('networkTestTool.source.kindSSH')}</span>
               {!profiles.some((profile) => profile.id === item.sshProfileID) ? (
-                <Badge variant="destructive" className="h-4 text-[9px]">
-                  {t('networkTestTool.source.profileMissing')}
-                </Badge>
+                <Badge variant="destructive">{t('networkTestTool.source.profileMissing')}</Badge>
               ) : null}
             </>
           )

@@ -455,7 +455,7 @@ export function ResourcePanel({
                 </div>
               </div>
               {truncated ? (
-                <p className="mt-2 text-xs text-amber-600">
+                <p className="mt-2 text-xs text-warning-foreground">
                   {t('serviceManagerTool.logsTruncated')}
                 </p>
               ) : null}

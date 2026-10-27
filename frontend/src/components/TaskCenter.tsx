@@ -830,7 +830,7 @@ export function TaskCenter({
                       <div className="relative overflow-hidden rounded-lg border border-border bg-card p-3">
                         <div
                           aria-hidden="true"
-                          className="absolute inset-y-0 left-0 bg-primary/10 transition-[width] duration-300 ease-out motion-reduce:transition-none"
+                          className="absolute inset-y-0 left-0 bg-primary/10 transition-[width] motion-reduce:transition-none"
                           style={{ width: `${fillPercent}%` }}
                         />
                         <div className="relative">
@@ -880,7 +880,7 @@ export function TaskCenter({
                                     : task.status === 'failed'
                                       ? 'destructive'
                                       : isActive
-                                        ? 'blue'
+                                        ? 'info'
                                         : 'outline'
                                 }
                               >

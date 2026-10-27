@@ -353,12 +353,12 @@ export default function RealTimePanel({
               className="flex-none"
               onClick={() => setPickerOpen(true)}
             >
-              <Plus data-icon="inline-start" size={14} />
+              <Plus weight="duotone" data-icon="inline-start" size={14} />
               {t('timeTool.realTime.add')}
             </Button>
             <div className="ml-auto flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
               <span
-                className={`size-1.5 flex-none rounded-full ${syncState === 'synced' ? 'bg-emerald-500' : syncState === 'error' ? 'bg-destructive' : 'bg-amber-500'}`}
+                className={`size-1.5 flex-none rounded-full ${syncState === 'synced' ? 'bg-success' : syncState === 'error' ? 'bg-destructive' : 'bg-warning'}`}
               />
               <span className="min-w-0 max-w-[14rem] truncate" role="status" aria-live="polite">
                 {t(`timeTool.realTime.sync.${syncState}`)}
