@@ -173,7 +173,7 @@ TinkerKit 是一组融入开发者日常工作的工具：快速、好用、克�
 
 应用壳为两行网格：38px 原生拖拽标题栏（macOS 27 起系统红绿灯区域更高，切到 `data-titlebar-variant='tall'` 时标题栏升至 52px）加自适应工作区。工作区由侧栏与内容区组成：完整侧栏 `232px`、图标侧栏 `56px`、隐藏 `0`。
 
-工具页和长页面统一使用 `ToolLayout`：`grid-rows-[auto_auto_minmax(0,1fr)_auto]` 的 Header / Toolbar（可选）/ Content / Footer（可选）骨架。固定 `ToolLayoutContent` 不滚动，内部编辑器、表格自行滚动；长页面与设置页使用 `ToolLayoutScrollableContent`（真实滚动层预留 `padding-inline-end: var(--overlay-scrollbar-size)`）。工具页常驻挂载以保留编辑器测量、滚动与撤销状态。
+工具页和长页面统一使用 `ToolLayout`：`grid-rows-[auto_auto_minmax(0,1fr)_auto]` 的 Header / Toolbar（可选）/ Content / Footer（可选）骨架。固定 `ToolLayoutContent` 不滚动，内部编辑器、表格自行滚动；需要整页滚动的场景（设置页分类、对话框表单）在 `ToolLayoutContent` 内部放 `ScrollArea`，并预留 `padding-inline-end: var(--overlay-scrollbar-size)`。工具页常驻挂载以保留编辑器测量、滚动与撤销状态。
 
 页面内边距为 20px 顶部、28px 水平、16px 底部（`px-7 pt-5 pb-4`）；700px 以下收缩为 18px 水平、14px 顶部。间距节奏为 4、6、8、12、16、20、24px。底部 `ToolActionBar` 右对齐、6px 间距、控件高 30px，窄窗口允许自然换行但不压缩控件。
 
@@ -209,12 +209,13 @@ TinkerKit 是一组融入开发者日常工作的工具：快速、好用、克�
 - **Secondary：** `bg-secondary text-secondary-foreground`，hover 混入少量 foreground。
 - **Ghost：** 无边框，hover 使用 `bg-muted`。
 - **Destructive：** `bg-destructive/10 text-destructive`，只用于破坏性动作，并由确认对话框承接二次确认。
-- **Tool Action Button（header 工具栏与 footer 动作栏）：** 两处共用同一套标准：高 30px、`px-[11px]`、`text-[11px]`，图标 14px `weight="duotone"` 置于文字前，动作永远使用「图标 + 文字」。footer 由 `ToolActionBar` 右对齐渲染，header 由 `ToolActionButton` 渲染，variant 映射统一为 `primary → default`、`secondary → outline`、`tertiary → ghost`、`danger → destructive`。下拉型动作（`menu` / `split`）在文字右侧追加 12px `CaretDown`；下拉菜单项本身保持纯文字。
+- **Tool Action Button（header 工具栏与 footer 动作栏）：** 两处共用同一套标准：高 30px、`px-[11px]`、`text-[11px]`，图标 14px `weight="duotone"` 置于文字前，动作永远使用「图标 + 文字」。footer 由 `ToolActionBar` 右对齐渲染，header 由 `ToolActionButton` 渲染，variant 映射统一为 `primary → default`、`secondary → outline`、`tertiary → ghost`、`danger → destructive`。下拉型动作（`menu` / `split`）在文字右侧追加 12px `CaretDown`；下拉菜单项本身保持纯文字。工具页内的空态与错误态动作（重试、取消）同样用 `ToolActionButton`，不再手写 30px 尺寸类。
 - **Tool Icon Button：** 纯图标按钮（`ToolIconButton`）只在语义唯一且空间受限的 header 入口使用，如高级设置、刷新、字段内清空；必须为 30×30 正方形、ghost 变体，并提供 `aria-label` 与 `title`。字段内联的清除/搜索按钮跟随字段内部高度，不套用 30px 尺寸。
 
 ### Inputs / Fields
 
 - **Style：** 高 32px（`h-8`）、`rounded-lg`、`border-input`、透明背景（深色下 `bg-input/30`）、10px 水平内边距；文本使用 foreground，placeholder 使用 `text-muted-foreground`。
+- **搜索框：** 列表与工具栏搜索统一用 `ToolSearchField`：高 30px（与同行 `ToolActionButton` 对齐）、`pl-8` 预留 `left-2.5` 的 14px duotone 放大镜、右侧 `size="icon-xs"` 清空按钮；回车提交、Esc 清空。不另行手写搜索框高度与图标偏移。
 - **Focus：** `focus-visible:border-ring` 加 3px `ring-ring/50`，不保留 CodeMirror 原生虚线 outline。
 - **Disabled：** 保持布局，背景降为 `bg-input/50`、透明度 0.5，并使用不可用光标。
 
@@ -227,7 +228,7 @@ TinkerKit 是一组融入开发者日常工作的工具：快速、好用、克�
 ### Editors and Tool Layout
 
 - CodeMirror 使用主题 surface、border、foreground 与状态 token，字号由 `--code-editor-font-size` 控制。
-- `ToolLayout` 是所有工具页与设置页的共享 Header / Toolbar / Content / Footer 骨架；固定 Content 不滚动，`ToolLayoutScrollableContent` 只用于长页面。
+- `ToolLayout` 是所有工具页与设置页的共享 Header / Toolbar / Content / Footer 骨架；固定 Content 不滚动，需要滚动的内容在 Content 内部自行用 `ScrollArea`。
 - 状态色必须同时配合文字、图标或结构变化，不能只依赖颜色。
 
 ### Scrollbars

@@ -19,6 +19,8 @@ import {
   ToolLayout,
   useFocusOnActivate,
   type PendingAction,
+  compactEditorBasicSetup,
+  editorSurfaceClass,
 } from './shared';
 import { toast } from './ui/toast';
 import {
@@ -177,7 +179,7 @@ export default function UrlTool({
             <div className="flex min-h-0 min-w-0 flex-col gap-2 font-mono text-[10px] font-medium uppercase tracking-[.04em] text-muted-foreground">
               <span>{t('urlTool.input')}</span>
               <CodeMirror
-                className="min-h-0 flex-1 overflow-hidden rounded-lg border border-border bg-card [&_.cm-editor]:h-full [&_.cm-editor.cm-focused]:outline-none [&_.cm-scroller]:overflow-auto"
+                className={editorSurfaceClass}
                 height="100%"
                 value={input}
                 onChange={setInput}
@@ -187,14 +189,7 @@ export default function UrlTool({
                 }}
                 theme={quietEditorTheme}
                 extensions={[EditorView.lineWrapping]}
-                basicSetup={{
-                  lineNumbers: false,
-                  foldGutter: false,
-                  highlightActiveLine: false,
-                  highlightActiveLineGutter: false,
-                  autocompletion: false,
-                  closeBrackets: false,
-                }}
+                basicSetup={compactEditorBasicSetup}
               />
             </div>
             <ScrollArea className="min-h-0 min-w-0">

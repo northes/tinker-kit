@@ -238,7 +238,6 @@ export default function ImageManagerTool({
     return () => window.clearTimeout(timer);
   }, [tasks, taskClock]);
 
-
   useEffect(() => {
     if (!pending || pending.tool !== 'image-manager' || consumed.current === pending) return;
     consumed.current = pending;
@@ -337,9 +336,7 @@ export default function ImageManagerTool({
   const interactionBlocked = busy !== null;
   const sourceSupportsDockerMutations = source.kind !== 'registry';
   const isRegistrySource = source.kind === 'registry';
-  const currentPullPlatform = status?.localArchitecture
-    ? `linux/${status.localArchitecture}`
-    : '';
+  const currentPullPlatform = status?.localArchitecture ? `linux/${status.localArchitecture}` : '';
   const currentPullPlatformLabel = t('imageManagerTool.pullCurrentPlatform', {
     architecture: status?.localArchitecture || t('imageManagerTool.architectureUnknown'),
   });
@@ -1184,29 +1181,24 @@ export default function ImageManagerTool({
               <div className="text-xs text-muted-foreground">
                 {t('imageManagerTool.watchCanceledHint')}
               </div>
-              <Button
-                variant="outline"
-                size="sm"
-                className="mt-2 h-[30px] px-[11px] text-[11px]"
-                onClick={restartWatch}
-              >
-                <ArrowsClockwise data-icon="inline-start" weight="duotone" />
-                {t('common.retry')}
-              </Button>
+              <ToolActionButton
+                variant="secondary"
+                icon={ArrowsClockwise}
+                label={t('common.retry')}
+                onPress={restartWatch}
+                className="mt-2"
+              />
             </div>
           ) : contentViewState === 'loading' ? (
             <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-2">
               <Spinner />
               {sourceViewState === 'connecting' ? null : (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-7 px-2 text-xs"
-                  onClick={cancelWatch}
-                >
-                  <XCircle data-icon="inline-start" size={14} />
-                  {t('common.cancel')}
-                </Button>
+                <ToolActionButton
+                  variant="tertiary"
+                  icon={XCircle}
+                  label={t('common.cancel')}
+                  onPress={cancelWatch}
+                />
               )}
             </div>
           ) : contentViewState === 'error' ? (
@@ -1218,15 +1210,13 @@ export default function ImageManagerTool({
               <div className="max-w-md text-xs text-muted-foreground">
                 {contentError || t('imageManagerTool.loadFailedHint')}
               </div>
-              <Button
-                variant="outline"
-                size="sm"
-                className="mt-2 h-[30px] px-[11px] text-[11px]"
-                onClick={refreshList}
-              >
-                <ArrowsClockwise data-icon="inline-start" weight="duotone" />
-                {t('imageManagerTool.refresh')}
-              </Button>
+              <ToolActionButton
+                variant="secondary"
+                icon={ArrowsClockwise}
+                label={t('imageManagerTool.refresh')}
+                onPress={refreshList}
+                className="mt-2"
+              />
             </div>
           ) : contentViewState === 'empty' || contentViewState === 'no-results' ? (
             <div className="flex h-auto min-h-0 flex-1 flex-col items-center justify-center gap-2 text-center">

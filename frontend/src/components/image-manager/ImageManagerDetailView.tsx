@@ -9,7 +9,6 @@ import {
   ToolLayoutHeader,
   ToolLayoutToolbar,
 } from '../shared';
-import { Button } from '../ui/button';
 import { ScrollArea } from '../ui/scroll-area';
 import { Spinner } from '../ui/spinner';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../ui/table';
@@ -267,10 +266,12 @@ export function ImageManagerDetailView({
           {loading ? (
             <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-2">
               <Spinner />
-              <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={onCancel}>
-                <XCircle data-icon="inline-start" size={14} />
-                {t('common.cancel')}
-              </Button>
+              <ToolActionButton
+                variant="tertiary"
+                icon={XCircle}
+                label={t('common.cancel')}
+                onPress={onCancel}
+              />
             </div>
           ) : canceled ? (
             <div className="flex h-auto min-h-0 flex-1 flex-col items-center justify-center gap-2 text-center">
@@ -281,15 +282,13 @@ export function ImageManagerDetailView({
               <div className="text-xs text-muted-foreground">
                 {t('imageManagerTool.detailCanceledHint')}
               </div>
-              <Button
-                variant="outline"
-                size="sm"
-                className="mt-2 h-[30px] px-[11px] text-[11px]"
-                onClick={onRetry}
-              >
-                <ArrowsClockwise data-icon="inline-start" weight="duotone" />
-                {t('common.retry')}
-              </Button>
+              <ToolActionButton
+                variant="secondary"
+                icon={ArrowsClockwise}
+                label={t('common.retry')}
+                onPress={onRetry}
+                className="mt-2"
+              />
             </div>
           ) : error ? (
             <div className="flex h-auto min-h-0 flex-1 flex-col items-center justify-center gap-2 text-center">

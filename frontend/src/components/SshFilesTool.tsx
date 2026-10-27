@@ -59,6 +59,7 @@ import { ConfirmDialog } from './ConfirmDialog';
 import { useFileDrop } from './fileDrop';
 import {
   ToolActionButton,
+  ToolSearchField,
   ToolHeaderField,
   ToolLayout,
   ToolLayoutContent,
@@ -1345,50 +1346,18 @@ export default function SshFilesTool({ active }: Props) {
         }
         right={
           <div className="flex min-w-0 flex-wrap items-center gap-2 max-[700px]:w-full max-[700px]:justify-end">
-            <form
-              className="relative w-[min(28vw,260px)] min-w-[180px] max-[700px]:order-last max-[700px]:w-full"
-              onSubmit={(event) => {
-                event.preventDefault();
-                void executeSearch();
-              }}
-            >
-              <MagnifyingGlass
-                size={14}
-                aria-hidden="true"
-                className="pointer-events-none absolute top-1/2 left-2.5 -translate-y-1/2 text-muted-foreground"
-              />
-              <Input
+            <div className="w-[min(28vw,260px)] min-w-[180px] max-[700px]:order-last max-[700px]:w-full">
+              <ToolSearchField
                 value={searchInput}
-                onChange={(event) => setSearchInput(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === 'Escape') {
-                    event.preventDefault();
-                    clearSearch();
-                    return;
-                  }
-                  if (event.key === 'Enter' && event.nativeEvent.isComposing) {
-                    event.preventDefault();
-                  }
-                }}
+                onValueChange={setSearchInput}
+                onSubmit={() => void executeSearch()}
+                onClear={clearSearch}
                 disabled={!sourceUsable || isLoading}
                 placeholder={t('sshFilesTool.searchPlaceholder')}
-                aria-label={t('sshFilesTool.search')}
-                className="h-[30px] w-full bg-muted/20 pl-8 pr-8 text-[11px]"
+                ariaLabel={t('sshFilesTool.search')}
+                clearLabel={t('sshFilesTool.clearSearch')}
               />
-              {searchInput ? (
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon-sm"
-                  className="absolute top-1/2 right-0.5 h-7 w-7 -translate-y-1/2"
-                  disabled={!sourceUsable || isLoading}
-                  aria-label={t('sshFilesTool.clearSearch')}
-                  onClick={clearSearch}
-                >
-                  <XCircle size={14} />
-                </Button>
-              ) : null}
-            </form>
+            </div>
             <DropdownMenu>
               <DropdownMenuTrigger
                 render={

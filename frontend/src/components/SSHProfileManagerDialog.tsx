@@ -15,7 +15,6 @@ import {
   DownloadSimple,
   Eye,
   EyeClosed,
-  MagnifyingGlass,
   PencilSimple,
   Plus,
   Trash,
@@ -32,6 +31,7 @@ import {
   TestSSHProfile,
 } from '../../bindings/tinkerkit/sshprofileservice';
 import { ConfirmDialog } from './ConfirmDialog';
+import { ToolSearchField } from './shared';
 import { Badge } from './ui/badge';
 import { ScrollArea } from './ui/scroll-area';
 import { Button } from './ui/button';
@@ -431,21 +431,14 @@ function SSHProfileManagerDialog({
           <ScrollArea className="min-h-0 flex-1 px-6 py-5 [padding-inline-end:var(--overlay-scrollbar-size)]">
             {view === 'list' ? (
               <div className="grid gap-6">
-                <div className="relative flex w-full items-center">
-                  <MagnifyingGlass
-                    size={14}
-                    weight="duotone"
-                    aria-hidden="true"
-                    className="pointer-events-none absolute left-2.5 text-muted-foreground"
-                  />
-                  <Input
-                    value={searchQuery}
-                    onChange={(event) => setSearchQuery(event.target.value)}
-                    placeholder={t('sshProfiles.searchPlaceholder')}
-                    aria-label={t('sshProfiles.searchPlaceholder')}
-                    className="h-[30px] pl-8 text-[11px]"
-                  />
-                </div>
+                <ToolSearchField
+                  value={searchQuery}
+                  onValueChange={setSearchQuery}
+                  onClear={() => setSearchQuery('')}
+                  placeholder={t('sshProfiles.searchPlaceholder')}
+                  ariaLabel={t('sshProfiles.searchPlaceholder')}
+                  clearLabel={t('sshProfiles.clearSearch')}
+                />
                 {normalizedQuery &&
                 filteredProfiles.length === 0 &&
                 filteredLocalProfiles.length === 0 ? (

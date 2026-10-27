@@ -17,9 +17,9 @@ import {
   DropdownMenuTrigger,
 } from './ui/dropdown-menu';
 import { ButtonGroup } from './ui/button-group';
-import { ScrollArea } from './ui/scroll-area';
+import { Input } from './ui/input';
 import { Tabs, TabsList, TabsTrigger } from './ui/tabs';
-import { BracketsCurly, CaretDown } from '@phosphor-icons/react';
+import { BracketsCurly, CaretDown, MagnifyingGlass, XCircle } from '@phosphor-icons/react';
 export { parseJsonLoose, stripJsonComments, stripTrailingCommas } from '../lib/json-parse';
 
 export type ToolId =
@@ -169,6 +169,88 @@ export function ToolHeaderField({
   );
 }
 
+// 工具页列表/工具栏搜索框：高度、图标位置与清空按钮由这里统一，
+// 回车提交（onSubmit）、Esc 清空（onClear）；不传 onSubmit 即为即时过滤。
+// 30px 与同行的 ToolActionButton 同高，避免工具栏各行高不一致。
+export function ToolSearchField({
+  id,
+  label,
+  value,
+  onValueChange,
+  onSubmit,
+  onClear,
+  placeholder,
+  ariaLabel,
+  clearLabel,
+  disabled,
+  className = '',
+}: {
+  id?: string;
+  label?: string;
+  value: string;
+  onValueChange: (value: string) => void;
+  onSubmit?: (value: string) => void;
+  onClear?: () => void;
+  placeholder?: string;
+  /** 没有可见 label 时输入框的无障碍名称。 */
+  ariaLabel?: string;
+  /** 清空按钮的无障碍名称，省略时沿用 ariaLabel 或可见 label。 */
+  clearLabel?: string;
+  disabled?: boolean;
+  className?: string;
+}) {
+  const field = (
+    <div className="relative w-full min-w-0">
+      <MagnifyingGlass
+        size={14}
+        weight="duotone"
+        aria-hidden="true"
+        className="pointer-events-none absolute top-1/2 left-2.5 -translate-y-1/2 text-muted-foreground"
+      />
+      <Input
+        id={id}
+        value={value}
+        disabled={disabled}
+        onChange={(event) => onValueChange(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key === 'Escape' && onClear && value) {
+            event.preventDefault();
+            onClear();
+            return;
+          }
+          if (event.key === 'Enter' && onSubmit && !event.nativeEvent.isComposing) {
+            event.preventDefault();
+            onSubmit(value.trim());
+          }
+        }}
+        placeholder={placeholder}
+        aria-label={label ? undefined : ariaLabel}
+        className={`h-[30px] text-[11px] ${onClear ? 'pr-8' : ''} pl-8`}
+      />
+      {onClear && value ? (
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-xs"
+          disabled={disabled}
+          className="absolute top-1/2 right-1.5 -translate-y-1/2"
+          aria-label={clearLabel ?? ariaLabel ?? label}
+          onClick={onClear}
+        >
+          <XCircle weight="duotone" aria-hidden="true" />
+        </Button>
+      ) : null}
+    </div>
+  );
+  if (!label)
+    return <div className={`w-full min-w-0${className ? ` ${className}` : ''}`}>{field}</div>;
+  return (
+    <ToolHeaderField label={label} htmlFor={id} className={className}>
+      {field}
+    </ToolHeaderField>
+  );
+}
+
 export function ToolLayoutToolbar({
   left,
   right,
@@ -255,23 +337,6 @@ export function ToolLayoutTabs({
       </TabsList>
       {children}
     </Tabs>
-  );
-}
-
-export function ToolLayoutScrollableContent({
-  children,
-  className = '',
-}: {
-  children: ReactNode;
-  className?: string;
-}) {
-  return (
-    <ScrollArea
-      className={`tool-layout-content row-start-3 h-full min-h-0 min-w-0 [padding-inline-end:var(--overlay-scrollbar-size)] ${className}`}
-      options={{ overflow: { x: 'hidden' } }}
-    >
-      {children}
-    </ScrollArea>
   );
 }
 
@@ -550,6 +615,23 @@ export function ToolActionBar({
     </div>
   );
 }
+
+// 工具页内 CodeMirror 编辑区的外壳：圆角、1px 边界、surface 底色，
+// 内部编辑器铺满且不保留 CodeMirror 原生焦点框。全部工具共用这一串。
+export const editorSurfaceClass =
+  'min-h-0 min-w-0 flex-1 overflow-hidden rounded-lg border border-border bg-card [&_.cm-editor]:h-full [&_.cm-editor.cm-focused]:outline-none [&_.cm-scroller]:overflow-auto';
+
+// Base64 / JWT / URL / 二维码等单行输入型编辑器的统一 CodeMirror 配置；
+// 需要行号的编辑器（文本工具）自行覆盖 lineNumbers。
+export const compactEditorBasicSetup = {
+  lineNumbers: false,
+  foldGutter: false,
+  highlightActiveLine: false,
+  highlightActiveLineGutter: false,
+  autocompletion: false,
+  closeBrackets: false,
+};
+
 export function useHistory(initial: string) {
   const [value, setValueState] = useState(initial);
   const valueRef = useRef(initial);

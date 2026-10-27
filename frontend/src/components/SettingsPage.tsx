@@ -67,7 +67,7 @@ import {
   UpdateSSHKnownHost,
 } from '../../bindings/tinkerkit/configservice';
 import { CheckForUpdates, GetCurrentVersion } from '../../bindings/tinkerkit/updateservice';
-import { ToolLayout, ToolLayoutContent, type Icon, type ToolId } from './shared';
+import { ToolActionButton, ToolLayout, ToolLayoutContent, type Icon, type ToolId } from './shared';
 import { toast } from './ui/toast';
 import { GITHUB_REPO_URL } from '../repositoryUrl';
 import { THEME_MODE_OPTIONS, type ThemeMode } from '../theme';
@@ -511,10 +511,12 @@ function SSHKnownHostsDialog({
                 <p className="m-0 text-xs text-destructive" role="alert">
                   {error}
                 </p>
-                <Button variant="outline" size="sm" onClick={reload}>
-                  <ArrowsClockwise data-icon="inline-start" weight="duotone" />
-                  {t('settings.sshKnownHostsRetry')}
-                </Button>
+                <ToolActionButton
+                  variant="secondary"
+                  icon={ArrowsClockwise}
+                  label={t('settings.sshKnownHostsRetry')}
+                  onPress={reload}
+                />
               </div>
             ) : entries.length === 0 ? (
               <div className="flex min-h-32 flex-col items-center justify-center gap-1.5 text-center">

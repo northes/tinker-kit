@@ -24,6 +24,7 @@ import {
   ToolLayoutFooter,
   ToolLayout,
   useFocusOnActivate,
+  editorSurfaceClass,
 } from './shared';
 import { toast } from './ui/toast';
 import { dataUrlToText, readLocalFile, useFileDrop } from './fileDrop';
@@ -359,7 +360,7 @@ export default function TextTool({
             </span>
             <div ref={paneRef} className="relative flex min-h-0 min-w-0 flex-1">
               <CodeMirror
-                className="min-h-0 flex-1 overflow-hidden rounded-lg border border-border bg-card [&_.cm-editor]:h-full [&_.cm-editor.cm-focused]:outline-none [&_.cm-scroller]:overflow-auto"
+                className={editorSurfaceClass}
                 height="100%"
                 value={value}
                 onChange={setValue}

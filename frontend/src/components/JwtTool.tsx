@@ -16,6 +16,8 @@ import {
   useFocusOnActivate,
   stripBearerToken,
   type PendingAction,
+  compactEditorBasicSetup,
+  editorSurfaceClass,
 } from './shared';
 import { toast } from './ui/toast';
 import '../styles/tools/editor.css';
@@ -95,7 +97,7 @@ function JwtPane({
     <div className="flex h-full min-h-0 min-w-0 flex-col gap-2 font-mono text-[10px] font-medium uppercase tracking-[.04em] text-muted-foreground">
       <span>{label}</span>
       <CodeMirror
-        className="min-h-0 min-w-0 flex-1 overflow-hidden rounded-lg border border-border bg-card [&_.cm-editor]:h-full [&_.cm-editor.cm-focused]:outline-none [&_.cm-scroller]:overflow-auto"
+        className={editorSurfaceClass}
         height="100%"
         value={value}
         onChange={onChange}
@@ -107,14 +109,7 @@ function JwtPane({
         editable={!readOnly}
         readOnly={readOnly}
         extensions={[...(syntax ? [syntax] : []), EditorView.lineWrapping, ...(extensions ?? [])]}
-        basicSetup={{
-          lineNumbers: false,
-          foldGutter: false,
-          highlightActiveLine: false,
-          highlightActiveLineGutter: false,
-          autocompletion: false,
-          closeBrackets: false,
-        }}
+        basicSetup={compactEditorBasicSetup}
       />
     </div>
   );
