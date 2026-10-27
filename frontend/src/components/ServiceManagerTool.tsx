@@ -33,6 +33,7 @@ import {
   StartLogMonitors,
 } from '../../bindings/tinkerkit/servicemanagerservice';
 import { formatBackendError } from '../lib/backend-error';
+import { isLocalSource, sourceLabel } from '../lib/local-source';
 import { ConfirmDialog } from './ConfirmDialog';
 import { LogFilterHistory } from '../../bindings/tinkerkit/configservice';
 import {
@@ -1255,12 +1256,8 @@ export default function ServiceManagerTool({
         onOpenChange={setManageOpen}
         items={targets.length ? targets : [LOCAL_TARGET]}
         itemKey={(item) => item.id}
-        itemName={(item) =>
-          item.id === 'local' || item.kind === 'local'
-            ? t('serviceManagerTool.localTarget')
-            : item.name
-        }
-        itemDisabled={(item) => item.id === 'local' || item.kind === 'local'}
+        itemName={(item) => sourceLabel(item, t('serviceManagerTool.localTarget'))}
+        itemDisabled={isLocalSource}
         createDraft={() =>
           ({ id: '', name: '', kind: 'ssh', sshProfileID: profiles[0]?.id ?? '' }) as ServiceTarget
         }
