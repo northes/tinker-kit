@@ -43,6 +43,7 @@ export interface Config {
     "serviceLogHighlightLevels": boolean;
     "portSources": PortSource[] | null;
     "portForwards": PortForwardConfig[] | null;
+    "portColumnWidths": PortColumnWidths;
 }
 
 export interface DockerComposeGroup {
@@ -562,6 +563,15 @@ export interface PipelineTablePage {
     "invalid": boolean;
 }
 
+/**
+ * PortColumnWidths 保存端口工具两张表格的列宽（px，按列定义顺序）。
+ * Ports 按主机（PortSource ID）分别保存，Forwards 对应不分主机的端口转发表。
+ */
+export interface PortColumnWidths {
+    "ports": { [_ in string]?: number[] | null } | null;
+    "forwards": number[] | null;
+}
+
 export interface PortEntry {
     "port": number;
     "address": string;
@@ -570,6 +580,12 @@ export interface PortEntry {
     "name": string;
     "user": string;
     "path": string;
+
+    /**
+     * CommandLine 是完整 argv。内核 comm 只有可执行名（pm2 托管的 node 应用统一是 node），
+     * 脚本路径、启动参数和进程标题只存在于这里。
+     */
+    "commandLine": string;
     "parentPID": number;
     "parentPath": string;
 }

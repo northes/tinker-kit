@@ -34,7 +34,6 @@ import {
   DotsSixVertical,
   Funnel,
   GearSix,
-  MagnifyingGlass,
   PencilSimple,
   Play,
   Plus,
@@ -46,22 +45,26 @@ import { useTranslation } from 'react-i18next';
 import {
   AddForward,
   DeleteForward,
+  GetColumnWidths,
   GetForwards,
   GetPortSources,
   ListPorts,
   ReorderForwards,
+  SaveColumnWidths,
   SavePortSources,
   StartForward,
   StopForward,
   UpdateForward,
 } from '../../bindings/tinkerkit/portservice';
 import type {
+  PortColumnWidths,
   PortEntry,
   PortForward,
   PortForwardRequest,
   PortSource,
 } from '../../bindings/tinkerkit/models';
 import { formatBackendError } from '../lib/backend-error';
+import { isLocalSource, sourceLabel } from '../lib/local-source';
 import { useSSHProfiles } from './SSHProfileManagerDialog';
 import { SSHProfileFormField } from './SSHProfileFormField';
 import { ConfirmDialog } from './ConfirmDialog';
@@ -69,6 +72,7 @@ import { TargetHostManagerDialog, upsertManagerItem } from './TargetHostManagerD
 import {
   ToolActionBar,
   ToolHeaderField,
+  ToolSearchField,
   ToolLayout,
   ToolLayoutContent,
   ToolLayoutFooter,
@@ -138,20 +142,38 @@ const PORT_COLUMNS = [
   'name',
   'user',
   'path',
+  'commandLine',
   'parentPID',
   'parentPath',
 ] as const satisfies readonly (keyof PortEntry)[];
-const PORT_COLUMN_WIDTHS: Record<(typeof PORT_COLUMNS)[number], string> = {
-  port: 'w-[72px]',
-  address: 'w-[180px]',
-  protocol: 'w-[72px]',
-  pid: 'w-[72px]',
-  name: 'w-[160px]',
-  user: 'w-[120px]',
-  path: 'w-[260px]',
-  parentPID: 'w-[88px]',
-  parentPath: 'w-[260px]',
+const PORT_COLUMN_WIDTHS: Record<(typeof PORT_COLUMNS)[number], number> = {
+  port: 72,
+  address: 180,
+  protocol: 72,
+  pid: 72,
+  name: 160,
+  user: 120,
+  path: 260,
+  commandLine: 320,
+  parentPID: 88,
+  parentPath: 260,
 };
+const MIN_COLUMN_WIDTH = 56;
+const MAX_COLUMN_WIDTH = 800;
+// 拖动列宽的把手宽度，固定不参与列宽持久化。
+const FORWARD_HANDLE_COLUMN_WIDTH = 40;
+
+const clampColumnWidth = (width: number) =>
+  Math.min(MAX_COLUMN_WIDTH, Math.max(MIN_COLUMN_WIDTH, Math.round(width)));
+
+// 后端只保存宽度数组；列含义由前端列定义决定，越界或缺失时回退默认宽度。
+function resolveColumnWidths<Key extends string>(
+  columns: readonly Key[],
+  defaults: Record<Key, number>,
+  stored?: number[] | null,
+) {
+  return columns.map((column, index) => clampColumnWidth(stored?.[index] ?? defaults[column]));
+}
 const FORWARD_COLUMNS = [
   'forwardName',
   'direction',
@@ -162,14 +184,14 @@ const FORWARD_COLUMNS = [
   'retries',
 ] as const;
 type ForwardSortKey = (typeof FORWARD_COLUMNS)[number];
-const FORWARD_COLUMN_WIDTHS: Record<ForwardSortKey, string> = {
-  forwardName: 'w-[170px]',
-  direction: 'w-[150px]',
-  source: 'w-[120px]',
-  listen: 'w-[200px]',
-  target: 'w-[200px]',
-  status: 'w-[100px]',
-  retries: 'w-[84px]',
+const FORWARD_COLUMN_WIDTHS: Record<ForwardSortKey, number> = {
+  forwardName: 170,
+  direction: 150,
+  source: 120,
+  listen: 200,
+  target: 200,
+  status: 100,
+  retries: 84,
 };
 type PortSortKey = (typeof PORT_COLUMNS)[number];
 type SortDirection = 'asc' | 'desc';
@@ -189,23 +211,31 @@ function forwardLabel(forward: PortForward) {
   return forward.name || `${forward.listenHost}:${forward.listenPort}`;
 }
 
+// 表头同时承载列排序与列宽拖动：右侧把手用指针捕获拖动，也支持左右方向键微调，
+// 松手或按键抬起时由父组件把列宽写回配置。
 function SortableHead({
   label,
   active,
   direction,
   onSort,
-  className = '',
+  width,
+  onResize,
+  onResizeEnd,
 }: {
   label: string;
   active: boolean;
   direction: SortDirection;
   onSort: () => void;
-  className?: string;
+  width: number;
+  onResize: (width: number) => void;
+  onResizeEnd: () => void;
 }) {
   const { t } = useTranslation();
+  const dragStart = useRef<{ x: number; width: number } | null>(null);
   return (
     <TableHead
-      className={className}
+      className="relative"
+      style={{ width }}
       aria-sort={active ? (direction === 'asc' ? 'ascending' : 'descending') : 'none'}
     >
       <Button
@@ -231,6 +261,45 @@ function SortableHead({
           <CaretUpDown aria-hidden="true" />
         )}
       </Button>
+      <span
+        role="separator"
+        aria-orientation="vertical"
+        aria-label={t('portTool.resizeColumn', { column: label })}
+        aria-valuenow={width}
+        aria-valuemin={MIN_COLUMN_WIDTH}
+        aria-valuemax={MAX_COLUMN_WIDTH}
+        aria-keyshortcuts="ArrowLeft ArrowRight"
+        tabIndex={0}
+        className="absolute inset-y-1 right-0 z-10 w-2 cursor-col-resize touch-none select-none rounded-full bg-transparent hover:bg-border focus-visible:bg-primary focus-visible:outline-none active:bg-primary"
+        onPointerDown={(event) => {
+          if (event.button !== 0) return;
+          event.preventDefault();
+          event.currentTarget.setPointerCapture(event.pointerId);
+          dragStart.current = { x: event.clientX, width };
+        }}
+        onPointerMove={(event) => {
+          const start = dragStart.current;
+          if (!start) return;
+          onResize(clampColumnWidth(start.width + event.clientX - start.x));
+        }}
+        onPointerUp={(event) => {
+          if (!dragStart.current) return;
+          dragStart.current = null;
+          event.currentTarget.releasePointerCapture(event.pointerId);
+          onResizeEnd();
+        }}
+        onPointerCancel={() => {
+          dragStart.current = null;
+        }}
+        onKeyDown={(event) => {
+          if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+          event.preventDefault();
+          onResize(clampColumnWidth(width + (event.key === 'ArrowRight' ? 16 : -16)));
+        }}
+        onKeyUp={(event) => {
+          if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') onResizeEnd();
+        }}
+      />
     </TableHead>
   );
 }
@@ -435,42 +504,20 @@ function SearchField({
 }) {
   const { t } = useTranslation();
   return (
-    <ToolHeaderField label={label} htmlFor={id} className="w-[220px] max-[700px]:w-full">
-      <div className="relative w-full min-w-0">
-        <MagnifyingGlass
-          size={14}
-          weight="duotone"
-          aria-hidden="true"
-          className="pointer-events-none absolute top-1/2 left-2.5 -translate-y-1/2 text-muted-foreground"
-        />
-        <Input
-          id={id}
-          value={draft}
-          onChange={(event) => onDraftChange(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === 'Enter' && !event.nativeEvent.isComposing)
-              onSearch(event.currentTarget.value.trim());
-          }}
-          placeholder={placeholder}
-          className="pr-8 pl-8"
-        />
-        {draft ? (
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon-xs"
-            className="absolute top-1/2 right-1.5 -translate-y-1/2"
-            aria-label={t('portTool.clearSearch')}
-            onClick={() => {
-              onDraftChange('');
-              onSearch('');
-            }}
-          >
-            <XCircle weight="duotone" aria-hidden="true" />
-          </Button>
-        ) : null}
-      </div>
-    </ToolHeaderField>
+    <ToolSearchField
+      id={id}
+      label={label}
+      placeholder={placeholder}
+      value={draft}
+      onValueChange={onDraftChange}
+      onSubmit={onSearch}
+      onClear={() => {
+        onDraftChange('');
+        onSearch('');
+      }}
+      clearLabel={t('portTool.clearSearch')}
+      className="w-[220px] max-[700px]:w-full"
+    />
   );
 }
 
@@ -501,6 +548,8 @@ export default function PortTool({ active }: { active: boolean }) {
   // 转发列表默认按持久化的定义顺序展示，新增的规则追加在末尾；列排序是临时视图。
   const [forwardSort, setForwardSort] = useState<SortState<ForwardSortKey> | null>(null);
   const [forwardLiveMessage, setForwardLiveMessage] = useState('');
+  // 列宽按主机保存：端口表跟随当前来源，转发表不分主机。
+  const [columnWidths, setColumnWidths] = useState<PortColumnWidths>({ ports: {}, forwards: [] });
   const [loading, setLoading] = useState(false);
   const [portsCanceled, setPortsCanceled] = useState(false);
   const scanRevision = useRef(0);
@@ -598,6 +647,21 @@ export default function PortTool({ active }: { active: boolean }) {
     const timer = window.setInterval(() => void refreshForwards(), 1000);
     return () => window.clearInterval(timer);
   }, [active, refreshForwards]);
+  useEffect(() => {
+    let canceled = false;
+    void (async () => {
+      try {
+        const stored = await GetColumnWidths();
+        if (canceled || !stored) return;
+        setColumnWidths({ ports: stored.ports ?? {}, forwards: stored.forwards ?? [] });
+      } catch (cause) {
+        if (!canceled) setError(formatBackendError(cause));
+      }
+    })();
+    return () => {
+      canceled = true;
+    };
+  }, []);
 
   const submitForward = async (event: FormEvent) => {
     event.preventDefault();
@@ -667,7 +731,7 @@ export default function PortTool({ active }: { active: boolean }) {
   const selectedSource = sources.find((item) => item.id === source);
   const sourceOptions = sources.map((item) => ({
     value: item.id,
-    label: item.id === 'local' ? t('portTool.localMachine') : item.name,
+    label: sourceLabel(item, t('portTool.localMachine')),
   }));
   const forwardSourceOptions = sources
     .filter((item) => item.kind === 'ssh')
@@ -700,8 +764,8 @@ export default function PortTool({ active }: { active: boolean }) {
     [i18n.language],
   );
   const sourceNames = useMemo(
-    () => new Map(sources.map((item) => [item.id, item.name])),
-    [sources],
+    () => new Map(sources.map((item) => [item.id, sourceLabel(item, t('portTool.localMachine'))])),
+    [sources, t],
   );
   const users = useMemo(
     () =>
@@ -807,6 +871,43 @@ export default function PortTool({ active }: { active: boolean }) {
       key,
       direction: current.key === key && current.direction === 'asc' ? 'desc' : 'asc',
     }));
+  const portColumnWidths = useMemo(
+    () => resolveColumnWidths(PORT_COLUMNS, PORT_COLUMN_WIDTHS, columnWidths.ports?.[source]),
+    [columnWidths, source],
+  );
+  const forwardColumnWidths = useMemo(
+    () => resolveColumnWidths(FORWARD_COLUMNS, FORWARD_COLUMN_WIDTHS, columnWidths.forwards),
+    [columnWidths],
+  );
+  const portTableMinWidth = portColumnWidths.reduce((total, width) => total + width, 0);
+  const forwardTableMinWidth =
+    FORWARD_HANDLE_COLUMN_WIDTH + forwardColumnWidths.reduce((total, width) => total + width, 0);
+  const columnWidthsRef = useRef(columnWidths);
+  useEffect(() => {
+    columnWidthsRef.current = columnWidths;
+  }, [columnWidths]);
+  const saveColumnWidths = async () => {
+    try {
+      await SaveColumnWidths(columnWidthsRef.current);
+    } catch (cause) {
+      setError(formatBackendError(cause));
+    }
+  };
+  // 拖动只改本地宽度，松手或键盘抬起时一次性写回配置，避免每次移动都落库。
+  const resizePortColumn = (index: number, width: number) => {
+    setColumnWidths((current) => {
+      const next = resolveColumnWidths(PORT_COLUMNS, PORT_COLUMN_WIDTHS, current.ports?.[source]);
+      next[index] = clampColumnWidth(width);
+      return { ...current, ports: { ...(current.ports ?? {}), [source]: next } };
+    });
+  };
+  const resizeForwardColumn = (index: number, width: number) => {
+    setColumnWidths((current) => {
+      const next = resolveColumnWidths(FORWARD_COLUMNS, FORWARD_COLUMN_WIDTHS, current.forwards);
+      next[index] = clampColumnWidth(width);
+      return { ...current, forwards: next };
+    });
+  };
   const changeForwardSort = (key: ForwardSortKey) =>
     setForwardSort((current) => ({
       key,
@@ -985,17 +1086,23 @@ export default function PortTool({ active }: { active: boolean }) {
               options={{ overflow: { x: 'scroll' } }}
               onViewport={setPortViewport}
             >
-              <Table className="min-w-[1284px] table-fixed" containerClassName="overflow-x-visible">
+              <Table
+                className="table-fixed"
+                style={{ minWidth: portTableMinWidth }}
+                containerClassName="overflow-x-visible"
+              >
                 <TableHeader className="sticky top-0 z-10 bg-background">
                   <TableRow>
-                    {PORT_COLUMNS.map((key) => (
+                    {PORT_COLUMNS.map((key, index) => (
                       <SortableHead
                         key={key}
-                        className={PORT_COLUMN_WIDTHS[key]}
                         label={t(`portTool.${key}`)}
                         active={portSort.key === key}
                         direction={portSort.direction}
                         onSort={() => changePortSort(key)}
+                        width={portColumnWidths[index]}
+                        onResize={(width) => resizePortColumn(index, width)}
+                        onResizeEnd={() => void saveColumnWidths()}
                       />
                     ))}
                   </TableRow>
@@ -1003,7 +1110,7 @@ export default function PortTool({ active }: { active: boolean }) {
                 <TableBody>
                   {paddingTop > 0 && (
                     <tr>
-                      <td colSpan={9} style={{ height: paddingTop, padding: 0 }} />
+                      <td colSpan={10} style={{ height: paddingTop, padding: 0 }} />
                     </tr>
                   )}
                   {visiblePorts.map((row) => {
@@ -1029,6 +1136,9 @@ export default function PortTool({ active }: { active: boolean }) {
                         <TableCell>
                           <WheelText>{entry.path || '—'}</WheelText>
                         </TableCell>
+                        <TableCell>
+                          <WheelText>{entry.commandLine || '—'}</WheelText>
+                        </TableCell>
                         <TableCell>{entry.parentPID || '—'}</TableCell>
                         <TableCell>
                           <WheelText>{entry.parentPath || '—'}</WheelText>
@@ -1038,7 +1148,7 @@ export default function PortTool({ active }: { active: boolean }) {
                   })}
                   {paddingBottom > 0 && (
                     <tr>
-                      <td colSpan={9} style={{ height: paddingBottom, padding: 0 }} />
+                      <td colSpan={10} style={{ height: paddingBottom, padding: 0 }} />
                     </tr>
                   )}
                 </TableBody>
@@ -1152,22 +1262,25 @@ export default function PortTool({ active }: { active: boolean }) {
                   onViewport={setForwardViewport}
                 >
                   <Table
-                    className="min-w-[1064px] table-fixed"
+                    className="table-fixed"
+                    style={{ minWidth: forwardTableMinWidth }}
                     containerClassName="overflow-x-visible"
                   >
                     <TableHeader className="sticky top-0 z-10 bg-background">
                       <TableRow>
-                        <TableHead className="w-[40px]">
+                        <TableHead style={{ width: FORWARD_HANDLE_COLUMN_WIDTH }}>
                           <span className="sr-only">{t('portTool.order')}</span>
                         </TableHead>
-                        {FORWARD_COLUMNS.map((key) => (
+                        {FORWARD_COLUMNS.map((key, index) => (
                           <SortableHead
                             key={key}
-                            className={FORWARD_COLUMN_WIDTHS[key]}
                             label={t(`portTool.${key}`)}
                             active={forwardSort?.key === key}
                             direction={forwardSort?.direction ?? 'asc'}
                             onSort={() => changeForwardSort(key)}
+                            width={forwardColumnWidths[index]}
+                            onResize={(width) => resizeForwardColumn(index, width)}
+                            onResizeEnd={() => void saveColumnWidths()}
                           />
                         ))}
                       </TableRow>
@@ -1460,10 +1573,8 @@ export default function PortTool({ active }: { active: boolean }) {
         onOpenChange={setManageOpen}
         items={sources}
         itemKey={(item) => item.id}
-        itemName={(item) =>
-          item.id === 'local' || item.kind === 'local' ? t('portTool.localMachine') : item.name
-        }
-        itemDisabled={(item) => item.id === 'local' || item.kind === 'local'}
+        itemName={(item) => sourceLabel(item, t('portTool.localMachine'))}
+        itemDisabled={isLocalSource}
         createDraft={() => ({
           id: '',
           name: '',
@@ -1485,7 +1596,7 @@ export default function PortTool({ active }: { active: boolean }) {
         saveItems={saveSources}
         saving={savingSources}
         renderMeta={(item) =>
-          item.id === 'local' || item.kind === 'local' ? (
+          isLocalSource(item) ? (
             <span>{t('portTool.localMachine')}</span>
           ) : (
             <>

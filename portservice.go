@@ -23,15 +23,18 @@ import (
 )
 
 type PortEntry struct {
-	Port       int    `json:"port"`
-	Address    string `json:"address"`
-	Protocol   string `json:"protocol"`
-	PID        int    `json:"pid"`
-	Name       string `json:"name"`
-	User       string `json:"user"`
-	Path       string `json:"path"`
-	ParentPID  int    `json:"parentPID"`
-	ParentPath string `json:"parentPath"`
+	Port     int    `json:"port"`
+	Address  string `json:"address"`
+	Protocol string `json:"protocol"`
+	PID      int    `json:"pid"`
+	Name     string `json:"name"`
+	User     string `json:"user"`
+	Path     string `json:"path"`
+	// CommandLine 是完整 argv。内核 comm 只有可执行名（pm2 托管的 node 应用统一是 node），
+	// 脚本路径、启动参数和进程标题只存在于这里。
+	CommandLine string `json:"commandLine"`
+	ParentPID   int    `json:"parentPID"`
+	ParentPath  string `json:"parentPath"`
 }
 
 type PortSource struct {
@@ -287,7 +290,27 @@ type processDetail struct {
 	path   string
 }
 
-func enrichPorts(rows []PortEntry, output []byte) {
+// parseProcessCommands 解析 ps -eo pid=,args= 的输出；命令行保留全部参数，
+// 作为搜索与展示进程真实身份的入口。
+func parseProcessCommands(output []byte) map[int]string {
+	commands := make(map[int]string)
+	for _, line := range strings.Split(string(output), "\n") {
+		pidText, command, ok := strings.Cut(strings.TrimSpace(line), " ")
+		if !ok {
+			continue
+		}
+		pid, err := strconv.Atoi(pidText)
+		command = strings.TrimSpace(command)
+		if err != nil || command == "" {
+			continue
+		}
+		commands[pid] = command
+	}
+	return commands
+}
+
+func enrichPorts(rows []PortEntry, output, commandOutput []byte) {
+	commands := parseProcessCommands(commandOutput)
 	processes := make(map[int]processDetail)
 	for _, line := range strings.Split(string(output), "\n") {
 		fields := strings.Fields(line)
@@ -310,6 +333,7 @@ func enrichPorts(rows []PortEntry, output []byte) {
 			rows[i].User = info.user
 		}
 		rows[i].ParentPath = processes[info.parent].path
+		rows[i].CommandLine = commands[rows[i].PID]
 	}
 }
 
@@ -363,7 +387,7 @@ func (s *PortService) ListPorts(ctx context.Context, profileID string) (entries 
 	if (profileID == "" || profileID == "local") && runtime.GOOS == "windows" {
 		return listWindowsPorts(ctx)
 	}
-	var portOutput, ps []byte
+	var portOutput, ps, commands []byte
 	mode := "lsof"
 	if profileID == "" || profileID == "local" {
 		command := "lsof"
@@ -378,6 +402,8 @@ func (s *PortService) ListPorts(ctx context.Context, profileID string) (entries 
 			return nil, userErrorCause("errors.port.scanFailed", err)
 		}
 		ps, _ = exec.CommandContext(ctx, "ps", "-eo", "pid=,ppid=,user=,comm=").Output()
+		// pm2 等守护进程派生的应用只有 argv 里能看出脚本和标题，comm 一律是可执行名。
+		commands, _ = exec.CommandContext(ctx, "ps", "-eo", "pid=,args=").Output()
 	} else {
 		profile, err := s.sourceProfile(profileID)
 		if err != nil {
@@ -396,7 +422,7 @@ func (s *PortService) ListPorts(ctx context.Context, profileID string) (entries 
 		// 固定命令，不拼接用户输入；标记用于区分扫描器和进程表。
 		var stdout bytes.Buffer
 		session.Stdout = &stdout
-		const command = "if command -v lsof >/dev/null 2>&1; then printf '__PORT_LSOF__\\n'; lsof -nP -iTCP -iUDP -FpcLfnPR || true; elif command -v ss >/dev/null 2>&1; then printf '__PORT_SS__\\n'; ss -H -tunap; else exit 127; fi; printf '__PORT_PS__\\n'; ps -eo pid=,ppid=,user=,comm="
+		const command = "if command -v lsof >/dev/null 2>&1; then printf '__PORT_LSOF__\\n'; lsof -nP -iTCP -iUDP -FpcLfnPR || true; elif command -v ss >/dev/null 2>&1; then printf '__PORT_SS__\\n'; ss -H -tunap; else exit 127; fi; printf '__PORT_PS__\\n'; ps -eo pid=,ppid=,user=,comm=; printf '__PORT_ARGS__\\n'; ps -eo pid=,args="
 		if err := session.Start(command); err != nil {
 			return nil, userErrorCause("errors.port.scanFailed", err)
 		}
@@ -427,7 +453,13 @@ func (s *PortService) ListPorts(ctx context.Context, profileID string) (entries 
 		if len(parts) != 2 {
 			return nil, userError("errors.port.scanFailed")
 		}
-		portOutput, ps = parts[0], parts[1]
+		portOutput = parts[0]
+		// 进程表与 argv 分两段采集：comm 可能是带空格的完整路径，不能与参数同段解析。
+		tables := bytes.SplitN(parts[1], []byte("__PORT_ARGS__\n"), 2)
+		if len(tables) != 2 {
+			return nil, userError("errors.port.scanFailed")
+		}
+		ps, commands = tables[0], tables[1]
 	}
 	var rows []PortEntry
 	if mode == "ss" {
@@ -435,7 +467,7 @@ func (s *PortService) ListPorts(ctx context.Context, profileID string) (entries 
 	} else {
 		rows = parseLsofPorts(portOutput)
 	}
-	enrichPorts(rows, ps)
+	enrichPorts(rows, ps, commands)
 	return rows, nil
 }
 
@@ -454,13 +486,14 @@ foreach ($process in (Get-CimInstance Win32_Process)) {
   if ($needed.ContainsKey([int]$process.ProcessId)) {
     try { $owner = (Invoke-CimMethod -InputObject $process -MethodName GetOwner).User } catch {}
   }
-  $processes[[int]$process.ProcessId] = [pscustomobject]@{ Name=$process.Name; Path=$process.ExecutablePath; ParentPID=$process.ParentProcessId; User=$owner }
+  $processes[[int]$process.ProcessId] = [pscustomobject]@{ Name=$process.Name; Path=$process.ExecutablePath; CommandLine=$process.CommandLine; ParentPID=$process.ParentProcessId; User=$owner }
 }
 foreach ($row in $rows) {
   $process = $processes[[int]$row.PID]
   $row | Add-Member -NotePropertyName Name -NotePropertyValue $process.Name
   $row | Add-Member -NotePropertyName User -NotePropertyValue $process.User
   $row | Add-Member -NotePropertyName Path -NotePropertyValue $process.Path
+  $row | Add-Member -NotePropertyName CommandLine -NotePropertyValue $process.CommandLine
   $row | Add-Member -NotePropertyName ParentPID -NotePropertyValue $process.ParentPID
   $parentPath = ''
   if ($process) { $parentPath = $processes[[int]$process.ParentPID].Path }
@@ -541,6 +574,82 @@ func normalizePortForwards(forwards []PortForwardConfig) []PortForwardConfig {
 		})
 	}
 	return result
+}
+
+const (
+	portColumnMinWidth = 56
+	portColumnMaxWidth = 800
+	portColumnMaxCount = 32
+)
+
+// normalizeColumnWidths 把列宽收敛到可用范围；列顺序与含义由前端列定义决定，这里只做边界保护。
+func normalizeColumnWidths(widths []int) []int {
+	result := make([]int, 0, min(len(widths), portColumnMaxCount))
+	for _, width := range widths {
+		if len(result) == portColumnMaxCount {
+			break
+		}
+		if width < portColumnMinWidth {
+			width = portColumnMinWidth
+		}
+		if width > portColumnMaxWidth {
+			width = portColumnMaxWidth
+		}
+		result = append(result, width)
+	}
+	return result
+}
+
+// normalizePortColumnWidths 丢弃已不存在主机的列宽，避免来源删除后留下孤儿配置。
+func normalizePortColumnWidths(widths PortColumnWidths, sources []PortSource) PortColumnWidths {
+	valid := make(map[string]bool, len(sources))
+	for _, source := range sources {
+		valid[source.ID] = true
+	}
+	ports := make(map[string][]int, len(widths.Ports))
+	for host, value := range widths.Ports {
+		host = strings.TrimSpace(host)
+		if !valid[host] {
+			continue
+		}
+		if normalized := normalizeColumnWidths(value); len(normalized) > 0 {
+			ports[host] = normalized
+		}
+	}
+	return PortColumnWidths{Ports: ports, Forwards: normalizeColumnWidths(widths.Forwards)}
+}
+
+// GetColumnWidths 返回端口工具的列宽配置；无配置服务时返回空布局。
+func (s *PortService) GetColumnWidths() PortColumnWidths {
+	if s == nil || s.config == nil {
+		return PortColumnWidths{Ports: map[string][]int{}}
+	}
+	return s.config.Get().PortColumnWidths
+}
+
+// SaveColumnWidths 合并保存列宽：Ports 按主机 ID 覆盖，未提交的主机保留原值。
+func (s *PortService) SaveColumnWidths(widths PortColumnWidths) error {
+	if s == nil || s.config == nil {
+		return userError("errors.common.configNotInitialized")
+	}
+	return s.config.updateConfigAllowDanglingRefs(func(cfg *Config) error {
+		ports := make(map[string][]int, len(cfg.PortColumnWidths.Ports)+len(widths.Ports))
+		for host, value := range cfg.PortColumnWidths.Ports {
+			ports[host] = value
+		}
+		for host, value := range widths.Ports {
+			host = strings.TrimSpace(host)
+			if host == "" {
+				continue
+			}
+			ports[host] = append([]int(nil), value...)
+		}
+		if len(widths.Forwards) > 0 {
+			cfg.PortColumnWidths.Forwards = append([]int(nil), widths.Forwards...)
+		}
+		cfg.PortColumnWidths.Ports = ports
+		return nil
+	})
 }
 
 func newPortTunnel(definition PortForwardConfig, profile SSHProfile) *portTunnel {

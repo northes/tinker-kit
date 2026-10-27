@@ -24,6 +24,13 @@ export function DeleteForward(id: string): $CancellablePromise<void> {
 }
 
 /**
+ * GetColumnWidths 返回端口工具的列宽配置；无配置服务时返回空布局。
+ */
+export function GetColumnWidths(): $CancellablePromise<$models.PortColumnWidths> {
+    return $Call.ByID(1439959117);
+}
+
+/**
  * GetForwards 返回所有持久化定义及其运行态；未运行的转发状态为 stopped。
  */
 export function GetForwards(): $CancellablePromise<$models.PortForward[] | null> {
@@ -47,6 +54,13 @@ export function ListPorts(profileID: string): $CancellablePromise<$models.PortEn
  */
 export function ReorderForwards(ids: string[] | null): $CancellablePromise<void> {
     return $Call.ByID(1959860291, ids);
+}
+
+/**
+ * SaveColumnWidths 合并保存列宽：Ports 按主机 ID 覆盖，未提交的主机保留原值。
+ */
+export function SaveColumnWidths(widths: $models.PortColumnWidths): $CancellablePromise<void> {
+    return $Call.ByID(500381824, widths);
 }
 
 export function SavePortSources(sources: $models.PortSource[] | null): $CancellablePromise<void> {

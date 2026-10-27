@@ -42,9 +42,23 @@ func TestParseLsofPortsAndProcessDetails(t *testing.T) {
 	if len(rows) != 2 || rows[0].Port != 8080 || rows[0].Protocol != "TCP" || rows[1].Port != 5353 || rows[1].Protocol != "UDP" {
 		t.Fatalf("unexpected port rows: %+v", rows)
 	}
-	enrichPorts(rows, []byte("42 7 alice /opt/my server\n7 1 root /sbin/parent\n"))
+	enrichPorts(rows, []byte("42 7 alice /opt/my server\n7 1 root /sbin/parent\n"), []byte("  42 /usr/local/bin/node /srv/my api/server.js --name my-api\n   7 /sbin/parent\n"))
 	if rows[0].PID != 42 || rows[0].User != "alice" || rows[0].Path != "/opt/my server" || rows[0].ParentPID != 7 || rows[0].ParentPath != "/sbin/parent" {
 		t.Fatalf("unexpected process details: %+v", rows[0])
+	}
+	// 命令行必须保留全部参数：pm2 应用的脚本路径和标题只出现在 argv 里。
+	if rows[0].CommandLine != "/usr/local/bin/node /srv/my api/server.js --name my-api" {
+		t.Fatalf("unexpected command line: %q", rows[0].CommandLine)
+	}
+}
+
+func TestParseProcessCommands(t *testing.T) {
+	commands := parseProcessCommands([]byte("  123 /usr/bin/node app.js --port 3000\n  124\nnot-a-pid /bin/true\n125 /bin/zsh -lc 'echo hi'\n"))
+	if len(commands) != 2 {
+		t.Fatalf("unexpected commands: %+v", commands)
+	}
+	if commands[123] != "/usr/bin/node app.js --port 3000" || commands[125] != "/bin/zsh -lc 'echo hi'" {
+		t.Fatalf("command lines should keep all arguments: %+v", commands)
 	}
 }
 
@@ -204,5 +218,53 @@ func TestReorderForwardsPersistsOrderWithoutDroppingDefinitions(t *testing.T) {
 	}
 	if got, want := strings.Join(ids, ","), "c,a,b"; got != want {
 		t.Fatalf("forward order after reorder = %q, want %q", got, want)
+	}
+}
+
+func TestNormalizePortColumnWidthsClampsAndDropsUnknownHosts(t *testing.T) {
+	widths := PortColumnWidths{
+		Ports:    map[string][]int{"local": {10, 200, 5000}, "port:gone": {100}},
+		Forwards: []int{0, 170},
+	}
+	result := normalizePortColumnWidths(widths, []PortSource{{ID: "local", Kind: "local", Name: "本机"}})
+	if len(result.Ports) != 1 {
+		t.Fatalf("widths for removed hosts should be dropped: %+v", result.Ports)
+	}
+	if got := result.Ports["local"]; len(got) != 3 || got[0] != portColumnMinWidth || got[1] != 200 || got[2] != portColumnMaxWidth {
+		t.Fatalf("widths should be clamped: %+v", got)
+	}
+	if len(result.Forwards) != 2 || result.Forwards[0] != portColumnMinWidth || result.Forwards[1] != 170 {
+		t.Fatalf("forward widths should be normalized: %+v", result.Forwards)
+	}
+}
+
+func TestSaveColumnWidthsKeepsOtherHostsAndForwards(t *testing.T) {
+	cfg := defaultConfig()
+	cfg.SSHProfiles = []SSHProfile{{ID: "profile", Name: "Host", Origin: "manual", Host: "host", Username: "user", Password: "secret", Port: 22}}
+	cfg.PortSources = []PortSource{
+		{ID: "local", Name: "本机", Kind: "local"},
+		{ID: "port:remote", Name: "Host", Kind: "ssh", SSHProfileID: "profile"},
+	}
+	config := &ConfigService{path: filepath.Join(t.TempDir(), "config.json"), cfg: normalizeConfig(cfg)}
+	service := NewPortService(config)
+
+	if err := service.SaveColumnWidths(PortColumnWidths{Ports: map[string][]int{"local": {80, 90}}, Forwards: []int{170, 150}}); err != nil {
+		t.Fatalf("SaveColumnWidths() error = %v", err)
+	}
+	if err := service.SaveColumnWidths(PortColumnWidths{Ports: map[string][]int{"port:remote": {120}, "port:gone": {140}}}); err != nil {
+		t.Fatalf("SaveColumnWidths() error = %v", err)
+	}
+	got := service.GetColumnWidths()
+	if len(got.Ports["local"]) != 2 || got.Ports["local"][0] != 80 {
+		t.Fatalf("existing host widths must be kept: %+v", got.Ports)
+	}
+	if len(got.Ports["port:remote"]) != 1 || got.Ports["port:remote"][0] != 120 {
+		t.Fatalf("new host widths must be saved: %+v", got.Ports)
+	}
+	if _, ok := got.Ports["port:gone"]; ok {
+		t.Fatalf("widths of unknown hosts must be dropped: %+v", got.Ports)
+	}
+	if len(got.Forwards) != 2 || got.Forwards[0] != 170 {
+		t.Fatalf("forward widths must survive host-only saves: %+v", got.Forwards)
 	}
 }

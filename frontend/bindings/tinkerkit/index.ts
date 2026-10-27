@@ -85,6 +85,7 @@ export type {
     PipelineResultPage,
     PipelineSessionInfo,
     PipelineTablePage,
+    PortColumnWidths,
     PortEntry,
     PortForward,
     PortForwardConfig,
