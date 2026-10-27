@@ -2,9 +2,9 @@
 
 ## 长列表虚拟化
 
-- 主内容为列表时统一用 `@tanstack/react-virtual`，不以当前数据量少为理由改用全量 DOM 渲染。滚动容器加 `ref`，`useVirtualizer` 只渲染 `getVirtualItems()` 的可视行；`<table>` 用上下占位 `<tr><td colSpan={n} style={{ height }} />` 撑出滚动高度。
+- 主内容为列表时统一用 `@tanstack/react-virtual`，不以当前数据量少为理由改用全量 DOM 渲染。滚动容器加 `ref`，`useVirtualizer` 只渲染 `getVirtualItems()` 的可视行；`<table>` 用上下占位 `<tr><td colSpan={n} style={{ height }} />` 撑出滚动高度。唯一例外是需要拖动排序的列表：`SortableContext` 依赖完整行参与，这类配置型短列表全量渲染并关闭虚拟化，规则见 [drag-and-drop.md](./drag-and-drop.md#顺序语义)。
 - 列表表头固定，各列使用明确的固定宽度。单元格内容超出时不换行、不截断，保留水平滚动能力；支持滚轮的水平滚动，但单元格内不显示水平或垂直滚动条。
-- 所有业务上可排序的列都必须提供排序交互：未激活使用 Regular `CaretUpDown`，升序使用 Regular `CaretUp`，降序使用 Regular `CaretDown`；不用空白代替未激活状态。
+- 所有业务上可排序的列都必须提供排序交互：未激活使用 Regular `CaretUpDown`，升序使用 Regular `CaretUp`，降序使用 Regular `CaretDown`；不用空白代替未激活状态。支持拖动排序的列表把列排序当临时视图，默认顺序与手柄规则见 [drag-and-drop.md](./drag-and-drop.md#顺序语义)。
 - 主列表工具的 footer 左侧放置当前统计；统计基于搜索和筛选后的可见结果，条件变化时立即同步，不显示未过滤的总数冒充当前结果数。
 - 占位行用普通 `<tr>/<td>`，不要复用 `TableRow`/`TableCell`，否则会带上 hover 和边框样式。
 - 行高不固定时（例如搜索态文件名下多一行父路径）用 `measureElement` 测量：把 `ref={virtualizer.measureElement}` 和 `data-index` 挂到行元素上，否则按 `estimateSize` 布局会产生错位。
