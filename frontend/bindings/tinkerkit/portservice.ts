@@ -41,6 +41,14 @@ export function ListPorts(profileID: string): $CancellablePromise<$models.PortEn
     return $Call.ByID(2476916090, profileID);
 }
 
+/**
+ * ReorderForwards 按给定 ID 顺序保存转发定义，用于列表拖动排序。
+ * 未出现在 ids 中的定义（例如并发新增）保持原有相对顺序追加在末尾，不丢弃任何定义。
+ */
+export function ReorderForwards(ids: string[] | null): $CancellablePromise<void> {
+    return $Call.ByID(1959860291, ids);
+}
+
 export function SavePortSources(sources: $models.PortSource[] | null): $CancellablePromise<void> {
     return $Call.ByID(1737334526, sources);
 }
