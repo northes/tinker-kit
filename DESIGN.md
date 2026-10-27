@@ -7,8 +7,14 @@ colors:
   primary-dark: "oklch(0.922 0 0)"
   on-primary-dark: "oklch(0.205 0 0)"
   success-green: "oklch(73.29% 0.1941 150.81)"
+  light-success-foreground: "oklch(0.5 0.13 152)"
+  dark-success-foreground: "oklch(0.84 0.17 152)"
   light-warning-amber: "oklch(78.19% 0.159 72.33)"
   dark-warning-amber: "oklch(82.03% 0.1392 76.34)"
+  light-warning-foreground: "oklch(0.5 0.115 66)"
+  dark-warning-foreground: "oklch(0.88 0.14 78)"
+  light-info-blue: "oklch(0.52 0.17 256)"
+  dark-info-blue: "oklch(0.72 0.14 254)"
   light-destructive-red: "oklch(0.577 0.245 27.325)"
   dark-destructive-red: "oklch(0.704 0.191 22.216)"
   light-canvas: "oklch(1 0 0)"
@@ -48,6 +54,9 @@ typography:
     fontSize: "16px"
     fontWeight: 400
     lineHeight: 1.6
+motion:
+  duration: "120ms"
+  easing: "ease-out"
 rounded:
   sm: "0.375rem"
   md: "0.5rem"
@@ -126,7 +135,7 @@ TinkerKit 是一组融入开发者日常工作的工具：快速、好用、克�
 - 浅色 / 深色双主题，共用中性 `primary` 焦点与克制的状态色；自定义主题遵循 `<name>-light` / `<name>-dark` 命名。
 - 系统 UI 字体承载界面，系统等宽字体承载代码、值和技术标签。
 - 统一的自定义滚动条系统（OverlayScrollbars），滚动条只作为定位提示，不争夺注意力。
-- 除 Toast 进出场与主题切换揭示外，默认无过渡、无入场动画；状态变化立即发生。
+- 全项目共用一组过渡参数（`--motion-duration` / `--motion-ease`，120ms ease-out）；动画只用于 Toast 进出场、主题切换揭示、工具页激活淡入与更新胶囊扫光。
 
 ## Colors
 
@@ -138,9 +147,12 @@ TinkerKit 是一组融入开发者日常工作的工具：快速、好用、克�
 
 ### Secondary
 
-- **Success Green（`oklch(73.29% 0.1941 150.81)`）：** 仅用于成功结果、差异新增与有效状态。
-- **Warning Amber（浅色 `oklch(78.19% 0.159 72.33)` / 深色 `oklch(82.03% 0.1392 76.34)`）：** 仅用于警告、需要注意但不阻断的状态。
-- **Danger Red（浅色 `oklch(0.577 0.245 27.325)` / 深色 `oklch(0.704 0.191 22.216)`）：** 仅用于错误、差异删除和破坏性动作。
+- **Success Green（`--success`，`oklch(73.29% 0.1941 150.81)`）：** 仅用于成功结果、差异新增与有效状态；填充、圆点、进度条用 `--success`，浅色底上的文本用 `--success-foreground`。
+- **Warning Amber（`--warning`：浅色 `oklch(78.19% 0.159 72.33)` / 深色 `oklch(82.03% 0.1392 76.34)`）：** 仅用于警告、需要注意但不阻断的状态；琥珀底上的文本用 `--warning-foreground`。
+- **Info Blue（`--info`：浅色 `oklch(0.52 0.17 256)` / 深色 `oklch(0.72 0.14 254)`）：** 状态色中唯一的非结果色，只表示"进行中/排队中"，不表达成功或失败。
+- **Danger Red（`--destructive`：浅色 `oklch(0.577 0.245 27.325)` / 深色 `oklch(0.704 0.191 22.216)`）：** 仅用于错误、差异删除和破坏性动作。
+
+**The Status Token Rule.** 状态色只能来自 `--success` / `--warning` / `--info` / `--destructive` 及其 `-foreground`；禁止在组件里使用 Tailwind 调色板类（`emerald-500`、`amber-600`、`blue`、`neutral-950` 等）或 `ui/badge` 之外的调色板变体，否则浅深两套主题下的对比度会立刻失效。状态识别必须配合文字、图标或结构变化，不能只依赖颜色。
 
 ### Neutral
 
@@ -193,6 +205,14 @@ TinkerKit 是一组融入开发者日常工作的工具：快速、好用、克�
 
 **The Flat-by-Default Rule.** 静态内容必须保持扁平；阴影只证明浮层确实悬浮在当前任务之上。
 
+## Motion
+
+过渡参数只有一组，定义在 `frontend/src/styles/foundation.css`：`--motion-duration: 120ms` 与 `--motion-ease: ease-out`。`index.css` 的 `@theme` 把它们绑定到 Tailwind 的 `--default-transition-duration` / `--default-transition-timing-function`，因此 `transition-*` 工具类不写 `duration-*` 就自动取这组值；独立 CSS 文件（`fileDrop.css`、`json.css`、`editor.css`）直接引用这两个变量。新增过渡只描述被改变的属性，不引入新的时长或缓动。
+
+**允许的动画只有四种：** Toast 进出场、主题切换揭示（`::view-transition-old(root)` 遮罩）、工具页激活的透明度淡入（`Reveal`）、更新胶囊的扫光（`UpdatePill.css` 的渐变位移，产品要求保留）。其余状态变化即时发生，不增加位移、缩放或持续动效，并且仍要尊重 `prefers-reduced-motion`。
+
+**The Single Motion Scale Rule.** 任何过渡都必须落在 `--motion-duration` / `--motion-ease` 上；禁止在组件里写 `duration-200`、`120ms ease`、`160ms` 之类的独立时长。`ui/*` 里 shadcn 自带的过渡属于官方默认，不在此约束内，也不得为单个调用点覆盖。
+
 ## Shapes
 
 主题基础圆角为 `0.625rem`（`--radius`）。按钮、输入、侧栏项、浮层统一消费基础圆角（`rounded-lg`）；更小的 `radius-sm`（0.375rem）、`radius-md`（0.5rem）等由 `index.css` 的 `@theme inline` 从基础圆角按比例派生，项目只消费、不另立阶梯。编辑器与差异面板使用细边框加派生圆角；页面结构本身不做大面积圆角裁切。
@@ -210,12 +230,18 @@ TinkerKit 是一组融入开发者日常工作的工具：快速、好用、克�
 - **Ghost：** 无边框，hover 使用 `bg-muted`。
 - **Destructive：** `bg-destructive/10 text-destructive`，只用于破坏性动作，并由确认对话框承接二次确认。
 - **Tool Action Button（header 工具栏与 footer 动作栏）：** 两处共用同一套标准：高 30px、`px-[11px]`、`text-[11px]`，图标 14px `weight="duotone"` 置于文字前，动作永远使用「图标 + 文字」。footer 由 `ToolActionBar` 右对齐渲染，header 由 `ToolActionButton` 渲染，variant 映射统一为 `primary → default`、`secondary → outline`、`tertiary → ghost`、`danger → destructive`。下拉型动作（`menu` / `split`）在文字右侧追加 12px `CaretDown`；下拉菜单项本身保持纯文字。工具页内的空态与错误态动作（重试、取消）同样用 `ToolActionButton`，不再手写 30px 尺寸类。
-- **Tool Icon Button：** 纯图标按钮（`ToolIconButton`）只在语义唯一且空间受限的 header 入口使用，如高级设置、刷新、字段内清空；必须为 30×30 正方形、ghost 变体，并提供 `aria-label` 与 `title`。字段内联的清除/搜索按钮跟随字段内部高度，不套用 30px 尺寸。
+- **Tool Icon Button：** 纯图标按钮（`ToolIconButton`）只在语义唯一且空间受限的 header 入口使用，如高级设置、刷新；必须为 30×30 正方形、ghost 变体，并提供 `aria-label` 与 `title`。
+- **尺寸阶梯：** 动作控件只有四档，按作用域选用，不手写 `h-*` 高度。① 30px：header 工具栏、footer 动作栏、空态/错误态动作（`ToolActionButton` / `ToolIconButton`）；② 32px：常规按钮与输入框（`size="default"` / `h-8`），以及输入行附属图标控件（`size="icon"`，如时间工具的时区与系统时区）；③ 28px：表格行、列表行内的紧凑动作（`size="sm"`），只可调整字号与内边距；④ 24px：字段内清除/搜索与面板内联的密集控件（`size="icon-xs"` / `size="xs"`）。
+
+### Badges
+
+- **单一尺寸：** 状态与计数徽标共用 `ui/badge` 的基准样式（高 20px、10px 字号），调用点不再覆盖 `h-*` / `text-[9px]` 一类的尺寸类。
+- **语义变体：** `variant` 只用 `secondary` / `outline` / `destructive` / `success` / `warning` / `info`，其颜色全部映射到状态 token。
 
 ### Inputs / Fields
 
 - **Style：** 高 32px（`h-8`）、`rounded-lg`、`border-input`、透明背景（深色下 `bg-input/30`）、10px 水平内边距；文本使用 foreground，placeholder 使用 `text-muted-foreground`。
-- **搜索框：** 列表与工具栏搜索统一用 `ToolSearchField`：高 30px（与同行 `ToolActionButton` 对齐）、`pl-8` 预留 `left-2.5` 的 14px duotone 放大镜、右侧 `size="icon-xs"` 清空按钮；回车提交、Esc 清空。不另行手写搜索框高度与图标偏移。
+- **搜索框：** 列表与工具栏搜索统一用 `ToolSearchField`：高 30px（与同行 `ToolActionButton` 对齐）、`pl-8` 预留 `left-2.5` 的 14px duotone 放大镜、右侧 `size="icon-xs"` 清空按钮；回车提交、Esc 清空。除面板内联的紧凑搜索（高 28px，如 JSON 结构面板的路径搜索）外，不另行手写搜索框高度与图标偏移。
 - **Focus：** `focus-visible:border-ring` 加 3px `ring-ring/50`，不保留 CodeMirror 原生虚线 outline。
 - **Disabled：** 保持布局，背景降为 `bg-input/50`、透明度 0.5，并使用不可用光标。
 
@@ -236,7 +262,8 @@ TinkerKit 是一组融入开发者日常工作的工具：快速、好用、克�
 - 自定义滚动条由 OverlayScrollbars 统一接管，命中区与预留宽度同为 `--overlay-scrollbar-size`（12px），视觉滑块 6px 圆角，颜色取 `muted-foreground` 42%，hover/active 提升到 68%。
 - 默认 `autoHide: 'leave'`：指针移入或滚动时出现，移出后隐藏。
 - 需要真实滚动元素 ref 的虚拟化列表（`@tanstack/react-virtual`）通过 `ScrollArea` 的 `onViewport` 指向 viewport，而不是宿主。
-- 浮层与命令面板内部滚动、CodeMirror 的 `.cm-scroller` 保持原生滚动行为；浮层用 `.no-scrollbar` 隐藏滚动条但保留滚动能力。
+- 浮层与命令面板内部滚动、CodeMirror 的 `.cm-scroller` 保持原生滚动行为；浮层（含 Dialog 表单、Popover 列表、DropdownMenu 内容）一律加 `.no-scrollbar`，隐藏滚动条但保留滚动能力。
+- 原生滚动条只允许出现在 CodeMirror 滚动层、可调整大小的 textarea 与页面内容区；其余容器走 `ScrollArea`。
 
 ### Overlays
 
@@ -253,7 +280,7 @@ TinkerKit 是一组融入开发者日常工作的工具：快速、好用、克�
 - **Do** 让 header 工具栏与 footer 动作栏的动作按钮统一为「图标 + 文字」，由 `ToolActionBar` / `ToolActionButton` 渲染；纯图标只用于语义唯一的 header 入口。
 - **Do** 使用系统 UI 字体和系统等宽字体，保持 4–24px 的既有间距节奏。
 - **Do** 让滚动条统一走 `ScrollArea`（OverlayScrollbars），并复用 `--overlay-scrollbar-size`，不要另建滚动条样式。
-- **Do** 默认关闭过渡和入场动画（Toast 进出场、主题切换揭示除外），并继续尊重 `prefers-reduced-motion`。
+- **Do** 过渡统一取 `--motion-duration` / `--motion-ease`；动画只保留 Toast 进出场、主题切换揭示、工具页激活淡入与更新胶囊扫光，并继续尊重 `prefers-reduced-motion`。
 
 ### Don't:
 
@@ -261,6 +288,7 @@ TinkerKit 是一组融入开发者日常工作的工具：快速、好用、克�
 - **Don't** 覆盖 shadcn/Base UI 的同名派生 token，尤其是 hover、soft color、二级边框与半径阶梯。
 - **Don't** 使用渐变、玻璃拟态、装饰性阴影、营销式大标题或卡片堆叠。
 - **Don't** 用硬编码颜色绕过 `globals.css`，也不要把项目语义适配 token 当作独立主题。
-- **Don't** 为视觉反馈增加位移、缩放或持续动效；状态应通过即时颜色、边界和内容变化表达。
+- **Don't** 在组件里写独立过渡时长（`duration-200`、`160ms`），也不要为视觉反馈增加位移、缩放或持续动效；状态应通过即时颜色、边界和内容变化表达。
+- **Don't** 用 Tailwind 调色板类表达状态（`emerald-500`、`amber-600`、`blue`、`neutral-950`），一律走 `--success` / `--warning` / `--info` / `--destructive` 及其 `-foreground`。
 - **Don't** 为工具栏动作按钮手写 `size="sm"`、`h-8`、`h-[32px]` 等尺寸类或省略图标；也不要新增第二套动作按钮样式。
 - **Don't** 在全局隐藏原生滚动条，或为单个容器写局部滚动条覆盖。
