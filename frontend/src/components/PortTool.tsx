@@ -10,11 +10,28 @@ import {
 } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import {
+  closestCenter,
+  DndContext,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+} from '@dnd-kit/core';
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from '@dnd-kit/sortable';
+import {
+  ArrowCounterClockwise,
   ArrowsClockwise,
   CaretDown,
   CaretUp,
   CaretUpDown,
   Copy,
+  DotsSixVertical,
   Funnel,
   GearSix,
   MagnifyingGlass,
@@ -32,6 +49,7 @@ import {
   GetForwards,
   GetPortSources,
   ListPorts,
+  ReorderForwards,
   SavePortSources,
   StartForward,
   StopForward,
@@ -217,6 +235,138 @@ function SortableHead({
   );
 }
 
+// 转发行同时是 dnd-kit 的可排序项：首列是拖动手柄，键盘可用上下键调整顺序。
+// 列排序是临时视图，定义顺序不可见，因此只有默认顺序下才提供拖动手柄。
+function ForwardRow({
+  forward,
+  sourceName,
+  sortable,
+  busy,
+  onToggle,
+  onEdit,
+  onCopy,
+  onDelete,
+  onMove,
+}: {
+  forward: PortForward;
+  sourceName: string;
+  sortable: boolean;
+  busy: boolean;
+  onToggle: () => void;
+  onEdit: () => void;
+  onCopy: () => void;
+  onDelete: () => void;
+  onMove: (delta: number) => void;
+}) {
+  const { t } = useTranslation();
+  const name = forwardLabel(forward);
+  const running = isForwardRunning(forward);
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    setActivatorNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({
+    id: forward.id,
+    disabled: !sortable,
+  });
+  // 与 JSON 流水线一致：纵向列表只透传 y 位移，否则被拖动行会在横向滚动容器里撑出滚动条。
+  // 提升到表头（z-10）之上，避免拖动时被吸顶表头盖住。
+  const style = {
+    transform: transform ? `translate3d(0, ${Math.round(transform.y)}px, 0)` : undefined,
+    transition,
+    zIndex: isDragging ? 20 : undefined,
+  };
+  return (
+    <ContextMenu>
+      <ContextMenuTrigger
+        render={
+          <TableRow
+            ref={setNodeRef}
+            style={style}
+            className={`${running ? '' : 'text-muted-foreground'} ${isDragging ? 'bg-accent' : ''}`}
+          />
+        }
+      >
+        <TableCell className="w-[40px]">
+          {sortable ? (
+            <Button
+              ref={setActivatorNodeRef}
+              variant="ghost"
+              size="icon-xs"
+              className="cursor-grab touch-none text-muted-foreground/60 active:cursor-grabbing"
+              {...attributes}
+              {...listeners}
+              aria-label={t('portTool.dragForward', { name })}
+              aria-keyshortcuts="ArrowUp ArrowDown"
+              onKeyDown={(event) => {
+                if (event.key === 'ArrowUp') {
+                  event.preventDefault();
+                  onMove(-1);
+                } else if (event.key === 'ArrowDown') {
+                  event.preventDefault();
+                  onMove(1);
+                } else {
+                  listeners?.onKeyDown?.(event);
+                }
+              }}
+            >
+              <DotsSixVertical weight="duotone" />
+              <span className="sr-only">
+                {t('portTool.moveForwardUp', { name })}. {t('portTool.moveForwardDown', { name })}
+              </span>
+            </Button>
+          ) : null}
+        </TableCell>
+        <TableCell>
+          <WheelText>{name}</WheelText>
+        </TableCell>
+        <TableCell>{t(`portTool.${forward.direction}Forward`)}</TableCell>
+        <TableCell>
+          <WheelText>{sourceName}</WheelText>
+        </TableCell>
+        <TableCell>
+          <WheelText>{`${forward.listenHost}:${forward.listenPort}`}</WheelText>
+        </TableCell>
+        <TableCell>
+          <WheelText>{`${forward.targetHost}:${forward.targetPort}`}</WheelText>
+        </TableCell>
+        <TableCell>
+          {t(`portTool.${forward.status}`)}
+          {forward.error && (
+            <WheelText className="text-xs text-destructive">
+              {formatBackendError(forward.error)}
+            </WheelText>
+          )}
+        </TableCell>
+        <TableCell>{forward.retries}/5</TableCell>
+      </ContextMenuTrigger>
+      <ContextMenuContent className="w-40">
+        <ContextMenuItem disabled={busy} onClick={onToggle}>
+          {running ? <Stop weight="duotone" /> : <Play weight="duotone" />}
+          {t(running ? 'portTool.stop' : 'portTool.start')}
+        </ContextMenuItem>
+        <ContextMenuItem onClick={onEdit}>
+          <PencilSimple weight="duotone" />
+          {t('portTool.editForward')}
+        </ContextMenuItem>
+        <ContextMenuItem onClick={onCopy}>
+          <Copy weight="duotone" />
+          {t('portTool.copyForward')}
+        </ContextMenuItem>
+        <ContextMenuSeparator />
+        <ContextMenuItem variant="destructive" onClick={onDelete}>
+          <Trash weight="duotone" />
+          {t('portTool.delete')}
+        </ContextMenuItem>
+      </ContextMenuContent>
+    </ContextMenu>
+  );
+}
+
 type FilterGroup = {
   key: string;
   label: string;
@@ -348,10 +498,9 @@ export default function PortTool({ active }: { active: boolean }) {
   const [directionFilter, setDirectionFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
   const [sourceFilter, setSourceFilter] = useState('all');
-  const [forwardSort, setForwardSort] = useState<SortState<ForwardSortKey>>({
-    key: 'listen',
-    direction: 'asc',
-  });
+  // 转发列表默认按持久化的定义顺序展示，新增的规则追加在末尾；列排序是临时视图。
+  const [forwardSort, setForwardSort] = useState<SortState<ForwardSortKey> | null>(null);
+  const [forwardLiveMessage, setForwardLiveMessage] = useState('');
   const [loading, setLoading] = useState(false);
   const [portsCanceled, setPortsCanceled] = useState(false);
   const scanRevision = useRef(0);
@@ -630,6 +779,7 @@ export default function PortTool({ active }: { active: boolean }) {
             (value) => String(value).toLocaleLowerCase(i18n.language).includes(query),
           )),
     );
+    if (!forwardSort) return result;
     const { key, direction } = forwardSort;
     result.sort((a, b) => {
       const left = forwardField(a, key);
@@ -660,7 +810,7 @@ export default function PortTool({ active }: { active: boolean }) {
   const changeForwardSort = (key: ForwardSortKey) =>
     setForwardSort((current) => ({
       key,
-      direction: current.key === key && current.direction === 'asc' ? 'desc' : 'asc',
+      direction: current?.key === key && current.direction === 'asc' ? 'desc' : 'asc',
     }));
   useEffect(() => {
     portViewport?.scrollTo({ top: 0 });
@@ -679,17 +829,40 @@ export default function PortTool({ active }: { active: boolean }) {
   const paddingBottom = visiblePorts.length
     ? portVirtualizer.getTotalSize() - visiblePorts[visiblePorts.length - 1].end
     : 0;
-  const forwardVirtualizer = useVirtualizer({
-    count: visibleForwardData.length,
-    getScrollElement: () => forwardViewport,
-    estimateSize: () => 40,
-    overscan: 12,
-  });
-  const visibleForwards = forwardVirtualizer.getVirtualItems();
-  const forwardPaddingTop = visibleForwards.length ? visibleForwards[0].start : 0;
-  const forwardPaddingBottom = visibleForwards.length
-    ? forwardVirtualizer.getTotalSize() - visibleForwards[visibleForwards.length - 1].end
-    : 0;
+  const forwardSensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  );
+  const announceForwardMove = (id: string, next: PortForward[]) => {
+    const position = next.findIndex((forward) => forward.id === id);
+    if (position < 0) return;
+    const message = t('portTool.movedForward', {
+      name: forwardLabel(next[position]),
+      position: position + 1,
+      total: next.length,
+    });
+    setForwardLiveMessage('');
+    requestAnimationFrame(() => setForwardLiveMessage(message));
+  };
+  // 拖动和键盘排序都写回持久化的定义顺序，刷新后顺序保持一致。
+  const reorderForward = async (activeID: string, overID: string) => {
+    const from = forwards.findIndex((forward) => forward.id === activeID);
+    const to = forwards.findIndex((forward) => forward.id === overID);
+    if (from < 0 || to < 0 || from === to) return;
+    const next = arrayMove(forwards, from, to);
+    announceForwardMove(activeID, next);
+    try {
+      await ReorderForwards(next.map((forward) => forward.id));
+      await refreshForwards();
+    } catch (cause) {
+      setError(formatBackendError(cause));
+    }
+  };
+  const moveForwardBy = (id: string, delta: number) => {
+    const index = visibleForwardData.findIndex((forward) => forward.id === id);
+    const target = index < 0 ? undefined : visibleForwardData[index + delta];
+    if (target) void reorderForward(id, target.id);
+  };
 
   const openSourceManager = () => setManageOpen(true);
   const saveSources = async (next: PortSource[]) => {
@@ -949,132 +1122,103 @@ export default function PortTool({ active }: { active: boolean }) {
                   },
                 ]}
               />
-            </div>
-            <ScrollArea
-              className="min-h-0 flex-1"
-              options={{ overflow: { x: 'scroll' } }}
-              onViewport={setForwardViewport}
-            >
-              <Table className="min-w-[1014px] table-fixed" containerClassName="overflow-x-visible">
-                <TableHeader className="sticky top-0 z-10 bg-background">
-                  <TableRow>
-                    {FORWARD_COLUMNS.map((key) => (
-                      <SortableHead
-                        key={key}
-                        className={FORWARD_COLUMN_WIDTHS[key]}
-                        label={t(`portTool.${key}`)}
-                        active={forwardSort.key === key}
-                        direction={forwardSort.direction}
-                        onSort={() => changeForwardSort(key)}
-                      />
-                    ))}
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {forwardPaddingTop > 0 && (
-                    <tr>
-                      <td colSpan={7} style={{ height: forwardPaddingTop, padding: 0 }} />
-                    </tr>
-                  )}
-                  {visibleForwards.map((row) => {
-                    const forward = visibleForwardData[row.index];
-                    const running = isForwardRunning(forward);
-                    return (
-                      <ContextMenu key={row.key}>
-                        <ContextMenuTrigger
-                          render={
-                            <TableRow
-                              ref={forwardVirtualizer.measureElement}
-                              data-index={row.index}
-                              className={running ? undefined : 'text-muted-foreground'}
-                            />
-                          }
-                        >
-                          <TableCell>
-                            <WheelText>{forwardLabel(forward)}</WheelText>
-                          </TableCell>
-                          <TableCell>{t(`portTool.${forward.direction}Forward`)}</TableCell>
-                          <TableCell>
-                            <WheelText>
-                              {sourceNames.get(forward.sourceID) ?? t('portTool.missingSource')}
-                            </WheelText>
-                          </TableCell>
-                          <TableCell>
-                            <WheelText>{`${forward.listenHost}:${forward.listenPort}`}</WheelText>
-                          </TableCell>
-                          <TableCell>
-                            <WheelText>{`${forward.targetHost}:${forward.targetPort}`}</WheelText>
-                          </TableCell>
-                          <TableCell>
-                            {t(`portTool.${forward.status}`)}
-                            {forward.error && (
-                              <WheelText className="text-xs text-destructive">
-                                {formatBackendError(forward.error)}
-                              </WheelText>
-                            )}
-                          </TableCell>
-                          <TableCell>{forward.retries}/5</TableCell>
-                        </ContextMenuTrigger>
-                        <ContextMenuContent className="w-40">
-                          <ContextMenuItem
-                            disabled={busyForward !== ''}
-                            onClick={() =>
-                              running ? void stopForward(forward) : void startForward(forward)
-                            }
-                          >
-                            {running ? <Stop weight="duotone" /> : <Play weight="duotone" />}
-                            {t(running ? 'portTool.stop' : 'portTool.start')}
-                          </ContextMenuItem>
-                          <ContextMenuItem
-                            onClick={() =>
-                              openForwardForm({
-                                editingId: forward.id,
-                                request: forwardRequest(forward),
-                              })
-                            }
-                          >
-                            <PencilSimple weight="duotone" />
-                            {t('portTool.editForward')}
-                          </ContextMenuItem>
-                          <ContextMenuItem
-                            onClick={() =>
-                              openForwardForm({
-                                editingId: null,
-                                request: forwardRequest(forward),
-                              })
-                            }
-                          >
-                            <Copy weight="duotone" />
-                            {t('portTool.copyForward')}
-                          </ContextMenuItem>
-                          <ContextMenuSeparator />
-                          <ContextMenuItem
-                            variant="destructive"
-                            onClick={() => {
-                              setDeleteError('');
-                              setDeleteTarget(forward);
-                            }}
-                          >
-                            <Trash weight="duotone" />
-                            {t('portTool.delete')}
-                          </ContextMenuItem>
-                        </ContextMenuContent>
-                      </ContextMenu>
-                    );
-                  })}
-                  {forwardPaddingBottom > 0 && (
-                    <tr>
-                      <td colSpan={7} style={{ height: forwardPaddingBottom, padding: 0 }} />
-                    </tr>
-                  )}
-                </TableBody>
-              </Table>
-              {visibleForwardData.length === 0 && (
-                <p className="py-8 text-center text-muted-foreground">
-                  {t(forwards.length ? 'portTool.noMatches' : 'portTool.emptyForwards')}
-                </p>
+              {forwardSort !== null && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 px-2 text-xs"
+                  onClick={() => setForwardSort(null)}
+                >
+                  <ArrowCounterClockwise data-icon="inline-start" size={14} />
+                  {t('portTool.defaultOrder')}
+                </Button>
               )}
-            </ScrollArea>
+            </div>
+            <DndContext
+              sensors={forwardSensors}
+              collisionDetection={closestCenter}
+              onDragEnd={({ active, over }) => {
+                if (!over || active.id === over.id) return;
+                void reorderForward(String(active.id), String(over.id));
+              }}
+            >
+              <SortableContext
+                items={visibleForwardData.map((forward) => forward.id)}
+                strategy={verticalListSortingStrategy}
+              >
+                <ScrollArea
+                  className="min-h-0 flex-1"
+                  options={{ overflow: { x: 'scroll' } }}
+                  onViewport={setForwardViewport}
+                >
+                  <Table
+                    className="min-w-[1064px] table-fixed"
+                    containerClassName="overflow-x-visible"
+                  >
+                    <TableHeader className="sticky top-0 z-10 bg-background">
+                      <TableRow>
+                        <TableHead className="w-[40px]">
+                          <span className="sr-only">{t('portTool.order')}</span>
+                        </TableHead>
+                        {FORWARD_COLUMNS.map((key) => (
+                          <SortableHead
+                            key={key}
+                            className={FORWARD_COLUMN_WIDTHS[key]}
+                            label={t(`portTool.${key}`)}
+                            active={forwardSort?.key === key}
+                            direction={forwardSort?.direction ?? 'asc'}
+                            onSort={() => changeForwardSort(key)}
+                          />
+                        ))}
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {visibleForwardData.map((forward) => (
+                        <ForwardRow
+                          key={forward.id}
+                          forward={forward}
+                          sourceName={
+                            sourceNames.get(forward.sourceID) ?? t('portTool.missingSource')
+                          }
+                          sortable={forwardSort === null}
+                          busy={busyForward !== ''}
+                          onToggle={() =>
+                            isForwardRunning(forward)
+                              ? void stopForward(forward)
+                              : void startForward(forward)
+                          }
+                          onEdit={() =>
+                            openForwardForm({
+                              editingId: forward.id,
+                              request: forwardRequest(forward),
+                            })
+                          }
+                          onCopy={() =>
+                            openForwardForm({
+                              editingId: null,
+                              request: forwardRequest(forward),
+                            })
+                          }
+                          onDelete={() => {
+                            setDeleteError('');
+                            setDeleteTarget(forward);
+                          }}
+                          onMove={(delta) => moveForwardBy(forward.id, delta)}
+                        />
+                      ))}
+                    </TableBody>
+                  </Table>
+                  {visibleForwardData.length === 0 && (
+                    <p className="py-8 text-center text-muted-foreground">
+                      {t(forwards.length ? 'portTool.noMatches' : 'portTool.emptyForwards')}
+                    </p>
+                  )}
+                </ScrollArea>
+              </SortableContext>
+            </DndContext>
+            <div className="sr-only" aria-live="polite" aria-atomic="true">
+              {forwardLiveMessage}
+            </div>
           </TabsContent>
         </ToolLayoutTabs>
       </ToolLayoutContent>
