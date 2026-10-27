@@ -75,6 +75,8 @@ export type IndexedItem = TranslatablePaletteItem & {
 
 export type Romanize = (text: string) => string;
 
+// 工具规范顺序：侧栏解析（resolveSidebarTools）用它补全缺失项，因此必须与
+// Go 端 configservice.go 的 defaultSidebarToolIDs 及 default-settings 的 sidebarTools 一致。
 export const tools: ToolDefinition[] = [
   {
     id: 'json' as const,
@@ -99,25 +101,11 @@ export const tools: ToolDefinition[] = [
     keywords: 'text count trim spaces lines bytes',
   },
   {
-    id: 'text-generator' as const,
-    nameKey: 'tools.text-generator.name',
-    descriptionKey: 'tools.text-generator.description',
-    icon: HashStraight,
-    keywords: 'text random generator uuid password string 文本 随机 生成 UUID',
-  },
-  {
     id: 'base64' as const,
     nameKey: 'tools.base64.name',
     descriptionKey: 'tools.base64.description',
     icon: FileCode,
     keywords: 'base64 encode decode text image data url 图片 编码 解码',
-  },
-  {
-    id: 'diff' as const,
-    nameKey: 'tools.diff.name',
-    descriptionKey: 'tools.diff.description',
-    icon: GitDiff,
-    keywords: 'diff compare patch code text difference 差异 对比 比较',
   },
   {
     id: 'jwt' as const,
@@ -149,11 +137,32 @@ export const tools: ToolDefinition[] = [
       'image picture crop expand quality compress png jpg jpeg svg webp 图片 裁剪 扩充 质量 压缩 导出',
   },
   {
+    id: 'diff' as const,
+    nameKey: 'tools.diff.name',
+    descriptionKey: 'tools.diff.description',
+    icon: GitDiff,
+    keywords: 'diff compare patch code text difference 差异 对比 比较',
+  },
+  {
+    id: 'text-generator' as const,
+    nameKey: 'tools.text-generator.name',
+    descriptionKey: 'tools.text-generator.description',
+    icon: HashStraight,
+    keywords: 'text random generator uuid password string 文本 随机 生成 UUID',
+  },
+  {
     id: 'image-manager' as const,
     nameKey: 'tools.image-manager.name',
     descriptionKey: 'tools.image-manager.description',
     icon: Package,
     keywords: 'docker image manager ssh container 镜像 管理 容器 推送 删除',
+  },
+  {
+    id: 'ssh-files' as const,
+    nameKey: 'tools.ssh-files.name',
+    descriptionKey: 'tools.ssh-files.description',
+    icon: FolderSimple,
+    keywords: 'ssh sftp files upload download explorer 文件 上传 下载 目录',
   },
   {
     id: 'service-manager' as const,
@@ -176,13 +185,6 @@ export const tools: ToolDefinition[] = [
     icon: Network,
     keywords:
       'network http https tcp websocket proxy dns interface latency waterfall 网络 测试 代理 网卡 超时',
-  },
-  {
-    id: 'ssh-files' as const,
-    nameKey: 'tools.ssh-files.name',
-    descriptionKey: 'tools.ssh-files.description',
-    icon: FolderSimple,
-    keywords: 'ssh sftp files upload download explorer 文件 上传 下载 目录',
   },
 ];
 

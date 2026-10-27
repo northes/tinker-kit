@@ -1,9 +1,19 @@
 import type { Config as Settings } from '../../bindings/tinkerkit/models';
+import { DEFAULT_NTP_SERVERS, TIME_RESULT_IDS } from '../utils/time';
 
+// 首帧占位配置：真实值由 Go ConfigService.GetConfig 提供（首次运行写的是
+// configservice.go 的 defaultConfig），本文件不得成为第二个默认值来源。
+//
+// 约定：
+// - 标量默认值与 Go defaultConfig 保持一致，加载完成前界面不应出现反向状态；
+// - 工具独占的默认值（时间结果行、NTP 服务器等）从对应工具的模块导入，
+//   不要在这里重新抄一份字面量；
+// - 结构化占位（来源列表等）保留与 Go 相同的最小形态，展示层按 kind 走 i18n，
+//   不依赖这里的 name。
 export const defaultSettings: Settings = {
   trayMatchEnabled: true,
   trayMatchTools: ['json', 'time', 'text', 'base64', 'diff', 'jwt', 'url'],
-  autoOverwrite: false,
+  autoOverwrite: true,
   autoCheckUpdates: true,
   taskConcurrency: 4,
   taskChunkConcurrency: 4,
@@ -32,22 +42,10 @@ export const defaultSettings: Settings = {
   darkTheme: 'default-dark',
   diffClipboardTargetMode: 'alternate',
   codeEditorFontSize: 16,
-  timeResultOrder: [
-    'local',
-    'dateTime',
-    'dateOnly',
-    'zonedIso8601',
-    'rfc3339',
-    'utc',
-    'compact',
-    'underscore',
-    'unixSeconds',
-    'unixMilliseconds',
-    'unixNanoseconds',
-  ],
+  timeResultOrder: [...TIME_RESULT_IDS],
   hiddenTimeResults: [],
   timeWeekStart: 'monday',
-  ntpServers: ['time.cloudflare.com:123', 'time.google.com:123', 'pool.ntp.org:123'],
+  ntpServers: [...DEFAULT_NTP_SERVERS],
   networkTestSettings: {
     payload: 'ping',
     timeoutSeconds: 30,
@@ -71,6 +69,8 @@ export const defaultSettings: Settings = {
   textAlwaysShowSearch: false,
   textGeneratorSources: [],
   dockerCLIPath: '',
+  // 本地来源的 name 由 Go 端规范化为「本机」后持久化，这里保持同一形态；
+  // 展示名一律走 lib/local-source 的 sourceLabel，不读 name。
   imageSources: [
     {
       id: 'local',
@@ -88,4 +88,5 @@ export const defaultSettings: Settings = {
   portSources: [{ id: 'local', name: '本机', kind: 'local', sshProfileID: '' }],
   serviceLogHighlightLevels: true,
   portForwards: [],
+  portColumnWidths: { ports: {}, forwards: [] },
 };

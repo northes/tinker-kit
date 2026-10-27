@@ -60,31 +60,20 @@ import RealTimePanel from './RealTimePanel';
 import { TimezonePickerDialog } from './TimezonePickerDialog';
 import { TabsContent } from './ui/tabs';
 import {
+  TIME_RESULT_IDS,
   formatTimeInZone,
   getSystemTimeZone,
   getTimeZoneOptions,
   parseTimeInput,
   resolveTimePreset,
   type TimePreset,
+  type TimeResultId as TimeResultIdType,
   type TimeWeekStart,
 } from '../utils/time';
 import { toast } from './ui/toast';
 
-const resultIds = [
-  'local',
-  'dateTime',
-  'dateOnly',
-  'timeOnly',
-  'zonedIso8601',
-  'rfc3339',
-  'utc',
-  'compact',
-  'underscore',
-  'unixSeconds',
-  'unixMilliseconds',
-  'unixNanoseconds',
-] as const;
-type TimeResultId = (typeof resultIds)[number];
+const resultIds = TIME_RESULT_IDS;
+type TimeResultId = TimeResultIdType;
 type TimeToolMode = 'convert' | 'dateCalculator' | 'realTime';
 const timePresetGroups: Array<{ primary: TimePreset; options: TimePreset[] }> = [
   { primary: 'now', options: ['yesterday', 'tomorrow'] },

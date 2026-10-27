@@ -172,6 +172,34 @@ const cityNames: Record<string, string> = {
 export function getSystemTimeZone() {
   return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
 }
+
+// 时间工具结果行的规范顺序：配置里的 timeResultOrder 是它的持久化快照，
+// TimeTool 与 default-settings 都从这里取，避免两处列表各自漂移。
+// 增删结果行时同时更新 Go 端 configservice.go 的 timeResults / defaultConfig。
+export const TIME_RESULT_IDS = [
+  'local',
+  'dateTime',
+  'dateOnly',
+  'timeOnly',
+  'zonedIso8601',
+  'rfc3339',
+  'utc',
+  'compact',
+  'underscore',
+  'unixSeconds',
+  'unixMilliseconds',
+  'unixNanoseconds',
+] as const;
+export type TimeResultId = (typeof TIME_RESULT_IDS)[number];
+
+// 默认 NTP 服务器镜像 Go 端 realtimeservice.go 的 defaultNtpServers()；
+// 运行时以 Go 返回的配置为准，这里只用于首帧占位与「恢复默认」。
+export const DEFAULT_NTP_SERVERS = [
+  'time.cloudflare.com:123',
+  'time.google.com:123',
+  'pool.ntp.org:123',
+];
+
 export type TimePreset =
   | 'now'
   | 'yesterday'
