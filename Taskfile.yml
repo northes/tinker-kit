@@ -35,6 +35,16 @@ tasks:
     cmds:
       - node --experimental-strip-types --test frontend/src/lib/byte-format.test.mjs frontend/src/lib/name-transform.test.mjs frontend/src/lib/task-format.test.mjs
 
+  test:i18n:
+    summary: Checks locale key parity and literal keys used in code
+    cmds:
+      - node --experimental-strip-types --test frontend/src/lib/i18n-keys.test.mjs
+
+  test:local-source:
+    summary: Checks local source detection and display labels
+    cmds:
+      - node --experimental-strip-types --test frontend/src/lib/local-source.test.mjs
+
   test:image-tasks:
     summary: Checks image task snapshot ordering
     cmds:
