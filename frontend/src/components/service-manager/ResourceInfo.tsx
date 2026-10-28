@@ -1,5 +1,5 @@
 import { ArrowsClockwise, CodeSimple, XCircle } from '@phosphor-icons/react';
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import type {
   DockerContainer,
@@ -29,6 +29,7 @@ import {
 import { Popover, PopoverContent, PopoverTitle, PopoverTrigger } from '../ui/popover';
 import { ScrollArea } from '../ui/scroll-area';
 import { Spinner } from '../ui/spinner';
+import { PixelAlignedSpinner } from '../PixelAlignedSpinner';
 import { STATUS_GROUPS, statusVariant, targetLabel, type Selection } from './model';
 import { type ContainerInfo } from './ResourcePanel';
 
@@ -70,51 +71,6 @@ function InfoField({ label, children }: { label: string; children: ReactNode }) 
       <dt className="truncate text-muted-foreground">{label}</dt>
       <dd className="min-w-0 break-words font-mono text-foreground">{children}</dd>
     </>
-  );
-}
-
-function ContainerSizeSpinner() {
-  const anchorRef = useRef<HTMLSpanElement>(null);
-  const contentRef = useRef<HTMLSpanElement>(null);
-
-  useLayoutEffect(() => {
-    const anchor = anchorRef.current;
-    const content = contentRef.current;
-    if (!anchor || !content) return;
-    let frame = 0;
-    const align = () => {
-      const { left, top } = anchor.getBoundingClientRect();
-      const scale = window.devicePixelRatio || 1;
-      // WebView 在半物理像素位置栅格化旋转 SVG 时会偏心；对齐静态容器，保留原动画。
-      content.style.left = `${Math.round(left * scale) / scale - left}px`;
-      content.style.top = `${Math.round(top * scale) / scale - top}px`;
-    };
-    const scheduleAlign = () => {
-      cancelAnimationFrame(frame);
-      frame = requestAnimationFrame(align);
-    };
-    const observer = new ResizeObserver(scheduleAlign);
-    // 分栏拖动会改变位置而不改变图标尺寸，因此同时观察布局祖先。
-    for (let element: Element | null = anchor; element; element = element.parentElement) {
-      observer.observe(element);
-    }
-    window.addEventListener('resize', scheduleAlign);
-    window.addEventListener('scroll', scheduleAlign, true);
-    align();
-    return () => {
-      observer.disconnect();
-      cancelAnimationFrame(frame);
-      window.removeEventListener('resize', scheduleAlign);
-      window.removeEventListener('scroll', scheduleAlign, true);
-    };
-  }, []);
-
-  return (
-    <span ref={anchorRef} className="inline-flex size-4 shrink-0">
-      <span ref={contentRef} className="relative inline-flex">
-        <Spinner />
-      </span>
-    </span>
   );
 }
 
@@ -167,12 +123,12 @@ function ContainerSizePopover({
         }
       >
         {size ? formatBytes(size.total) : '—'}
-        {loading ? <ContainerSizeSpinner /> : null}
+        {loading ? <PixelAlignedSpinner /> : null}
       </PopoverTrigger>
       <PopoverContent align="start" className="w-80 max-w-[calc(100vw-2rem)]">
         <div className="flex items-center justify-between gap-3">
           <PopoverTitle>{t('serviceManagerTool.detail.sizeBreakdown')}</PopoverTitle>
-          {loading && size ? <ContainerSizeSpinner /> : null}
+          {loading && size ? <PixelAlignedSpinner /> : null}
         </div>
         {size ? (
           <div className="flex flex-col gap-2">
@@ -197,7 +153,7 @@ function ContainerSizePopover({
         ) : (
           <div className="flex min-h-12 items-center justify-center text-xs text-muted-foreground">
             {loading ? (
-              <ContainerSizeSpinner />
+              <PixelAlignedSpinner />
             ) : canceled ? (
               t('serviceManagerTool.loadCanceled')
             ) : (
