@@ -32,8 +32,11 @@ import { Button } from '../components/ui/button';
 import { tools, type Page } from './definitions';
 import { moveSidebarToolBy } from './navigation';
 
+// 侧栏项的 hover 背景由这里自己负责：ghost 变体自带 `dark:hover:bg-muted/50`，
+// 深色下它会以半透明色盖在共享高亮上（选中项 hover 立刻变灰），因此用同变体的
+// `dark:hover:bg-muted` 顶掉它，再用更高优先级的 dark 分组把选中项的 hover 压回透明。
 const sidebarItemClassName =
-  'sidebar-item flex h-auto min-h-0 w-full items-center justify-start gap-2.5 rounded-lg px-2 py-1.5 text-xs text-muted-foreground hover:bg-muted hover:text-foreground aria-[current=page]:text-primary-foreground aria-[current=page]:hover:bg-transparent aria-[current=page]:hover:text-primary-foreground [&_svg]:size-[17px]';
+  'sidebar-item flex h-auto min-h-0 w-full items-center justify-start gap-2.5 rounded-lg px-2 py-1.5 text-xs text-muted-foreground hover:bg-muted hover:text-foreground dark:hover:bg-muted aria-[current=page]:text-primary-foreground aria-[current=page]:hover:bg-transparent aria-[current=page]:hover:text-primary-foreground dark:aria-[current=page]:hover:bg-transparent [&_svg]:size-[17px]';
 
 function SidebarManageRow({
   tool,
