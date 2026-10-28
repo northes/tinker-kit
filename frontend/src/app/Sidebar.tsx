@@ -23,7 +23,7 @@ import {
   EyeClosed,
   GearSix,
 } from '@phosphor-icons/react';
-import { useState } from 'react';
+import { useLayoutEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { SidebarToolConfig } from '../../bindings/tinkerkit/models';
 import type { ToolDefinition } from '../components/SettingsPage';
@@ -33,7 +33,7 @@ import { tools, type Page } from './definitions';
 import { moveSidebarToolBy } from './navigation';
 
 const sidebarItemClassName =
-  'sidebar-item flex h-auto min-h-0 w-full items-center justify-start gap-2.5 rounded-lg px-2 py-1.5 text-xs text-muted-foreground hover:bg-muted hover:text-foreground aria-[current=page]:bg-primary aria-[current=page]:text-primary-foreground aria-[current=page]:hover:bg-primary aria-[current=page]:hover:text-primary-foreground dark:aria-[current=page]:hover:bg-primary [&_svg]:size-[17px]';
+  'sidebar-item flex h-auto min-h-0 w-full items-center justify-start gap-2.5 rounded-lg px-2 py-1.5 text-xs text-muted-foreground hover:bg-muted hover:text-foreground aria-[current=page]:text-primary-foreground aria-[current=page]:hover:bg-transparent aria-[current=page]:hover:text-primary-foreground [&_svg]:size-[17px]';
 
 function SidebarManageRow({
   tool,
@@ -174,6 +174,13 @@ export function Sidebar({
   const { t } = useTranslation();
   const [liveMessage, setLiveMessage] = useState('');
   const [activeId, setActiveId] = useState<ToolId | null>(null);
+  const [highlight, setHighlight] = useState<{
+    left: number;
+    top: number;
+    width: number;
+    height: number;
+  } | null>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
@@ -184,6 +191,42 @@ export function Sidebar({
   });
   const visibleTools = managing ? orderedTools : orderedTools.filter((item) => item.enabled);
   const activeTool = activeId ? visibleTools.find(({ tool }) => tool.id === activeId) : undefined;
+  // 选中高亮由滚动容器内的一块共享背景承担，位置取自当前 aria-current 项，
+  // 切换页面时只改 transform，因此高亮会滑到新选中项而不是原地跳变。
+  useLayoutEffect(() => {
+    const container = scrollRef.current;
+    if (!container) return;
+    const sync = () => {
+      const current = container.querySelector<HTMLElement>('[aria-current="page"]');
+      if (!current || !current.offsetWidth) {
+        setHighlight(null);
+        return;
+      }
+      const next = {
+        left: current.offsetLeft,
+        top: current.offsetTop,
+        width: current.offsetWidth,
+        height: current.offsetHeight,
+      };
+      setHighlight((previous) =>
+        previous &&
+        previous.left === next.left &&
+        previous.top === next.top &&
+        previous.width === next.width &&
+        previous.height === next.height
+          ? previous
+          : next,
+      );
+    };
+    sync();
+    // 侧栏宽度（完整/图标模式）、字号和语言都会改变项的位置；尺寸变化即时生效，
+    // 只有切换选中项时的位置变化才做位移过渡。
+    const observer = new ResizeObserver(sync);
+    observer.observe(container);
+    const current = container.querySelector<HTMLElement>('[aria-current="page"]');
+    if (current) observer.observe(current);
+    return () => observer.disconnect();
+  }, [page, managing, sidebarTools]);
   const announceMove = (id: ToolId, next: SidebarToolConfig[]) => {
     const tool = tools.find((entry) => entry.id === id);
     const position = next.findIndex((item) => item.id === id) + 1;
@@ -201,7 +244,21 @@ export function Sidebar({
       id="app-sidebar"
       className="sidebar flex min-h-0 flex-col overflow-hidden border-r border-border bg-background"
     >
-      <div className="no-scrollbar flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto px-3">
+      <div
+        ref={scrollRef}
+        className="no-scrollbar relative isolate flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto px-3"
+      >
+        {highlight && (
+          <div
+            aria-hidden
+            className="pointer-events-none absolute -z-10 rounded-lg bg-primary transition-transform motion-reduce:transition-none"
+            style={{
+              transform: `translate(${highlight.left}px, ${highlight.top}px)`,
+              width: highlight.width,
+              height: highlight.height,
+            }}
+          />
+        )}
         {managing && (
           <div className="sticky top-0 z-10 mb-1 flex flex-none flex-col gap-2 border-b border-border bg-background py-3">
             <div className="px-2">

@@ -135,7 +135,7 @@ TinkerKit 是一组融入开发者日常工作的工具：快速、好用、克�
 - 浅色 / 深色双主题，共用中性 `primary` 焦点与克制的状态色；自定义主题遵循 `<name>-light` / `<name>-dark` 命名。
 - 系统 UI 字体承载界面，系统等宽字体承载代码、值和技术标签。
 - 统一的自定义滚动条系统（OverlayScrollbars），滚动条只作为定位提示，不争夺注意力。
-- 全项目共用一组过渡参数（`--motion-duration` / `--motion-ease`，120ms ease-out）；动画只用于 Toast 进出场、主题切换揭示、工具页激活淡入与更新胶囊扫光。
+- 全项目共用一组过渡参数（`--motion-duration` / `--motion-ease`，120ms ease-out）；动画只用于 Toast 进出场、主题切换揭示、工具页激活淡入、更新胶囊扫光与侧栏选中高亮位移。
 
 ## Colors
 
@@ -209,7 +209,7 @@ TinkerKit 是一组融入开发者日常工作的工具：快速、好用、克�
 
 过渡参数只有一组，定义在 `frontend/src/styles/foundation.css`：`--motion-duration: 120ms` 与 `--motion-ease: ease-out`。`index.css` 的 `@theme` 把它们绑定到 Tailwind 的 `--default-transition-duration` / `--default-transition-timing-function`，因此 `transition-*` 工具类不写 `duration-*` 就自动取这组值；独立 CSS 文件（`fileDrop.css`、`json.css`、`editor.css`）直接引用这两个变量。新增过渡只描述被改变的属性，不引入新的时长或缓动。
 
-**允许的动画只有四种：** Toast 进出场、主题切换揭示（`::view-transition-old(root)` 遮罩）、工具页激活的透明度淡入（`Reveal`）、更新胶囊的扫光（`UpdatePill.css` 的渐变位移，产品要求保留）。其余状态变化即时发生，不增加位移、缩放或持续动效，并且仍要尊重 `prefers-reduced-motion`。
+**允许的动画只有五种：** Toast 进出场、主题切换揭示（`::view-transition-old(root)` 遮罩）、工具页激活的透明度淡入（`Reveal`）、更新胶囊的扫光（`UpdatePill.css` 的渐变位移，产品要求保留）、侧栏选中高亮的位移（选中背景随当前项平移，只过渡 `transform`）。其余状态变化即时发生，不增加位移、缩放或持续动效，并且仍要尊重 `prefers-reduced-motion`。
 
 **The Single Motion Scale Rule.** 任何过渡都必须落在 `--motion-duration` / `--motion-ease` 上；禁止在组件里写 `duration-200`、`120ms ease`、`160ms` 之类的独立时长。`ui/*` 里 shadcn 自带的过渡属于官方默认，不在此约束内，也不得为单个调用点覆盖。
 
@@ -280,7 +280,7 @@ TinkerKit 是一组融入开发者日常工作的工具：快速、好用、克�
 - **Do** 让 header 工具栏与 footer 动作栏的动作按钮统一为「图标 + 文字」，由 `ToolActionBar` / `ToolActionButton` 渲染；纯图标只用于语义唯一的 header 入口。
 - **Do** 使用系统 UI 字体和系统等宽字体，保持 4–24px 的既有间距节奏。
 - **Do** 让滚动条统一走 `ScrollArea`（OverlayScrollbars），并复用 `--overlay-scrollbar-size`，不要另建滚动条样式。
-- **Do** 过渡统一取 `--motion-duration` / `--motion-ease`；动画只保留 Toast 进出场、主题切换揭示、工具页激活淡入与更新胶囊扫光，并继续尊重 `prefers-reduced-motion`。
+- **Do** 过渡统一取 `--motion-duration` / `--motion-ease`；动画只保留 Toast 进出场、主题切换揭示、工具页激活淡入、更新胶囊扫光与侧栏选中高亮位移，并继续尊重 `prefers-reduced-motion`。
 
 ### Don't:
 
@@ -288,7 +288,7 @@ TinkerKit 是一组融入开发者日常工作的工具：快速、好用、克�
 - **Don't** 覆盖 shadcn/Base UI 的同名派生 token，尤其是 hover、soft color、二级边框与半径阶梯。
 - **Don't** 使用渐变、玻璃拟态、装饰性阴影、营销式大标题或卡片堆叠。
 - **Don't** 用硬编码颜色绕过 `globals.css`，也不要把项目语义适配 token 当作独立主题。
-- **Don't** 在组件里写独立过渡时长（`duration-200`、`160ms`），也不要为视觉反馈增加位移、缩放或持续动效；状态应通过即时颜色、边界和内容变化表达。
+- **Don't** 在组件里写独立过渡时长（`duration-200`、`160ms`），也不要在已列动画之外为视觉反馈增加位移、缩放或持续动效；其余状态应通过即时颜色、边界和内容变化表达。
 - **Don't** 用 Tailwind 调色板类表达状态（`emerald-500`、`amber-600`、`blue`、`neutral-950`），一律走 `--success` / `--warning` / `--info` / `--destructive` 及其 `-foreground`。
 - **Don't** 为工具栏动作按钮手写 `size="sm"`、`h-8`、`h-[32px]` 等尺寸类或省略图标；也不要新增第二套动作按钮样式。
 - **Don't** 在全局隐藏原生滚动条，或为单个容器写局部滚动条覆盖。
