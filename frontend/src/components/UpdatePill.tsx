@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Events } from '@wailsio/runtime';
 import { ArrowCircleUp, X } from '@phosphor-icons/react';
 import { Button } from './ui/button';
-import { Spinner } from './ui/spinner';
+import { PixelAlignedSpinner } from './PixelAlignedSpinner';
 import { useTranslation } from 'react-i18next';
 import { InstallUpdate, RestartApp } from '../../bindings/tinkerkit/updateservice';
 import { formatBackendError } from '../lib/backend-error';
@@ -17,6 +17,10 @@ const formatVersion = (value: unknown) => {
     .replace(/^v/i, '');
   return v ? `v${v}` : '';
 };
+
+// 顶栏胶囊与左组的 28px 图标按钮同高、同基线；两侧光学内边距统一为 10px。
+const pillShell =
+  'relative top-(--app-titlebar-item-offset) z-[3] ml-auto flex h-7 max-w-[min(340px,calc(100vw-220px))] flex-none select-none items-center gap-1.5 self-center rounded-full border border-border bg-card pl-2.5 text-foreground transition-colors [--wails-draggable:no-drag]';
 
 export default function UpdatePill() {
   const { t } = useTranslation();
@@ -119,44 +123,57 @@ export default function UpdatePill() {
           : state === 'applying'
             ? t('updatePill.applying')
             : t('updatePill.restarting');
+  // 进度只在真正下载时出现；完成后进入准备/重启阶段，胶囊回到不带刻度的状态文字。
+  const downloading = state === 'downloading' && percent > 0;
   if (working)
     return (
-      <div
-        className="relative top-(--app-titlebar-item-offset) z-[3] flex h-6 max-w-[min(340px,calc(100vw-220px))] flex-none items-center self-center gap-1.5 ml-auto rounded-full border border-border bg-card py-0 px-1.5 text-foreground [--wails-draggable:no-drag]"
-        role="status"
-      >
-        <Spinner className="size-3.5 flex-none self-center text-primary motion-reduce:animate-none" />
-        <span className="update-pill__text block min-w-0 self-center overflow-hidden text-ellipsis whitespace-nowrap text-[10px] leading-[14px] text-foreground">
+      <div className={`${pillShell} overflow-hidden pr-2.5`} role="status">
+        {downloading ? (
+          <span
+            aria-hidden="true"
+            className="pointer-events-none absolute inset-y-0 left-0 bg-primary/10"
+            style={{ width: `${percent}%` }}
+          />
+        ) : null}
+        <PixelAlignedSpinner
+          aria-hidden="true"
+          className="relative size-3.5 flex-none text-primary"
+        />
+        <span className="update-pill__text relative min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap text-[10px] leading-[14px]">
           {label}
-          {state === 'downloading' && percent > 0 ? ` ${percent}%` : ''}
         </span>
+        {downloading ? (
+          <span className="relative flex-none font-mono text-[10px] leading-[14px] tabular-nums text-muted-foreground">
+            {percent}%
+          </span>
+        ) : null}
       </div>
     );
   return (
     <div
-      className="relative top-(--app-titlebar-item-offset) z-[3] flex h-6 max-w-[min(340px,calc(100vw-220px))] flex-none items-center self-center gap-1.5 ml-auto overflow-hidden rounded-full border border-border bg-card py-0 px-0.5 text-foreground [--wails-draggable:no-drag] cursor-pointer hover:border-muted-foreground hover:bg-muted"
+      className={`${pillShell} overflow-hidden pr-1 hover:border-muted-foreground/40`}
       role="status"
     >
       <Button
         variant="ghost"
-        className="flex h-full min-w-0 flex-none cursor-pointer gap-[5px] border-0 bg-transparent p-0 text-inherit hover:bg-transparent hover:text-inherit [&_svg]:size-3.5 [&_svg]:text-primary"
+        className="flex h-full min-w-0 flex-1 items-center gap-1.5 rounded-full border-0 bg-transparent p-0 text-inherit hover:bg-transparent hover:text-inherit hover:[&_svg]:text-primary"
         onClick={start}
-        aria-label={label}
       >
-        <ArrowCircleUp data-icon="inline-start" size={14} weight="duotone" />
-        <span className="update-pill__text block min-w-0 self-center overflow-hidden text-ellipsis whitespace-nowrap text-[10px] leading-[14px] text-foreground">
+        <ArrowCircleUp size={14} weight="duotone" className="flex-none text-primary/70" />
+        <span className="update-pill__text min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-[10px] leading-[14px]">
           {label}
         </span>
       </Button>
+      <span aria-hidden="true" className="h-3.5 w-px flex-none bg-border" />
       <Button
         variant="ghost"
         size="icon-xs"
-        className="flex-none cursor-pointer rounded-full border-0 bg-transparent text-muted-foreground opacity-[.72] hover:bg-accent hover:text-foreground hover:opacity-100 [&_svg]:size-[11px] [&_svg]:shrink-0"
+        className="flex-none rounded-full border-0 bg-transparent text-muted-foreground hover:bg-accent hover:text-foreground"
         aria-label={t('updatePill.dismiss')}
         title={t('updatePill.dismiss')}
         onClick={dismiss}
       >
-        <X size={11} weight="regular" />
+        <X size={12} weight="duotone" />
       </Button>
     </div>
   );
