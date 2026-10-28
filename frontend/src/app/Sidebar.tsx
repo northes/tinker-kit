@@ -259,7 +259,7 @@ export function Sidebar({
         {highlight && (
           <div
             aria-hidden
-            className="pointer-events-none absolute top-0 left-0 -z-10 rounded-lg bg-primary transition-transform motion-reduce:transition-none"
+            className="pointer-events-none absolute top-0 left-0 -z-10 rounded-lg bg-primary transition-transform duration-(--motion-slide-duration) ease-(--motion-slide-ease) motion-reduce:transition-none"
             style={{
               transform: `translate(${highlight.left}px, ${highlight.top}px)`,
               width: highlight.width,
