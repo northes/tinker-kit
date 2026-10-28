@@ -202,11 +202,16 @@ export function Sidebar({
         setHighlight(null);
         return;
       }
+      // 高亮锚在容器的 padding 边距原点（`left-0 top-0`），当前项的位置也换算到同一原点：
+      // 不设 left/top 时绝对定位的静态位置已经落在内容盒起点，再叠加 offsetLeft
+      // 会把容器 padding 算两遍，导致整块高亮右移一个 padding 并贴住侧栏边框。
+      const containerRect = container.getBoundingClientRect();
+      const currentRect = current.getBoundingClientRect();
       const next = {
-        left: current.offsetLeft,
-        top: current.offsetTop,
-        width: current.offsetWidth,
-        height: current.offsetHeight,
+        left: currentRect.left - containerRect.left - container.clientLeft + container.scrollLeft,
+        top: currentRect.top - containerRect.top - container.clientTop + container.scrollTop,
+        width: currentRect.width,
+        height: currentRect.height,
       };
       setHighlight((previous) =>
         previous &&
@@ -251,7 +256,7 @@ export function Sidebar({
         {highlight && (
           <div
             aria-hidden
-            className="pointer-events-none absolute -z-10 rounded-lg bg-primary transition-transform motion-reduce:transition-none"
+            className="pointer-events-none absolute top-0 left-0 -z-10 rounded-lg bg-primary transition-transform motion-reduce:transition-none"
             style={{
               transform: `translate(${highlight.left}px, ${highlight.top}px)`,
               width: highlight.width,
