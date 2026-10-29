@@ -2,6 +2,16 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { Popover, PopoverContent, PopoverTitle, PopoverTrigger } from './ui/popover';
 import { Button } from './ui/button';
 import { Checkbox } from './ui/checkbox';
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from './ui/dialog';
+import {
+  Combobox,
+  ComboboxContent,
+  ComboboxEmpty,
+  ComboboxInput,
+  ComboboxItem,
+  ComboboxList,
+} from './ui/combobox';
+import { ScrollableText } from './ScrollableText';
 import { Label } from './ui/label';
 import { Trans, useTranslation } from 'react-i18next';
 import {
@@ -74,6 +84,32 @@ const spaceTransforms: Record<string, (input: string) => string> = {
   compressSpaces: (input) => input.replace(/ {2,}/g, ' '),
   removeSpaces: (input) => input.replace(/[ \t]+/g, ''),
 };
+
+// 按行切分并保留原始换行符，整行移除空行（含仅空白字符的行）。
+const removeEmptyLines = (input: string) =>
+  (input.match(/[^\r\n]*(?:\r\n|\r|\n|$)/g) ?? []).filter((line) => line.trim() !== '').join('');
+
+const lineTransforms: Record<string, (input: string) => string> = {
+  compressLine: (input) => input.replace(/\r\n?|\n/g, ' '),
+  compressLineNoTrailingBackslash: (input) =>
+    input.replace(/\\[ \t]*(?=\r\n?|\n|$)/g, '').replace(/\r\n?|\n/g, ' '),
+  removeEmptyLines,
+};
+
+// 逐行在原行内容两侧拼接用户输入，换行符原样保留；末尾缺行时的零宽匹配不当作一行。
+const addLineAffixes = (input: string, prefix: string, suffix: string) =>
+  input.replace(/([^\r\n]*)(\r\n|\r|\n|$)/g, (match, content: string, ending: string) =>
+    content === '' && ending === '' ? match : `${prefix}${content}${suffix}${ending}`,
+  );
+
+type AffixField = 'prefix' | 'suffix';
+
+const AFFIX_HISTORY_LIMIT = 5;
+// 最新一次输入排在最前，重复值只保留一条。
+const rememberAffix = (entries: string[], value: string) =>
+  value === ''
+    ? entries
+    : [value, ...entries.filter((entry) => entry !== value)].slice(0, AFFIX_HISTORY_LIMIT);
 
 type CaseMode = 'upper' | 'lower' | 'lineUpper' | 'lineLower' | 'wordUpper' | 'wordLower';
 // 模块级常量避免每次渲染触发 CodeMirror reconfigure，导致搜索面板被重置关闭。
@@ -162,6 +198,147 @@ function StatPlain({ label, count }: { label: string; count: number }) {
   );
 }
 
+// 首尾字符输入框：可直接输入任意字符，也可从最近使用记录中回填。
+function AffixHistoryCombobox({
+  id,
+  label,
+  value,
+  entries,
+  autoFocus,
+  onChange,
+  onDelete,
+}: {
+  id: string;
+  label: string;
+  value: string;
+  entries: string[];
+  autoFocus?: boolean;
+  onChange: (value: string) => void;
+  onDelete: (entry: string) => void;
+}) {
+  const { t } = useTranslation();
+  return (
+    <Combobox
+      items={entries}
+      // 自由输入也必须同步为控件值，否则浮层关闭时会用空选中值覆盖输入。
+      value={value || null}
+      onValueChange={(next) => onChange(next ?? '')}
+      inputValue={value}
+      onInputValueChange={onChange}
+      filter={(entry, query) => entry.toLowerCase().includes(query.trim().toLowerCase())}
+      openOnInputClick
+    >
+      <ComboboxInput id={id} className="w-full" triggerLabel={label} autoFocus={autoFocus} />
+      <ComboboxContent>
+        <ComboboxList>
+          {(entry: string) => (
+            <ComboboxItem key={entry} value={entry} showIndicator={false} className="group/affix">
+              <ScrollableText text={entry} />
+              <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center rounded-r-md bg-linear-to-r from-transparent via-popover to-popover pl-6 pr-1 opacity-0 group-hover/affix:via-accent group-hover/affix:to-accent group-hover/affix:opacity-100 group-focus-within/affix:via-accent group-focus-within/affix:to-accent group-focus-within/affix:opacity-100 group-data-[highlighted]/affix:via-accent group-data-[highlighted]/affix:to-accent group-data-[highlighted]/affix:opacity-100 [@media(pointer:coarse)]:opacity-100">
+                <Button
+                  variant="ghost"
+                  size="icon-xs"
+                  className="group/affix-remove pointer-events-auto"
+                  aria-label={t('textTool.affixDeleteHistory', { value: entry })}
+                  title={t('textTool.affixDeleteHistory', { value: entry })}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onDelete(entry);
+                  }}
+                >
+                  <Trash
+                    weight="duotone"
+                    size={14}
+                    className="opacity-60 group-hover/affix-remove:opacity-80 group-focus-visible/affix-remove:opacity-80"
+                    aria-hidden="true"
+                  />
+                </Button>
+              </div>
+            </ComboboxItem>
+          )}
+        </ComboboxList>
+        <ComboboxEmpty>
+          {t(entries.length ? 'textTool.affixNoMatch' : 'textTool.affixNoHistory')}
+        </ComboboxEmpty>
+      </ComboboxContent>
+    </Combobox>
+  );
+}
+
+// 输入值随对话框关闭重置，最近使用记录由 TextTool 持有并跨次保留。
+function AffixDialog({
+  histories,
+  onDeleteHistory,
+  onApply,
+  onClose,
+}: {
+  histories: Record<AffixField, string[]>;
+  onDeleteHistory: (field: AffixField, entry: string) => void;
+  onApply: (prefix: string, suffix: string) => void;
+  onClose: () => void;
+}) {
+  const { t } = useTranslation();
+  const [prefix, setPrefix] = useState('');
+  const [suffix, setSuffix] = useState('');
+  const canApply = prefix !== '' || suffix !== '';
+  return (
+    <Dialog
+      open
+      onOpenChange={(open) => {
+        if (!open) onClose();
+      }}
+    >
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>{t('textTool.affix')}</DialogTitle>
+        </DialogHeader>
+        <form
+          id="text-affix-form"
+          className="grid gap-3"
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (!canApply) return;
+            onApply(prefix, suffix);
+            onClose();
+          }}
+        >
+          <div className="grid gap-2">
+            <Label htmlFor="text-affix-prefix">{t('textTool.affixPrefix')}</Label>
+            <AffixHistoryCombobox
+              id="text-affix-prefix"
+              label={t('textTool.affixPrefix')}
+              value={prefix}
+              entries={histories.prefix}
+              autoFocus
+              onChange={setPrefix}
+              onDelete={(entry) => onDeleteHistory('prefix', entry)}
+            />
+          </div>
+          <div className="grid gap-2">
+            <Label htmlFor="text-affix-suffix">{t('textTool.affixSuffix')}</Label>
+            <AffixHistoryCombobox
+              id="text-affix-suffix"
+              label={t('textTool.affixSuffix')}
+              value={suffix}
+              entries={histories.suffix}
+              onChange={setSuffix}
+              onDelete={(entry) => onDeleteHistory('suffix', entry)}
+            />
+          </div>
+        </form>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>
+            {t('common.cancel')}
+          </Button>
+          <Button type="submit" form="text-affix-form" disabled={!canApply}>
+            {t('common.add')}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export default function TextTool({
   active,
   alwaysShowSearch,
@@ -178,16 +355,11 @@ export default function TextTool({
 }) {
   const { t } = useTranslation();
   const [value, setValue] = useState('');
-  const [removeTrailingBackslash, setRemoveTrailingBackslash] = useState(false);
-  const compressLine = useCallback(
-    (input: string) => {
-      const prepared = removeTrailingBackslash
-        ? input.replace(/\\[ \t]*(?=\r\n?|\n|$)/g, '')
-        : input;
-      return prepared.replace(/\r\n?|\n/g, ' ');
-    },
-    [removeTrailingBackslash],
-  );
+  const [affixOpen, setAffixOpen] = useState(false);
+  const [affixHistory, setAffixHistory] = useState<Record<AffixField, string[]>>({
+    prefix: [],
+    suffix: [],
+  });
   // 用 state 触发一次 effect 重跑，确保自动应用「始终显示搜索」时编辑器已创建。
   const [editorReady, setEditorReady] = useState(false);
   const consumed = useRef<PendingAction | null>(null);
@@ -255,6 +427,19 @@ export default function TextTool({
   const apply = (fn: (input: string) => string) => {
     setValue(fn(value));
   };
+  // 确认后只记录非空输入，输入框本身随对话框关闭而重置。
+  const applyAffixes = (prefix: string, suffix: string) => {
+    setValue((input) => addLineAffixes(input, prefix, suffix));
+    setAffixHistory((history) => ({
+      prefix: rememberAffix(history.prefix, prefix),
+      suffix: rememberAffix(history.suffix, suffix),
+    }));
+  };
+  const updateAffixHistory = (field: AffixField, update: (entries: string[]) => string[]) => {
+    setAffixHistory((history) => ({ ...history, [field]: update(history[field]) }));
+  };
+  const deleteAffixHistory = (field: AffixField, entry: string) =>
+    updateAffixHistory(field, (entries) => entries.filter((item) => item !== entry));
   const copy = async () => {
     try {
       await navigator.clipboard.writeText(value);
@@ -273,7 +458,7 @@ export default function TextTool({
       trim: spaceTransforms.trim,
       removeSpaces: spaceTransforms.removeSpaces,
       compress: spaceTransforms.compressSpaces,
-      compressLine,
+      ...lineTransforms,
       upper: (s) => transformCase(s, 'upper'),
       lower: (s) => transformCase(s, 'lower'),
       lineUpper: (s) => transformCase(s, 'lineUpper'),
@@ -302,7 +487,7 @@ export default function TextTool({
       return;
     }
     setValue(pending.input);
-  }, [pending, value, t, compressLine]);
+  }, [pending, value, t]);
   // 勾选后打开搜索栏并保持常驻；用户按 Esc 或点关闭时关闭面板并同步取消勾选。
   useEffect(() => {
     const view = inputView.current;
@@ -476,17 +661,24 @@ export default function TextTool({
                 onSelect: (mode) => apply(spaceTransforms[mode]),
               },
               {
-                key: 'compressLine',
-                label: t('textTool.compressLine'),
+                key: 'lines',
+                label: t('textTool.line'),
                 icon: ArrowsInLineVertical,
-                type: 'split',
-                menuLabel: t('textTool.compressLineOptions'),
-                menuChecked: removeTrailingBackslash,
-                menuItemLabel: t('textTool.removeTrailingBackslash'),
-                onMenuToggle: () => setRemoveTrailingBackslash((checked) => !checked),
-                variant: 'secondary',
+                type: 'menu',
                 disabled: !value,
-                onPress: () => apply(compressLine),
+                options: [
+                  ...['compressLine', 'compressLineNoTrailingBackslash', 'removeEmptyLines'].map(
+                    (key) => ({ key, label: t(`textTool.${key}`), group: 'transform' }),
+                  ),
+                  { key: 'affix', label: t('textTool.affix'), group: 'affix' },
+                ],
+                onSelect: (mode) => {
+                  if (mode === 'affix') {
+                    setAffixOpen(true);
+                    return;
+                  }
+                  apply(lineTransforms[mode]);
+                },
               },
               {
                 key: 'copy',
@@ -499,6 +691,14 @@ export default function TextTool({
             ]}
           />
         </ToolLayoutFooter>
+        {affixOpen ? (
+          <AffixDialog
+            histories={affixHistory}
+            onDeleteHistory={deleteAffixHistory}
+            onApply={applyAffixes}
+            onClose={() => setAffixOpen(false)}
+          />
+        ) : null}
       </ToolLayout>
     </Reveal>
   );
