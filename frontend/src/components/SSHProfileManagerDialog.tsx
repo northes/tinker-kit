@@ -76,11 +76,12 @@ import { Spinner } from './ui/spinner';
 import { Textarea } from './ui/textarea';
 import { toast } from './ui/toast';
 import { formatBackendError } from '../lib/backend-error';
+import { cn } from '@/lib/utils';
 
 type SSHProfileContextValue = {
   profiles: SSHProfile[];
   reload: () => Promise<SSHProfile[]>;
-  openManager: () => void;
+  openManager: (selectedProfileID?: string) => void;
 };
 
 const SSHProfileContext = createContext<SSHProfileContextValue | null>(null);
@@ -181,6 +182,7 @@ export function useSSHProfiles() {
 export function SSHProfileProvider({ children }: { children: ReactNode }) {
   const [profiles, setProfiles] = useState<SSHProfile[]>([]);
   const [managerOpen, setManagerOpen] = useState(false);
+  const [selectedProfileID, setSelectedProfileID] = useState('');
 
   const reload = useCallback(async () => {
     const next = (await GetSSHProfiles()) ?? [];
@@ -198,13 +200,17 @@ export function SSHProfileProvider({ children }: { children: ReactNode }) {
     return () => window.removeEventListener('tinkerkit:config-replaced', refresh);
   }, [reload]);
 
-  const openManager = useCallback(() => setManagerOpen(true), []);
+  const openManager = useCallback((profileID = '') => {
+    setSelectedProfileID(profileID);
+    setManagerOpen(true);
+  }, []);
 
   return (
     <SSHProfileContext.Provider value={{ profiles, reload, openManager }}>
       {children}
       <SSHProfileManagerDialog
         open={managerOpen}
+        selectedProfileID={selectedProfileID}
         profiles={profiles}
         onProfilesChange={setProfiles}
         onOpenChange={setManagerOpen}
@@ -215,11 +221,13 @@ export function SSHProfileProvider({ children }: { children: ReactNode }) {
 
 function SSHProfileManagerDialog({
   open,
+  selectedProfileID,
   profiles,
   onProfilesChange,
   onOpenChange,
 }: {
   open: boolean;
+  selectedProfileID: string;
   profiles: SSHProfile[];
   onProfilesChange: (profiles: SSHProfile[]) => void;
   onOpenChange: (open: boolean) => void;
@@ -236,9 +244,13 @@ function SSHProfileManagerDialog({
   const [deleteTarget, setDeleteTarget] = useState<SSHProfile | null>(null);
   const [localProfiles, setLocalProfiles] = useState<SSHProfile[]>([]);
   const [localLoading, setLocalLoading] = useState(false);
+  const [listReady, setListReady] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [discardAction, setDiscardAction] = useState<'close' | 'back' | null>(null);
   const formBaselineRef = useRef<SSHProfile>({ ...emptyProfile });
+  const [viewport, setViewport] = useState<HTMLElement | null>(null);
+  const selectedProfileRef = useRef<HTMLDivElement | null>(null);
+  const centeredSelectionRef = useRef(false);
   const imported = profileIsImported(draft);
   const jumpCandidates = profileJumpCandidates(profiles, draft.id);
   const jumpMissing =
@@ -271,7 +283,12 @@ function SSHProfileManagerDialog({
   const filteredLocalProfiles = localProfiles.filter(matchesQuery);
 
   useEffect(() => {
-    if (!open) return;
+    if (!open) {
+      setListReady(false);
+      return;
+    }
+    centeredSelectionRef.current = false;
+    setListReady(false);
     setView('list');
     setDraft(emptyProfile);
     formBaselineRef.current = { ...emptyProfile };
@@ -281,6 +298,33 @@ function SSHProfileManagerDialog({
     setDiscardAction(null);
     void loadLocalProfiles();
   }, [open]);
+
+  useEffect(() => {
+    if (
+      !open ||
+      !listReady ||
+      !viewport ||
+      view !== 'list' ||
+      centeredSelectionRef.current ||
+      !selectedProfileRef.current
+    ) {
+      return;
+    }
+    const frame = requestAnimationFrame(() => {
+      const selected = selectedProfileRef.current;
+      if (!selected) return;
+      const row = selected.getBoundingClientRect();
+      const area = viewport.getBoundingClientRect();
+      viewport.scrollTo({
+        top: viewport.scrollTop + row.top - area.top - (viewport.clientHeight - row.height) / 2,
+        behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches
+          ? 'instant'
+          : 'smooth',
+      });
+      centeredSelectionRef.current = true;
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [open, listReady, viewport, view, profiles, selectedProfileID]);
 
   const loadLocalProfiles = async () => {
     setLocalLoading(true);
@@ -292,6 +336,7 @@ function SSHProfileManagerDialog({
       setListError(errorMessage(reason));
     } finally {
       setLocalLoading(false);
+      setListReady(true);
     }
   };
 
@@ -477,7 +522,10 @@ function SSHProfileManagerDialog({
               <span className="min-w-0 break-words">{listError}</span>
             </div>
           ) : null}
-          <ScrollArea className="min-h-0 flex-1 px-6 py-5 [padding-inline-end:var(--overlay-scrollbar-size)]">
+          <ScrollArea
+            className="min-h-0 flex-1 px-6 py-5 [padding-inline-end:var(--overlay-scrollbar-size)]"
+            onViewport={setViewport}
+          >
             {view === 'list' ? (
               <div className="grid gap-6">
                 <ToolSearchField
@@ -523,7 +571,15 @@ function SSHProfileManagerDialog({
                     {filteredProfiles.length ? (
                       <div className="divide-y divide-border border-y border-border">
                         {filteredProfiles.map((profile) => (
-                          <div key={profile.id} className="flex min-w-0 items-center gap-2 py-2.5">
+                          <div
+                            key={profile.id}
+                            ref={profile.id === selectedProfileID ? selectedProfileRef : undefined}
+                            aria-current={profile.id === selectedProfileID ? 'true' : undefined}
+                            className={cn(
+                              'flex min-w-0 items-center gap-2 px-2 py-2.5',
+                              profile.id === selectedProfileID && 'bg-primary/20',
+                            )}
+                          >
                             <div className="min-w-0 flex-1">
                               <div className="flex min-w-0 items-center gap-2">
                                 <span className="truncate text-xs font-medium text-foreground">
