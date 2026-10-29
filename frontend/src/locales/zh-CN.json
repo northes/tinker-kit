@@ -1468,6 +1468,11 @@
     "host": "Host",
     "port": "Port",
     "username": "Username",
+    "jumpTitle": "跳板机",
+    "jumpHint": "先连接这台机器，再由它转发到当前地址；留空表示直接连接。",
+    "jumpNone": "不使用跳板机（直连）",
+    "jumpVia": "经 {{name}} 连接",
+    "jumpMissing": "跳板机配置不存在",
     "password": "Password",
     "showPassword": "显示密码",
     "hidePassword": "隐藏密码",
@@ -2035,6 +2040,7 @@
       "checkFailed": "检查更新失败：{{detail}}"
     },
     "ssh": {
+      "jumpConnectFailed": "连接跳板机「{{name}}」失败：{{detail}}",
       "connectFailed": "连接 SSH 主机失败：{{detail}}"
     },
     "json": {
@@ -2393,6 +2399,9 @@
       "invalidAuth": "SSH 认证信息无效",
       "invalidKeyPath": "SSH 私钥路径无效",
       "keyPassphraseWithoutKey": "SSH 密钥口令未关联私钥",
+      "invalidJumpProfileID": "跳板机配置 ID 无效",
+      "jumpNotFound": "SSH 配置「{{name}}」引用的跳板机不存在",
+      "jumpCycle": "SSH 配置「{{name}}」的跳板机链路存在循环引用",
       "invalidId": "SSH 配置 ID 无效",
       "invalidIdAt": "SSH 配置 ID 无效（第 {{index}} 项）",
       "invalidProfileAt": "SSH 配置无效（第 {{index}} 项）：{{detail}}",

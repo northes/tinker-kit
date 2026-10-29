@@ -2211,6 +2211,13 @@ export default function SshFilesTool({ active }: Props) {
         }}
         renderForm={({ draft, setDraft }) => {
           const linkedProfile = profiles.find((item) => item.id === draft.sshProfileID);
+          const jumpName = linkedProfile?.jumpProfileID
+            ? (profiles.find((item) => item.id === linkedProfile.jumpProfileID)?.name ??
+              t('sshProfiles.jumpMissing'))
+            : '';
+          const connectionHint = linkedProfile
+            ? `${linkedProfile.username ? `${linkedProfile.username}@` : ''}${linkedProfile.host}:${linkedProfile.port || 22}${jumpName ? ` · ${t('sshProfiles.jumpVia', { name: jumpName })}` : ''}`
+            : t('sshFilesTool.sshProfileMissing');
           return (
             <>
               <div className="grid gap-1.5">
@@ -2240,11 +2247,7 @@ export default function SshFilesTool({ active }: Props) {
                   }
                   placeholder={t('sshFilesTool.selectSSHProfile')}
                 />
-                <p className="m-0 text-[10px] leading-4 text-muted-foreground">
-                  {linkedProfile
-                    ? `${linkedProfile.username ? `${linkedProfile.username}@` : ''}${linkedProfile.host}:${linkedProfile.port || 22}`
-                    : t('sshFilesTool.sshProfileMissing')}
-                </p>
+                <p className="m-0 text-[10px] leading-4 text-muted-foreground">{connectionHint}</p>
               </div>
               <div className="grid gap-1.5">
                 <Label htmlFor="ssh-source-default-path" className="text-xs text-muted-foreground">

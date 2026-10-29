@@ -1468,6 +1468,11 @@
     "host": "Host",
     "port": "Port",
     "username": "Username",
+    "jumpTitle": "Jump host",
+    "jumpHint": "Connect through this host first and let it forward to the address above. Leave empty to connect directly.",
+    "jumpNone": "No jump host (direct)",
+    "jumpVia": "Via {{name}}",
+    "jumpMissing": "Jump host missing",
     "password": "Password",
     "showPassword": "Show password",
     "hidePassword": "Hide password",
@@ -2035,6 +2040,7 @@
       "checkFailed": "Failed to check for updates: {{detail}}"
     },
     "ssh": {
+      "jumpConnectFailed": "Failed to connect to jump host \"{{name}}\": {{detail}}",
       "connectFailed": "Failed to connect to the SSH host: {{detail}}"
     },
     "json": {
@@ -2393,6 +2399,9 @@
       "invalidAuth": "Invalid SSH authentication credentials",
       "invalidKeyPath": "Invalid SSH private key path",
       "keyPassphraseWithoutKey": "SSH key passphrase is not associated with a private key",
+      "invalidJumpProfileID": "SSH jump host ID is invalid",
+      "jumpNotFound": "The jump host referenced by SSH profile \"{{name}}\" no longer exists",
+      "jumpCycle": "SSH profile \"{{name}}\" is part of a jump host cycle",
       "invalidId": "Invalid SSH profile ID",
       "invalidIdAt": "Invalid SSH profile ID (item {{index}})",
       "invalidProfileAt": "Invalid SSH profile (item {{index}}): {{detail}}",

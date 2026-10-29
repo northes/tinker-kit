@@ -36,6 +36,14 @@ import { Badge } from './ui/badge';
 import { ScrollArea } from './ui/scroll-area';
 import { Button } from './ui/button';
 import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from './ui/select';
+import {
   AlertDialog,
   AlertDialogAction,
   AlertDialogCancel,
@@ -89,6 +97,7 @@ export const emptyProfile: SSHProfile = {
   privateKey: '',
   privateKeyPath: '',
   keyPassphrase: '',
+  jumpProfileID: '',
   originUpdatedAt: '',
 };
 
@@ -99,6 +108,25 @@ function profileAddress(profile: SSHProfile) {
 
 function profileIsImported(profile: SSHProfile) {
   return profile.origin === 'ssh-config';
+}
+
+// profileJumpCandidates 排除配置自身和所有经它转发的配置：后者当跳板机会形成环路。
+function profileJumpCandidates(profiles: SSHProfile[], profileID: string) {
+  if (!profileID) return profiles;
+  const blocked = new Set<string>([profileID]);
+  let expanded = true;
+  while (expanded) {
+    expanded = false;
+    for (const profile of profiles) {
+      if (profile.id && profile.jumpProfileID && blocked.has(profile.jumpProfileID)) {
+        if (!blocked.has(profile.id)) {
+          blocked.add(profile.id);
+          expanded = true;
+        }
+      }
+    }
+  }
+  return profiles.filter((profile) => !blocked.has(profile.id));
 }
 
 function errorMessage(error: unknown) {
@@ -212,10 +240,31 @@ function SSHProfileManagerDialog({
   const [discardAction, setDiscardAction] = useState<'close' | 'back' | null>(null);
   const formBaselineRef = useRef<SSHProfile>({ ...emptyProfile });
   const imported = profileIsImported(draft);
+  const jumpCandidates = profileJumpCandidates(profiles, draft.id);
+  const jumpMissing =
+    Boolean(draft.jumpProfileID) &&
+    !jumpCandidates.some((profile) => profile.id === draft.jumpProfileID);
+  const jumpOptions = [
+    { value: '', label: t('sshProfiles.jumpNone') },
+    ...jumpCandidates.map((profile) => ({ value: profile.id, label: profile.name })),
+    ...(jumpMissing ? [{ value: draft.jumpProfileID, label: t('sshProfiles.jumpMissing') }] : []),
+  ];
+  const jumpLabel = (profile: SSHProfile) => {
+    if (!profile.jumpProfileID) return '';
+    const name = profiles.find((item) => item.id === profile.jumpProfileID)?.name;
+    return name ? t('sshProfiles.jumpVia', { name }) : t('sshProfiles.jumpMissing');
+  };
   const normalizedQuery = searchQuery.trim().toLowerCase();
   const matchesQuery = (profile: SSHProfile) =>
     !normalizedQuery ||
-    [profile.name, profile.originAlias, profile.host, profile.username, profileAddress(profile)]
+    [
+      profile.name,
+      profile.originAlias,
+      profile.host,
+      profile.username,
+      profileAddress(profile),
+      jumpLabel(profile),
+    ]
       .filter(Boolean)
       .some((value) => value.toLowerCase().includes(normalizedQuery));
   const filteredProfiles = profiles.filter(matchesQuery);
@@ -495,6 +544,9 @@ function SSHProfileManagerDialog({
                                 {profileIsImported(profile) ? (
                                   <span className="truncate">{profile.originAlias}</span>
                                 ) : null}
+                                {profile.jumpProfileID ? (
+                                  <span className="truncate">{jumpLabel(profile)}</span>
+                                ) : null}
                               </div>
                             </div>
                             <Button
@@ -686,6 +738,31 @@ function SSHProfileManagerDialog({
                       disabled={imported}
                       onChange={(event) => setField('username', event.target.value)}
                     />
+                  </div>
+                  <div className="grid gap-1.5">
+                    <Label htmlFor="ssh-profile-jump">{t('sshProfiles.jumpTitle')}</Label>
+                    <Select
+                      items={jumpOptions}
+                      value={draft.jumpProfileID}
+                      onValueChange={(next) => setField('jumpProfileID', next ?? '')}
+                      disabled={busy}
+                    >
+                      <SelectTrigger id="ssh-profile-jump" className="w-full">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectGroup>
+                          {jumpOptions.map((option) => (
+                            <SelectItem key={option.value || 'direct'} value={option.value}>
+                              {option.label}
+                            </SelectItem>
+                          ))}
+                        </SelectGroup>
+                      </SelectContent>
+                    </Select>
+                    <p className="text-xs leading-5 text-muted-foreground">
+                      {t('sshProfiles.jumpHint')}
+                    </p>
                   </div>
                   <div className="grid gap-1.5">
                     <span className="text-sm leading-none font-medium">
