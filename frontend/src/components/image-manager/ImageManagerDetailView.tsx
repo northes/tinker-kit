@@ -1,16 +1,17 @@
-import { ArrowsClockwise, CaretLeft, Package, XCircle } from '@phosphor-icons/react';
+import { CaretLeft, Package } from '@phosphor-icons/react';
 import { useTranslation } from 'react-i18next';
 import type { DockerImageDetail } from '../../../bindings/tinkerkit/models';
 import {
   Reveal,
   ToolActionButton,
+  ToolCanceledState,
   ToolLayout,
   ToolLayoutContent,
   ToolLayoutHeader,
   ToolLayoutToolbar,
+  ToolLoadingState,
 } from '../shared';
 import { ScrollArea } from '../ui/scroll-area';
-import { Spinner } from '../ui/spinner';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../ui/table';
 import { asStringList, formatBytes, formatCreatedAt, formatRawJSON, labelEntries } from './model';
 
@@ -264,32 +265,9 @@ export function ImageManagerDetailView({
         />
         <ToolLayoutContent className="flex min-h-0 flex-col">
           {loading ? (
-            <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-2">
-              <Spinner />
-              <ToolActionButton
-                variant="tertiary"
-                icon={XCircle}
-                label={t('common.cancel')}
-                onPress={onCancel}
-              />
-            </div>
+            <ToolLoadingState onCancel={onCancel} />
           ) : canceled ? (
-            <div className="flex h-auto min-h-0 flex-1 flex-col items-center justify-center gap-2 text-center">
-              <XCircle size={16} weight="duotone" className="text-muted-foreground" />
-              <div className="text-sm text-muted-foreground">
-                {t('imageManagerTool.detailCanceled')}
-              </div>
-              <div className="text-xs text-muted-foreground">
-                {t('imageManagerTool.detailCanceledHint')}
-              </div>
-              <ToolActionButton
-                variant="secondary"
-                icon={ArrowsClockwise}
-                label={t('common.retry')}
-                onPress={onRetry}
-                className="mt-2"
-              />
-            </div>
+            <ToolCanceledState onRetry={onRetry} retryLabel={t('common.retry')} />
           ) : error ? (
             <div className="flex h-auto min-h-0 flex-1 flex-col items-center justify-center gap-2 text-center">
               <Package size={28} weight="duotone" className="text-muted-foreground" />

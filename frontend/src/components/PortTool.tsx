@@ -71,12 +71,15 @@ import { ConfirmDialog } from './ConfirmDialog';
 import { TargetHostManagerDialog, upsertManagerItem } from './TargetHostManagerDialog';
 import {
   ToolActionBar,
+  ToolCanceledState,
+  ToolEmptyState,
   ToolHeaderField,
-  ToolSearchField,
   ToolLayout,
   ToolLayoutContent,
   ToolLayoutFooter,
   ToolLayoutTabs,
+  ToolLoadingState,
+  ToolSearchField,
   WheelText,
 } from './shared';
 import { Badge } from './ui/badge';
@@ -1081,105 +1084,91 @@ export default function PortTool({ active }: { active: boolean }) {
                 </Button>
               )}
             </div>
-            <ScrollArea
-              className="min-h-0 flex-1"
-              options={{ overflow: { x: 'scroll' } }}
-              onViewport={setPortViewport}
-            >
-              <Table
-                className="table-fixed"
-                style={{ minWidth: portTableMinWidth }}
-                containerClassName="overflow-x-visible"
+            {visiblePortData.length === 0 ? (
+              loading ? (
+                <ToolLoadingState label={t('portTool.loading')} onCancel={cancelPorts} />
+              ) : portsCanceled ? (
+                <ToolCanceledState onRetry={() => void refreshPorts()} />
+              ) : (
+                <ToolEmptyState
+                  title={t(ports.length ? 'portTool.noMatches' : 'portTool.emptyPorts')}
+                />
+              )
+            ) : (
+              <ScrollArea
+                className="min-h-0 flex-1"
+                options={{ overflow: { x: 'scroll' } }}
+                onViewport={setPortViewport}
               >
-                <TableHeader className="sticky top-0 z-10 bg-background">
-                  <TableRow>
-                    {PORT_COLUMNS.map((key, index) => (
-                      <SortableHead
-                        key={key}
-                        label={t(`portTool.${key}`)}
-                        active={portSort.key === key}
-                        direction={portSort.direction}
-                        onSort={() => changePortSort(key)}
-                        width={portColumnWidths[index]}
-                        onResize={(width) => resizePortColumn(index, width)}
-                        onResizeEnd={() => void saveColumnWidths()}
-                      />
-                    ))}
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {paddingTop > 0 && (
-                    <tr>
-                      <td colSpan={10} style={{ height: paddingTop, padding: 0 }} />
-                    </tr>
-                  )}
-                  {visiblePorts.map((row) => {
-                    const entry = visiblePortData[row.index];
-                    return (
-                      <TableRow
-                        key={row.key}
-                        ref={portVirtualizer.measureElement}
-                        data-index={row.index}
-                      >
-                        <TableCell>{entry.port}</TableCell>
-                        <TableCell>
-                          <WheelText>{entry.address}</WheelText>
-                        </TableCell>
-                        <TableCell>{entry.protocol}</TableCell>
-                        <TableCell>{entry.pid}</TableCell>
-                        <TableCell>
-                          <WheelText>{entry.name}</WheelText>
-                        </TableCell>
-                        <TableCell>
-                          <WheelText>{entry.user}</WheelText>
-                        </TableCell>
-                        <TableCell>
-                          <WheelText>{entry.path || '—'}</WheelText>
-                        </TableCell>
-                        <TableCell>
-                          <WheelText>{entry.commandLine || '—'}</WheelText>
-                        </TableCell>
-                        <TableCell>{entry.parentPID || '—'}</TableCell>
-                        <TableCell>
-                          <WheelText>{entry.parentPath || '—'}</WheelText>
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })}
-                  {paddingBottom > 0 && (
-                    <tr>
-                      <td colSpan={10} style={{ height: paddingBottom, padding: 0 }} />
-                    </tr>
-                  )}
-                </TableBody>
-              </Table>
-              {loading && (
-                <p className="py-8 text-center text-muted-foreground">{t('portTool.loading')}</p>
-              )}
-              {!loading && portsCanceled && visiblePortData.length === 0 && (
-                <div className="flex flex-col items-center gap-2 py-8 text-center">
-                  <XCircle size={16} weight="duotone" className="text-muted-foreground" />
-                  <p className="m-0 text-muted-foreground">{t('portTool.loadCanceled')}</p>
-                  <p className="m-0 text-xs text-muted-foreground">
-                    {t('portTool.loadCanceledHint')}
-                  </p>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-7 px-2 text-xs"
-                    onClick={() => void refreshPorts()}
-                  >
-                    <ArrowsClockwise weight="duotone" data-icon="inline-start" size={14} />
-                    {t('common.retry')}
-                  </Button>
-                </div>
-              )}
-              {!loading && !portsCanceled && visiblePortData.length === 0 && (
-                <p className="py-8 text-center text-muted-foreground">
-                  {t(ports.length ? 'portTool.noMatches' : 'portTool.emptyPorts')}
-                </p>
-              )}
-            </ScrollArea>
+                <Table
+                  className="table-fixed"
+                  style={{ minWidth: portTableMinWidth }}
+                  containerClassName="overflow-x-visible"
+                >
+                  <TableHeader className="sticky top-0 z-10 bg-background">
+                    <TableRow>
+                      {PORT_COLUMNS.map((key, index) => (
+                        <SortableHead
+                          key={key}
+                          label={t(`portTool.${key}`)}
+                          active={portSort.key === key}
+                          direction={portSort.direction}
+                          onSort={() => changePortSort(key)}
+                          width={portColumnWidths[index]}
+                          onResize={(width) => resizePortColumn(index, width)}
+                          onResizeEnd={() => void saveColumnWidths()}
+                        />
+                      ))}
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {paddingTop > 0 && (
+                      <tr>
+                        <td colSpan={10} style={{ height: paddingTop, padding: 0 }} />
+                      </tr>
+                    )}
+                    {visiblePorts.map((row) => {
+                      const entry = visiblePortData[row.index];
+                      return (
+                        <TableRow
+                          key={row.key}
+                          ref={portVirtualizer.measureElement}
+                          data-index={row.index}
+                        >
+                          <TableCell>{entry.port}</TableCell>
+                          <TableCell>
+                            <WheelText>{entry.address}</WheelText>
+                          </TableCell>
+                          <TableCell>{entry.protocol}</TableCell>
+                          <TableCell>{entry.pid}</TableCell>
+                          <TableCell>
+                            <WheelText>{entry.name}</WheelText>
+                          </TableCell>
+                          <TableCell>
+                            <WheelText>{entry.user}</WheelText>
+                          </TableCell>
+                          <TableCell>
+                            <WheelText>{entry.path || '—'}</WheelText>
+                          </TableCell>
+                          <TableCell>
+                            <WheelText>{entry.commandLine || '—'}</WheelText>
+                          </TableCell>
+                          <TableCell>{entry.parentPID || '—'}</TableCell>
+                          <TableCell>
+                            <WheelText>{entry.parentPath || '—'}</WheelText>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                    {paddingBottom > 0 && (
+                      <tr>
+                        <td colSpan={10} style={{ height: paddingBottom, padding: 0 }} />
+                      </tr>
+                    )}
+                  </TableBody>
+                </Table>
+              </ScrollArea>
+            )}
           </TabsContent>
           <TabsContent value="forwards" className="flex min-h-0 flex-col gap-2">
             <div className="flex min-w-0 flex-wrap items-end gap-2">

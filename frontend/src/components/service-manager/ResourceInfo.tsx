@@ -28,8 +28,8 @@ import {
 } from '../ui/dialog';
 import { Popover, PopoverContent, PopoverTitle, PopoverTrigger } from '../ui/popover';
 import { ScrollArea } from '../ui/scroll-area';
-import { Spinner } from '../ui/spinner';
 import { PixelAlignedSpinner } from '../PixelAlignedSpinner';
+import { ToolCanceledState, ToolLoadingState } from '../shared';
 import { STATUS_GROUPS, statusVariant, targetLabel, type Selection } from './model';
 import { type ContainerInfo } from './ResourcePanel';
 
@@ -155,7 +155,7 @@ function ContainerSizePopover({
             {loading ? (
               <PixelAlignedSpinner />
             ) : canceled ? (
-              t('serviceManagerTool.loadCanceled')
+              t('common.canceled')
             ) : (
               t('serviceManagerTool.detail.sizeUnavailable')
             )}
@@ -592,40 +592,17 @@ export function ResourceInfoTab({
               {error}
             </p>
           ) : !info && detailCanceled ? (
-            <div className="flex h-full flex-col items-center justify-center gap-2 p-6 text-center">
-              <XCircle size={16} weight="duotone" className="text-muted-foreground" />
-              <span className="text-sm text-muted-foreground">
-                {t('serviceManagerTool.loadCanceled')}
-              </span>
-              <span className="text-xs text-muted-foreground">
-                {t('serviceManagerTool.loadCanceledHint')}
-              </span>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="mt-1 h-7 px-2 text-xs"
-                onClick={retryDetail}
-              >
-                <ArrowsClockwise weight="duotone" data-icon="inline-start" size={14} />
-                {t('serviceManagerTool.refresh')}
-              </Button>
-            </div>
+            <ToolCanceledState
+              className="h-full"
+              onRetry={retryDetail}
+              retryLabel={t('serviceManagerTool.refresh')}
+            />
           ) : !info ? (
-            <div className="flex h-full flex-col items-center justify-center gap-2 text-center text-xs text-muted-foreground">
-              <Spinner />
-              {t('common.loading')}
-              {detailLoading ? (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-7 px-2 text-xs"
-                  onClick={cancelDetail}
-                >
-                  <XCircle weight="duotone" data-icon="inline-start" size={14} />
-                  {t('common.cancel')}
-                </Button>
-              ) : null}
-            </div>
+            <ToolLoadingState
+              className="h-full"
+              label={t('common.loading')}
+              onCancel={detailLoading ? cancelDetail : undefined}
+            />
           ) : (
             <ContainerInfoView
               info={info}

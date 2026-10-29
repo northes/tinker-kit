@@ -59,12 +59,15 @@ import { ConfirmDialog } from './ConfirmDialog';
 import { useFileDrop } from './fileDrop';
 import {
   ToolActionButton,
-  ToolSearchField,
+  ToolCanceledState,
+  ToolEmptyState,
   ToolHeaderField,
   ToolLayout,
   ToolLayoutContent,
   ToolLayoutFooter,
   ToolLayoutToolbar,
+  ToolLoadingState,
+  ToolSearchField,
   useCheckboxDragSelect,
 } from './shared';
 import {
@@ -1637,78 +1640,44 @@ export default function SshFilesTool({ active }: Props) {
                 </span>
               </div>
               {loadingSources ? (
-                <div className="flex h-full flex-col items-center justify-center gap-2 p-6 text-center">
-                  <Spinner />
-                  <span className="text-sm text-muted-foreground">
-                    {t('sshFilesTool.loadingSources')}
-                  </span>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="mt-1 h-7 px-2 text-xs"
-                    onClick={cancelLoading}
-                  >
-                    <XCircle weight="duotone" data-icon="inline-start" size={14} />
-                    {t('common.cancel')}
-                  </Button>
-                </div>
+                <ToolLoadingState
+                  className="h-full"
+                  label={t('sshFilesTool.loadingSources')}
+                  onCancel={cancelLoading}
+                />
               ) : loading ? (
-                <div className="flex h-full flex-col items-center justify-center gap-2 p-6 text-center">
-                  <Spinner />
-                  <span className="text-sm text-muted-foreground">
-                    {searching
+                <ToolLoadingState
+                  className="h-full"
+                  label={
+                    searching
                       ? t('sshFilesTool.searching')
-                      : t(`sshFilesTool.${directoryLoadingPhase}`)}
-                  </span>
-                  <span className="max-w-full truncate font-mono text-[11px] text-muted-foreground/70">
-                    {loadingDirectoryPath}
-                  </span>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="mt-1 h-7 px-2 text-xs"
-                    onClick={cancelLoading}
-                  >
-                    <XCircle weight="duotone" data-icon="inline-start" size={14} />
-                    {t('common.cancel')}
-                  </Button>
-                </div>
+                      : t(`sshFilesTool.${directoryLoadingPhase}`)
+                  }
+                  detail={searching ? undefined : loadingDirectoryPath}
+                  onCancel={cancelLoading}
+                />
               ) : loadingCanceled ? (
-                <div className="flex h-full flex-col items-center justify-center gap-2 p-6 text-center">
-                  <XCircle size={16} weight="duotone" className="text-muted-foreground" />
-                  <span className="text-sm text-muted-foreground">
-                    {t('sshFilesTool.loadingCanceled')}
-                  </span>
-                  <span className="max-w-full truncate font-mono text-[11px] text-muted-foreground/70">
-                    {t('sshFilesTool.loadingCanceledHint')}
-                  </span>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="mt-1 h-7 px-2 text-xs"
-                    onClick={retryCanceledLoading}
-                  >
-                    <ArrowClockwise weight="duotone" data-icon="inline-start" size={14} />
-                    {t('sshFilesTool.refresh')}
-                  </Button>
-                </div>
+                <ToolCanceledState
+                  className="h-full"
+                  onRetry={retryCanceledLoading}
+                  retryLabel={t('sshFilesTool.refresh')}
+                />
               ) : !sourceID ? (
-                <div className="flex h-full flex-col items-center justify-center gap-2 p-6 text-center">
-                  <HardDrives size={30} weight="duotone" className="text-muted-foreground" />
-                  <div className="text-sm font-medium text-foreground">
-                    {t('sshFilesTool.empty')}
-                  </div>
-                  <div className="max-w-sm text-xs text-muted-foreground">
-                    {t('sshFilesTool.emptyHint')}
-                  </div>
-                  <Button
-                    variant="outline"
-                    className="mt-1 h-8 text-xs"
-                    onClick={() => setManageOpen(true)}
-                  >
-                    {t('sshFilesTool.addSource')}
-                  </Button>
-                </div>
+                <ToolEmptyState
+                  className="h-full"
+                  icon={HardDrives}
+                  title={t('sshFilesTool.empty')}
+                  hint={t('sshFilesTool.emptyHint')}
+                  action={
+                    <Button
+                      variant="outline"
+                      className="h-8 text-xs"
+                      onClick={() => setManageOpen(true)}
+                    >
+                      {t('sshFilesTool.addSource')}
+                    </Button>
+                  }
+                />
               ) : !sourceUsable ? (
                 <div className="flex h-full flex-col items-center justify-center gap-2 p-6 text-center">
                   <Warning size={30} weight="duotone" className="text-destructive" />
@@ -1736,25 +1705,18 @@ export default function SshFilesTool({ active }: Props) {
                   </Button>
                 </div>
               ) : entries.length === 0 ? (
-                <div className="flex h-full flex-col items-center justify-center gap-2 p-6 text-center">
-                  {searchActive ? (
-                    <MagnifyingGlass size={30} weight="duotone" className="text-muted-foreground" />
-                  ) : (
-                    <Folder size={30} weight="duotone" className="text-muted-foreground" />
+                <ToolEmptyState
+                  className="h-full"
+                  icon={searchActive ? MagnifyingGlass : Folder}
+                  title={t(
+                    searchActive ? 'sshFilesTool.searchNoResults' : 'sshFilesTool.directoryEmpty',
                   )}
-                  <div className="text-sm font-medium text-foreground">
-                    {t(
-                      searchActive ? 'sshFilesTool.searchNoResults' : 'sshFilesTool.directoryEmpty',
-                    )}
-                  </div>
-                  <div className="max-w-sm text-xs text-muted-foreground">
-                    {t(
-                      searchActive
-                        ? 'sshFilesTool.searchNoResultsHint'
-                        : 'sshFilesTool.directoryEmptyHint',
-                    )}
-                  </div>
-                </div>
+                  hint={t(
+                    searchActive
+                      ? 'sshFilesTool.searchNoResultsHint'
+                      : 'sshFilesTool.directoryEmptyHint',
+                  )}
+                />
               ) : (
                 <Table className="min-w-[840px] text-xs" containerClassName="overflow-visible">
                   <TableHeader className="sticky top-0 z-10 bg-background">

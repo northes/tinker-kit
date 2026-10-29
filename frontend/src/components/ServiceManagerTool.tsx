@@ -2,6 +2,7 @@ import { mergeServiceInventory } from '../lib/service-inventory';
 import {
   ArrowsClockwise,
   CaretDown,
+  Cube,
   DesktopTower,
   GearSix,
   ListBullets,
@@ -61,6 +62,7 @@ import { ResourcePanel, RuntimeError } from './service-manager/ResourcePanel';
 import {
   Reveal,
   ToolActionButton,
+  ToolEmptyState,
   ToolHeaderField,
   ToolLayout,
   ToolLayoutContent,
@@ -1161,9 +1163,11 @@ export default function ServiceManagerTool({
                         </div>
                       ))
                     ) : (
-                      <p className="px-4 py-5 text-center text-xs text-muted-foreground">
-                        {t('serviceManagerTool.pickedEmpty')}
-                      </p>
+                      <ToolEmptyState
+                        className="h-full"
+                        icon={Cube}
+                        title={t('serviceManagerTool.pickedEmpty')}
+                      />
                     )}
                   </ScrollArea>
                 </div>
@@ -1183,6 +1187,7 @@ export default function ServiceManagerTool({
                   busy={busy}
                   loadingCanceled={loadCanceled}
                   onRetryLoading={() => void load(targetID)}
+                  onCancelLoading={cancelLoad}
                   t={t}
                 />
               )}

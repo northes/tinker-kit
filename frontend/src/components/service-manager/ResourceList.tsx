@@ -10,7 +10,6 @@ import {
   Power,
   Stack,
   Trash,
-  XCircle,
 } from '@phosphor-icons/react';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -31,8 +30,8 @@ import {
   ContextMenuTrigger,
 } from '../ui/context-menu';
 import { ScrollArea } from '../ui/scroll-area';
-import { Spinner } from '../ui/spinner';
 import { toast } from '../ui/toast';
+import { ToolCanceledState, ToolEmptyState, ToolLoadingState } from '../shared';
 import {
   matchesStatusFilter,
   resourceKey,
@@ -58,6 +57,7 @@ export function ResourceList({
   busy,
   loadingCanceled = false,
   onRetryLoading,
+  onCancelLoading,
   t,
 }: {
   targetID: string;
@@ -75,6 +75,7 @@ export function ResourceList({
   busy: string;
   loadingCanceled?: boolean;
   onRetryLoading?: () => void;
+  onCancelLoading?: () => void;
   t: ReturnType<typeof useTranslation>['t'];
 }) {
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
@@ -86,36 +87,21 @@ export function ResourceList({
       return next;
     });
   if (!inventory && !pickedResources) {
-    if (loadingCanceled)
+    if (loadingCanceled) {
       return (
-        <div className="grid h-full place-items-center">
-          <div className="flex flex-col items-center gap-2 text-center">
-            <XCircle size={16} weight="duotone" className="text-muted-foreground" />
-            <span className="text-sm text-muted-foreground">
-              {t('serviceManagerTool.loadCanceled')}
-            </span>
-            <span className="text-xs text-muted-foreground">
-              {t('serviceManagerTool.loadCanceledHint')}
-            </span>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="mt-1 h-7 px-2 text-xs"
-              onClick={onRetryLoading}
-            >
-              <ArrowsClockwise weight="duotone" data-icon="inline-start" size={14} />
-              {t('serviceManagerTool.refresh')}
-            </Button>
-          </div>
-        </div>
+        <ToolCanceledState
+          className="h-full"
+          onRetry={onRetryLoading}
+          retryLabel={t('serviceManagerTool.refresh')}
+        />
       );
+    }
     return (
-      <div className="grid h-full place-items-center">
-        <div className="flex flex-col items-center gap-2 text-center">
-          <Spinner />
-          <span className="text-sm text-muted-foreground">{t('serviceManagerTool.loading')}</span>
-        </div>
-      </div>
+      <ToolLoadingState
+        className="h-full"
+        label={t('serviceManagerTool.loading')}
+        onCancel={onCancelLoading}
+      />
     );
   }
   const match = (name: string) => !search || name.toLowerCase().includes(search);
@@ -520,5 +506,28 @@ export function ResourceList({
         )}
     </>
   );
-  return embedded ? content : <ScrollArea className="h-full min-h-0">{content}</ScrollArea>;
+  // 运行时都可用却没有任何资源时才算真空态；运行时不可用走上面的错误提示。
+  const runtimes = ['docker', 'pm2', 'systemd'] as const;
+  const totalResources =
+    (inventory?.containers?.length ?? 0) +
+    (inventory?.dockerGroups?.length ?? 0) +
+    (inventory?.pm2Processes?.length ?? 0) +
+    (inventory?.systemUnits?.length ?? 0);
+  const inventoryEmpty = inventory
+    ? totalResources === 0 &&
+      !(pickedResources?.length ?? 0) &&
+      runtimes.some((runtime) => inventory[runtime].available) &&
+      !runtimes.some((runtime) => inventory[runtime].available && inventory[runtime].error)
+    : false;
+  const body = inventoryEmpty ? (
+    <ToolEmptyState
+      className="h-full"
+      icon={Cube}
+      title={t('serviceManagerTool.inventoryEmpty')}
+      hint={t('serviceManagerTool.inventoryEmptyHint')}
+    />
+  ) : (
+    content
+  );
+  return embedded ? body : <ScrollArea className="h-full min-h-0">{body}</ScrollArea>;
 }

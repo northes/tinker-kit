@@ -7,6 +7,7 @@ import {
   type ReactNode,
 } from 'react';
 import { Button } from './ui/button';
+import { Spinner } from './ui/spinner';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -18,6 +19,7 @@ import {
 import { Input } from './ui/input';
 import { Tabs, TabsList, TabsTrigger } from './ui/tabs';
 import { BracketsCurly, CaretDown, MagnifyingGlass, XCircle } from '@phosphor-icons/react';
+import { useTranslation } from 'react-i18next';
 export { parseJsonLoose, stripJsonComments, stripTrailingCommas } from '../lib/json-parse';
 
 export type ToolId =
@@ -340,6 +342,136 @@ export function ToolLayoutTabs({
 
 export function ToolLayoutFooter({ children }: { children?: ReactNode }) {
   return <footer className="row-start-4 min-h-0 min-w-0">{children}</footer>;
+}
+
+type ToolStateShellProps = {
+  icon?: ReactNode;
+  title: ReactNode;
+  hint?: ReactNode;
+  detail?: string;
+  action?: ReactNode;
+  className?: string;
+};
+
+// 所有远程工具的状态块共用一套排版：图标/加载指示、标题、说明、操作。
+function ToolStateShell({
+  icon,
+  title,
+  hint,
+  detail,
+  action,
+  className = '',
+}: ToolStateShellProps) {
+  return (
+    <div
+      className={`flex min-h-0 flex-1 flex-col items-center justify-center gap-2 p-6 text-center ${className}`}
+    >
+      {icon}
+      <div className="text-sm font-medium text-foreground">{title}</div>
+      {hint ? <div className="max-w-md text-xs leading-5 text-muted-foreground">{hint}</div> : null}
+      {detail ? (
+        <div className="max-w-full truncate font-mono text-[11px] text-muted-foreground/70">
+          {detail}
+        </div>
+      ) : null}
+      {action ? <div className="mt-1">{action}</div> : null}
+    </div>
+  );
+}
+
+// 加载中：默认带取消按钮，连接和拉取数据阶段都可以中断。
+export function ToolLoadingState({
+  label,
+  detail,
+  cancelLabel,
+  onCancel,
+  className,
+}: {
+  label?: ReactNode;
+  detail?: string;
+  cancelLabel?: string;
+  onCancel?: () => void;
+  className?: string;
+}) {
+  const { t } = useTranslation();
+  return (
+    <ToolStateShell
+      className={className}
+      icon={<Spinner />}
+      title={label ?? t('common.loading')}
+      detail={detail}
+      action={
+        onCancel ? (
+          <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={onCancel}>
+            <XCircle weight="duotone" data-icon="inline-start" size={14} />
+            {cancelLabel ?? t('common.cancel')}
+          </Button>
+        ) : undefined
+      }
+    />
+  );
+}
+
+// 已取消：保留重试入口，不把取消当成错误。
+export function ToolCanceledState({
+  title,
+  hint,
+  retryLabel,
+  onRetry,
+  className,
+}: {
+  title?: ReactNode;
+  hint?: ReactNode;
+  retryLabel?: string;
+  onRetry?: () => void;
+  className?: string;
+}) {
+  const { t } = useTranslation();
+  return (
+    <ToolStateShell
+      className={className}
+      icon={<XCircle size={24} weight="duotone" className="text-muted-foreground" />}
+      title={title ?? t('common.canceled')}
+      hint={hint ?? t('common.canceledHint')}
+      action={
+        onRetry ? (
+          <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={onRetry}>
+            {retryLabel ?? t('common.retry')}
+          </Button>
+        ) : undefined
+      }
+    />
+  );
+}
+
+// 空态：图标可选，操作按钮由调用方提供。
+export function ToolEmptyState({
+  icon: Icon,
+  title,
+  hint,
+  detail,
+  action,
+  className,
+}: {
+  icon?: Icon;
+  title: ReactNode;
+  hint?: ReactNode;
+  detail?: string;
+  action?: ReactNode;
+  className?: string;
+}) {
+  return (
+    <ToolStateShell
+      className={className}
+      icon={
+        Icon ? <Icon size={28} weight="duotone" className="text-muted-foreground" /> : undefined
+      }
+      title={title}
+      hint={hint}
+      detail={detail}
+      action={action}
+    />
+  );
 }
 
 // 单元格内容超出宽度时，纵向滚轮转为横向滚动；未溢出时让事件冒泡给列表。

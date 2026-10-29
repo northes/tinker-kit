@@ -34,6 +34,7 @@ import { ScrollArea } from './ui/scroll-area';
 import {
   Reveal,
   ToolActionBar,
+  ToolEmptyState,
   ToolHeaderField,
   ToolIconButton,
   ToolLayout,
@@ -1023,12 +1024,12 @@ export default function NetworkTestTool({ active }: { active: boolean }) {
                   </ScrollArea>
                 </div>
               ) : !result && !running ? (
-                <div className="grid min-h-48 flex-1 place-items-center text-center text-xs text-muted-foreground">
-                  <div>
-                    <Network className="mx-auto mb-2 size-6" weight="duotone" />
-                    <p className="m-0">{t('networkTestTool.empty')}</p>
-                  </div>
-                </div>
+                <ToolEmptyState
+                  className="min-h-48"
+                  icon={Network}
+                  title={t('networkTestTool.emptyTitle')}
+                  hint={t('networkTestTool.empty')}
+                />
               ) : null}
             </div>
           </ToolLayoutContent>

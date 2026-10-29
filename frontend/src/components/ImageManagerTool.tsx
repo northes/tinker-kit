@@ -94,11 +94,14 @@ import { ImageImportDialog } from './ImageImportDialog';
 import {
   Reveal,
   ToolActionButton,
+  ToolCanceledState,
+  ToolEmptyState,
   ToolHeaderField,
   ToolLayout,
   ToolLayoutContent,
   ToolLayoutFooter,
   ToolLayoutToolbar,
+  ToolLoadingState,
   useCheckboxDragSelect,
   type PendingAction,
 } from './shared';
@@ -1171,34 +1174,16 @@ export default function ImageManagerTool({
         />
         <ToolLayoutContent className="flex min-h-0 flex-col">
           {watchCanceled ? (
-            <div className="flex h-auto min-h-0 flex-1 flex-col items-center justify-center gap-2 text-center">
-              <XCircle size={16} weight="duotone" className="text-muted-foreground" />
-              <div className="text-sm text-muted-foreground">
-                {t('imageManagerTool.watchCanceled')}
-              </div>
-              <div className="text-xs text-muted-foreground">
-                {t('imageManagerTool.watchCanceledHint')}
-              </div>
-              <ToolActionButton
-                variant="secondary"
-                icon={ArrowsClockwise}
-                label={t('common.retry')}
-                onPress={restartWatch}
-                className="mt-2"
-              />
-            </div>
+            <ToolCanceledState onRetry={restartWatch} retryLabel={t('common.retry')} />
           ) : contentViewState === 'loading' ? (
-            <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-2">
-              <Spinner />
-              {sourceViewState === 'connecting' ? null : (
-                <ToolActionButton
-                  variant="tertiary"
-                  icon={XCircle}
-                  label={t('common.cancel')}
-                  onPress={cancelWatch}
-                />
-              )}
-            </div>
+            <ToolLoadingState
+              label={
+                sourceViewState === 'connecting'
+                  ? t('imageManagerTool.connecting')
+                  : t('common.loading')
+              }
+              onCancel={cancelWatch}
+            />
           ) : contentViewState === 'error' ? (
             <div className="flex h-auto min-h-0 flex-1 flex-col items-center justify-center gap-2 text-center">
               <Package size={28} weight="duotone" className="text-muted-foreground" />
@@ -1217,19 +1202,19 @@ export default function ImageManagerTool({
               />
             </div>
           ) : contentViewState === 'empty' || contentViewState === 'no-results' ? (
-            <div className="flex h-auto min-h-0 flex-1 flex-col items-center justify-center gap-2 text-center">
-              <Package size={28} weight="duotone" className="text-muted-foreground" />
-              <div className="text-sm font-medium text-foreground">
-                {contentViewState === 'no-results'
-                  ? t('imageManagerTool.searchNoResults')
-                  : t('imageManagerTool.emptyTitle')}
-              </div>
-              <div className="text-xs text-muted-foreground">
-                {contentViewState === 'no-results'
-                  ? t('imageManagerTool.searchNoResultsHint')
-                  : t('imageManagerTool.emptyHint')}
-              </div>
-            </div>
+            <ToolEmptyState
+              icon={Package}
+              title={t(
+                contentViewState === 'no-results'
+                  ? 'imageManagerTool.searchNoResults'
+                  : 'imageManagerTool.emptyTitle',
+              )}
+              hint={t(
+                contentViewState === 'no-results'
+                  ? 'imageManagerTool.searchNoResultsHint'
+                  : 'imageManagerTool.emptyHint',
+              )}
+            />
           ) : (
             <ScrollArea
               className="min-h-0 flex-1 overscroll-contain [padding-inline-end:var(--overlay-scrollbar-size)]"

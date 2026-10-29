@@ -2,7 +2,6 @@ import { Events } from '@wailsio/runtime';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
-  CancelRemoteFileRequest,
   GetFileSources,
   GetRemoteCreationTimes,
   ListRemoteFiles,
@@ -70,20 +69,16 @@ export function useRemoteFileBrowser({
   const cancelLoading = useCallback(() => {
     const kind = loadingKindRef.current;
     if (!kind) return;
-    const activeDirectoryRequestID = String(directoryRequestRef.current);
     // 目录加载被中断时清空已加载标记，返回该工具时会重新加载。
     if (kind === 'directory') directoryLoadKeyRef.current = '';
+    // 所有远程请求都走同一条取消通道：递增版本号让旧结果失效，再取消在途调用。
     sourcesRequestRef.current++;
     directoryRequestRef.current++;
     searchRequestRef.current++;
     const requests = Array.from(loadingCallsRef.current);
     loadingCallsRef.current.clear();
     loadingKindRef.current = null;
-    if (kind === 'directory') {
-      void CancelRemoteFileRequest(activeDirectoryRequestID).catch(() => undefined);
-    } else {
-      for (const request of requests) void request.cancel();
-    }
+    for (const request of requests) void request.cancel();
     setLoadingSources(false);
     setLoading(false);
     setSearching(false);
@@ -93,17 +88,12 @@ export function useRemoteFileBrowser({
 
   useEffect(() => {
     return () => {
-      const activeDirectoryRequestID = String(directoryRequestRef.current);
-      if (loadingKindRef.current === 'directory')
-        void CancelRemoteFileRequest(activeDirectoryRequestID).catch(() => undefined);
       sourcesRequestRef.current++;
       directoryRequestRef.current++;
       searchRequestRef.current++;
       const requests = Array.from(loadingCallsRef.current);
       loadingCallsRef.current.clear();
-      if (loadingKindRef.current !== 'directory') {
-        for (const request of requests) void request.cancel();
-      }
+      for (const request of requests) void request.cancel();
     };
   }, []);
   const source = sources.find((item) => item.id === sourceID) ?? null;
