@@ -70,6 +70,11 @@ tasks:
     cmds:
       - node --experimental-strip-types --test frontend/src/lib/network-test-user-agent.test.mjs
 
+  test:text-affix:
+    summary: Checks text affix input retention when the combobox closes
+    cmds:
+      - node --experimental-strip-types --test frontend/src/components/TextTool.test.mjs
+
   test:json-preview:
     summary: Checks JSON preview and expansion state across tool switches
     cmds:
