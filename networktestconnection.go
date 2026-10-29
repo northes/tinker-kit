@@ -167,10 +167,12 @@ func newSSHNetworkRoute(run *networkTestRun, request NetworkTestRequest) (*netwo
 	meta := map[string]string{"source": run.source.Name, "host": run.profile.Host, "outbound": "ssh"}
 	route.stage("ssh-connect", "running", NetworkTestStage{Meta: meta})
 	language := "zh-CN"
+	profiles := []SSHProfile{*run.profile}
 	if run.service != nil && run.service.config != nil {
 		language = run.service.config.Get().Language
+		profiles = replaceSSHProfile(run.service.config.GetSSHProfiles(), *run.profile)
 	}
-	client, err := dialSSHProfileClient(run.ctx, *run.profile, language)
+	client, err := dialSSHProfileClient(run.ctx, profiles, *run.profile, language)
 	if err != nil {
 		failure := userErrorCause("networkTestTool.backend.sshConnectFailed", err)
 		route.fail("ssh-connect", failure)

@@ -240,3 +240,68 @@ func TestSaveImageSourcesUsesProfileReferencesAtomically(t *testing.T) {
 		t.Fatal("镜像来源引用不存在的全局 SSH 配置时应失败")
 	}
 }
+
+func TestSSHProfileJumpSelectionPersistsAcrossRefresh(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	writeSSHConfigTestFile(t, filepath.Join(home, ".ssh", "config"), "Host prod\n    HostName prod.example.com\n    User deploy\n")
+	previous := sshConfigCommand
+	t.Cleanup(func() { sshConfigCommand = previous })
+	sshConfigCommand = func(ctx context.Context, alias string) *exec.Cmd {
+		return exec.CommandContext(ctx, "printf", "hostname prod.example.com\nport 22\nuser deploy\n")
+	}
+	service := &ConfigService{path: filepath.Join(t.TempDir(), "config.json"), cfg: normalizeConfig(defaultConfig())}
+	jump, err := service.SaveSSHProfile(SSHProfile{Name: "跳板机", Host: "jump.example.com", Username: "deploy", Password: "secret"})
+	if err != nil {
+		t.Fatalf("保存跳板机配置失败: %v", err)
+	}
+	imported, err := service.ImportSSHConfigProfile("prod")
+	if err != nil {
+		t.Fatalf("导入本机 SSH 配置失败: %v", err)
+	}
+	saved, err := service.SaveSSHProfile(SSHProfile{
+		ID: imported.ID, Name: imported.Name, Origin: imported.Origin, OriginAlias: imported.OriginAlias,
+		Host: imported.Host, Port: imported.Port, Username: imported.Username,
+		PrivateKeyPath: imported.PrivateKeyPath, JumpProfileID: jump.ID,
+	})
+	if err != nil {
+		t.Fatalf("导入配置应允许设置跳板机: %v", err)
+	}
+	if saved.JumpProfileID != jump.ID {
+		t.Fatalf("跳板机选择未保存: %#v", saved)
+	}
+	refreshed, err := service.RefreshSSHConfigProfile(imported.ID)
+	if err != nil {
+		t.Fatalf("刷新本机 SSH 配置失败: %v", err)
+	}
+	if refreshed.JumpProfileID != jump.ID {
+		t.Fatalf("刷新本机 SSH 配置不应丢失跳板机选择: %#v", refreshed)
+	}
+	for _, profile := range service.GetSSHProfiles() {
+		if profile.ID == imported.ID && profile.JumpProfileID != jump.ID {
+			t.Fatalf("应用内配置未保留跳板机选择: %#v", profile)
+		}
+	}
+}
+
+func TestSaveSSHProfileRejectsJumpCycle(t *testing.T) {
+	service := &ConfigService{path: filepath.Join(t.TempDir(), "config.json"), cfg: normalizeConfig(defaultConfig())}
+	first, err := service.SaveSSHProfile(SSHProfile{Name: "A", Host: "a.example.com", Username: "deploy", Password: "secret"})
+	if err != nil {
+		t.Fatalf("保存第一条配置失败: %v", err)
+	}
+	second, err := service.SaveSSHProfile(SSHProfile{Name: "B", Host: "b.example.com", Username: "deploy", Password: "secret", JumpProfileID: first.ID})
+	if err != nil {
+		t.Fatalf("保存经跳板机的配置失败: %v", err)
+	}
+	if _, err := service.SaveSSHProfile(SSHProfile{
+		ID: first.ID, Name: first.Name, Host: first.Host, Username: first.Username, Password: first.Password, JumpProfileID: second.ID,
+	}); localizedErrorKey(err) != "errors.sshProfile.jumpCycle" {
+		t.Fatalf("反向往回引用应形成循环并被拒绝，实际: %v", err)
+	}
+	if _, err := service.SaveSSHProfile(SSHProfile{
+		ID: first.ID, Name: first.Name, Host: first.Host, Username: first.Username, Password: first.Password, JumpProfileID: first.ID,
+	}); err == nil {
+		t.Fatal("配置不应把自身设为跳板机")
+	}
+}

@@ -173,7 +173,8 @@ export function SetTaskSettings(taskConcurrency: number, chunkConcurrency: numbe
 }
 
 /**
- * TestSSHProfile 使用 SSH 文件和镜像服务共用的直接客户端路径完成握手测试。
+ * TestSSHProfile 使用后续 SSH 工具共用的连接链完成握手测试；草稿配置的跳板机
+ * 仍从已保存配置中解析。
  */
 export function TestSSHProfile(profile: $models.SSHProfile): $CancellablePromise<void> {
     return $Call.ByID(22431840, profile);

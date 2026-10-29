@@ -366,7 +366,10 @@ func (s *ServiceManagerService) targetSnapshot(id string) (ServiceTarget, ImageS
 		if profile.ID != profileID {
 			continue
 		}
-		source := imageSourceFromSSHProfile(ImageSource{ID: id, Name: profile.Name, Kind: "ssh", SSHProfileID: profile.ID}, profile)
+		source, err := imageSourceFromSSHProfile(ImageSource{ID: id, Name: profile.Name, Kind: "ssh", SSHProfileID: profile.ID}, profile, s.config.GetSSHProfiles())
+		if err != nil {
+			return ServiceTarget{}, ImageSource{}, "", err
+		}
 		return ServiceTarget{ID: id, Name: profile.Name, Kind: "ssh", SSHProfileID: profile.ID}, source, "docker", nil
 	}
 	return ServiceTarget{}, ImageSource{}, "", userError("errors.service.targetSSHProfileNotFound")

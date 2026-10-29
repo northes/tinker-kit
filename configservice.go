@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync"
 
@@ -132,12 +133,15 @@ type ImageSource struct {
 	SSHPrivateKey     string `json:"-"`
 	SSHPrivateKeyPath string `json:"-"`
 	SSHKeyPassphrase  string `json:"-"`
-	RegistryURL       string `json:"registryURL"`
-	RegistryUsername  string `json:"registryUsername"`
-	RegistryPassword  string `json:"registryPassword"`
+	// SSHJump 是已展开的跳板机链（最外层在前），连接时先经这些主机转发。
+	SSHJump          []SSHConnection `json:"-"`
+	RegistryURL      string          `json:"registryURL"`
+	RegistryUsername string          `json:"registryUsername"`
+	RegistryPassword string          `json:"registryPassword"`
 }
 
-// SSHProfile 是应用全局复用的 SSH 连接配置。
+// SSHProfile 是应用全局复用的 SSH 连接配置。JumpProfileID 指向另一条配置，
+// 表示该配置只经那台机器可达；跳板机自身的连接参数与认证仍保存在被引用配置里。
 type SSHProfile struct {
 	ID              string `json:"id"`
 	Name            string `json:"name"`
@@ -150,10 +154,12 @@ type SSHProfile struct {
 	PrivateKey      string `json:"privateKey"`
 	PrivateKeyPath  string `json:"privateKeyPath"`
 	KeyPassphrase   string `json:"keyPassphrase"`
+	JumpProfileID   string `json:"jumpProfileID"`
 	OriginUpdatedAt string `json:"originUpdatedAt"`
 }
 
-// SSHConnection 是文件工具复用的 SSH 连接配置。文件源只引用 ID，避免重复保存凭据。
+// SSHConnection 是一次 SSH 拨号的连接参数，也是跳板机链每一跳的单位。
+// 文件源只引用 SSH 配置 ID，避免重复保存凭据。
 type SSHConnection struct {
 	ID             string `json:"id"`
 	Name           string `json:"name"`
@@ -166,6 +172,7 @@ type SSHConnection struct {
 	PrivateKey     string `json:"privateKey"`
 	PrivateKeyPath string `json:"privateKeyPath"`
 	KeyPassphrase  string `json:"keyPassphrase"`
+	JumpProfileID  string `json:"jumpProfileID"`
 }
 
 // FileSource 是 SSH 文件管理中的可浏览源；同一连接可被多个源引用。
@@ -222,16 +229,9 @@ func stringSlicesEqual(a []string, b []string) bool {
 	return true
 }
 
+// imageSourcesEqual 逐字段比较镜像来源；带跳板机链的来源含切片字段，无法直接比较。
 func imageSourcesEqual(a []ImageSource, b []ImageSource) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := range a {
-		if a[i] != b[i] {
-			return false
-		}
-	}
-	return true
+	return reflect.DeepEqual(a, b)
 }
 
 func validConfigValue(value string, maxLength int) bool {

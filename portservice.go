@@ -362,17 +362,15 @@ func (s *PortService) sourceProfile(id string) (SSHProfile, error) {
 func (s *PortService) dial(ctx context.Context, profile SSHProfile) (*ssh.Client, error) {
 	dialCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
-	auth, err := sshAuthMethodsForProfile(profile)
-	if err != nil {
-		return nil, err
-	}
 	callback, err := newAppSSHHostKeyCallback(s.config.Get().Language)
 	if err != nil {
 		return nil, err
 	}
-	host := strings.TrimPrefix(strings.TrimSuffix(profile.Host, "]"), "[")
-	address := net.JoinHostPort(host, strconv.Itoa(profile.Port))
-	return dialSSHClient(dialCtx, address, &ssh.ClientConfig{User: profile.Username, Auth: auth, HostKeyCallback: callback, Timeout: 15 * time.Second})
+	hops, err := sshConnectionChainHops(s.config.GetSSHProfiles(), sshProfileToConnection(profile), callback)
+	if err != nil {
+		return nil, err
+	}
+	return dialSSHChain(dialCtx, hops)
 }
 
 // ListPorts 的 ctx 来自 Wails 绑定调用；前端取消时中断本地扫描或远端 SSH 会话。

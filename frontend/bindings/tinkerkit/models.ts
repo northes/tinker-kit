@@ -726,7 +726,8 @@ export interface SSHConfigHost {
 }
 
 /**
- * SSHConnection 是文件工具复用的 SSH 连接配置。文件源只引用 ID，避免重复保存凭据。
+ * SSHConnection 是一次 SSH 拨号的连接参数，也是跳板机链每一跳的单位。
+ * 文件源只引用 SSH 配置 ID，避免重复保存凭据。
  */
 export interface SSHConnection {
     "id": string;
@@ -740,6 +741,7 @@ export interface SSHConnection {
     "privateKey": string;
     "privateKeyPath": string;
     "keyPassphrase": string;
+    "jumpProfileID": string;
 }
 
 /**
@@ -756,7 +758,8 @@ export interface SSHKnownHost {
 }
 
 /**
- * SSHProfile 是应用全局复用的 SSH 连接配置。
+ * SSHProfile 是应用全局复用的 SSH 连接配置。JumpProfileID 指向另一条配置，
+ * 表示该配置只经那台机器可达；跳板机自身的连接参数与认证仍保存在被引用配置里。
  */
 export interface SSHProfile {
     "id": string;
@@ -770,6 +773,7 @@ export interface SSHProfile {
     "privateKey": string;
     "privateKeyPath": string;
     "keyPassphrase": string;
+    "jumpProfileID": string;
     "originUpdatedAt": string;
 }
 

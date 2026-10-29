@@ -128,9 +128,17 @@ func dialAuthenticatedSSH(ctx context.Context, source ImageSource, language stri
 	if port == 0 {
 		port = 22
 	}
-	config := &ssh.ClientConfig{User: user, Auth: authMethods, HostKeyCallback: hostKeyCallback, Timeout: imageCommandTimeout}
 	address := net.JoinHostPort(host, strconv.Itoa(port))
-	client, err := dialSSHClient(ctx, address, config)
+	jumpHops, err := sshJumpHops(source.SSHJump, hostKeyCallback, imageCommandTimeout)
+	if err != nil {
+		return nil, err
+	}
+	hops := append(jumpHops, sshChainHop{
+		name:    source.Name,
+		address: address,
+		config:  &ssh.ClientConfig{User: user, Auth: authMethods, HostKeyCallback: hostKeyCallback, Timeout: imageCommandTimeout},
+	})
+	client, err := dialSSHChain(ctx, hops)
 	if err != nil {
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
@@ -138,6 +146,11 @@ func dialAuthenticatedSSH(ctx context.Context, source ImageSource, language stri
 		var hostKeyErr *sshHostKeyError
 		if errors.As(err, &hostKeyErr) {
 			return nil, hostKeyErr
+		}
+		// 跳板机失败已经带上了具体机器名称，不能再简化成目标的通用连接错误。
+		var localized *localizedError
+		if errors.As(err, &localized) {
+			return nil, err
 		}
 		return nil, userError("errors.image.sshConnectFailed")
 	}

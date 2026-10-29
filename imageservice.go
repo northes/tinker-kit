@@ -374,7 +374,10 @@ func (s *ImageService) sourceSnapshot(sourceID string) (ImageSource, string, str
 					if profile.ID == "" {
 						return ImageSource{}, "", "", userError("errors.image.sshProfileMissing")
 					}
-					resolved := imageSourceFromSSHProfile(source, profile)
+					resolved, err := imageSourceFromSSHProfile(source, profile, config.SSHProfiles)
+					if err != nil {
+						return ImageSource{}, "", "", err
+					}
 					return resolved, "docker", imageSourceFingerprint(resolved, "docker"), nil
 				}
 				if validSSHHost(source.SSHHost) {
@@ -392,7 +395,7 @@ func (s *ImageService) sourceSnapshot(sourceID string) (ImageSource, string, str
 	return ImageSource{}, "", "", userErrorParams("errors.image.sourceNotFound", map[string]any{"sourceID": sourceID})
 }
 
-func imageSourceFromSSHProfile(source ImageSource, profile SSHProfile) ImageSource {
+func imageSourceFromSSHProfile(source ImageSource, profile SSHProfile, profiles []SSHProfile) (ImageSource, error) {
 	source.SSHHost = profile.Host
 	source.SSHPort = profile.Port
 	source.SSHUsername = profile.Username
@@ -400,7 +403,12 @@ func imageSourceFromSSHProfile(source ImageSource, profile SSHProfile) ImageSour
 	source.SSHPrivateKey = profile.PrivateKey
 	source.SSHPrivateKeyPath = profile.PrivateKeyPath
 	source.SSHKeyPassphrase = profile.KeyPassphrase
-	return source
+	jumps, err := sshJumpConnections(profiles, sshProfileToConnection(profile))
+	if err != nil {
+		return ImageSource{}, err
+	}
+	source.SSHJump = jumps
+	return source, nil
 }
 
 func (s *ImageService) source(sourceID string) (ImageSource, string, error) {
@@ -420,6 +428,7 @@ func imageSourceFingerprint(source ImageSource, cliPath string) string {
 		KeyPath       string `json:"keyPath"`
 		PrivateKey    string `json:"privateKey"`
 		KeyPassphrase string `json:"keyPassphrase"`
+		Jump          string `json:"jump"`
 	}{Kind: source.Kind, CLI: cliPath}
 	switch source.Kind {
 	case "registry":
@@ -428,6 +437,11 @@ func imageSourceFingerprint(source ImageSource, cliPath string) string {
 		value.Host, value.Port, value.Username = source.SSHHost, source.SSHPort, source.SSHUsername
 		value.Password, value.KeyPath = source.SSHPassword, source.SSHPrivateKeyPath
 		value.PrivateKey, value.KeyPassphrase = source.SSHPrivateKey, source.SSHKeyPassphrase
+		jumps := make([]string, 0, len(source.SSHJump))
+		for _, jump := range source.SSHJump {
+			jumps = append(jumps, fmt.Sprintf("%s@%s:%d", jump.Username, jump.Host, jump.Port))
+		}
+		value.Jump = strings.Join(jumps, ",")
 	}
 	b, _ := json.Marshal(value)
 	digest := sha256.Sum256(b)
@@ -562,7 +576,11 @@ func (s *ImageService) TestImageSourceConnection(source ImageSource) error {
 		if profile.ID == "" {
 			return userError("errors.image.sshProfileMissing")
 		}
-		normalized = imageSourceFromSSHProfile(normalized, profile)
+		resolved, err := imageSourceFromSSHProfile(normalized, profile, config.SSHProfiles)
+		if err != nil {
+			return err
+		}
+		normalized = resolved
 	}
 	cliPath := config.DockerCLIPath
 	if cliPath == "" {

@@ -132,9 +132,20 @@ func sshHostKeyAlgorithmsForKnownKeys(keys []knownhosts.KnownKey) []string {
 }
 
 func dialSSHClient(ctx context.Context, address string, config *ssh.ClientConfig) (*ssh.Client, error) {
+	return dialSSHClientVia(ctx, sshLocalDialer, address, config)
+}
+
+// sshHostDialer 建立一段到下一跳的传输连接；跳板机链路用它替换本地 TCP 拨号。
+type sshHostDialer func(ctx context.Context, address string) (net.Conn, error)
+
+func sshLocalDialer(ctx context.Context, address string) (net.Conn, error) {
+	return (&net.Dialer{}).DialContext(ctx, "tcp", address)
+}
+
+func dialSSHClientVia(ctx context.Context, dial sshHostDialer, address string, config *ssh.ClientConfig) (*ssh.Client, error) {
 	preferredConfig := *config
 	preferredConfig.HostKeyAlgorithms = sshHostKeyAlgorithms()
-	client, err := dialSSHClientOnce(ctx, address, &preferredConfig)
+	client, err := dialSSHClientOnce(ctx, dial, address, &preferredConfig)
 	if err == nil {
 		return client, nil
 	}
@@ -148,21 +159,21 @@ func dialSSHClient(ctx context.Context, address string, config *ssh.ClientConfig
 			if len(knownAlgorithms) > 0 {
 				retryConfig := *config
 				retryConfig.HostKeyAlgorithms = knownAlgorithms
-				client, retryErr := dialSSHClientOnce(ctx, address, &retryConfig)
+				client, retryErr := dialSSHClientOnce(ctx, dial, address, &retryConfig)
 				if retryErr == nil {
 					return client, nil
 				}
 				if errors.As(retryErr, &hostKeyErr) {
-					return retrySSHClientAfterHostKeyPrompt(ctx, address, config, hostKeyErr)
+					return retrySSHClientAfterHostKeyPrompt(ctx, dial, address, config, hostKeyErr)
 				}
 				var algorithmErr *ssh.AlgorithmNegotiationError
 				if errors.As(retryErr, &algorithmErr) && algorithmErr.What == "host key" {
-					return retrySSHClientAfterHostKeyPrompt(ctx, address, config, hostKeyErr)
+					return retrySSHClientAfterHostKeyPrompt(ctx, dial, address, config, hostKeyErr)
 				}
 				return nil, retryErr
 			}
 		}
-		return retrySSHClientAfterHostKeyPrompt(ctx, address, config, hostKeyErr)
+		return retrySSHClientAfterHostKeyPrompt(ctx, dial, address, config, hostKeyErr)
 	}
 
 	var keyErr *knownhosts.KeyError
@@ -177,11 +188,12 @@ func dialSSHClient(ctx context.Context, address string, config *ssh.ClientConfig
 	}
 	retryConfig := *config
 	retryConfig.HostKeyAlgorithms = knownAlgorithms
-	return dialSSHClientOnce(ctx, address, &retryConfig)
+	return dialSSHClientOnce(ctx, dial, address, &retryConfig)
 }
 
 func retrySSHClientAfterHostKeyPrompt(
 	ctx context.Context,
+	dial sshHostDialer,
 	address string,
 	config *ssh.ClientConfig,
 	hostKeyErr *sshHostKeyError,
@@ -200,11 +212,11 @@ func retrySSHClientAfterHostKeyPrompt(
 	retryConfig := *config
 	retryConfig.HostKeyCallback = hostKeyCallback
 	retryConfig.HostKeyAlgorithms = sshHostKeyAlgorithms()
-	return dialSSHClientOnce(ctx, address, &retryConfig)
+	return dialSSHClientOnce(ctx, dial, address, &retryConfig)
 }
 
-func dialSSHClientOnce(ctx context.Context, address string, config *ssh.ClientConfig) (*ssh.Client, error) {
-	netConn, err := (&net.Dialer{}).DialContext(ctx, "tcp", address)
+func dialSSHClientOnce(ctx context.Context, dial sshHostDialer, address string, config *ssh.ClientConfig) (*ssh.Client, error) {
+	netConn, err := dial(ctx, address)
 	if err != nil {
 		return nil, &sshDialError{err: err}
 	}

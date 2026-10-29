@@ -367,7 +367,8 @@ func (s *FileService) dialSFTPWithOptions(
 	if err != nil {
 		return nil, nil, err
 	}
-	hostKeyCallback, err := newAppSSHHostKeyCallback(s.configSnapshot().Language)
+	config := s.configSnapshot()
+	hostKeyCallback, err := newAppSSHHostKeyCallback(config.Language)
 	if err != nil {
 		return nil, nil, userErrorCause("errors.sshFile.readKnownHostsFailed", err)
 	}
@@ -376,9 +377,20 @@ func (s *FileService) dialSFTPWithOptions(
 	if port == 0 {
 		port = 22
 	}
-	address := net.JoinHostPort(host, fmt.Sprintf("%d", port))
-	sshConfig := &ssh.ClientConfig{User: conn.Username, Auth: auth, HostKeyCallback: hostKeyCallback, Timeout: 15 * time.Second}
-	client, err := dialSSHClient(ctx, address, sshConfig)
+	jumps, err := sshJumpConnections(config.SSHProfiles, conn)
+	if err != nil {
+		return nil, nil, err
+	}
+	hops, err := sshJumpHops(jumps, hostKeyCallback, 15*time.Second)
+	if err != nil {
+		return nil, nil, err
+	}
+	hops = append(hops, sshChainHop{
+		name:    conn.Name,
+		address: net.JoinHostPort(host, fmt.Sprintf("%d", port)),
+		config:  &ssh.ClientConfig{User: conn.Username, Auth: auth, HostKeyCallback: hostKeyCallback, Timeout: 15 * time.Second},
+	})
+	client, err := dialSSHChain(ctx, hops)
 	if err != nil {
 		var dialErr *sshDialError
 		if errors.As(err, &dialErr) || ctx.Err() != nil {
@@ -387,6 +399,11 @@ func (s *FileService) dialSFTPWithOptions(
 		var hostKeyErr *sshHostKeyError
 		if errors.As(err, &hostKeyErr) {
 			return nil, nil, hostKeyErr
+		}
+		// 跳板机失败已经指明确切机器，不能再简化成目标的认证或连接错误。
+		var localized *localizedError
+		if errors.As(err, &localized) {
+			return nil, nil, err
 		}
 		if isSSHAuthenticationFailure(err) {
 			return nil, nil, userError("errors.sshFile.authFailed")

@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -106,6 +105,7 @@ func normalizeSSHProfile(profile SSHProfile) (SSHProfile, error) {
 	profile.Host = strings.TrimSpace(profile.Host)
 	profile.Username = strings.TrimSpace(profile.Username)
 	profile.PrivateKeyPath = strings.TrimSpace(profile.PrivateKeyPath)
+	profile.JumpProfileID = strings.TrimSpace(profile.JumpProfileID)
 	profile.OriginUpdatedAt = strings.TrimSpace(profile.OriginUpdatedAt)
 	if profile.Origin == "" {
 		profile.Origin = "manual"
@@ -152,6 +152,14 @@ func normalizeSSHProfile(profile SSHProfile) (SSHProfile, error) {
 	if profile.KeyPassphrase != "" && profile.PrivateKey == "" && profile.PrivateKeyPath == "" {
 		return SSHProfile{}, userError("errors.sshProfile.keyPassphraseWithoutKey")
 	}
+	if profile.JumpProfileID != "" {
+		if !validConfigValue(profile.JumpProfileID, 128) {
+			return SSHProfile{}, userError("errors.sshProfile.invalidJumpProfileID")
+		}
+		if profile.ID != "" && profile.JumpProfileID == profile.ID {
+			return SSHProfile{}, userErrorParams("errors.sshProfile.jumpCycle", map[string]any{"name": profile.Name})
+		}
+	}
 	return profile, nil
 }
 
@@ -177,18 +185,45 @@ func normalizeSSHProfiles(profiles []SSHProfile) []SSHProfile {
 
 func validateSSHProfiles(profiles []SSHProfile) error {
 	seen := make(map[string]struct{}, len(profiles))
+	normalized := make([]SSHProfile, 0, len(profiles))
 	for index, profile := range profiles {
-		normalized, err := normalizeSSHProfile(profile)
+		item, err := normalizeSSHProfile(profile)
 		if err != nil {
 			return userErrorParamsCause("errors.sshProfile.invalidProfileAt", map[string]any{"index": index + 1}, err)
 		}
-		if !validConfigValue(normalized.ID, 128) {
+		if !validConfigValue(item.ID, 128) {
 			return userErrorParams("errors.sshProfile.invalidIdAt", map[string]any{"index": index + 1})
 		}
-		if _, ok := seen[normalized.ID]; ok {
-			return userErrorParams("errors.sshProfile.duplicateId", map[string]any{"id": normalized.ID})
+		if _, ok := seen[item.ID]; ok {
+			return userErrorParams("errors.sshProfile.duplicateId", map[string]any{"id": item.ID})
 		}
-		seen[normalized.ID] = struct{}{}
+		seen[item.ID] = struct{}{}
+		normalized = append(normalized, item)
+	}
+	return validateSSHJumpReferences(normalized)
+}
+
+// validateSSHJumpReferences 允许跳板机被删除后留下悬空引用（连接时给出明确错误），
+// 但循环引用会让相关配置全部无法连接，必须在保存时拒绝。
+func validateSSHJumpReferences(profiles []SSHProfile) error {
+	byID := make(map[string]SSHProfile, len(profiles))
+	for _, profile := range profiles {
+		byID[profile.ID] = profile
+	}
+	for _, profile := range profiles {
+		visited := map[string]struct{}{profile.ID: {}}
+		current := profile
+		for current.JumpProfileID != "" {
+			next, ok := byID[current.JumpProfileID]
+			if !ok {
+				break
+			}
+			if _, cycle := visited[next.ID]; cycle {
+				return userErrorParams("errors.sshProfile.jumpCycle", map[string]any{"name": profile.Name})
+			}
+			visited[next.ID] = struct{}{}
+			current = next
+		}
 	}
 	return nil
 }
@@ -356,6 +391,8 @@ func (s *ConfigService) RefreshSSHConfigProfile(id string) (SSHProfile, error) {
 	}
 	updated.ID = current.ID
 	updated.Name = current.Name
+	// 跳板机是应用内配置之间的关系，本机 SSH config 不提供，刷新时保留用户选择。
+	updated.JumpProfileID = current.JumpProfileID
 	return s.saveSSHProfile(updated, true)
 }
 
@@ -383,17 +420,22 @@ func ensureSSHConfigAlias(alias string) error {
 	return userErrorParams("errors.sshProfile.configAliasMissing", map[string]any{"alias": alias})
 }
 
-// TestSSHProfile 使用 SSH 文件和镜像服务共用的直接客户端路径完成握手测试。
+// TestSSHProfile 使用后续 SSH 工具共用的连接链完成握手测试；草稿配置的跳板机
+// 仍从已保存配置中解析。
 func (s *ConfigService) TestSSHProfile(profile SSHProfile) error {
 	normalized, err := normalizeSSHProfile(profile)
 	if err != nil {
 		return err
 	}
-	return testSSHProfile(context.Background(), normalized, s.Get().Language)
+	profiles := replaceSSHProfile(s.GetSSHProfiles(), normalized)
+	if err := validateSSHJumpReferences(profiles); err != nil {
+		return err
+	}
+	return testSSHProfile(context.Background(), profiles, normalized, s.Get().Language)
 }
 
-func testSSHProfile(ctx context.Context, profile SSHProfile, language string) error {
-	client, err := dialSSHProfileClient(ctx, profile, language)
+func testSSHProfile(ctx context.Context, profiles []SSHProfile, profile SSHProfile, language string) error {
+	client, err := dialSSHProfileClient(ctx, profiles, profile, language)
 	if err != nil {
 		return err
 	}
@@ -401,38 +443,52 @@ func testSSHProfile(ctx context.Context, profile SSHProfile, language string) er
 	return nil
 }
 
-func dialSSHProfileClient(ctx context.Context, profile SSHProfile, language string) (*ssh.Client, error) {
-	auth, err := sshAuthMethodsForProfile(profile)
-	if err != nil {
-		return nil, err
-	}
+// dialSSHProfileClient 建立 profile 的客户端；跳板机链路按 profiles 中的引用展开。
+func dialSSHProfileClient(ctx context.Context, profiles []SSHProfile, profile SSHProfile, language string) (*ssh.Client, error) {
 	hostKeyCallback, err := newAppSSHHostKeyCallback(language)
 	if err != nil {
 		return nil, userErrorCause("errors.sshProfile.knownHostsFailed", err)
 	}
-	host := strings.TrimPrefix(strings.TrimSuffix(profile.Host, "]"), "[")
-	address := net.JoinHostPort(host, strconv.Itoa(profile.Port))
-	config := &ssh.ClientConfig{User: profile.Username, Auth: auth, HostKeyCallback: hostKeyCallback, Timeout: 15 * time.Second}
-	return dialSSHClient(ctx, address, config)
+	hops, err := sshConnectionChainHops(profiles, sshProfileToConnection(profile), hostKeyCallback)
+	if err != nil {
+		return nil, err
+	}
+	return dialSSHChain(ctx, hops)
 }
 
-func sshAuthMethodsForProfile(profile SSHProfile) ([]ssh.AuthMethod, error) {
-	methods := make([]ssh.AuthMethod, 0, 3)
-	if profile.Password != "" {
-		methods = append(methods, passwordAuthMethods(profile.Password)...)
+// replaceSSHProfile 用最新配置替换同 ID 的已保存配置，未保存的草稿直接追加，
+// 让校验与连接测试都基于同一份候选列表。
+func replaceSSHProfile(profiles []SSHProfile, profile SSHProfile) []SSHProfile {
+	result := copySSHProfiles(profiles)
+	if profile.ID != "" {
+		for index := range result {
+			if result[index].ID == profile.ID {
+				result[index] = profile
+				return result
+			}
+		}
 	}
-	keyData := profile.PrivateKey
+	return append(result, profile)
+}
+
+// sshAuthMethodsForConnection 从连接配置构建认证方法；跳板机与目标共用同一套凭据解析。
+func sshAuthMethodsForConnection(conn SSHConnection) ([]ssh.AuthMethod, error) {
+	methods := make([]ssh.AuthMethod, 0, 3)
+	if conn.Password != "" {
+		methods = append(methods, passwordAuthMethods(conn.Password)...)
+	}
+	keyData := conn.PrivateKey
 	var err error
-	if keyData == "" && profile.PrivateKeyPath != "" {
-		keyData, err = readSSHPrivateKeyFile(profile.PrivateKeyPath)
+	if keyData == "" && conn.PrivateKeyPath != "" {
+		keyData, err = readSSHPrivateKeyFile(conn.PrivateKeyPath)
 		if err != nil {
 			return nil, userError("errors.sshProfile.readPrivateKeyFailed")
 		}
 	}
 	if keyData != "" {
 		var signer ssh.Signer
-		if profile.KeyPassphrase != "" {
-			signer, err = ssh.ParsePrivateKeyWithPassphrase([]byte(keyData), []byte(profile.KeyPassphrase))
+		if conn.KeyPassphrase != "" {
+			signer, err = ssh.ParsePrivateKeyWithPassphrase([]byte(keyData), []byte(conn.KeyPassphrase))
 		} else {
 			signer, err = ssh.ParsePrivateKey([]byte(keyData))
 		}
@@ -524,7 +580,8 @@ func sshProfileToConnection(profile SSHProfile) SSHConnection {
 		ID: profile.ID, Name: profile.Name, Host: profile.Host, Port: profile.Port,
 		Username: profile.Username, Password: profile.Password, PrivateKey: profile.PrivateKey,
 		PrivateKeyPath: profile.PrivateKeyPath, KeyPassphrase: profile.KeyPassphrase,
-		Mode: "manual", Alias: profile.OriginAlias,
+		JumpProfileID: profile.JumpProfileID,
+		Mode:          "manual", Alias: profile.OriginAlias,
 	}
 }
 
