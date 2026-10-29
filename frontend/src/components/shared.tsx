@@ -10,13 +10,11 @@ import { Button } from './ui/button';
 import {
   DropdownMenu,
   DropdownMenuContent,
-  DropdownMenuCheckboxItem,
   DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from './ui/dropdown-menu';
-import { ButtonGroup } from './ui/button-group';
 import { Input } from './ui/input';
 import { Tabs, TabsList, TabsTrigger } from './ui/tabs';
 import { BracketsCurly, CaretDown, MagnifyingGlass, XCircle } from '@phosphor-icons/react';
@@ -409,19 +407,6 @@ export type ToolBarAction =
       disabled?: boolean;
       options: Array<{ key: string; label: string; group?: string }>;
       onSelect: (value: string) => void;
-    }
-  | {
-      key: string;
-      label: string;
-      icon?: Icon;
-      variant: 'primary' | 'secondary' | 'tertiary' | 'danger';
-      type: 'split';
-      disabled?: boolean;
-      onPress: () => void;
-      menuLabel: string;
-      menuChecked: boolean;
-      menuItemLabel: string;
-      onMenuToggle: () => void;
     };
 
 const buttonVariant = {
@@ -569,38 +554,6 @@ export function ToolActionBar({
               ))}
             </DropdownMenuContent>
           </DropdownMenu>
-        ) : action.type === 'split' ? (
-          <ButtonGroup key={action.key} aria-label={action.label}>
-            <ToolActionButton
-              variant={action.variant}
-              label={action.label}
-              icon={action.icon}
-              disabled={action.disabled}
-              onPress={action.onPress}
-            />
-            <DropdownMenu>
-              <DropdownMenuTrigger
-                disabled={action.disabled}
-                render={
-                  <Button
-                    variant={buttonVariant[action.variant]}
-                    className="h-[30px] w-[30px] flex-none"
-                    aria-label={action.menuLabel}
-                  />
-                }
-              >
-                <CaretDown className="size-3" weight="duotone" aria-hidden />
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuCheckboxItem
-                  checked={action.menuChecked}
-                  onCheckedChange={action.onMenuToggle}
-                >
-                  {action.menuItemLabel}
-                </DropdownMenuCheckboxItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </ButtonGroup>
         ) : (
           <ToolActionButton
             key={action.key}
