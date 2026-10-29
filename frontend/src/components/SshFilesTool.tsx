@@ -2136,6 +2136,7 @@ export default function SshFilesTool({ active }: Props) {
           profiles.find((profile) => profile.id === item.sshProfileID)?.name ||
           t('sshFilesTool.sourceName')
         }
+        activeKey={sourceID}
         createDraft={() => emptyFileSource(profiles[0]?.id ?? '')}
         toDraft={(item) => ({ ...item })}
         commitDraft={(draft, previous) => {

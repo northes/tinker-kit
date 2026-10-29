@@ -1269,6 +1269,7 @@ export default function ServiceManagerTool({
         items={targets.length ? targets : [LOCAL_TARGET]}
         itemKey={(item) => item.id}
         itemName={(item) => sourceLabel(item, t('serviceManagerTool.localTarget'))}
+        activeKey={targetID}
         itemDisabled={isLocalSource}
         createDraft={() =>
           ({ id: '', name: '', kind: 'ssh', sshProfileID: profiles[0]?.id ?? '' }) as ServiceTarget

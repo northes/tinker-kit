@@ -1563,6 +1563,7 @@ export default function PortTool({ active }: { active: boolean }) {
         items={sources}
         itemKey={(item) => item.id}
         itemName={(item) => sourceLabel(item, t('portTool.localMachine'))}
+        activeKey={source}
         itemDisabled={isLocalSource}
         createDraft={() => ({
           id: '',

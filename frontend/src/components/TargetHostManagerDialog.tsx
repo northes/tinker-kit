@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   DndContext,
@@ -30,11 +30,15 @@ function SortableManagerItem({
   id,
   label,
   disabled = false,
+  active = false,
+  itemRef,
   children,
 }: {
   id: string;
   label: string;
   disabled?: boolean;
+  active?: boolean;
+  itemRef?: (node: HTMLDivElement | null) => void;
   children: ReactNode;
 }) {
   const {
@@ -48,9 +52,13 @@ function SortableManagerItem({
   } = useSortable({ id });
   return (
     <div
-      ref={setNodeRef}
+      ref={(node) => {
+        setNodeRef(node);
+        itemRef?.(node);
+      }}
       style={{ transform: CSS.Transform.toString(transform), transition }}
-      className={`flex min-w-0 items-center gap-2 rounded-lg border border-border bg-card px-3 py-2.5 ${disabled ? 'opacity-75' : ''} ${isDragging ? 'z-10 shadow-md' : ''}`}
+      aria-current={active ? 'true' : undefined}
+      className={`flex min-w-0 items-center gap-2 rounded-lg border px-3 py-2.5 ${active ? 'border-primary/30 bg-primary/20' : 'border-border bg-card'} ${disabled ? 'opacity-75' : ''} ${isDragging ? 'z-10 shadow-md' : ''}`}
     >
       <Button
         ref={setActivatorNodeRef}
@@ -109,6 +117,7 @@ export function TargetHostManagerDialog<TItem, TDraft>({
   items,
   itemKey,
   itemName,
+  activeKey,
   itemDisabled,
   createDraft,
   toDraft,
@@ -126,6 +135,7 @@ export function TargetHostManagerDialog<TItem, TDraft>({
   items: TItem[];
   itemKey: (item: TItem) => string;
   itemName: (item: TItem) => string;
+  activeKey?: string;
   /** Disables edit and remove controls while keeping the row sortable. */
   itemDisabled?: (item: TItem) => boolean;
   createDraft: () => TDraft;
@@ -148,6 +158,9 @@ export function TargetHostManagerDialog<TItem, TDraft>({
   const [saveError, setSaveError] = useState('');
   const [removeItem, setRemoveItem] = useState<TItem | null>(null);
   const [discardAction, setDiscardAction] = useState<'close' | 'back' | null>(null);
+  const [viewport, setViewport] = useState<HTMLElement | null>(null);
+  const activeItemRef = useRef<HTMLDivElement | null>(null);
+  const centeredActiveRef = useRef(false);
   const sensors = useSensors(
     useSensor(PointerSensor),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
@@ -203,6 +216,37 @@ export function TargetHostManagerDialog<TItem, TDraft>({
       setSaveError(formatBackendError(error));
     }
   };
+  useEffect(() => {
+    if (!open) {
+      centeredActiveRef.current = false;
+      return;
+    }
+    if (formDraft !== null || !viewport || centeredActiveRef.current || !activeItemRef.current) {
+      return;
+    }
+    const frame = requestAnimationFrame(() => {
+      const active = activeItemRef.current;
+      if (!active) return;
+      const row = active.getBoundingClientRect();
+      const area = viewport.getBoundingClientRect();
+      viewport.scrollTo({
+        top: viewport.scrollTop + row.top - area.top - (viewport.clientHeight - row.height) / 2,
+        behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches
+          ? 'instant'
+          : 'smooth',
+      });
+      centeredActiveRef.current = true;
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [open, viewport, formDraft, draftItems, activeKey]);
+
+  const setActiveItemRef = useMemo(
+    () => (node: HTMLDivElement | null) => {
+      activeItemRef.current = node;
+    },
+    [],
+  );
+
   const handleDragEnd = ({ active, over }: DragEndEvent) => {
     if (over && active.id !== over.id) {
       setDraftItems((current) =>
@@ -235,6 +279,7 @@ export function TargetHostManagerDialog<TItem, TDraft>({
                 className="h-full min-h-0 [padding-inline-end:var(--overlay-scrollbar-size)]"
                 scrollFade="y"
                 options={{ scrollbars: { visibility: 'hidden' } }}
+                onViewport={setViewport}
               >
                 <div className="grid min-h-full content-start gap-2 py-1">
                   {draftItems.length ? (
@@ -254,6 +299,8 @@ export function TargetHostManagerDialog<TItem, TDraft>({
                               id={itemKey(item)}
                               label={strings.dragItem(itemName(item))}
                               disabled={itemDisabled?.(item) ?? false}
+                              active={itemKey(item) === activeKey}
+                              itemRef={itemKey(item) === activeKey ? setActiveItemRef : undefined}
                             >
                               <div className="min-w-0 flex-1">
                                 <div className="truncate text-xs font-medium text-foreground">

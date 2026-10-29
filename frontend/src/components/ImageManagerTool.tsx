@@ -2020,6 +2020,7 @@ export default function ImageManagerTool({
         items={sources}
         itemKey={(item) => item.id}
         itemName={(item) => sourceDisplayName(item, t, profiles)}
+        activeKey={source.id}
         itemDisabled={isLocalSource}
         createDraft={() => ({ id: '', name: '', kind: 'ssh', sshProfileID: '' }) as SourceDraft}
         toDraft={(item) => ({ ...(item as ManagedImageSource) }) as SourceDraft}

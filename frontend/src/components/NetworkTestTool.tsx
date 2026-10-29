@@ -1504,6 +1504,7 @@ export default function NetworkTestTool({ active }: { active: boolean }) {
         items={networkTestSources}
         itemKey={(item) => item.id}
         itemName={(item) => sourceLabel(item, t('networkTestTool.source.local'))}
+        activeKey={sourceID}
         itemDisabled={isLocalSource}
         createDraft={() => ({
           id: '',
