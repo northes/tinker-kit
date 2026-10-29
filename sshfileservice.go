@@ -354,42 +354,15 @@ func remoteCreationTimes(
 	return parseRemoteCreationTimes(output, len(remotePaths)), nil
 }
 
-func (s *FileService) ListRemoteFiles(sourceID, currentPath string, showHidden bool, requestID string) (RemoteDirectoryListing, error) {
+// ListRemoteFiles 列出远程目录。ctx 来自 Wails 绑定调用，前端取消时中断连接与读取；
+// requestID 只用于关联连接与读取阶段的加载事件。
+func (s *FileService) ListRemoteFiles(ctx context.Context, sourceID, currentPath string, showHidden bool, requestID string) (RemoteDirectoryListing, error) {
 	_, conn, err := s.sourceSnapshot(sourceID)
 	if err != nil {
 		return RemoteDirectoryListing{}, err
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	if requestID != "" {
-		s.requestMu.Lock()
-		if s.requests == nil {
-			s.requests = map[string]context.CancelFunc{}
-		}
-		for canceledID, canceledAt := range s.canceledRequests {
-			if time.Since(canceledAt) > time.Minute {
-				delete(s.canceledRequests, canceledID)
-			}
-		}
-		if previous := s.requests[requestID]; previous != nil {
-			previous()
-		}
-		s.requests[requestID] = cancel
-		if _, canceled := s.canceledRequests[requestID]; canceled {
-			delete(s.canceledRequests, requestID)
-			cancel()
-		}
-		s.requestMu.Unlock()
-		defer func() {
-			s.requestMu.Lock()
-			if s.requests[requestID] != nil {
-				delete(s.requests, requestID)
-			}
-			s.requestMu.Unlock()
-			cancel()
-		}()
-	} else {
-		defer cancel()
-	}
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
 	s.sessionMu.Lock()
 	cached := s.sessions[sourceID]
 	hasCachedSession := cached != nil && cached.connection == conn && !cached.retired
@@ -434,25 +407,7 @@ func (s *FileService) ListRemoteFiles(sourceID, currentPath string, showHidden b
 	return RemoteDirectoryListing{Path: remotePath, Entries: result}, nil
 }
 
-// CancelRemoteFileRequest 中断正在连接或读取目录的请求。
-func (s *FileService) CancelRemoteFileRequest(requestID string) {
-	if requestID == "" {
-		return
-	}
-	s.requestMu.Lock()
-	cancel := s.requests[requestID]
-	if cancel == nil {
-		if s.canceledRequests == nil {
-			s.canceledRequests = map[string]time.Time{}
-		}
-		s.canceledRequests[requestID] = time.Now()
-	}
-	s.requestMu.Unlock()
-	if cancel != nil {
-		cancel()
-	}
-}
-
+// emitDirectoryLoading 把连接、读取阶段同步给界面，requestID 用于忽略过期请求。
 func (s *FileService) emitDirectoryLoading(requestID, phase string) {
 	if requestID == "" || s.emitEvent == nil {
 		return
@@ -497,12 +452,12 @@ func (s *FileService) GetRemoteCreationTimes(ctx context.Context, sourceID strin
 }
 
 // GetRemoteFileEntry 解析收藏路径的当前类型，不读取整个父目录。
-func (s *FileService) GetRemoteFileEntry(sourceID, remotePath string) (RemoteFileEntry, error) {
+func (s *FileService) GetRemoteFileEntry(ctx context.Context, sourceID, remotePath string) (RemoteFileEntry, error) {
 	_, conn, err := s.sourceSnapshot(sourceID)
 	if err != nil {
 		return RemoteFileEntry{}, err
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	session, err := s.acquirePersistentSFTP(ctx, sourceID, conn)
 	if err != nil {
@@ -534,14 +489,14 @@ func remoteFileEntryFromInfo(remotePath string, entry os.FileInfo, createdAt str
 	}
 }
 
-func (s *FileService) TestSSHFileConnection(connection SSHConnection, defaultPath string) error {
+func (s *FileService) TestSSHFileConnection(ctx context.Context, connection SSHConnection, defaultPath string) error {
 	if connection.Port == 0 {
 		connection.Port = 22
 	}
 	if connection.Mode != "local" && connection.Username == "" {
 		return userError("errors.sshFile.emptyUsername")
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
 	sshClient, client, err := s.dialSFTPWithOptions(ctx, connection, remoteDownloadSFTPOptions()...)
 	if err != nil {
@@ -561,7 +516,7 @@ func (s *FileService) TestSSHFileConnection(connection SSHConnection, defaultPat
 }
 
 // CreateRemoteDirectory 在远程文件源的指定路径创建文件夹。
-func (s *FileService) CreateRemoteDirectory(sourceID, remotePath string) error {
+func (s *FileService) CreateRemoteDirectory(ctx context.Context, sourceID, remotePath string) error {
 	remotePath = normalizedRemotePath(remotePath)
 	if remotePath == "/" {
 		return userError("errors.sshFile.invalidFolderPath")
@@ -570,7 +525,7 @@ func (s *FileService) CreateRemoteDirectory(sourceID, remotePath string) error {
 	if err != nil {
 		return err
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	sshClient, client, err := s.dialSFTP(ctx, conn)
 	if err != nil {

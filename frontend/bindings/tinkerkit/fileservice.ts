@@ -23,13 +23,6 @@ export function CancelFileTask(id: string): $CancellablePromise<void> {
 }
 
 /**
- * CancelRemoteFileRequest 中断正在连接或读取目录的请求。
- */
-export function CancelRemoteFileRequest(requestID: string): $CancellablePromise<void> {
-    return $Call.ByID(520401154, requestID);
-}
-
-/**
  * ClearFileTasks 移除所有已结束（非排队、扫描、运行或等待处理）的文件任务并返回最新快照。
  */
 export function ClearFileTasks(): $CancellablePromise<$models.FileTaskSnapshot> {
@@ -72,6 +65,10 @@ export function GetRemoteFileEntry(sourceID: string, remotePath: string): $Cance
     return $Call.ByID(1504669771, sourceID, remotePath);
 }
 
+/**
+ * ListRemoteFiles 列出远程目录。ctx 来自 Wails 绑定调用，前端取消时中断连接与读取；
+ * requestID 只用于关联连接与读取阶段的加载事件。
+ */
 export function ListRemoteFiles(sourceID: string, currentPath: string, showHidden: boolean, requestID: string): $CancellablePromise<$models.RemoteDirectoryListing> {
     return $Call.ByID(1852492260, sourceID, currentPath, showHidden, requestID);
 }

@@ -10,25 +10,21 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
 )
 
 // FileService 提供需要原生文件对话框的文件操作。
 type FileService struct {
-	config           *ConfigService
-	taskScheduler    *taskScheduler
-	sessionMu        sync.Mutex
-	sessions         map[string]*persistentSFTPSession
-	requestMu        sync.Mutex
-	requests         map[string]context.CancelFunc
-	canceledRequests map[string]time.Time
-	taskMu           sync.Mutex
-	tasks            map[string]*fileTaskState
-	taskOrder        []string
-	taskRevision     uint64
-	emitEvent        func(string, any)
+	config        *ConfigService
+	taskScheduler *taskScheduler
+	sessionMu     sync.Mutex
+	sessions      map[string]*persistentSFTPSession
+	taskMu        sync.Mutex
+	tasks         map[string]*fileTaskState
+	taskOrder     []string
+	taskRevision  uint64
+	emitEvent     func(string, any)
 }
 
 func (s *FileService) setTaskScheduler(scheduler *taskScheduler) {
@@ -59,7 +55,7 @@ var imageMIMETypes = map[string]string{
 }
 
 func NewFileService(config ...*ConfigService) *FileService {
-	service := &FileService{sessions: map[string]*persistentSFTPSession{}, requests: map[string]context.CancelFunc{}}
+	service := &FileService{sessions: map[string]*persistentSFTPSession{}}
 	if len(config) > 0 {
 		service.config = config[0]
 	}

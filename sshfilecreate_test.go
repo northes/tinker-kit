@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -87,7 +88,7 @@ func TestCreateRemoteTextFileDoesNotCreateMissingParent(t *testing.T) {
 func TestCreateRemoteTextFileRejectsInvalidPathsBeforeConnecting(t *testing.T) {
 	service := &FileService{}
 	for _, remotePath := range []string{"", " ", "/", "/folder/..", "/bad\x00name"} {
-		if err := service.CreateRemoteTextFile("", remotePath); localizedErrorKey(err) != "errors.sshFile.textPathInvalid" {
+		if err := service.CreateRemoteTextFile(context.Background(), "", remotePath); localizedErrorKey(err) != "errors.sshFile.textPathInvalid" {
 			t.Fatalf("应在建立连接前拒绝无效路径 %q: %v", remotePath, err)
 		}
 	}

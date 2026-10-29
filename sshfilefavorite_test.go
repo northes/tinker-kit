@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -29,22 +30,22 @@ func TestFavoriteRemoteFileEntryResolvesCurrentType(t *testing.T) {
 	}
 	withTestSFTPClient(t, root, func(client *sftp.Client) {
 		service.sessions = map[string]*persistentSFTPSession{"source": {connection: conn, sftp: client}}
-		entry, err := service.GetRemoteFileEntry("source", file)
+		entry, err := service.GetRemoteFileEntry(context.Background(), "source", file)
 		if err != nil || entry.IsDir || entry.IsSymlink || entry.Path != file || entry.Size != 2 {
 			t.Fatalf("文件收藏解析错误: %#v, %v", entry, err)
 		}
-		entry, err = service.GetRemoteFileEntry("source", root)
+		entry, err = service.GetRemoteFileEntry(context.Background(), "source", root)
 		if err != nil || !entry.IsDir {
 			t.Fatalf("目录收藏解析错误: %#v, %v", entry, err)
 		}
-		entry, err = service.GetRemoteFileEntry("source", link)
+		entry, err = service.GetRemoteFileEntry(context.Background(), "source", link)
 		if err != nil || !entry.IsSymlink {
 			t.Fatalf("符号链接不能作为普通文本文件打开: %#v, %v", entry, err)
 		}
 		if err := os.Remove(file); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := service.GetRemoteFileEntry("source", file); err == nil {
+		if _, err := service.GetRemoteFileEntry(context.Background(), "source", file); err == nil {
 			t.Fatal("失效收藏必须返回错误")
 		}
 	})

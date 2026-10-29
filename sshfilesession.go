@@ -116,12 +116,6 @@ func (s *FileService) invalidatePersistentSFTP(sourceID string, session *persist
 }
 
 func (s *FileService) shutdown() {
-	s.requestMu.Lock()
-	for requestID, cancel := range s.requests {
-		cancel()
-		delete(s.requests, requestID)
-	}
-	s.requestMu.Unlock()
 	s.sessionMu.Lock()
 	sessions := make([]*persistentSFTPSession, 0, len(s.sessions))
 	for sourceID, session := range s.sessions {

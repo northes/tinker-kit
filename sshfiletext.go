@@ -51,7 +51,7 @@ func createRemoteText(client *sftp.Client, remotePath string) error {
 }
 
 // CreateRemoteTextFile 创建空白纯文本文件，不覆盖已有项目，也不隐式创建父目录。
-func (s *FileService) CreateRemoteTextFile(sourceID, remotePath string) error {
+func (s *FileService) CreateRemoteTextFile(ctx context.Context, sourceID, remotePath string) error {
 	remotePath, err := remoteTextPath(remotePath)
 	if err != nil {
 		return err
@@ -60,7 +60,7 @@ func (s *FileService) CreateRemoteTextFile(sourceID, remotePath string) error {
 	if err != nil {
 		return err
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	session, err := s.acquirePersistentSFTP(ctx, sourceID, connection)
 	if err != nil {
@@ -160,7 +160,7 @@ func saveRemoteText(client *sftp.Client, remotePath, content, revision string) (
 	return hex.EncodeToString(sum[:]), nil
 }
 
-func (s *FileService) ReadRemoteTextFile(sourceID, remotePath string) (RemoteTextFile, error) {
+func (s *FileService) ReadRemoteTextFile(ctx context.Context, sourceID, remotePath string) (RemoteTextFile, error) {
 	remotePath, err := remoteTextPath(remotePath)
 	if err != nil {
 		return RemoteTextFile{}, err
@@ -169,7 +169,7 @@ func (s *FileService) ReadRemoteTextFile(sourceID, remotePath string) (RemoteTex
 	if err != nil {
 		return RemoteTextFile{}, err
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	session, err := s.acquirePersistentSFTP(ctx, sourceID, connection)
 	if err != nil {
@@ -183,7 +183,7 @@ func (s *FileService) ReadRemoteTextFile(sourceID, remotePath string) (RemoteTex
 	return result, err
 }
 
-func (s *FileService) SaveRemoteTextFile(sourceID, remotePath, content, revision string) (string, error) {
+func (s *FileService) SaveRemoteTextFile(ctx context.Context, sourceID, remotePath, content, revision string) (string, error) {
 	remotePath, err := remoteTextPath(remotePath)
 	if err != nil {
 		return "", err
@@ -192,7 +192,7 @@ func (s *FileService) SaveRemoteTextFile(sourceID, remotePath, content, revision
 	if err != nil {
 		return "", err
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	session, err := s.acquirePersistentSFTP(ctx, sourceID, connection)
 	if err != nil {
