@@ -1,4 +1,4 @@
-import { FavoritePath } from './ssh-files/FavoritePath';
+import { ScrollableText } from './ScrollableText';
 import {
   Archive,
   ArrowClockwise,
@@ -1566,7 +1566,7 @@ export default function SshFilesTool({ active }: Props) {
                         onClick={() => void openFavorite(favoritePath)}
                       >
                         <Star size={14} weight="duotone" aria-hidden="true" />
-                        <FavoritePath path={favoritePath} />
+                        <ScrollableText text={favoritePath} />
                       </DropdownMenuItem>
                       <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center rounded-r-md bg-linear-to-r from-transparent via-popover to-popover pl-6 pr-1 opacity-0 group-hover/favorite:via-accent group-hover/favorite:to-accent group-hover/favorite:opacity-100 group-focus-within/favorite:via-accent group-focus-within/favorite:to-accent group-focus-within/favorite:opacity-100 [@media(pointer:coarse)]:opacity-100">
                         <DropdownMenuItem

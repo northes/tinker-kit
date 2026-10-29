@@ -1,8 +1,8 @@
 import { useCallback, useLayoutEffect, useState } from 'react';
-import { ScrollArea } from '../ui/scroll-area';
+import { ScrollArea } from './ui/scroll-area';
 
-// 收藏菜单默认展示路径尾部；滚轮只控制当前路径，不滚动整个菜单。
-export function FavoritePath({ path }: { path: string }) {
+// 单行文本默认展示尾部；滚轮只控制文本自身，不带动外层滚动容器。
+export function ScrollableText({ text }: { text: string }) {
   const [viewport, setViewport] = useState<HTMLElement | null>(null);
   const onViewport = useCallback((element: HTMLElement | null) => setViewport(element), []);
 
@@ -42,7 +42,7 @@ export function FavoritePath({ path }: { path: string }) {
       viewport.removeEventListener('scroll', onScroll);
       viewport.removeEventListener('wheel', onWheel);
     };
-  }, [viewport, path]);
+  }, [viewport, text]);
 
   return (
     <ScrollArea
@@ -50,9 +50,9 @@ export function FavoritePath({ path }: { path: string }) {
       onViewport={onViewport}
       scrollFade="x"
       options={{ overflow: { x: 'scroll', y: 'hidden' }, scrollbars: { visibility: 'hidden' } }}
-      title={path}
+      title={text}
     >
-      <span className="block w-max whitespace-nowrap">{path}</span>
+      <span className="block w-max whitespace-nowrap">{text}</span>
     </ScrollArea>
   );
 }
