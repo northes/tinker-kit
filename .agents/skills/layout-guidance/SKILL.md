@@ -1,6 +1,6 @@
 ---
 name: layout-guidance
-description: 仅在改工具页布局/高度链、CodeMirror 尺寸与交互、浮层与 footer 对齐、列表勾选与批量操作、列表拖动排序、弹窗表单提交等 UI 细节或 `ScrollArea` 滚动容器时使用。纯颜色或文案修改不要使用本 skill。
+description: 仅在改工具页布局/高度链、CodeMirror 尺寸与交互、浮层与 footer 对齐、列表勾选与批量操作、列表拖动排序、输入历史记录、弹窗表单提交等 UI 细节或 `ScrollArea` 滚动容器时使用。纯颜色或文案修改不要使用本 skill。
 user-invocable: false
 ---
 
@@ -13,7 +13,7 @@ user-invocable: false
 只读取直接命中的参考，不默认加载全部文件：
 
 - CodeMirror、编辑器快捷键、空态定位或可调整分栏：[editor.md](./editor.md)。
-- 设置页层级、Select、来源管理、复制反馈、删除确认或弹窗表单：[forms-and-controls.md](./forms-and-controls.md)。
+- 设置页层级、Select、输入历史记录（统一使用 Combobox、可滚动文字与右侧删除按钮）、来源管理、复制反馈、删除确认或弹窗表单：[forms-and-controls.md](./forms-and-controls.md)。
 - 虚拟列表、搜索、排序、右键和拖选批量操作：[lists.md](./lists.md)。
 - 列表拖动排序、被拖项视觉、手柄与键盘调序、顺序持久化：[drag-and-drop.md](./drag-and-drop.md)。
 - 浮层定位、命令面板结构或 WebView 旋转图标诊断：[overlays-and-motion.md](./overlays-and-motion.md)。

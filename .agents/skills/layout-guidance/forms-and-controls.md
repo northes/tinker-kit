@@ -32,6 +32,20 @@
 - 所有用户触发的删除或移除数据、资源的操作（包括单项和批量、持久化数据和本次会话数据）都必须先显示确认框；按钮、菜单项和快捷键只打开确认框，不直接执行删除。确认内容应明确对象及影响，用户确认后才执行。
 - 删除确认统一使用共享组件 `ConfirmDialog`（`frontend/src/components/ConfirmDialog.tsx`），不要在工具或设置页内重复拼 `AlertDialog`；标题、描述、确认文案、危险态、busy、错误和额外正文通过 props 传入，组件在 `busy` 时阻止关闭，调用方在操作完成后自行关闭。
 
+## 输入历史记录
+
+后续新增或改造需要记录、选择历史输入的功能，统一沿用文本工具「首尾加字符」的 Combobox 交互，以及 SSH 文件管理器收藏行的文字与删除按钮样式。不要为不同工具另建历史菜单样式。
+
+- 基础控件复用 `frontend/src/components/ui/combobox.tsx` 的 `Combobox`、`ComboboxInput`、`ComboboxContent`、`ComboboxList`、`ComboboxItem` 和 `ComboboxEmpty`；完整组合以 `frontend/src/components/TextTool.tsx` 的 `AffixHistoryCombobox` 为参考。出现第二处同类历史输入时，将该组合提取为共享组件，由各工具提供历史数据与回调，不复制整套 JSX 和样式。
+- 同时支持自由输入、按输入筛选历史、鼠标与键盘选择回填。当前输入是唯一数据来源；`value` 与 `inputValue` 同步，历史选择通过 `onValueChange` 回填。不得以「是否已在历史中」决定当前控件值，否则新文字会在失焦或浮层关闭时被空选中值覆盖。删除历史项也不得清空当前输入。
+- 历史项文字直接复用 `frontend/src/components/ScrollableText.tsx` 的 `ScrollableText`：单行显示、默认展示尾部、溢出时可用滚轮横向查看完整文字、滚动不带动外层浮层。不得用 `truncate`、省略号或仅提供 tooltip 替代可滚动文字；纯空格等有意义字符也须原样保留。
+- 历史行使用 `ComboboxItem showIndicator={false}`，不显示选中对勾。行容器作为定位参照，右侧删除按钮放在绝对定位的渐变遮罩层中（`absolute inset-y-0 right-0`，`pl-6 pr-1`）；参照 SSH 收藏行在 `popover` / `accent` 之间切换遮罩颜色。不要将删除按钮直接排在文字后再保留对勾占位，造成按钮右侧大片空白。
+- 删除按钮复用 `Button variant="ghost" size="icon-xs"`，使用 14px、`weight="duotone"` 的 `Trash`。默认隐藏，在行 hover、键盘高亮或行内聚焦时显示，触屏常显；图标默认 60% 不透明度，按钮 hover / 键盘聚焦时为 80%。提供本地化 `aria-label` 与 `title`；点击删除不得冒泡触发历史选择或表单提交。具体删除确认边界遵循本文的删除规则。
+- 只提供单项删除，不提供「清空历史」按钮、批量清理入口或相应 footer。空列表与筛选无匹配分别使用本地化空态。
+- 历史在实际确认使用后记录，最新在前、相同值去重、空字符串不记录；前后空格及仅含空格的有效输入不做 trim。多个字段分别维护历史，容量按功能需求确定（文本工具行首、行尾各最近 5 条），不要把所有工具强制设为相同容量。
+- 输入草稿、历史记录和持久化各有自己的生命周期：关闭弹窗后默认重置草稿，通过历史回填；历史由功能所属边界持有。是否跨应用重启持久化由需求决定，不因使用 Combobox 擅自引入 localStorage 或第二套状态来源。
+- 验收至少覆盖：新输入失焦不丢失、历史选择回填、删除不误选且不清空当前输入、长文字横向滚动、垃圾桶紧贴右边无多余空白、鼠标与键盘高亮下遮罩颜色一致、关闭重开后通过历史恢复输入。
+
 ## 原生表单与弹窗提交
 
 - 弹窗表单优先用原生 `<form onSubmit>` 承载字段，回车提交、Tab 顺序和 `disabled` 语义交给浏览器；不要只给主按钮挂 `onClick`，再给每个输入补 Enter 监听。
