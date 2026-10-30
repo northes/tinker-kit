@@ -46,6 +46,18 @@
 .cm-cursor {
   border-left-color: var(--primary) !important;
 }
+/* 搜索匹配与容器日志的 <mark> 共用 warning 背景；强制覆盖语法着色以保持同样的近黑文字。 */
+.cm-editor .cm-searchMatch {
+  background: var(--warning) !important;
+  border-radius: 2px;
+}
+.cm-editor .cm-searchMatch,
+.cm-editor .cm-searchMatch * {
+  color: oklch(0.145 0 0) !important;
+}
+.cm-editor .cm-searchMatch-selected {
+  box-shadow: inset 0 0 0 1px oklch(0.145 0 0 / 55%);
+}
 /* 搜索面板浮在编辑器右上角的小卡片，不再挤压内容。 */
 .cm-editor .cm-panels.cm-panels-top {
   position: absolute !important;

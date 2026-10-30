@@ -300,7 +300,7 @@ function logSpan(span: AnsiSpan, content: string, key: number, marked = false): 
   if (!content) return null;
   if (marked) {
     return (
-      <mark key={key} className="rounded-[2px] bg-warning font-medium text-warning-foreground">
+      <mark key={key} className="rounded-[2px] bg-warning font-medium text-neutral-950">
         {content}
       </mark>
     );
