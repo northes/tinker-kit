@@ -2509,6 +2509,7 @@
     "direction": "Direction",
     "listen": "Listen address",
     "target": "Target address",
+    "openInBrowser": "Open {{url}} in browser",
     "status": "Status",
     "retries": "Reconnects",
     "add": "Add forward",

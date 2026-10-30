@@ -1,3 +1,4 @@
+import { Browser } from '@wailsio/runtime';
 import {
   Fragment,
   useCallback,
@@ -214,6 +215,35 @@ function forwardLabel(forward: PortForward) {
   return forward.name || `${forward.listenHost}:${forward.listenPort}`;
 }
 
+// 地址只是 host:port，浏览器需要显式协议；通配监听地址改用本机回环地址访问。
+function browserAddress(host: string, port: number) {
+  const trimmed = host.trim().replace(/^\[(.*)\]$/, '$1');
+  const normalized =
+    !trimmed || trimmed === '*' || trimmed === '0.0.0.0' || trimmed === '::'
+      ? '127.0.0.1'
+      : trimmed;
+  const address = normalized.includes(':') ? `[${normalized}]` : normalized;
+  return `http://${address}:${port}`;
+}
+
+function ForwardAddressLink({ host, port }: { host: string; port: number }) {
+  const { t } = useTranslation();
+  const address = `${host}:${port}`;
+  const url = browserAddress(host, port);
+  return (
+    <Button
+      type="button"
+      variant="link"
+      className="h-auto w-full cursor-pointer justify-start p-0 text-left font-normal text-inherit hover:text-primary"
+      aria-label={t('portTool.openInBrowser', { url })}
+      title={t('portTool.openInBrowser', { url })}
+      onClick={() => void Browser.OpenURL(url)}
+    >
+      <WheelText>{address}</WheelText>
+    </Button>
+  );
+}
+
 // 表头同时承载列排序与列宽拖动：右侧把手用指针捕获拖动，也支持左右方向键微调，
 // 松手或按键抬起时由父组件把列宽写回配置。
 function SortableHead({
@@ -401,10 +431,10 @@ function ForwardRow({
           <WheelText>{sourceName}</WheelText>
         </TableCell>
         <TableCell>
-          <WheelText>{`${forward.listenHost}:${forward.listenPort}`}</WheelText>
+          <ForwardAddressLink host={forward.listenHost} port={forward.listenPort} />
         </TableCell>
         <TableCell>
-          <WheelText>{`${forward.targetHost}:${forward.targetPort}`}</WheelText>
+          <ForwardAddressLink host={forward.targetHost} port={forward.targetPort} />
         </TableCell>
         <TableCell>
           {t(`portTool.${forward.status}`)}

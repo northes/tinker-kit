@@ -2509,6 +2509,7 @@
     "direction": "方向",
     "listen": "监听地址",
     "target": "目标地址",
+    "openInBrowser": "在浏览器中打开 {{url}}",
     "status": "状态",
     "retries": "重连次数",
     "add": "新增转发",
