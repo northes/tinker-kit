@@ -22,16 +22,6 @@ import {
 import { Switch } from './ui/switch';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
 import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from './ui/alert-dialog';
-import {
   Dialog,
   DialogContent,
   DialogDescription,
@@ -1317,25 +1307,18 @@ export default function SettingsPage({
         busy={configBusy}
         onConfirm={() => void runConfigAction()}
       />
-      <AlertDialog
+      <ConfirmDialog
         open={confirmQuit}
         onOpenChange={(open) => {
-          if (!open && !quitting) setConfirmQuit(false);
+          if (!open) setConfirmQuit(false);
         }}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>{t('quitDialog.title')}</AlertDialogTitle>
-            <AlertDialogDescription>{t('quitDialog.body')}</AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={quitting}>{t('quitDialog.cancel')}</AlertDialogCancel>
-            <AlertDialogAction disabled={quitting} onClick={() => void quitApp()}>
-              {t('quitDialog.confirm')}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+        title={t('quitDialog.title')}
+        description={t('quitDialog.body')}
+        confirmLabel={t('quitDialog.confirm')}
+        cancelLabel={t('quitDialog.cancel')}
+        busy={quitting}
+        onConfirm={() => void quitApp()}
+      />
     </div>
   );
 }

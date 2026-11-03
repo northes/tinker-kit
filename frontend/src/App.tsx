@@ -48,15 +48,14 @@ import { Sidebar } from './app/Sidebar';
 import { parseJsonLoose, type PendingAction, type ToolId } from './components/shared';
 import { TaskCenter } from './components/TaskCenter';
 import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from './components/ui/alert-dialog';
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from './components/ui/dialog';
 import { Button } from './components/ui/button';
 import { ScrollArea } from './components/ui/scroll-area';
 import { toast, Toaster } from './components/ui/toast';
@@ -1202,17 +1201,17 @@ function AppShell() {
           page={sidebarPage}
         />
       </div>
-      <AlertDialog
+      <Dialog
         open={sshHostKeyPrompt !== null}
         onOpenChange={(open) => {
           if (!open) respondSSHHostKeyPrompt(false);
         }}
       >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>{t('sshHostKeyDialog.title')}</AlertDialogTitle>
+        <DialogContent showCloseButton={false}>
+          <DialogHeader>
+            <DialogTitle>{t('sshHostKeyDialog.title')}</DialogTitle>
             {sshHostKeyPrompt ? (
-              <AlertDialogDescription render={<div />} className="space-y-3 text-left">
+              <DialogDescription render={<div />} className="space-y-3">
                 <p className="m-0">
                   {t(
                     sshHostKeyPrompt.changed
@@ -1245,27 +1244,29 @@ function AppShell() {
                   </code>
                 </div>
                 <p className="m-0 text-xs">{t('sshHostKeyDialog.verifyHint')}</p>
-              </AlertDialogDescription>
+              </DialogDescription>
             ) : null}
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>{t('sshHostKeyDialog.cancel')}</AlertDialogCancel>
-            <AlertDialogAction onClick={() => respondSSHHostKeyPrompt(true)}>
+          </DialogHeader>
+          <DialogFooter>
+            <DialogClose render={<Button variant="outline" />}>
+              {t('sshHostKeyDialog.cancel')}
+            </DialogClose>
+            <Button onClick={() => respondSSHHostKeyPrompt(true)}>
               {t(sshHostKeyPrompt?.changed ? 'sshHostKeyDialog.update' : 'sshHostKeyDialog.trust')}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-      <AlertDialog
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      <Dialog
         open={matchDialog !== null}
         onOpenChange={(open) => {
           if (!open) setMatchDialog(null);
         }}
       >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>{t('matchDialog.title')}</AlertDialogTitle>
-            <AlertDialogDescription render={<div />} className="w-full text-left">
+        <DialogContent showCloseButton={false}>
+          <DialogHeader>
+            <DialogTitle>{t('matchDialog.title')}</DialogTitle>
+            <DialogDescription render={<div />} className="w-full">
               <p className="m-0">
                 {t('matchDialog.bodyPrefix')}
                 <strong>{matchDialog ? t(`tools.${matchDialog.tool}.name`) : ''}</strong>
@@ -1278,11 +1279,13 @@ function AppShell() {
                   </code>
                 </ScrollArea>
               ) : null}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>{t('matchDialog.cancel')}</AlertDialogCancel>
-            <AlertDialogAction
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <DialogClose render={<Button variant="outline" />}>
+              {t('matchDialog.cancel')}
+            </DialogClose>
+            <Button
               onClick={() => {
                 const d = matchDialog;
                 setMatchDialog(null);
@@ -1304,10 +1307,10 @@ function AppShell() {
               }}
             >
               {t('matchDialog.confirm')}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }

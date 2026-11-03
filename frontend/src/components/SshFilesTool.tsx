@@ -105,16 +105,6 @@ import { SSHProfileFormField } from './SSHProfileFormField';
 import { useSSHProfiles } from './SSHProfileManagerDialog';
 import { TargetHostManagerDialog, upsertManagerItem } from './TargetHostManagerDialog';
 import { openTaskCenter } from './TaskCenter';
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from './ui/alert-dialog';
 import { Badge } from './ui/badge';
 import { Button } from './ui/button';
 import { Checkbox } from './ui/checkbox';
@@ -2719,61 +2709,50 @@ export default function SshFilesTool({ active }: Props) {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-      <AlertDialog
+      <ConfirmDialog
         open={operationConflict !== null}
         onOpenChange={(open) => {
-          if (!open && !operationRunning) cancelOperationConflict();
+          if (!open) cancelOperationConflict();
         }}
+        title={t('sshFilesTool.operationConflictTitle')}
+        descriptionClassName="grid gap-2 text-xs leading-5"
+        confirmLabel={t('sshFilesTool.overwrite')}
+        cancelLabel={t('common.cancel')}
+        destructive
+        busy={operationRunning}
+        error={
+          operationError ? `${t('sshFilesTool.operationFailed')}: ${operationError}` : undefined
+        }
+        onConfirm={() => void resolveOperationConflict('overwrite')}
+        extraActions={
+          <Button
+            variant="outline"
+            disabled={operationRunning || operationConflict === null}
+            onClick={() => void resolveOperationConflict('keep-both')}
+          >
+            {operationRunning ? <Spinner data-icon="inline-start" /> : null}
+            {t('sshFilesTool.keepBoth')}
+          </Button>
+        }
       >
-        <AlertDialogContent className="min-w-0 max-w-[calc(100vw-32px)] sm:max-w-md">
-          <AlertDialogHeader>
-            <AlertDialogTitle>{t('sshFilesTool.operationConflictTitle')}</AlertDialogTitle>
-            <AlertDialogDescription render={<div />} className="grid gap-2 text-xs leading-5">
-              <p className="m-0">
-                {t('sshFilesTool.operationConflictDesc', {
-                  count: operationConflict?.conflicts.length ?? 0,
-                })}
-              </p>
-              <ScrollArea className="w-full max-h-40 overscroll-contain rounded-md border border-border bg-muted/20 p-2">
-                <ul className="m-0 list-none space-y-1 font-mono text-[11px]">
-                  {operationConflict?.conflicts.map((path) => (
-                    <li key={path} className="w-full break-all">
-                      {path}
-                    </li>
-                  ))}
-                </ul>
-              </ScrollArea>
-              <p className="m-0 text-[10px] leading-4 text-muted-foreground">
-                {t('sshFilesTool.operationConflictKeepHint')}
-              </p>
-              {operationError ? (
-                <span className="break-words text-destructive" role="alert">
-                  {t('sshFilesTool.operationFailed')}: {operationError}
-                </span>
-              ) : null}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={operationRunning}>{t('common.cancel')}</AlertDialogCancel>
-            <Button
-              variant="outline"
-              disabled={operationRunning || operationConflict === null}
-              onClick={() => void resolveOperationConflict('keep-both')}
-            >
-              {operationRunning ? <Spinner data-icon="inline-start" /> : null}
-              {t('sshFilesTool.keepBoth')}
-            </Button>
-            <AlertDialogAction
-              variant="destructive"
-              disabled={operationRunning || operationConflict === null}
-              onClick={() => void resolveOperationConflict('overwrite')}
-            >
-              {operationRunning ? <Spinner data-icon="inline-start" /> : null}
-              {t('sshFilesTool.overwrite')}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+        <p className="m-0">
+          {t('sshFilesTool.operationConflictDesc', {
+            count: operationConflict?.conflicts.length ?? 0,
+          })}
+        </p>
+        <ScrollArea className="w-full max-h-40 overscroll-contain rounded-md border border-border bg-muted/20 p-2">
+          <ul className="m-0 list-none space-y-1 font-mono text-[11px]">
+            {operationConflict?.conflicts.map((path) => (
+              <li key={path} className="w-full break-all">
+                {path}
+              </li>
+            ))}
+          </ul>
+        </ScrollArea>
+        <p className="m-0 text-[10px] leading-4 text-muted-foreground">
+          {t('sshFilesTool.operationConflictKeepHint')}
+        </p>
+      </ConfirmDialog>
       <ConfirmDialog
         open={deletePaths !== null}
         onOpenChange={(open) => {
