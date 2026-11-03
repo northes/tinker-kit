@@ -417,12 +417,12 @@ func TestImageMutationLimitsBatchOperations(t *testing.T) {
 			return nil, nil
 		},
 	}
-	changes := make([]DockerImageReferenceChange, 0, maxDockerImageOperations+1)
-	for i := 0; i < maxDockerImageOperations+1; i++ {
+	changes := make([]DockerImageReferenceChange, 0, maxDockerImageBatchSize+1)
+	for i := 0; i < maxDockerImageBatchSize+1; i++ {
 		changes = append(changes, DockerImageReferenceChange{Source: fmt.Sprintf("repo:%d", i), Target: fmt.Sprintf("repo:new-%d", i)})
 	}
 	result := service.TagDockerImages("local", changes, false)
-	if calls != maxDockerImageOperations || len(result.Succeeded) != maxDockerImageOperations || len(result.Failed) != 1 {
+	if calls != maxDockerImageBatchSize || len(result.Succeeded) != maxDockerImageBatchSize || len(result.Failed) != 1 {
 		t.Fatalf("批量限制结果为调用 %d、成功 %d、失败 %d", calls, len(result.Succeeded), len(result.Failed))
 	}
 }

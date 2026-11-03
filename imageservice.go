@@ -23,7 +23,7 @@ const (
 	imageCommandTimeout         = 15 * time.Second
 	imagePushTimeout            = 5 * time.Minute
 	maxImageCommandOutput       = 8 << 20
-	maxDockerDeleteImages       = 100
+	maxDockerImageBatchSize     = 100
 	maxRegistryRepositories     = 10000
 	maxRegistryTags             = 10000
 	maxRegistryBodySize         = 8 << 20
@@ -300,6 +300,10 @@ func NewImageService(config *ConfigService) *ImageService {
 }
 
 func (s *ImageService) ServiceName() string { return "ImageService" }
+
+// ImageBatchLimit 返回单次镜像批量操作（删除、推送、换 Tag）允许的最大条目数。
+// 前端按该值拆批调用，避免超出上限后剩余条目被整批标记失败。
+func (s *ImageService) ImageBatchLimit() int { return maxDockerImageBatchSize }
 
 func (s *ImageService) setEventEmitter(emitter func(string, any)) {
 	if s != nil {

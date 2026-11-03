@@ -52,6 +52,14 @@ export function GetSSHConfigHosts(): $CancellablePromise<$models.SSHConfigHost[]
 }
 
 /**
+ * ImageBatchLimit 返回单次镜像批量操作（删除、推送、换 Tag）允许的最大条目数。
+ * 前端按该值拆批调用，避免超出上限后剩余条目被整批标记失败。
+ */
+export function ImageBatchLimit(): $CancellablePromise<number> {
+    return $Call.ByID(2866733738);
+}
+
+/**
  * InspectDockerImage 的 ctx 来自 Wails 绑定调用；前端取消时中断镜像详情查询。
  */
 export function InspectDockerImage(sourceID: string, imageID: string): $CancellablePromise<$models.DockerImageDetail> {

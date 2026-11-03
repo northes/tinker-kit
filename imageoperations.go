@@ -35,8 +35,6 @@ func (s *ImageService) PushDockerImage(sourceID string, image string) (DockerOpe
 	return result, nil
 }
 
-const maxDockerImageOperations = 100
-
 func emptyDockerImageBatchResult() DockerImageBatchResult {
 	return DockerImageBatchResult{
 		Succeeded: []string{},
@@ -98,11 +96,11 @@ func (s *ImageService) TagDockerImages(sourceID string, changes []DockerImageRef
 		}
 		return result
 	}
-	if len(changes) > maxDockerImageOperations {
-		for _, change := range changes[maxDockerImageOperations:] {
+	if len(changes) > maxDockerImageBatchSize {
+		for _, change := range changes[maxDockerImageBatchSize:] {
 			appendDockerImageBatchFailure(&result, change.Source, userError("errors.image.operationLimitExceeded").Error())
 		}
-		changes = changes[:maxDockerImageOperations]
+		changes = changes[:maxDockerImageBatchSize]
 	}
 	ctx := s.serviceContext()
 	for _, change := range changes {
@@ -322,11 +320,11 @@ func (s *ImageService) PushDockerImages(sourceID string, changes []DockerImageRe
 		}
 		return result
 	}
-	if len(changes) > maxDockerImageOperations {
-		for _, change := range changes[maxDockerImageOperations:] {
+	if len(changes) > maxDockerImageBatchSize {
+		for _, change := range changes[maxDockerImageBatchSize:] {
 			appendDockerImageBatchFailure(&result, change.Source, userError("errors.image.operationLimitExceeded").Error())
 		}
-		changes = changes[:maxDockerImageOperations]
+		changes = changes[:maxDockerImageBatchSize]
 	}
 	for _, change := range changes {
 		if !validMutableImageReference(change.Source) || !validMutableImageReference(change.Target) {
@@ -394,11 +392,11 @@ func (s *ImageService) DeleteDockerImages(sourceID string, targets []DockerDelet
 		target.ExpectedDigest = strings.TrimSpace(target.ExpectedDigest)
 		uniqueTargets = append(uniqueTargets, target)
 	}
-	if len(uniqueTargets) > maxDockerDeleteImages {
-		for _, target := range uniqueTargets[maxDockerDeleteImages:] {
+	if len(uniqueTargets) > maxDockerImageBatchSize {
+		for _, target := range uniqueTargets[maxDockerImageBatchSize:] {
 			result.Failed = append(result.Failed, DockerDeleteFailure{ImageID: target.ImageID, Error: userError("errors.image.deleteLimitExceeded").Error()})
 		}
-		uniqueTargets = uniqueTargets[:maxDockerDeleteImages]
+		uniqueTargets = uniqueTargets[:maxDockerImageBatchSize]
 	}
 	source, cliPath, fingerprint, sourceErr := s.sourceSnapshot(sourceID)
 	if sourceErr != nil {
