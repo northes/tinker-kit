@@ -1,20 +1,22 @@
 import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { cn } from '@/lib/utils';
+import { Button } from './ui/button';
 import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from './ui/alert-dialog';
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from './ui/dialog';
+import { ScrollArea } from './ui/scroll-area';
 import { Spinner } from './ui/spinner';
 
 // ConfirmDialog 是应用内所有删除/危险确认弹窗的唯一实现。调用方负责在确认逻辑
 // 完成后关闭（把 open 置为 false），组件只在 busy 时阻止关闭。
+// 弹窗允许点击背景关闭（等同取消）；正文超出窗口高度时只滚动正文，标题与操作区保持可见。
 export function ConfirmDialog({
   open,
   onOpenChange,
@@ -49,20 +51,31 @@ export function ConfirmDialog({
   const { t } = useTranslation();
   const hasBody = description != null || children != null || error != null;
   return (
-    <AlertDialog
+    <Dialog
       open={open}
       onOpenChange={(next) => {
         if (!busy) onOpenChange(next);
       }}
     >
-      <AlertDialogContent className={cn('min-w-0 max-w-[calc(100vw-2rem)] sm:max-w-md', className)}>
-        <AlertDialogHeader className="min-w-0">
-          <AlertDialogTitle>{title}</AlertDialogTitle>
-          {hasBody ? (
-            <AlertDialogDescription
+      <DialogContent
+        showCloseButton={false}
+        className={cn(
+          'flex max-h-[calc(100dvh-2rem)] min-h-0 min-w-0 max-w-[calc(100vw-2rem)] flex-col overflow-hidden sm:max-w-md',
+          className,
+        )}
+      >
+        <DialogHeader className="min-w-0 flex-none">
+          <DialogTitle>{title}</DialogTitle>
+        </DialogHeader>
+        {hasBody ? (
+          <ScrollArea
+            className="-m-1 min-h-0 min-w-0 flex-auto overscroll-contain"
+            options={{ overflow: { x: 'hidden' } }}
+          >
+            <DialogDescription
               render={<div />}
               className={cn(
-                'w-full min-w-0 max-w-full text-left whitespace-normal break-words [overflow-wrap:anywhere]',
+                'w-full min-w-0 max-w-full whitespace-normal break-words [overflow-wrap:anywhere]',
                 descriptionClassName,
               )}
             >
@@ -72,22 +85,24 @@ export function ConfirmDialog({
                   {error}
                 </span>
               ) : null}
-            </AlertDialogDescription>
-          ) : null}
-        </AlertDialogHeader>
-        <AlertDialogFooter>
-          <AlertDialogCancel disabled={busy}>{cancelLabel ?? t('common.cancel')}</AlertDialogCancel>
+            </DialogDescription>
+          </ScrollArea>
+        ) : null}
+        <DialogFooter className="flex-none">
+          <DialogClose render={<Button variant="outline" disabled={busy} />}>
+            {cancelLabel ?? t('common.cancel')}
+          </DialogClose>
           {extraActions}
-          <AlertDialogAction
+          <Button
             variant={destructive ? 'destructive' : 'default'}
             disabled={busy}
             onClick={onConfirm}
           >
             {busy ? <Spinner data-icon="inline-start" /> : null}
             {confirmLabel}
-          </AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
