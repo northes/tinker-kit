@@ -1178,29 +1178,13 @@ export default function JsonTool({
       changeInput(pending.input);
       return;
     }
+    // 自动格式化要等后端返回，期间若输入已被改动（用户编辑或更新的填入请求）就以新内容为准。
+    const baseline = inputRef.current;
     void requestAutoFormat(pending.input).then((next) => {
-      if (next === null || inputRef.current !== pending.input) return;
+      if (next === null || inputRef.current !== baseline) return;
       changeInput(next);
     });
   }, [pending, pipeline, requestAutoFormat]);
-  useEffect(() => {
-    const onFill = () => {
-      if (!autoFormatRef.current) return;
-      const view = views.current.get('input');
-      if (!view) return;
-      const src = view.state.doc.toString();
-      void requestAutoFormat(src).then((next) => {
-        if (
-          next !== null &&
-          next !== src &&
-          views.current.get('input')?.state.doc.toString() === src
-        )
-          setInput(next);
-      });
-    };
-    window.addEventListener('tinkerkit:json-after-fill', onFill);
-    return () => window.removeEventListener('tinkerkit:json-after-fill', onFill);
-  }, [requestAutoFormat]);
   useEffect(() => {
     if (!schema) return;
     if (schemaEvaluation.status === 'idle' || schemaEvaluation.status === 'pending') {
