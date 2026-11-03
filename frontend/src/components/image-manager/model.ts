@@ -68,6 +68,8 @@ export type ConfirmState = {
   type: 'delete';
   ids: string[];
   targets: DockerDeleteTarget[];
+  previewDigests: string[];
+  previewTags: string[];
   name: string;
   sourceId: string;
   sourceKind: string;
