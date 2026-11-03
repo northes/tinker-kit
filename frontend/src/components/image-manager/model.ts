@@ -1,6 +1,5 @@
 import { CancelError } from '@wailsio/runtime';
 import type {
-  DockerDeleteTarget,
   DockerImage,
   DockerImageDetail,
   DockerStatus,
@@ -10,6 +9,7 @@ import type {
 import { formatBackendError } from '../../lib/backend-error';
 import { LOCAL_SOURCE_ID, isLocalSource } from '../../lib/local-source';
 import { type ImageRenameForm, imageRepository, imageTag } from './rename';
+import type { ImageDeleteItem } from './delete-selection';
 
 export { LOCAL_SOURCE_ID, isLocalSource };
 
@@ -66,11 +66,7 @@ export type WatchDockerImagesEvent = {
 
 export type ConfirmState = {
   type: 'delete';
-  ids: string[];
-  targets: DockerDeleteTarget[];
-  previewDigests: string[];
-  previewTags: string[];
-  name: string;
+  items: ImageDeleteItem[];
   sourceId: string;
   sourceKind: string;
   sourceConfigKey: string;
@@ -346,41 +342,6 @@ export function copyableImageName(source: ImageSource, name: string) {
 export function clipboardList(values: string[], countLabel: string) {
   if (values.length <= 1) return values[0] ?? '';
   return [...values.map((value, index) => `${index + 1}. ${value}`), countLabel].join('\n');
-}
-
-function registryImageIdentity(image: DockerImage) {
-  const digest = image.digest?.trim();
-  return digest ? `${image.repository}\u0000${digest}` : '';
-}
-
-export function associatedRegistryTags(images: DockerImage[], ids: string[]) {
-  const selectedIds = new Set(ids);
-  const selectedImages = images.filter((image) => selectedIds.has(image.id));
-  const identities = new Set(selectedImages.map(registryImageIdentity).filter(Boolean));
-  if (identities.size === 0) return [];
-  const selectedTags = new Set(selectedImages.flatMap((image) => asStringList(image.tags)));
-  return [
-    ...new Set(
-      images
-        .filter((image) => identities.has(registryImageIdentity(image)))
-        .flatMap((image) => asStringList(image.tags))
-        .filter((tag) => !selectedTags.has(tag)),
-    ),
-  ];
-}
-
-// 删除按行粒度：具名行用 repo:tag（docker rmi <tag> 只移除该 tag），
-// 悬空行才回退到镜像 ID（docker rmi <id> 删除整个镜像）。
-export function deleteTargets(rows: ImageRow[]): DockerDeleteTarget[] {
-  const seen = new Set<string>();
-  const targets: DockerDeleteTarget[] = [];
-  for (const row of rows) {
-    const imageID = row.reference || row.image.id;
-    if (seen.has(imageID)) continue;
-    seen.add(imageID);
-    targets.push({ imageID, expectedDigest: row.image.digest?.trim() ?? '' });
-  }
-  return targets;
 }
 
 type ImageWithSizeBytes = DockerImage & { sizeBytes?: number | null };
