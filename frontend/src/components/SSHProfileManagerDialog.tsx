@@ -44,16 +44,6 @@ import {
   SelectValue,
 } from './ui/select';
 import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from './ui/alert-dialog';
-import {
   Dialog,
   DialogContent,
   DialogDescription,
@@ -956,35 +946,24 @@ function SSHProfileManagerDialog({
         busy={busy}
         onConfirm={() => void remove()}
       />
-      <AlertDialog
+      <ConfirmDialog
         open={discardAction !== null}
         onOpenChange={(nextOpen) => {
           if (!nextOpen && !busy) setDiscardAction(null);
         }}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>{t('sshProfiles.discardTitle')}</AlertDialogTitle>
-            <AlertDialogDescription>{t('sshProfiles.discardDescription')}</AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={busy}>{t('common.cancel')}</AlertDialogCancel>
-            <AlertDialogAction
-              variant="destructive"
-              disabled={busy}
-              onClick={() => {
-                const action = discardAction;
-                setDiscardAction(null);
-                setFormError('');
-                if (action === 'back') setView('list');
-                else onOpenChange(false);
-              }}
-            >
-              {t('sshProfiles.discardConfirm')}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+        title={t('sshProfiles.discardTitle')}
+        description={t('sshProfiles.discardDescription')}
+        confirmLabel={t('sshProfiles.discardConfirm')}
+        destructive
+        busy={busy}
+        onConfirm={() => {
+          const action = discardAction;
+          setDiscardAction(null);
+          setFormError('');
+          if (action === 'back') setView('list');
+          else onOpenChange(false);
+        }}
+      />
     </>
   );
 }

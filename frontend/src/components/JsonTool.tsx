@@ -7,16 +7,7 @@ import {
   useState,
   type ReactNode,
 } from 'react';
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from './ui/alert-dialog';
+import { ConfirmDialog } from './ConfirmDialog';
 import { Button } from './ui/button';
 import { Checkbox } from './ui/checkbox';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from './ui/dialog';
@@ -1696,75 +1687,56 @@ export default function JsonTool({
           <DialogFooter showCloseButton />
         </DialogContent>
       </Dialog>
-      <AlertDialog
+      <ConfirmDialog
         open={commentDialog !== null}
         onOpenChange={(open) => {
           if (!open) setCommentDialog(null);
         }}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>{t('jsonTool.commentTitle')}</AlertDialogTitle>
-            <AlertDialogDescription>
-              {commentDialog?.mode === 'minify'
-                ? t('jsonTool.commentMinifyBody')
-                : t('jsonTool.commentFormatBody')}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>{t('jsonTool.cancel')}</AlertDialogCancel>
-            {commentDialog?.mode === 'format' && (
-              <Button
-                variant="outline"
-                onClick={() => {
-                  const d = commentDialog;
-                  setCommentDialog(null);
-                  if (d) runTransform(d.pane, false, false);
-                }}
-              >
-                {t('jsonTool.keepComments')}
-              </Button>
-            )}
-            <AlertDialogAction
-              variant="destructive"
+        title={t('jsonTool.commentTitle')}
+        description={
+          commentDialog?.mode === 'minify'
+            ? t('jsonTool.commentMinifyBody')
+            : t('jsonTool.commentFormatBody')
+        }
+        confirmLabel={
+          commentDialog?.mode === 'minify' ? t('jsonTool.minifyClear') : t('jsonTool.clearComments')
+        }
+        cancelLabel={t('jsonTool.cancel')}
+        destructive
+        onConfirm={() => {
+          const d = commentDialog;
+          setCommentDialog(null);
+          if (d) runTransform(d.pane, d.mode === 'minify', true);
+        }}
+        extraActions={
+          commentDialog?.mode === 'format' ? (
+            <Button
+              variant="outline"
               onClick={() => {
                 const d = commentDialog;
                 setCommentDialog(null);
-                if (d) runTransform(d.pane, d.mode === 'minify', true);
+                if (d) runTransform(d.pane, false, false);
               }}
             >
-              {commentDialog?.mode === 'minify'
-                ? t('jsonTool.minifyClear')
-                : t('jsonTool.clearComments')}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-      <AlertDialog
+              {t('jsonTool.keepComments')}
+            </Button>
+          ) : null
+        }
+      />
+      <ConfirmDialog
         open={repairPrompt}
         onOpenChange={(open) => {
           if (!open) setRepairPrompt(false);
         }}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>{t('jsonTool.formatFailed')}</AlertDialogTitle>
-            <AlertDialogDescription>{t('jsonTool.repairPrompt')}</AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>{t('jsonTool.cancel')}</AlertDialogCancel>
-            <AlertDialogAction
-              disabled={repairing}
-              onClick={() => {
-                setRepairPrompt(false);
-                repairInput();
-              }}
-            >
-              {t('jsonTool.repair')}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+        title={t('jsonTool.formatFailed')}
+        description={t('jsonTool.repairPrompt')}
+        confirmLabel={t('jsonTool.repair')}
+        cancelLabel={t('jsonTool.cancel')}
+        onConfirm={() => {
+          setRepairPrompt(false);
+          repairInput();
+        }}
+      />
     </Reveal>
   );
 }
