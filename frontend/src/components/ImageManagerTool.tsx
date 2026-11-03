@@ -21,6 +21,7 @@ import { useTranslation } from 'react-i18next';
 import { ValidateImageSource } from '../../bindings/tinkerkit/configservice';
 import {
   DeleteDockerImages,
+  ImageBatchLimit,
   PrepareImageImports,
   PushDockerImages,
   ResolveImagePullPlatforms,
@@ -44,15 +45,19 @@ import { formatBackendError } from '../lib/backend-error';
 import { imageArchitectures } from '../lib/image-architectures';
 import { ConfirmDialog } from './ConfirmDialog';
 import { ImageSearchField } from './image-manager/ImageSearchField';
+import { runImageBatches } from './image-manager/batch';
 import {
-  associatedRegistryTags,
+  createImageDeleteItems,
+  excludeImageDeleteTag,
+  imageDeletePreview,
+} from './image-manager/delete-selection';
+import {
   asStringList,
   bindingSource,
   buildImageRows,
   buildRenamePreview,
   clipboardList,
   copyableImageName,
-  deleteTargets,
   errorMessage,
   formatBytes,
   formatCreatedAt,
@@ -143,6 +148,14 @@ import {
 import { Spinner } from './ui/spinner';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
 import { toast } from './ui/toast';
+
+let imageBatchLimitRequest: Promise<number> | null = null;
+
+// 单次批量调用的条目上限由 Go 侧持有；读取失败时退回单次调用，不在前端重复这个数字。
+function imageBatchLimit() {
+  imageBatchLimitRequest ??= ImageBatchLimit().catch(() => Number.POSITIVE_INFINITY);
+  return imageBatchLimitRequest;
+}
 
 export default function ImageManagerTool({
   active,
@@ -344,6 +357,7 @@ export default function ImageManagerTool({
     architecture: status?.localArchitecture || t('imageManagerTool.architectureUnknown'),
   });
   const sourceCanDelete = (source as ManagedImageSource).capabilities?.canDelete ?? true;
+  const deletePreview = useMemo(() => imageDeletePreview(confirm?.items ?? []), [confirm?.items]);
 
   useEffect(() => {
     const visibleKeys = new Set(filteredRows.map((row) => row.key));
@@ -538,8 +552,17 @@ export default function ImageManagerTool({
   const runPushChanges = async (changes: Array<{ source: string; target: string }>) => {
     setBusy('push');
     try {
-      const result = await PushDockerImages(source.id, changes);
-      const { succeeded, failures } = reportBatchResult(result, 'imageManagerTool.pushed');
+      const limit = await imageBatchLimit();
+      const results = await runImageBatches(changes, limit, (chunk) =>
+        PushDockerImages(source.id, chunk),
+      );
+      const { succeeded, failures } = reportBatchResult(
+        {
+          succeeded: results.flatMap((result) => result.succeeded ?? []),
+          failed: results.flatMap((result) => result.failed ?? []),
+        },
+        'imageManagerTool.pushed',
+      );
       if (succeeded.length > 0 || changes.some((change) => change.source !== change.target)) {
         requestWatchReload();
       }
@@ -845,16 +868,17 @@ export default function ImageManagerTool({
 
   const runDelete = async (
     sourceID: string,
-    ids: string[],
     targets: DockerDeleteTarget[],
-    name: string,
     deleteManifest: boolean,
   ) => {
     setBusy('delete');
     try {
-      const result = await DeleteDockerImages(sourceID, targets, deleteManifest);
-      const deleted = result.deleted?.length ?? 0;
-      const failures = result.failed ?? [];
+      const limit = await imageBatchLimit();
+      const results = await runImageBatches(targets, limit, (chunk) =>
+        DeleteDockerImages(sourceID, chunk, deleteManifest),
+      );
+      const deleted = results.reduce((total, result) => total + (result.deleted?.length ?? 0), 0);
+      const failures = results.flatMap((result) => result.failed ?? []);
       const failed = failures.length;
       if (failed > 0) {
         toast.add({
@@ -891,14 +915,19 @@ export default function ImageManagerTool({
     if (confirm.sourceConfigKey !== sourceConfigKey) {
       toast.add({ title: t('imageManagerTool.sourceChangedRefresh'), type: 'warning' });
       setConfirm(null);
-    } else
-      void runDelete(
-        confirm.sourceId,
-        confirm.ids,
-        confirm.targets,
-        confirm.name,
-        confirm.deleteManifest,
-      );
+    } else void runDelete(confirm.sourceId, deletePreview.targets, confirm.deleteManifest);
+  };
+
+  const excludeConfirmTag = (tag: string) => {
+    if (!confirm || busy || confirm.sourceConfigKey !== sourceConfigKey) return;
+    const next = excludeImageDeleteTag(confirm.items, tag);
+    if (next.removedKeys.size === 0) return;
+    setSelected((current) => {
+      const selected = new Set(current);
+      for (const key of next.removedKeys) selected.delete(key);
+      return selected;
+    });
+    setConfirm(next.items.length > 0 ? { ...confirm, items: next.items } : null);
   };
 
   const taskCutoff = Date.now() - IMAGE_TASK_RETENTION_MS;
@@ -1426,38 +1455,7 @@ export default function ImageManagerTool({
                             onClick={() =>
                               setConfirm({
                                 type: 'delete',
-                                ids: operationRows.map((item) => item.reference || item.image.id),
-                                targets: deleteTargets(operationRows),
-                                previewDigests: [
-                                  ...new Set(
-                                    operationRows
-                                      .map(
-                                        (item) =>
-                                          item.image.digest?.trim() ||
-                                          (source.kind === 'registry' ? '' : item.image.id),
-                                      )
-                                      .filter(Boolean),
-                                  ),
-                                ],
-                                previewTags:
-                                  source.kind === 'registry'
-                                    ? associatedRegistryTags(
-                                        images,
-                                        operationRows.map((item) => item.image.id),
-                                      )
-                                    : [
-                                        ...new Set(
-                                          operationRows
-                                            .map((item) => item.reference)
-                                            .filter(Boolean),
-                                        ),
-                                      ],
-                                name:
-                                  operationRows.length > 1
-                                    ? t('imageManagerTool.selectedCount', {
-                                        count: operationRows.length,
-                                      })
-                                    : rowLabel,
+                                items: createImageDeleteItems(operationRows, source.kind, images),
                                 sourceId: source.id,
                                 sourceKind: source.kind,
                                 sourceConfigKey,
@@ -2260,14 +2258,18 @@ export default function ImageManagerTool({
                 ? confirm.deleteManifest
                   ? t('imageManagerTool.registryDeleteConfirmSummary')
                   : t('imageManagerTool.registryDeleteTagSummary')
-                : confirm.targets.length > 1
-                  ? t('imageManagerTool.deleteConfirmManyBody', { count: confirm.targets.length })
-                  : t('imageManagerTool.deleteConfirmBody', { name: confirm.name })}
+                : deletePreview.targets.length > 1
+                  ? t('imageManagerTool.deleteConfirmManyBody', {
+                      count: deletePreview.targets.length,
+                    })
+                  : t('imageManagerTool.deleteConfirmBody', {
+                      name: confirm.items[0]?.name || unnamed,
+                    })}
             </p>
             <div className="min-w-0 rounded-md border border-border bg-muted/40 px-3 py-2">
-              {confirm.previewDigests.length > 0 ? (
+              {deletePreview.digests.length > 0 ? (
                 <div className="space-y-1.5">
-                  {confirm.previewDigests.map((digest) => (
+                  {deletePreview.digests.map((digest) => (
                     <div key={digest} className="flex min-w-0 items-start gap-2">
                       <code className="min-w-0 flex-1 break-all font-mono text-xs leading-5 text-foreground">
                         {digest}
@@ -2292,7 +2294,7 @@ export default function ImageManagerTool({
                 </p>
               )}
             </div>
-            {confirm.previewTags.length > 0 ? (
+            {deletePreview.tags.length > 0 ? (
               <div className="min-w-0">
                 <div className="text-[10px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
                   {t('imageManagerTool.registryDeleteTags')}
@@ -2302,23 +2304,50 @@ export default function ImageManagerTool({
                   options={{ overflow: { x: 'hidden' } }}
                 >
                   <div className="flex flex-wrap gap-1.5">
-                    {confirm.previewTags.map((tag, index) => (
-                      <button
-                        type="button"
-                        key={`${tag}-${index}`}
-                        className="group inline-flex min-w-0 max-w-full items-start gap-1.5 rounded-md border border-border bg-muted/40 px-1.5 py-0.5 text-left text-foreground outline-none transition-colors hover:bg-muted focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
-                        title={t('imageManagerTool.copyTag')}
-                        aria-label={t('imageManagerTool.copyTag')}
-                        onClick={() => void copyTag(tag)}
+                    {deletePreview.tags.map((tag) => (
+                      <div
+                        key={tag}
+                        className="group/delete-tag relative inline-flex min-w-0 max-w-full"
                       >
-                        <Copy
-                          size={13}
-                          weight="duotone"
-                          className="mt-0.5 shrink-0"
-                          aria-hidden="true"
-                        />
-                        <code className="min-w-0 break-all font-mono text-xs leading-5">{tag}</code>
-                      </button>
+                        <button
+                          type="button"
+                          className="inline-flex min-w-0 max-w-full items-start gap-1.5 rounded-md border border-border bg-muted/40 px-1.5 py-0.5 text-left text-foreground outline-none transition-colors group-hover/delete-tag:bg-muted group-focus-within/delete-tag:bg-muted focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+                          title={t('imageManagerTool.copyTag')}
+                          aria-label={t('imageManagerTool.copyTag')}
+                          onClick={() => void copyTag(tag)}
+                        >
+                          <Copy
+                            size={13}
+                            weight="duotone"
+                            className="mt-0.5 shrink-0"
+                            aria-hidden="true"
+                          />
+                          <code className="min-w-0 break-all font-mono text-xs leading-5">
+                            {tag}
+                          </code>
+                        </button>
+                        <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center rounded-r-md bg-linear-to-r from-transparent via-muted to-muted pl-6 pr-0.5 opacity-0 group-hover/delete-tag:opacity-100 group-focus-within/delete-tag:opacity-100 [@media(pointer:coarse)]:opacity-100">
+                          <Button
+                            variant="ghost"
+                            size="icon-xs"
+                            className="group/delete-tag-remove pointer-events-auto"
+                            disabled={busy !== null || confirm.sourceConfigKey !== sourceConfigKey}
+                            title={t('imageManagerTool.deselectTag', { tag })}
+                            aria-label={t('imageManagerTool.deselectTag', { tag })}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              excludeConfirmTag(tag);
+                            }}
+                          >
+                            <Trash
+                              size={14}
+                              weight="duotone"
+                              className="opacity-60 group-hover/delete-tag-remove:opacity-80 group-focus-visible/delete-tag-remove:opacity-80"
+                              aria-hidden="true"
+                            />
+                          </Button>
+                        </div>
+                      </div>
                     ))}
                   </div>
                 </ScrollArea>

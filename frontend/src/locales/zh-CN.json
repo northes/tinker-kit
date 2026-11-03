@@ -1008,6 +1008,7 @@
     "registryDeleteTagSummary": "仅删除所选 Tag，同一 manifest 的其他 Tag 将重新推送保留。",
     "registryDeleteTagRepushHint": "该操作需要重新推送同一 manifest 的其他 Tag，可能较慢。",
     "registryDeleteTags": "关联 Tags",
+    "deselectTag": "取消勾选与 {{tag}} 关联的镜像",
     "registryDeleteDigestPending": "Digest 仍在后台加载，删除时将由 Registry 解析。",
     "registryDeleteGCHint": "存储空间回收由 Registry GC 决定。",
     "confirm": "确认",

@@ -1008,6 +1008,7 @@
     "registryDeleteTagSummary": "Delete only the selected tag and re-push the other tags on the same manifest to keep them.",
     "registryDeleteTagRepushHint": "This re-pushes the other tags on the same manifest to keep them, and may be slower.",
     "registryDeleteTags": "Associated tags",
+    "deselectTag": "Deselect images associated with {{tag}}",
     "registryDeleteDigestPending": "The digest is still loading in the background and will be resolved by the registry when deleted.",
     "registryDeleteGCHint": "Storage reclamation is controlled by Registry GC.",
     "confirm": "Confirm",

@@ -50,6 +50,16 @@ tasks:
     cmds:
       - node --experimental-strip-types --test frontend/src/lib/image-tasks.test.mjs
 
+  test:image-batches:
+    summary: Checks image batch chunking against the backend limit
+    cmds:
+      - node --experimental-strip-types --test frontend/src/components/image-manager/batch.test.mjs
+
+  test:image-delete-selection:
+    summary: Checks image delete preview and tag deselection
+    cmds:
+      - node --experimental-strip-types --test frontend/src/components/image-manager/delete-selection.test.mjs
+
   test:image-architectures:
     summary: Checks image architecture badge data
     cmds:
