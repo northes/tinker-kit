@@ -60,6 +60,8 @@ export function useRemoteFileBrowser({
   const sourcesRequestRef = useRef(0);
   const directoryRequestRef = useRef(0);
   const searchRequestRef = useRef(0);
+  const activeSearchIDRef = useRef('');
+  const searchCallRef = useRef<CancellableCall | null>(null);
   const loadingKindRef = useRef<LoadingKind | null>(null);
   const loadingCallsRef = useRef(new Set<CancellableCall>());
   const pendingFavoritePathRef = useRef<MissingFavoritePath | null>(null);
@@ -75,6 +77,8 @@ export function useRemoteFileBrowser({
     sourcesRequestRef.current++;
     directoryRequestRef.current++;
     searchRequestRef.current++;
+    activeSearchIDRef.current = '';
+    searchCallRef.current = null;
     const requests = Array.from(loadingCallsRef.current);
     loadingCallsRef.current.clear();
     loadingKindRef.current = null;
@@ -91,6 +95,8 @@ export function useRemoteFileBrowser({
       sourcesRequestRef.current++;
       directoryRequestRef.current++;
       searchRequestRef.current++;
+      activeSearchIDRef.current = '';
+      searchCallRef.current = null;
       const requests = Array.from(loadingCallsRef.current);
       loadingCallsRef.current.clear();
       for (const request of requests) void request.cancel();
@@ -299,6 +305,15 @@ export function useRemoteFileBrowser({
   );
   const resetSearchState = useCallback(() => {
     searchRequestRef.current++;
+    activeSearchIDRef.current = '';
+    const request = searchCallRef.current;
+    searchCallRef.current = null;
+    if (request) {
+      loadingCallsRef.current.delete(request);
+      void request.cancel();
+    }
+    if (loadingKindRef.current === 'search') loadingKindRef.current = null;
+    setLoadingCanceled(null);
     setSearchInput('');
     setSearchQuery('');
     setSearchActive(false);
@@ -314,6 +329,8 @@ export function useRemoteFileBrowser({
     }
 
     const requestID = ++searchRequestRef.current;
+    const searchID = crypto.randomUUID();
+    activeSearchIDRef.current = searchID;
     directoryRequestRef.current++;
     loadingKindRef.current = 'search';
     setLoadingCanceled(null);
@@ -332,7 +349,9 @@ export function useRemoteFileBrowser({
       searchMode,
       searchScope,
       showHidden,
+      searchID,
     );
+    searchCallRef.current = request;
     loadingCallsRef.current.add(request);
     try {
       const result = await request;
@@ -340,11 +359,12 @@ export function useRemoteFileBrowser({
       setEntries(result ?? []);
     } catch (reason) {
       if (requestID !== searchRequestRef.current) return;
-      setEntries([]);
       setError(errorMessage(reason));
     } finally {
       loadingCallsRef.current.delete(request);
       if (requestID === searchRequestRef.current) {
+        activeSearchIDRef.current = '';
+        searchCallRef.current = null;
         setLoading(false);
         setSearching(false);
         if (loadingKindRef.current === 'search') loadingKindRef.current = null;
@@ -399,6 +419,24 @@ export function useRemoteFileBrowser({
     window.addEventListener('tinkerkit:config-replaced', refresh);
     return () => window.removeEventListener('tinkerkit:config-replaced', refresh);
   }, [active, loadSources]);
+
+  useEffect(() => {
+    if (!active) return;
+    const offSearchResults = Events.On('ssh-files:search-results', (event) => {
+      const payload = event.data as { requestID?: string; entries?: RemoteFileEntry[] };
+      if (
+        !payload.requestID ||
+        payload.requestID !== activeSearchIDRef.current ||
+        loadingKindRef.current !== 'search' ||
+        !payload.entries?.length
+      ) {
+        return;
+      }
+      const batch = payload.entries;
+      setEntries((current) => [...current, ...batch]);
+    });
+    return () => offSearchResults();
+  }, [active]);
 
   useEffect(() => {
     if (!active) return;
@@ -488,6 +526,7 @@ export function useRemoteFileBrowser({
     loadingSources,
     loading,
     searching,
+    searchRevision: searchRequestRef.current,
     setError,
     resetSearchState,
     loadDirectory,

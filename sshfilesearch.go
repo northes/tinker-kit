@@ -4,10 +4,10 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"sort"
+	"os"
 	"strings"
-
-	"github.com/pkg/sftp"
+	"sync"
+	"time"
 )
 
 func normalizeRemoteSearchMode(value string) (string, error) {
@@ -60,9 +60,11 @@ func remoteSearchGrepExec(query string) string {
 shift
 for file
 do
-  grep -lIZ -i -F -e "$query" "$file"
+  grep -qI -i -F -e "$query" "$file"
   status=$?
-  if [ "$status" -gt 1 ]; then
+  if [ "$status" -eq 0 ]; then
+    printf '%s\0' "$file"
+  elif [ "$status" -gt 1 ]; then
     exit "$status"
   fi
 done
@@ -79,7 +81,7 @@ func remoteSearchFindCommand(query, root, searchMode, searchScope string, showHi
 		if searchMode == remoteFileSearchContent {
 			findStatus += "find \"$item\" -prune -type f " + remoteSearchGrepExec(query)
 		} else {
-			findStatus += "find \"$item\" -prune -iname " + pattern + " -print0"
+			findStatus += "find \"$item\" -prune -iname " + pattern + ` -exec printf '%s\0' {} \;`
 		}
 		return findStatus + " || findStatus=$?; fi; done; exit \"$findStatus\""
 	}
@@ -92,7 +94,7 @@ func remoteSearchFindCommand(query, root, searchMode, searchScope string, showHi
 	if searchMode == remoteFileSearchContent {
 		return command + " -type f " + remoteSearchGrepExec(query)
 	}
-	return command + " -iname " + pattern + " -print0"
+	return command + " -iname " + pattern + ` -exec printf '%s\0' {} \;`
 }
 
 func remoteSearchCommand(query, root, searchMode, searchScope string, showHidden bool) string {
@@ -105,12 +107,13 @@ func remoteSearchCommand(query, root, searchMode, searchScope string, showHidden
 		if showHidden {
 			fdCommand += " --hidden"
 		}
-		fdCommand += " -- " + shellQuote(query) + " " + shellQuote(root)
+		// 每项独立输出，避免 fd 在管道缓冲中积攒结果直到搜索结束。
+		fdCommand += ` --exec printf '%s\0' {} ';' -- ` + shellQuote(query) + " " + shellQuote(root)
 		return "if command -v fd >/dev/null 2>&1; then " + fdCommand + "; else " +
 			remoteSearchFindCommand(query, root, searchMode, searchScope, showHidden) + "; fi"
 	}
 
-	rgCommand := "rg --files-with-matches --null --fixed-strings --ignore-case --no-ignore"
+	rgCommand := "rg --files-with-matches --null --fixed-strings --ignore-case --no-ignore --line-buffered"
 	if !recursive {
 		rgCommand += " --max-depth 1"
 	}
@@ -124,51 +127,97 @@ func remoteSearchCommand(query, root, searchMode, searchScope string, showHidden
 		remoteSearchFindCommand(query, root, searchMode, searchScope, showHidden) + "; fi"
 }
 
-func parseRemoteSearchPaths(output []byte) []string {
-	paths := make([]string, 0)
-	seen := make(map[string]struct{})
-	for _, rawPath := range bytes.Split(output, []byte{0}) {
-		if len(rawPath) == 0 {
-			continue
-		}
-		remotePath := normalizedRemotePath(string(rawPath))
-		if remotePath == "/" {
-			continue
-		}
-		if _, ok := seen[remotePath]; ok {
-			continue
-		}
-		seen[remotePath] = struct{}{}
-		paths = append(paths, remotePath)
-	}
-	return paths
+const (
+	remoteSearchBatchSize     = 64
+	remoteSearchBatchInterval = 80 * time.Millisecond
+)
+
+// RemoteSearchBatch 仅携带本次搜索新发现的项目，requestID 隔离不同窗口和过期搜索。
+type RemoteSearchBatch struct {
+	RequestID string            `json:"requestID"`
+	Entries   []RemoteFileEntry `json:"entries"`
 }
 
-// remoteSearchEntries 只读取远程搜索结果的元数据，不参与文件内容匹配。
-func remoteSearchEntries(ctx context.Context, client *sftp.Client, output []byte) ([]RemoteFileEntry, error) {
-	paths := parseRemoteSearchPaths(output)
-	result := make([]RemoteFileEntry, 0, len(paths))
-	for _, remotePath := range paths {
-		if err := ctx.Err(); err != nil {
-			return nil, err
+// remoteSearchResults 以 NUL 分帧，跨 stdout 分块保留未完成路径；文件内容仍只在远端匹配。
+type remoteSearchResults struct {
+	mu       sync.Mutex
+	ctx      context.Context
+	cancel   context.CancelFunc
+	err      error
+	stat     func(string) (os.FileInfo, error)
+	emit     func([]RemoteFileEntry)
+	pending  []byte
+	seen     map[string]struct{}
+	entries  []RemoteFileEntry
+	batch    []RemoteFileEntry
+	lastEmit time.Time
+}
+
+func (r *remoteSearchResults) flush() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.flushLocked()
+}
+
+func (r *remoteSearchResults) flushLocked() {
+	if len(r.batch) == 0 || r.ctx.Err() != nil {
+		return
+	}
+	if r.emit != nil {
+		r.emit(r.batch)
+	}
+	r.batch = nil
+	r.lastEmit = time.Now()
+}
+
+func (r *remoteSearchResults) Write(data []byte) (int, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.pending = append(r.pending, data...)
+	for {
+		if err := r.ctx.Err(); err != nil {
+			return 0, err
 		}
-		info, err := client.Lstat(remotePath)
+		end := bytes.IndexByte(r.pending, 0)
+		if end < 0 {
+			return len(data), nil
+		}
+		path := string(r.pending[:end])
+		r.pending = r.pending[end+1:]
+		if path == "" {
+			continue
+		}
+		path = normalizedRemotePath(path)
+		if path == "/" {
+			continue
+		}
+		if r.seen == nil {
+			r.seen = make(map[string]struct{})
+		}
+		if _, found := r.seen[path]; found {
+			continue
+		}
+		r.seen[path] = struct{}{}
+		info, err := r.stat(path)
 		if err != nil {
 			if isRemoteNotFound(err) {
 				continue
 			}
-			return nil, userErrorParamsCause("errors.sshFile.readSearchResultFailed", map[string]any{"path": remotePath}, err)
+			r.err = userErrorParamsCause("errors.sshFile.readSearchResultFailed", map[string]any{"path": path}, err)
+			// stdout 消费失败时同时停止远端命令，避免其输出阻塞后无法退出。
+			if r.cancel != nil {
+				r.cancel()
+			}
+			return 0, r.err
 		}
-		result = append(result, remoteFileEntryFromInfo(remotePath, info, ""))
+		entry := remoteFileEntryFromInfo(path, info, "")
+		r.entries = append(r.entries, entry)
+		r.batch = append(r.batch, entry)
+		// 首项立即展示；大量输出按数量和元数据读取耗时合并事件。
+		if len(r.entries) == 1 || len(r.batch) >= remoteSearchBatchSize || time.Since(r.lastEmit) >= remoteSearchBatchInterval {
+			r.flushLocked()
+		}
 	}
-	sort.SliceStable(result, func(i, j int) bool {
-		left, right := strings.ToLower(result[i].Path), strings.ToLower(result[j].Path)
-		if left == right {
-			return result[i].Path < result[j].Path
-		}
-		return left < right
-	})
-	return result, nil
 }
 
 // SearchRemoteFiles 在远程文件源中使用远程 fd/find 或 rg/grep 搜索。
@@ -178,7 +227,15 @@ func (s *FileService) SearchRemoteFiles(
 	ctx context.Context,
 	sourceID, currentPath, query, searchMode, searchScope string,
 	showHidden bool,
+	requestID string,
 ) (entries []RemoteFileEntry, err error) {
+	ctx, cancel := context.WithTimeout(ctx, remoteFileSearchTimeout)
+	defer cancel()
+	defer func() {
+		if errors.Is(ctx.Err(), context.Canceled) {
+			entries, err = nil, nil
+		}
+	}()
 	query = strings.TrimSpace(query)
 	if !validTextValue(query, 4096) {
 		return nil, userError("errors.sshFile.searchQueryInvalid")
@@ -195,32 +252,66 @@ func (s *FileService) SearchRemoteFiles(
 	if err != nil {
 		return nil, err
 	}
-	ctx, cancel := context.WithTimeout(ctx, remoteFileSearchTimeout)
-	defer cancel()
-	defer func() {
-		if errors.Is(ctx.Err(), context.Canceled) {
-			entries, err = nil, nil
-		}
-	}()
 	sshClient, client, err := s.dialSFTP(ctx, conn)
 	if err != nil {
 		return nil, err
 	}
 	defer closeSSHClient(sshClient)
 	defer client.Close()
+	// 搜索使用独立会话；取消时关闭它，解除在途元数据读取和命令输出的阻塞。
+	stopCancel := context.AfterFunc(ctx, func() {
+		_ = client.Close()
+		closeSSHClient(sshClient)
+	})
+	defer stopCancel()
 
 	root, err := resolveRemoteDirectory(client, currentPath)
 	if err != nil {
 		return nil, err
 	}
-	output, err := runRemoteCommandOutput(
-		ctx,
+	commandCtx, cancelCommand := context.WithCancel(ctx)
+	defer cancelCommand()
+	results := &remoteSearchResults{
+		ctx:    ctx,
+		cancel: cancelCommand,
+		stat:   client.Lstat,
+		emit: func(batch []RemoteFileEntry) {
+			if s.emitEvent != nil {
+				s.emitEvent(remoteSearchResultsEventName, RemoteSearchBatch{RequestID: requestID, Entries: batch})
+			}
+		},
+	}
+	// 首项立即发出；后续批次也会定时刷新，避免零散结果等到下一项才出现。
+	ticker := time.NewTicker(remoteSearchBatchInterval)
+	defer ticker.Stop()
+	stopFlush := make(chan struct{})
+	flushDone := make(chan struct{})
+	go func() {
+		defer close(flushDone)
+		for {
+			select {
+			case <-ticker.C:
+				results.flush()
+			case <-stopFlush:
+				return
+			}
+		}
+	}()
+	err = runRemoteCommandToWriter(
+		commandCtx,
 		conn,
 		sshClient,
 		remoteSearchCommand(query, root, searchMode, searchScope, showHidden),
+		results,
 	)
-	if err != nil {
-		return nil, userErrorCause("errors.sshFile.searchFailed", err)
+	close(stopFlush)
+	<-flushDone
+	results.flush()
+	if results.err != nil {
+		return results.entries, results.err
 	}
-	return remoteSearchEntries(ctx, client, output)
+	if err != nil {
+		return results.entries, userErrorCause("errors.sshFile.searchFailed", err)
+	}
+	return results.entries, nil
 }

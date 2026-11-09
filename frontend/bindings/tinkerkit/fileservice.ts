@@ -149,8 +149,8 @@ export function SaveText(content: string, filename: string): $CancellablePromise
  * searchScope 为 current（仅当前目录）或 recursive（从当前目录开始递归）。
  * 搜索结果只在远端生成，当前设备不读取远程文件内容。
  */
-export function SearchRemoteFiles(sourceID: string, currentPath: string, query: string, searchMode: string, searchScope: string, showHidden: boolean): $CancellablePromise<$models.RemoteFileEntry[] | null> {
-    return $Call.ByID(669656548, sourceID, currentPath, query, searchMode, searchScope, showHidden);
+export function SearchRemoteFiles(sourceID: string, currentPath: string, query: string, searchMode: string, searchScope: string, showHidden: boolean, requestID: string): $CancellablePromise<$models.RemoteFileEntry[] | null> {
+    return $Call.ByID(669656548, sourceID, currentPath, query, searchMode, searchScope, showHidden, requestID);
 }
 
 export function StartFileDownload(sourceID: string, remotePaths: string[] | null): $CancellablePromise<$models.FileTaskSnapshot> {

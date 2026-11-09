@@ -7,6 +7,7 @@ import {
   CaretDown,
   CaretRight,
   CaretUp,
+  CaretUpDown,
   CheckCircle,
   Copy,
   DownloadSimple,
@@ -168,6 +169,11 @@ export default function SshFilesTool({ active }: Props) {
   const { t, i18n } = useTranslation();
   const { profiles } = useSSHProfiles();
   const [sortKey, setSortKey] = useState<FileSortKey>('name');
+  const [searchSort, setSearchSort] = useState<{
+    revision: number;
+    key: FileSortKey;
+    direction: SortDirection;
+  } | null>(null);
   const [sortDirection, setSortDirection] = useState<SortDirection>('asc');
   const [sizeValues, setSizeValues] = useState<Record<string, number>>({});
   const [tasks, setTasks] = useState<FileTask[]>([]);
@@ -222,6 +228,7 @@ export default function SshFilesTool({ active }: Props) {
     loadingSources,
     loading,
     searching,
+    searchRevision,
     setError,
     resetSearchState,
     loadDirectory,
@@ -1147,12 +1154,17 @@ export default function SshFilesTool({ active }: Props) {
   const activeTasks = tasks.filter(
     (task) => task.status === 'queued' || task.status === 'running' || task.status === 'scanning',
   );
+  const activeSearchSort = searchSort?.revision === searchRevision ? searchSort : null;
+  const activeSortKey = searchActive ? (searching ? null : activeSearchSort?.key) : sortKey;
+  const activeSortDirection = searchActive ? (activeSearchSort?.direction ?? 'asc') : sortDirection;
   const sortedEntries = useMemo(() => {
-    const direction = sortDirection === 'asc' ? 1 : -1;
+    // 搜索默认保持发现顺序，新结果始终追加；完成后才允许用户主动排序。
+    if (!activeSortKey) return entries;
+    const direction = activeSortDirection === 'asc' ? 1 : -1;
     return [...entries].sort((left, right) => {
       if (left.isDir !== right.isDir) return left.isDir ? -1 : 1;
 
-      if (sortKey === 'name') {
+      if (activeSortKey === 'name') {
         return (
           left.name.localeCompare(right.name, i18n.language, {
             sensitivity: 'base',
@@ -1162,17 +1174,17 @@ export default function SshFilesTool({ active }: Props) {
       }
 
       const leftValue =
-        sortKey === 'size'
+        activeSortKey === 'size'
           ? left.isDir
             ? (sizeValues[left.path] ?? null)
             : left.size
-          : timestampMillis(sortKey === 'modifiedAt' ? left.modifiedAt : left.createdAt);
+          : timestampMillis(activeSortKey === 'modifiedAt' ? left.modifiedAt : left.createdAt);
       const rightValue =
-        sortKey === 'size'
+        activeSortKey === 'size'
           ? right.isDir
             ? (sizeValues[right.path] ?? null)
             : right.size
-          : timestampMillis(sortKey === 'modifiedAt' ? right.modifiedAt : right.createdAt);
+          : timestampMillis(activeSortKey === 'modifiedAt' ? right.modifiedAt : right.createdAt);
 
       if (leftValue === null || rightValue === null) {
         if (leftValue === rightValue) return 0;
@@ -1180,7 +1192,7 @@ export default function SshFilesTool({ active }: Props) {
       }
       return (leftValue - rightValue) * direction;
     });
-  }, [entries, i18n.language, sizeValues, sortDirection, sortKey]);
+  }, [activeSortDirection, activeSortKey, entries, i18n.language, sizeValues]);
   // 只渲染可视区域的行：远端目录可能很大，全量渲染会拖慢滚动与切换。
   const [fileListViewport, setFileListViewport] = useState<HTMLElement | null>(null);
   const fileRowVirtualizer = useVirtualizer({
@@ -1226,6 +1238,7 @@ export default function SshFilesTool({ active }: Props) {
     </SelectGroup>
   );
   const isLoading = loadingSources || loading || searching;
+  const hasSearchResults = searchActive && entries.length > 0;
   const searchModeLabel = t(
     searchMode === 'name' ? 'sshFilesTool.searchByName' : 'sshFilesTool.searchByContent',
   );
@@ -1235,11 +1248,12 @@ export default function SshFilesTool({ active }: Props) {
       : 'sshFilesTool.searchFromCurrentDirectory',
   );
   const changeSort = (nextKey: FileSortKey) => {
-    if (sortKey === nextKey) {
-      setSortDirection((direction) => (direction === 'asc' ? 'desc' : 'asc'));
+    const direction = activeSortKey === nextKey && activeSortDirection === 'asc' ? 'desc' : 'asc';
+    if (searchActive) {
+      setSearchSort({ revision: searchRevision, key: nextKey, direction });
     } else {
       setSortKey(nextKey);
-      setSortDirection('asc');
+      setSortDirection(direction);
     }
   };
   const sortLabel = (key: FileSortKey) => {
@@ -1249,9 +1263,9 @@ export default function SshFilesTool({ active }: Props) {
     return t('sshFilesTool.created');
   };
   const sortableHeader = (key: FileSortKey, label: string) => {
-    const activeSort = sortKey === key;
+    const activeSort = activeSortKey === key;
     const directionLabel = activeSort
-      ? sortDirection === 'asc'
+      ? activeSortDirection === 'asc'
         ? t('imageManagerTool.sortAscending')
         : t('imageManagerTool.sortDescending')
       : t('imageManagerTool.sortNotActive');
@@ -1264,16 +1278,19 @@ export default function SshFilesTool({ active }: Props) {
           column: sortLabel(key),
           direction: directionLabel,
         })}
+        disabled={searching}
         onClick={() => changeSort(key)}
       >
         {label}
         {activeSort ? (
-          sortDirection === 'asc' ? (
-            <CaretUp weight="duotone" data-icon="inline-end" aria-hidden="true" />
+          activeSortDirection === 'asc' ? (
+            <CaretUp weight="regular" data-icon="inline-end" aria-hidden="true" />
           ) : (
-            <CaretDown weight="duotone" data-icon="inline-end" aria-hidden="true" />
+            <CaretDown weight="regular" data-icon="inline-end" aria-hidden="true" />
           )
-        ) : null}
+        ) : (
+          <CaretUpDown weight="regular" data-icon="inline-end" aria-hidden="true" />
+        )}
       </Button>
     );
   };
@@ -1635,7 +1652,7 @@ export default function SshFilesTool({ active }: Props) {
                   label={t('sshFilesTool.loadingSources')}
                   onCancel={cancelLoading}
                 />
-              ) : loading ? (
+              ) : loading && !hasSearchResults ? (
                 <ToolLoadingState
                   className="h-full"
                   label={
@@ -1646,7 +1663,7 @@ export default function SshFilesTool({ active }: Props) {
                   detail={searching ? undefined : loadingDirectoryPath}
                   onCancel={cancelLoading}
                 />
-              ) : loadingCanceled ? (
+              ) : loadingCanceled && !hasSearchResults ? (
                 <ToolCanceledState
                   className="h-full"
                   onRetry={retryCanceledLoading}
@@ -1678,7 +1695,7 @@ export default function SshFilesTool({ active }: Props) {
                     {t('sshFilesTool.sshProfileMissingHint')}
                   </div>
                 </div>
-              ) : error ? (
+              ) : error && !hasSearchResults ? (
                 <div className="flex h-full flex-col items-center justify-center gap-2 p-6 text-center">
                   <XCircle size={30} weight="duotone" className="text-destructive" />
                   <div className="text-sm font-medium text-foreground">
@@ -1728,8 +1745,8 @@ export default function SshFilesTool({ active }: Props) {
                       <TableHead
                         className="min-w-[280px] text-[10px] text-muted-foreground"
                         aria-sort={
-                          sortKey === 'name'
-                            ? sortDirection === 'asc'
+                          activeSortKey === 'name'
+                            ? activeSortDirection === 'asc'
                               ? 'ascending'
                               : 'descending'
                             : 'none'
@@ -1740,8 +1757,8 @@ export default function SshFilesTool({ active }: Props) {
                       <TableHead
                         className="w-32 text-[10px] text-muted-foreground"
                         aria-sort={
-                          sortKey === 'size'
-                            ? sortDirection === 'asc'
+                          activeSortKey === 'size'
+                            ? activeSortDirection === 'asc'
                               ? 'ascending'
                               : 'descending'
                             : 'none'
@@ -1752,8 +1769,8 @@ export default function SshFilesTool({ active }: Props) {
                       <TableHead
                         className="w-44 text-[10px] text-muted-foreground"
                         aria-sort={
-                          sortKey === 'modifiedAt'
-                            ? sortDirection === 'asc'
+                          activeSortKey === 'modifiedAt'
+                            ? activeSortDirection === 'asc'
                               ? 'ascending'
                               : 'descending'
                             : 'none'
@@ -1764,8 +1781,8 @@ export default function SshFilesTool({ active }: Props) {
                       <TableHead
                         className="w-44 text-[10px] text-muted-foreground"
                         aria-sort={
-                          sortKey === 'createdAt'
-                            ? sortDirection === 'asc'
+                          activeSortKey === 'createdAt'
+                            ? activeSortDirection === 'asc'
                               ? 'ascending'
                               : 'descending'
                             : 'none'
@@ -2113,6 +2130,30 @@ export default function SshFilesTool({ active }: Props) {
               </button>
             ) : null}
           </div>
+          {hasSearchResults && (searching || loadingCanceled === 'search' || error) ? (
+            <div className="flex min-w-0 items-center gap-2 text-xs">
+              <span role={error ? 'alert' : 'status'} className="min-w-0 text-muted-foreground">
+                {searching ? (
+                  <span className="inline-flex items-center gap-2">
+                    <Spinner className="size-3" />
+                    {t('sshFilesTool.searching')}
+                  </span>
+                ) : error ? (
+                  <span className="break-words text-destructive">
+                    {t('sshFilesTool.searchIncomplete')} {error}
+                  </span>
+                ) : (
+                  t('sshFilesTool.searchCanceled')
+                )}
+              </span>
+              <ToolActionButton
+                variant="secondary"
+                icon={searching ? XCircle : ArrowClockwise}
+                label={t(searching ? 'common.cancel' : 'sshFilesTool.refresh')}
+                onPress={searching ? cancelLoading : reloadCurrentView}
+              />
+            </div>
+          ) : null}
         </div>
       </ToolLayoutFooter>
 

@@ -19,22 +19,23 @@ import (
 )
 
 const (
-	fileTaskTypeUpload        = "upload"
-	fileTaskTypeDownload      = "download"
-	fileTaskTypeSize          = "size"
-	fileTaskTypeCopy          = "copy"
-	fileTaskTypeMove          = "move"
-	fileTaskTypeExtract       = "extract"
-	fileTaskTypeCompress      = "compress"
-	fileTaskQueued            = "queued"
-	fileTaskScanning          = "scanning"
-	fileTaskRunning           = "running"
-	fileTaskSuccess           = "success"
-	fileTaskFailed            = "failed"
-	fileTaskCanceled          = "canceled"
-	fileTaskConflict          = "conflict"
-	fileTasksEventName        = "ssh-files:tasks"
-	directoryLoadingEventName = "ssh-files:directory-loading"
+	fileTaskTypeUpload           = "upload"
+	fileTaskTypeDownload         = "download"
+	fileTaskTypeSize             = "size"
+	fileTaskTypeCopy             = "copy"
+	fileTaskTypeMove             = "move"
+	fileTaskTypeExtract          = "extract"
+	fileTaskTypeCompress         = "compress"
+	fileTaskQueued               = "queued"
+	fileTaskScanning             = "scanning"
+	fileTaskRunning              = "running"
+	fileTaskSuccess              = "success"
+	fileTaskFailed               = "failed"
+	fileTaskCanceled             = "canceled"
+	fileTaskConflict             = "conflict"
+	fileTasksEventName           = "ssh-files:tasks"
+	directoryLoadingEventName    = "ssh-files:directory-loading"
+	remoteSearchResultsEventName = "ssh-files:search-results"
 )
 
 const (
@@ -258,32 +259,43 @@ func runRemoteCommandOutput(
 	sshClient *ssh.Client,
 	command string,
 ) ([]byte, error) {
+	var stdout bytes.Buffer
+	err := runRemoteCommandToWriter(ctx, conn, sshClient, command, &stdout)
+	return stdout.Bytes(), err
+}
+
+// runRemoteCommandToWriter 实时消费 stdout，并在返回前等待所有输出处理结束。
+func runRemoteCommandToWriter(
+	ctx context.Context,
+	conn SSHConnection,
+	sshClient *ssh.Client,
+	command string,
+	stdout io.Writer,
+) error {
 	if conn.Mode == "local" {
 		alias := strings.TrimSpace(conn.Alias)
 		if !validSSHHost(alias) {
-			return nil, userError("errors.sshFile.invalidLocalSSHAlias")
+			return userError("errors.sshFile.invalidLocalSSHAlias")
 		}
 		process := newSystemSSHCommand(ctx, alias, command)
-		var stdout bytes.Buffer
 		var stderr bytes.Buffer
-		process.Stdout = &stdout
+		process.Stdout = stdout
 		process.Stderr = &stderr
 		err := process.Run()
-		if err != nil && ctx.Err() != nil {
-			return nil, ctx.Err()
+		if ctx.Err() != nil {
+			return ctx.Err()
 		}
-		return stdout.Bytes(), remoteCommandError(stderr.String(), err)
+		return remoteCommandError(stderr.String(), err)
 	}
 	if sshClient == nil {
-		return nil, userError("errors.sshFile.sessionNotEstablished")
+		return userError("errors.sshFile.sessionNotEstablished")
 	}
 	session, err := sshClient.NewSession()
 	if err != nil {
-		return nil, err
+		return err
 	}
 	defer session.Close()
-	var stdout bytes.Buffer
-	session.Stdout = &stdout
+	session.Stdout = stdout
 	var stderr bytes.Buffer
 	session.Stderr = &stderr
 	done := make(chan error, 1)
@@ -292,10 +304,14 @@ func runRemoteCommandOutput(
 	}()
 	select {
 	case err := <-done:
-		return stdout.Bytes(), remoteCommandError(stderr.String(), err)
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		return remoteCommandError(stderr.String(), err)
 	case <-ctx.Done():
 		_ = session.Close()
-		return nil, ctx.Err()
+		<-done
+		return ctx.Err()
 	}
 }
 
@@ -356,13 +372,20 @@ func remoteCreationTimes(
 
 // ListRemoteFiles 列出远程目录。ctx 来自 Wails 绑定调用，前端取消时中断连接与读取；
 // requestID 只用于关联连接与读取阶段的加载事件。
-func (s *FileService) ListRemoteFiles(ctx context.Context, sourceID, currentPath string, showHidden bool, requestID string) (RemoteDirectoryListing, error) {
+func (s *FileService) ListRemoteFiles(ctx context.Context, sourceID, currentPath string, showHidden bool, requestID string) (listing RemoteDirectoryListing, err error) {
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	defer func() {
+		// Wails 已取消前端 Promise，再返回错误会触发全局 CancelledRejectionError。
+		if errors.Is(ctx.Err(), context.Canceled) {
+			listing, err = RemoteDirectoryListing{}, nil
+		}
+	}()
 	_, conn, err := s.sourceSnapshot(sourceID)
 	if err != nil {
 		return RemoteDirectoryListing{}, err
 	}
-	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
-	defer cancel()
+
 	s.sessionMu.Lock()
 	cached := s.sessions[sourceID]
 	hasCachedSession := cached != nil && cached.connection == conn && !cached.retired
@@ -420,6 +443,13 @@ func (s *FileService) emitDirectoryLoading(requestID, phase string) {
 
 // GetRemoteCreationTimes 在目录列表返回后补充可选的创建时间元数据。
 func (s *FileService) GetRemoteCreationTimes(ctx context.Context, sourceID string, remotePaths []string) (times map[string]string, err error) {
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	defer func() {
+		if errors.Is(ctx.Err(), context.Canceled) {
+			times, err = nil, nil
+		}
+	}()
 	result := make(map[string]string, len(remotePaths))
 	if len(remotePaths) == 0 {
 		return result, nil
@@ -428,13 +458,6 @@ func (s *FileService) GetRemoteCreationTimes(ctx context.Context, sourceID strin
 	if err != nil {
 		return nil, err
 	}
-	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
-	defer cancel()
-	defer func() {
-		if errors.Is(ctx.Err(), context.Canceled) {
-			times, err = nil, nil
-		}
-	}()
 	session, err := s.acquirePersistentSFTP(ctx, sourceID, conn)
 	if err != nil {
 		return nil, err

@@ -1745,6 +1745,8 @@
     "searchCurrentDirectory": "当前目录",
     "searchFromCurrentDirectory": "从当前目录开始",
     "searching": "正在远程搜索文件…",
+    "searchCanceled": "搜索已取消，已保留找到的结果",
+    "searchIncomplete": "搜索未完成，已保留找到的结果。",
     "searchResults": "搜索结果",
     "searchResultCount": "找到 {{count}} 项",
     "searchFailed": "搜索失败",

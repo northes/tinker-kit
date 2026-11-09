@@ -1745,6 +1745,8 @@
     "searchCurrentDirectory": "Current directory",
     "searchFromCurrentDirectory": "From current directory",
     "searching": "Searching remote files…",
+    "searchCanceled": "Search canceled. Results found so far are retained.",
+    "searchIncomplete": "Search incomplete. Results found so far are retained.",
     "searchResults": "Search results",
     "searchResultCount": "{{count}} results",
     "searchFailed": "Search failed",

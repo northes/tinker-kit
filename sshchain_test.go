@@ -24,6 +24,7 @@ import (
 type testSSHServer struct {
 	address string
 	sftpDir string
+	exec    func(ssh.Channel, string)
 	active  atomic.Int32
 }
 
@@ -31,11 +32,11 @@ func startTestSSHServer(t *testing.T, user, password string, routes map[string]s
 	return startTestSSHServerWithOptions(t, user, password, routes, "")
 }
 
-func startTestSFTPServer(t *testing.T, user, password, dir string) *testSSHServer {
-	return startTestSSHServerWithOptions(t, user, password, nil, dir)
+func startTestSFTPServer(t *testing.T, user, password, dir string, execute ...func(ssh.Channel, string)) *testSSHServer {
+	return startTestSSHServerWithOptions(t, user, password, nil, dir, execute...)
 }
 
-func startTestSSHServerWithOptions(t *testing.T, user, password string, routes map[string]string, sftpDir string) *testSSHServer {
+func startTestSSHServerWithOptions(t *testing.T, user, password string, routes map[string]string, sftpDir string, execute ...func(ssh.Channel, string)) *testSSHServer {
 	t.Helper()
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -60,6 +61,9 @@ func startTestSSHServerWithOptions(t *testing.T, user, password string, routes m
 	}
 	config.AddHostKey(signer)
 	server := &testSSHServer{address: listener.Addr().String(), sftpDir: sftpDir}
+	if len(execute) > 0 {
+		server.exec = execute[0]
+	}
 	go func() {
 		for {
 			conn, acceptErr := listener.Accept()
@@ -143,6 +147,14 @@ func (s *testSSHServer) handleSession(channel ssh.Channel, requests <-chan *ssh.
 		switch request.Type {
 		case "exec":
 			_ = request.Reply(true, nil)
+			if s.exec != nil {
+				var payload struct{ Command string }
+				if ssh.Unmarshal(request.Payload, &payload) != nil {
+					return
+				}
+				s.exec(channel, payload.Command)
+				return
+			}
 			_, _ = channel.Write([]byte("ok"))
 			_, _ = channel.SendRequest("exit-status", false, ssh.Marshal(struct{ Status uint32 }{0}))
 			return
