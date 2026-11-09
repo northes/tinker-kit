@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import type { ComponentProps, ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { cn } from '@/lib/utils';
 import { Button } from './ui/button';
@@ -34,7 +34,7 @@ export function ConfirmDialog({
   descriptionClassName,
 }: {
   open: boolean;
-  onOpenChange: (open: boolean) => void;
+  onOpenChange: NonNullable<ComponentProps<typeof Dialog>['onOpenChange']>;
   title: ReactNode;
   description?: ReactNode;
   children?: ReactNode;
@@ -53,8 +53,9 @@ export function ConfirmDialog({
   return (
     <Dialog
       open={open}
-      onOpenChange={(next) => {
-        if (!busy) onOpenChange(next);
+      onOpenChange={(next, details) => {
+        if (busy) details.cancel();
+        else onOpenChange(next, details);
       }}
     >
       <DialogContent

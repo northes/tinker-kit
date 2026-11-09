@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import CodeMirror from '@uiw/react-codemirror';
-import { completeAnyWord } from '@codemirror/autocomplete';
+import { closeCompletion, completeAnyWord, completionStatus } from '@codemirror/autocomplete';
 import { EditorView, keymap } from '@codemirror/view';
 import { EditorState, type Extension } from '@codemirror/state';
 import { HighlightStyle, StreamLanguage, syntaxHighlighting } from '@codemirror/language';
@@ -221,6 +221,8 @@ export function RemoteTextEditorDialog({ sourceID, path, name, onClose, onSaved 
   const [error, setError] = useState('');
   const [discardOpen, setDiscardOpen] = useState(false);
   const viewRef = useRef<EditorView | null>(null);
+  // 补全消费过的原生 Esc：即使事件继续泄漏到 Dialog 的 document 监听，也不能再打开放弃确认。
+  const consumedEscapes = useRef(new WeakSet<Event>());
   const saveRef = useRef(async () => {});
   const dirty = content !== savedContent;
   const formatSupported = Boolean(prettierParsers[extension(name)]);
@@ -315,11 +317,43 @@ export function RemoteTextEditorDialog({ sourceID, path, name, onClose, onSaved 
     <>
       <Dialog
         open
-        onOpenChange={(open) => {
-          if (!open) requestClose();
+        onOpenChange={(open, details) => {
+          if (open) return;
+          // 关闭由 onClose 卸载编辑器；不能让 Dialog 在确认或 busy 守卫前改变内部状态。
+          details.cancel();
+          if (discardOpen) return;
+          if (details.reason === 'escape-key') {
+            const event = details.event;
+            if (consumedEscapes.current.has(event)) return;
+            if (event.defaultPrevented || ('repeat' in event && event.repeat)) return;
+            const view = viewRef.current;
+            if (view && completionStatus(view.state) !== null) {
+              // 补全已由捕获阶段关闭时，同一次 Esc 仍可能走到这里。
+              consumedEscapes.current.add(event);
+              closeCompletion(view);
+              event.preventDefault();
+              return;
+            }
+            // 即将打开放弃确认框：同一原生事件不能再次进入确认框的关闭处理。
+            consumedEscapes.current.add(event);
+            event.preventDefault();
+          }
+          requestClose();
         }}
       >
-        <DialogContent className="grid h-[min(72vh,720px)] w-[min(960px,calc(100vw-32px))] max-w-none grid-rows-[auto_minmax(0,1fr)_auto] gap-3 sm:max-w-none">
+        <DialogContent
+          className="grid h-[min(72vh,720px)] w-[min(960px,calc(100vw-32px))] max-w-none grid-rows-[auto_minmax(0,1fr)_auto] gap-3 sm:max-w-none"
+          onKeyDownCapture={(event) => {
+            if (event.key !== 'Escape' || event.nativeEvent.isComposing) return;
+            const view = viewRef.current;
+            if (!view || completionStatus(view.state) === null) return;
+            // 补全属于编辑器内层：先标记并关闭，再尽量阻止外层 Dialog 处理同一次按键。
+            consumedEscapes.current.add(event.nativeEvent);
+            closeCompletion(view);
+            event.preventDefault();
+            event.stopPropagation();
+          }}
+        >
           <DialogHeader className="min-w-0">
             <DialogTitle className="truncate">
               {t('sshFilesTool.editTextTitle', { name })}
@@ -390,16 +424,29 @@ export function RemoteTextEditorDialog({ sourceID, path, name, onClose, onSaved 
             </Button>
           </DialogFooter>
         </DialogContent>
+        <ConfirmDialog
+          open={discardOpen}
+          onOpenChange={(open, details) => {
+            if (details.reason === 'escape-key') {
+              const event = details.event;
+              if (
+                consumedEscapes.current.has(event) ||
+                event.defaultPrevented ||
+                ('repeat' in event && event.repeat)
+              ) {
+                details.cancel();
+                return;
+              }
+            }
+            setDiscardOpen(open);
+          }}
+          title={t('sshFilesTool.discardTextTitle')}
+          description={t('sshFilesTool.discardTextDescription')}
+          confirmLabel={t('sshFilesTool.discardTextAction')}
+          destructive
+          onConfirm={onClose}
+        />
       </Dialog>
-      <ConfirmDialog
-        open={discardOpen}
-        onOpenChange={setDiscardOpen}
-        title={t('sshFilesTool.discardTextTitle')}
-        description={t('sshFilesTool.discardTextDescription')}
-        confirmLabel={t('sshFilesTool.discardTextAction')}
-        destructive
-        onConfirm={onClose}
-      />
     </>
   );
 }

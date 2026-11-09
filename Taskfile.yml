@@ -105,6 +105,16 @@ tasks:
     cmds:
       - npx --no-install prettier --write {{.FILES}}
 
+  test:editor-completion:
+    summary: Checks completion Escape handling inside editor dialogs
+    cmds:
+      - node --experimental-strip-types --test frontend/src/components/codeMirrorCompletion.test.mjs frontend/src/components/RemoteTextEditorDialog.dom.test.mjs
+
+  test:ssh-file-search:
+    summary: Checks progressive SSH file search and stale result isolation
+    cmds:
+      - node --experimental-strip-types --test frontend/src/components/ssh-files/useRemoteFileBrowser.test.mjs
+
   test:ssh-file-create:
     summary: Checks SSH file creation dialogs and refresh scopes
     cmds:
