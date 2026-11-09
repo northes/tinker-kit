@@ -160,8 +160,16 @@ func saveRemoteText(client *sftp.Client, remotePath, content, revision string) (
 	return hex.EncodeToString(sum[:]), nil
 }
 
-func (s *FileService) ReadRemoteTextFile(ctx context.Context, sourceID, remotePath string) (RemoteTextFile, error) {
-	remotePath, err := remoteTextPath(remotePath)
+func (s *FileService) ReadRemoteTextFile(ctx context.Context, sourceID, remotePath string) (file RemoteTextFile, err error) {
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	defer func() {
+		// 编辑器关闭会取消 Wails 调用，不能再向已取消的 Promise 返回错误。
+		if errors.Is(ctx.Err(), context.Canceled) {
+			file, err = RemoteTextFile{}, nil
+		}
+	}()
+	remotePath, err = remoteTextPath(remotePath)
 	if err != nil {
 		return RemoteTextFile{}, err
 	}
@@ -169,8 +177,6 @@ func (s *FileService) ReadRemoteTextFile(ctx context.Context, sourceID, remotePa
 	if err != nil {
 		return RemoteTextFile{}, err
 	}
-	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
-	defer cancel()
 	session, err := s.acquirePersistentSFTP(ctx, sourceID, connection)
 	if err != nil {
 		return RemoteTextFile{}, err
