@@ -1190,7 +1190,7 @@
       "systemd": "Systemd"
     },
     "search": "Search",
-    "searchPlaceholder": "Search containers, services or ports; press Enter",
+    "searchPlaceholder": "Search names, details, ports, etc...",
     "refresh": "Refresh",
     "refreshFailed": "Unable to refresh services",
     "loading": "Loading services…",
