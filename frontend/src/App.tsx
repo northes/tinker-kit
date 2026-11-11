@@ -1142,6 +1142,7 @@ function AppShell() {
                     setCollapseLines={(value) =>
                       setSettings((current) => ({ ...current, serviceLogCollapseLines: value }))
                     }
+                    taskNotificationMode={settings.taskNotificationMode}
                   />
                 </Suspense>
               )}

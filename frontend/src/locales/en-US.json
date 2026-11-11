@@ -1340,6 +1340,12 @@
     "actionCanceled": "Action canceled",
     "actionCanceledHint": "The remote action for {{resource}} was interrupted and the list was refreshed.",
     "actionPartialFailed": "{{action}} partially failed for {{resource}}: {{successTotal}} succeeded, {{failedTotal}} failed",
+    "notificationSucceeded": "Restart completed",
+    "notificationFailed": "Restart failed",
+    "notificationPartial": "Restart partially failed",
+    "notificationBody": "{{resource}}",
+    "notificationDetailBody": "{{resource}}: {{detail}}",
+    "notificationPartialBody": "{{resource}}: {{successTotal}} succeeded, {{failedTotal}} failed",
     "actions": {
       "start": "Start",
       "stop": "Stop",

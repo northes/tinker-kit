@@ -34,6 +34,7 @@ import {
   StartLogMonitors,
 } from '../../bindings/tinkerkit/servicemanagerservice';
 import { formatBackendError } from '../lib/backend-error';
+import { sendSystemNotification } from '../lib/task-notification-feedback';
 import { isLocalSource, sourceLabel } from '../lib/local-source';
 import { ConfirmDialog } from './ConfirmDialog';
 import { LogFilterHistory } from '../../bindings/tinkerkit/configservice';
@@ -115,12 +116,14 @@ export default function ServiceManagerTool({
   setHighlightLevels,
   collapseLines,
   setCollapseLines,
+  taskNotificationMode,
 }: {
   active: boolean;
   highlightLevels: boolean;
   setHighlightLevels: (value: boolean) => void;
   collapseLines: number;
   setCollapseLines: (value: number) => void;
+  taskNotificationMode?: string;
 }) {
   const { t } = useTranslation();
   const targetLabelId = useId();
@@ -532,12 +535,47 @@ export default function ServiceManagerTool({
       action,
     } as ServiceActionRequest);
     actionRequest.current = request;
+    const notifyRestart = (
+      outcome: 'succeeded' | 'failed' | 'partial',
+      detail?: string,
+      totals?: { successTotal: number; failedTotal: number },
+    ) => {
+      if (action !== 'restart') return;
+      const title = t(
+        outcome === 'succeeded'
+          ? 'serviceManagerTool.notificationSucceeded'
+          : outcome === 'partial'
+            ? 'serviceManagerTool.notificationPartial'
+            : 'serviceManagerTool.notificationFailed',
+      );
+      const trimmed = detail?.trim();
+      const body =
+        outcome === 'partial' && totals
+          ? t('serviceManagerTool.notificationPartialBody', {
+              resource: resourceLabel,
+              successTotal: totals.successTotal,
+              failedTotal: totals.failedTotal,
+            })
+          : trimmed
+            ? t('serviceManagerTool.notificationDetailBody', {
+                resource: resourceLabel,
+                detail: trimmed,
+              })
+            : t('serviceManagerTool.notificationBody', { resource: resourceLabel });
+      sendSystemNotification({
+        mode: taskNotificationMode,
+        id: `service-restart:${target}:${resource.id}:${Date.now()}`,
+        title,
+        body,
+      });
+    };
     try {
       const result = await request;
       const failed = result.failed ?? [];
       const succeeded = result.succeeded ?? [];
       if (failed.length) {
         const partial = succeeded.length > 0;
+        const detail = failed.map((item) => formatBackendError(item.error)).join('；');
         toast.add({
           title: partial
             ? t('serviceManagerTool.actionPartialFailed', {
@@ -550,10 +588,17 @@ export default function ServiceManagerTool({
                 action: actionLabel,
                 resource: resourceLabel,
               }),
-          description: failed.map((item) => formatBackendError(item.error)).join('；'),
+          description: detail,
           type: partial ? 'warning' : 'error',
         });
-      } else
+        notifyRestart(
+          partial ? 'partial' : 'failed',
+          detail,
+          partial
+            ? { successTotal: succeeded.length, failedTotal: failed.length }
+            : undefined,
+        );
+      } else {
         toast.add({
           title: t('serviceManagerTool.actionSucceeded', {
             action: actionLabel,
@@ -561,6 +606,8 @@ export default function ServiceManagerTool({
           }),
           type: 'success',
         });
+        notifyRestart('succeeded');
+      }
       if (target === targetID) await load(target, view !== 'picked');
       if (view === 'picked') {
         const updated = await GetServiceInventory(target);
@@ -582,14 +629,16 @@ export default function ServiceManagerTool({
         }
         return;
       }
+      const detail = formatBackendError(error);
       toast.add({
         title: t('serviceManagerTool.actionFailed', {
           action: actionLabel,
           resource: resourceLabel,
         }),
-        description: formatBackendError(error),
+        description: detail,
         type: 'error',
       });
+      notifyRestart('failed', detail);
     } finally {
       if (actionRequest.current === request) actionRequest.current = null;
       setBusy('');

@@ -1340,6 +1340,12 @@
     "actionCanceled": "操作已取消",
     "actionCanceledHint": "{{resource}} 的远程操作已中断，列表已重新同步。",
     "actionPartialFailed": "{{resource}}：{{action}}部分失败，成功 {{successTotal}} 项，失败 {{failedTotal}} 项",
+    "notificationSucceeded": "重启已完成",
+    "notificationFailed": "重启失败",
+    "notificationPartial": "重启部分失败",
+    "notificationBody": "{{resource}}",
+    "notificationDetailBody": "{{resource}}：{{detail}}",
+    "notificationPartialBody": "{{resource}}，成功 {{successTotal}} 项，失败 {{failedTotal}} 项",
     "actions": {
       "start": "启动",
       "stop": "停止",

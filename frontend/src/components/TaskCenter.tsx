@@ -7,7 +7,7 @@ import {
   useRef,
   useState,
 } from 'react';
-import { Events, Window } from '@wailsio/runtime';
+import { Events } from '@wailsio/runtime';
 import { useTranslation } from 'react-i18next';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import {
@@ -35,14 +35,12 @@ import {
   RetryImageTask,
 } from '../../bindings/tinkerkit/imageservice';
 import { GetFileSources } from '../../bindings/tinkerkit/fileservice';
-import {
-  IsAvailable,
-  OpenNotificationSettings,
-  RequestAuthorization,
-  Send,
-} from '../../bindings/tinkerkit/tasknotificationservice';
+import { OpenNotificationSettings } from '../../bindings/tinkerkit/tasknotificationservice';
 import { toast } from './ui/toast';
-import { showTaskNotificationPermissionDialog } from '../lib/task-notification-feedback';
+import {
+  primeSystemNotificationAuthorization,
+  sendSystemNotification,
+} from '../lib/task-notification-feedback';
 import {
   estimateTaskRemainingSeconds,
   formatTaskBytes,
@@ -221,7 +219,6 @@ export function TaskCenter({
   const fileRevision = useRef(-1);
   const statuses = useRef(new Map<string, string>());
   const samples = useRef(new Map<string, { bytes: number; at: number; speed: number }>());
-  const notificationAuthorized = useRef<boolean | null>(null);
   const pendingSnapshots = useRef<{ image?: ImageTask[]; file?: FileTask[] }>({});
 
   const processSnapshot = useCallback(
@@ -270,23 +267,12 @@ export function TaskCenter({
             description: task.error ? formatBackendError(task.error) : undefined,
             type: task.status === 'failed' ? 'error' : undefined,
           });
-          void (async () => {
-            const mode = settings.taskNotificationMode ?? 'unfocused';
-            if (mode === 'off') return;
-            if (mode === 'unfocused' && (await Window.IsFocused())) return;
-            if (!(await IsAvailable())) {
-              showTaskNotificationPermissionDialog();
-              return;
-            }
-            if (notificationAuthorized.current !== true) {
-              notificationAuthorized.current = await RequestAuthorization();
-              if (!notificationAuthorized.current) {
-                showTaskNotificationPermissionDialog();
-                return;
-              }
-            }
-            await Send(`task-${task.id}`, notificationTitle, notificationBody);
-          })().catch(() => showTaskNotificationPermissionDialog());
+          sendSystemNotification({
+            mode: settings.taskNotificationMode,
+            id: `task-${task.id}`,
+            title: notificationTitle,
+            body: notificationBody,
+          });
         }
         statuses.current.set(task.id, task.status);
         const time = Date.now();
@@ -400,24 +386,8 @@ export function TaskCenter({
   }, [settings.taskConcurrency, settings.taskChunkConcurrency]);
 
   useEffect(() => {
-    const mode = settings.taskNotificationMode ?? 'unfocused';
-    if (mode === 'off' || notificationAuthorized.current !== null) return;
-    void IsAvailable()
-      .then(async (available) => {
-        if (!available) {
-          notificationAuthorized.current = false;
-          showTaskNotificationPermissionDialog();
-          return;
-        }
-        const authorized = await RequestAuthorization();
-        notificationAuthorized.current = authorized;
-        if (!authorized) showTaskNotificationPermissionDialog();
-      })
-      .catch(() => {
-        notificationAuthorized.current = false;
-        showTaskNotificationPermissionDialog();
-      });
-  }, [settings.taskNotificationMode, t]);
+    primeSystemNotificationAuthorization(settings.taskNotificationMode);
+  }, [settings.taskNotificationMode]);
 
   const allTasks = useMemo(() => unifiedTasks(images, files), [images, files]);
   const tasksWithSpeed = useMemo(
