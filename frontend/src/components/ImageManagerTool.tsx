@@ -42,6 +42,7 @@ import type {
   Config as Settings,
 } from '../../bindings/tinkerkit/models';
 import { formatBackendError } from '../lib/backend-error';
+import { sendSystemNotification } from '../lib/task-notification-feedback';
 import { imageArchitectures } from '../lib/image-architectures';
 import { ConfirmDialog } from './ConfirmDialog';
 import { ImageSearchField } from './image-manager/ImageSearchField';
@@ -525,9 +526,52 @@ export default function ImageManagerTool({
     }
   };
 
+  const notifyPushResult = (
+    succeeded: string[],
+    failures: DockerImageBatchResult['failed'],
+    fallbackDetail?: string,
+  ) => {
+    const failedItems = failures ?? [];
+    if (!succeeded.length && !failedItems.length && !fallbackDetail?.trim()) return;
+    const partial = succeeded.length > 0 && failedItems.length > 0;
+    const failed = failedItems.length > 0 || Boolean(fallbackDetail?.trim());
+    const singleFailure = failedItems.length === 1 ? failedItems[0] : undefined;
+    const detail = singleFailure
+      ? t('imageManagerTool.operationFailureReason', {
+          image: singleFailure.image,
+          reason: formatBackendError(singleFailure.error),
+        })
+      : fallbackDetail?.trim();
+    const body = partial
+      ? t('imageManagerTool.notificationPartialBody', {
+          succeeded: succeeded.length,
+          failed: failedItems.length,
+        })
+      : detail
+        ? t('imageManagerTool.notificationDetailBody', { detail })
+        : failed
+          ? t('imageManagerTool.notificationFailedBody', { total: failedItems.length })
+          : succeeded.length === 1
+            ? succeeded[0]
+            : t('imageManagerTool.notificationSucceededBody', { total: succeeded.length });
+    sendSystemNotification({
+      mode: settings.taskNotificationMode,
+      id: `image-push:${source.id}:${Date.now()}`,
+      title: t(
+        partial
+          ? 'imageManagerTool.notificationPartial'
+          : failed
+            ? 'imageManagerTool.notificationFailed'
+            : 'imageManagerTool.notificationSucceeded',
+      ),
+      body,
+    });
+  };
+
   const reportBatchResult = (result: DockerImageBatchResult, successKey: string) => {
     const succeeded = result.succeeded ?? [];
     const failures = result.failed ?? [];
+    notifyPushResult(succeeded, failures);
     if (failures.length > 0) {
       toast.add({
         title: t('imageManagerTool.pushPartial', {
@@ -569,11 +613,13 @@ export default function ImageManagerTool({
       }
       if (failures.length === 0) setSelected(new Set());
     } catch (error) {
+      const detail = errorMessage(error);
       toast.add({
         title: t('imageManagerTool.pushFailed'),
-        description: errorMessage(error) || undefined,
+        description: detail || undefined,
         type: 'error',
       });
+      if (!(error instanceof CancelError)) notifyPushResult([], [], detail);
     } finally {
       setBusy(null);
       setOperationDialog(null);

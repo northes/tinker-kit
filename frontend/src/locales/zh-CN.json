@@ -1015,6 +1015,13 @@
     "pushed": "镜像已推送",
     "pushPartial": "镜像推送：成功 {{succeeded}} 项，失败 {{failed}} 项",
     "pushFailed": "镜像推送失败",
+    "notificationSucceeded": "镜像已推送",
+    "notificationFailed": "镜像推送失败",
+    "notificationPartial": "镜像推送部分失败",
+    "notificationSucceededBody": "{{total}} 项",
+    "notificationFailedBody": "失败 {{total}} 项",
+    "notificationPartialBody": "成功 {{succeeded}} 项，失败 {{failed}} 项",
+    "notificationDetailBody": "{{detail}}",
     "tagChangeFailed": "镜像 Tag 修改失败",
     "operationFailureReason": "{{image}}：{{reason}}",
     "deleted": "镜像已删除",
@@ -2848,6 +2855,11 @@
       "rtsp-describe": "发送 RTSP DESCRIBE",
       "tls-probe": "加密端点探测"
     },
-    "runFailed": "测试未能执行：{{error}}"
+    "runFailed": "测试未能执行：{{error}}",
+    "notificationSucceeded": "网络测试已完成",
+    "notificationFailed": "网络测试失败",
+    "notificationTimeout": "网络测试超时",
+    "notificationBody": "{{target}}",
+    "notificationDetailBody": "{{target}}：{{detail}}"
   }
 }

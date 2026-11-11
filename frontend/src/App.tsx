@@ -1157,7 +1157,10 @@ function AppShell() {
             <div className={toolSlotClass(page === 'network-test')}>
               {visited.has('network-test') && (
                 <Suspense fallback={null}>
-                  <NetworkTestTool active={page === 'network-test'} />
+                  <NetworkTestTool
+                    active={page === 'network-test'}
+                    taskNotificationMode={settings.taskNotificationMode}
+                  />
                 </Suspense>
               )}
             </div>

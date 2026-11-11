@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Events } from '@wailsio/runtime';
+import { CancelError, Events } from '@wailsio/runtime';
 import { ArrowClockwise, Code, GearSix, Network, Stop } from '@phosphor-icons/react';
 import type {
   NetworkInterface,
@@ -22,6 +22,7 @@ import {
   SaveNetworkTestSources,
 } from '../../bindings/tinkerkit/configservice';
 import { formatBackendError } from '../lib/backend-error';
+import { sendSystemNotification } from '../lib/task-notification-feedback';
 import { isLocalSource, sourceLabel } from '../lib/local-source';
 import {
   automaticTarget,
@@ -250,7 +251,13 @@ function StageHintLine({ text, className }: { text: string; className: string })
   );
 }
 
-export default function NetworkTestTool({ active }: { active: boolean }) {
+export default function NetworkTestTool({
+  active,
+  taskNotificationMode,
+}: {
+  active: boolean;
+  taskNotificationMode?: string;
+}) {
   const { t } = useTranslation();
   const { profiles } = useSSHProfiles();
   const [protocolSelection, setProtocolSelection] = useState<ProtocolSelection>('auto');
@@ -553,6 +560,27 @@ export default function NetworkTestTool({ active }: { active: boolean }) {
     setTestStartedAt(startedAt);
     setNow(startedAt);
     setRunning(true);
+    const notifyFinished = (status: string, detail?: string) => {
+      if (status === 'canceled') return;
+      const trimmed = status === 'success' ? '' : detail?.trim();
+      sendSystemNotification({
+        mode: taskNotificationMode,
+        id: `network-test:${request.runID}`,
+        title: t(
+          status === 'success'
+            ? 'networkTestTool.notificationSucceeded'
+            : status === 'timeout'
+              ? 'networkTestTool.notificationTimeout'
+              : 'networkTestTool.notificationFailed',
+        ),
+        body: trimmed
+          ? t('networkTestTool.notificationDetailBody', {
+              target: request.target,
+              detail: trimmed,
+            })
+          : t('networkTestTool.notificationBody', { target: request.target }),
+      });
+    };
     try {
       const finalResult = await RunNetworkTest(request);
       if (activeRunID.current !== request.runID) return;
@@ -563,8 +591,13 @@ export default function NetworkTestTool({ active }: { active: boolean }) {
       setResult(complete);
       setStages(complete.stages);
       setRunning(false);
+      notifyFinished(complete.status, complete.error);
     } catch (error) {
       if (activeRunID.current !== request.runID) return;
+      if (error instanceof CancelError) {
+        setRunning(false);
+        return;
+      }
       // footer 只显示状态与耗时：调用层失败（没有任何阶段）时用 toast 说明原因，
       // 避免出现「只有失败状态、看不到原因」的静默失败。
       const failureMessage = formatBackendError(error);
@@ -585,6 +618,7 @@ export default function NetworkTestTool({ active }: { active: boolean }) {
       };
       setResult(failed);
       setRunning(false);
+      notifyFinished('error', failureMessage);
     }
   };
 

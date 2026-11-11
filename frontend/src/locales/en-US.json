@@ -1015,6 +1015,13 @@
     "pushed": "Image pushed",
     "pushPartial": "Image push: {{succeeded}} succeeded, {{failed}} failed",
     "pushFailed": "Failed to push image",
+    "notificationSucceeded": "Image pushed",
+    "notificationFailed": "Image push failed",
+    "notificationPartial": "Image push partially failed",
+    "notificationSucceededBody": "{{total}} items",
+    "notificationFailedBody": "{{total}} failed",
+    "notificationPartialBody": "{{succeeded}} succeeded, {{failed}} failed",
+    "notificationDetailBody": "{{detail}}",
     "tagChangeFailed": "Failed to change image tag",
     "operationFailureReason": "{{image}}: {{reason}}",
     "deleted": "Image deleted",
@@ -2848,6 +2855,11 @@
       "rtsp-describe": "Send RTSP DESCRIBE",
       "tls-probe": "TLS endpoint probe"
     },
-    "runFailed": "The test could not run: {{error}}"
+    "runFailed": "The test could not run: {{error}}",
+    "notificationSucceeded": "Network test completed",
+    "notificationFailed": "Network test failed",
+    "notificationTimeout": "Network test timed out",
+    "notificationBody": "{{target}}",
+    "notificationDetailBody": "{{target}}: {{detail}}"
   }
 }
