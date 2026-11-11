@@ -948,6 +948,8 @@ export interface SystemdUnit {
     "activeState": string;
     "subState": string;
     "scope": string;
+    "execStart": string;
+    "fragmentPath": string;
 }
 
 export interface SystemdUnitDetail {

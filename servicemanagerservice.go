@@ -79,13 +79,15 @@ type PM2Process struct {
 }
 
 type SystemdUnit struct {
-	ID          string `json:"id"`
-	Name        string `json:"name"`
-	Description string `json:"description"`
-	LoadState   string `json:"loadState"`
-	ActiveState string `json:"activeState"`
-	SubState    string `json:"subState"`
-	Scope       string `json:"scope"`
+	ID           string `json:"id"`
+	Name         string `json:"name"`
+	Description  string `json:"description"`
+	LoadState    string `json:"loadState"`
+	ActiveState  string `json:"activeState"`
+	SubState     string `json:"subState"`
+	Scope        string `json:"scope"`
+	ExecStart    string `json:"execStart"`
+	FragmentPath string `json:"fragmentPath"`
 }
 
 type ServiceInventory struct {
@@ -720,7 +722,7 @@ func (s *ServiceManagerService) listPM2(ctx context.Context, source ImageSource)
 }
 
 func (s *ServiceManagerService) listSystemd(ctx context.Context, source ImageSource, scope string) ([]SystemdUnit, error) {
-	args := []string{"list-units", "--type=service", "--all", "--no-legend", "--no-pager", "--plain"}
+	args := []string{"show", "--no-pager", "--property=Id,Description,LoadState,ActiveState,SubState,FragmentPath,ExecStart", "*.service"}
 	if scope == "user" {
 		args = append([]string{"--user"}, args...)
 	}
@@ -728,19 +730,50 @@ func (s *ServiceManagerService) listSystemd(ctx context.Context, source ImageSou
 	if err != nil {
 		return nil, err
 	}
+	return parseSystemdUnits(string(out), scope), nil
+}
+
+func parseSystemdUnits(output, scope string) []SystemdUnit {
 	units := []SystemdUnit{}
-	for _, line := range strings.Split(string(out), "\n") {
-		fields := strings.Fields(line)
-		if len(fields) < 4 || !strings.HasSuffix(fields[0], ".service") {
+	var unit SystemdUnit
+	flush := func() {
+		if unit.ID != "" && strings.HasSuffix(unit.ID, ".service") {
+			unit.Name = unit.ID
+			unit.Scope = scope
+			units = append(units, unit)
+		}
+		unit = SystemdUnit{}
+	}
+	for _, line := range strings.Split(output, "\n") {
+		key, value, ok := strings.Cut(line, "=")
+		if !ok {
+			if strings.TrimSpace(line) == "" {
+				flush()
+			}
 			continue
 		}
-		desc := ""
-		if len(fields) > 4 {
-			desc = strings.Join(fields[4:], " ")
+		switch key {
+		case "Id":
+			if unit.ID != "" && unit.ID != value {
+				flush()
+			}
+			unit.ID = value
+		case "Description":
+			unit.Description = value
+		case "LoadState":
+			unit.LoadState = value
+		case "ActiveState":
+			unit.ActiveState = value
+		case "SubState":
+			unit.SubState = value
+		case "FragmentPath":
+			unit.FragmentPath = value
+		case "ExecStart":
+			unit.ExecStart = value
 		}
-		units = append(units, SystemdUnit{ID: fields[0], Name: fields[0], LoadState: fields[1], ActiveState: fields[2], SubState: fields[3], Description: desc, Scope: scope})
 	}
-	return units, nil
+	flush()
+	return units
 }
 
 func (s *ServiceManagerService) GetDockerContainerDetail(ctx context.Context, targetID, id string) (result DockerContainerDetail, err error) {

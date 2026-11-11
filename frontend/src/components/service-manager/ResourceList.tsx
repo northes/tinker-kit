@@ -142,13 +142,14 @@ export function ResourceList({
     status: string,
     description = '',
     image = '',
+    searchText = '',
   ) => {
     if (allowed && !allowed.has(resourceKey(resource))) return null;
     const container = resource.runtime === 'docker' ? containersByID.get(resource.id) : undefined;
     if (
       !(container
         ? matchContainer(container) || match(resource.group ?? '')
-        : match(resource.name || resource.id))
+        : match(searchText || resource.name || resource.id))
     )
       return null;
     if (!matchesStatusFilter(statuses, resource.runtime as Runtime, status)) return null;
@@ -382,12 +383,14 @@ export function ResourceList({
       (!allowed || allowed.has(resourceKey({ runtime: 'pm2', id: process.id }))) &&
       match(process.name || process.id),
   );
+  const systemdSearchText = (unit: SystemdUnit) =>
+    [unit.name, unit.id, unit.description, unit.execStart, unit.fragmentPath].join(' ');
   const systemUnits = (inventory?.systemUnits ?? []).filter(
     (unit) =>
       matchesStatusFilter(statuses, 'systemd', unit.activeState) &&
       (!allowed ||
         allowed.has(resourceKey({ runtime: 'systemd', id: unit.id, scope: unit.scope }))) &&
-      match(unit.name || unit.id),
+      match(systemdSearchText(unit)),
   );
   const hasPickedRuntime = (runtime: Runtime) =>
     !allowed || [...allowed].some((key) => key.startsWith(`${runtime}|`));
@@ -469,6 +472,8 @@ export function ResourceList({
                     'systemd',
                     unit.activeState,
                     unit.description,
+                    '',
+                    systemdSearchText(unit),
                   ),
                 )}
               </>
