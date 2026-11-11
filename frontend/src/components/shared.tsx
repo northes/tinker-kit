@@ -20,6 +20,7 @@ import { Input } from './ui/input';
 import { Tabs, TabsList, TabsTrigger } from './ui/tabs';
 import { BracketsCurly, CaretDown, MagnifyingGlass, XCircle } from '@phosphor-icons/react';
 import { useTranslation } from 'react-i18next';
+import { cn } from '../lib/utils';
 export { parseJsonLoose, stripJsonComments, stripTrailingCommas } from '../lib/json-parse';
 
 export type ToolId =
@@ -245,8 +246,7 @@ export function ToolSearchField({
       ) : null}
     </div>
   );
-  if (!label)
-    return <div className={`w-full min-w-0${className ? ` ${className}` : ''}`}>{field}</div>;
+  if (!label) return <div className={cn('w-full min-w-0', className)}>{field}</div>;
   return (
     <ToolHeaderField label={label} htmlFor={id} className={className}>
       {field}

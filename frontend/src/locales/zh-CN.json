@@ -1190,7 +1190,7 @@
       "systemd": "Systemd"
     },
     "search": "搜索",
-    "searchPlaceholder": "搜索容器、服务或端口，回车应用",
+    "searchPlaceholder": "搜索名称详情端口等...",
     "refresh": "刷新",
     "refreshFailed": "刷新服务列表失败",
     "loading": "正在加载服务列表…",
