@@ -229,7 +229,7 @@ TinkerKit 是一组融入开发者日常工作的工具：快速、好用、克�
 - **Secondary：** `bg-secondary text-secondary-foreground`，hover 混入少量 foreground。
 - **Ghost：** 无边框，hover 使用 `bg-muted`。
 - **Destructive：** `bg-destructive/10 text-destructive`，只用于破坏性动作，并由确认对话框承接二次确认。
-- **Tool Action Button（header 工具栏与 footer 动作栏）：** 两处共用同一套标准：高 30px、`px-[11px]`、`text-[11px]`，图标 14px `weight="duotone"` 置于文字前，动作永远使用「图标 + 文字」。footer 由 `ToolActionBar` 右对齐渲染，header 由 `ToolActionButton` 渲染，variant 映射统一为 `primary → default`、`secondary → outline`、`tertiary → ghost`、`danger → destructive`。下拉型动作（`menu` / `split`）在文字右侧追加 12px `CaretDown`；下拉菜单项本身保持纯文字。工具页内的空态与错误态动作（重试、取消）同样用 `ToolActionButton`，不再手写 30px 尺寸类。
+- **Tool Action Button（header 工具栏与 footer 动作栏）：** 两处共用同一套标准：高 30px、`px-[11px]`、`text-[11px]`，图标 14px `weight="regular"` 置于文字前，动作永远使用「图标 + 文字」。footer 由 `ToolActionBar` 右对齐渲染，header 由 `ToolActionButton` 渲染，variant 映射统一为 `primary → default`、`secondary → outline`、`tertiary → ghost`、`danger → destructive`。下拉型动作（`menu` / `split`）在文字右侧追加 12px `CaretDown`；下拉菜单项本身保持纯文字。工具页内的空态与错误态动作（重试、取消）同样用 `ToolActionButton`，不再手写 30px 尺寸类。
 - **Tool Icon Button：** 纯图标按钮（`ToolIconButton`）只在语义唯一且空间受限的 header 入口使用，如高级设置、刷新；必须为 30×30 正方形、ghost 变体，并提供 `aria-label` 与 `title`。
 - **尺寸阶梯：** 动作控件只有四档，按作用域选用，不手写 `h-*` 高度。① 30px：header 工具栏、footer 动作栏、空态/错误态动作（`ToolActionButton` / `ToolIconButton`）；② 32px：常规按钮与输入框（`size="default"` / `h-8`），以及输入行附属图标控件（`size="icon"`，如时间工具的时区与系统时区）；③ 28px：表格行、列表行内的紧凑动作（`size="sm"`），只可调整字号与内边距；④ 24px：字段内清除/搜索与面板内联的密集控件（`size="icon-xs"` / `size="xs"`）。
 
@@ -241,7 +241,7 @@ TinkerKit 是一组融入开发者日常工作的工具：快速、好用、克�
 ### Inputs / Fields
 
 - **Style：** 高 32px（`h-8`）、`rounded-lg`、`border-input`、透明背景（深色下 `bg-input/30`）、10px 水平内边距；文本使用 foreground，placeholder 使用 `text-muted-foreground`。
-- **搜索框：** 列表与工具栏搜索统一用 `ToolSearchField`：高 30px（与同行 `ToolActionButton` 对齐）、`pl-8` 预留 `left-2.5` 的 14px duotone 放大镜、右侧 `size="icon-xs"` 清空按钮；回车提交、Esc 清空。除面板内联的紧凑搜索（高 28px，如 JSON 结构面板的路径搜索）外，不另行手写搜索框高度与图标偏移。
+- **搜索框：** 列表与工具栏搜索统一用 `ToolSearchField`：与 header 里的 Select 同为高 32px、`text-sm`，`pl-8` 预留 `left-2.5` 的 14px regular 放大镜、右侧 `size="icon-xs"` 清空按钮；回车提交、Esc 清空。并排的选择与搜索共用 `toolHeaderControlClassName`（宽 220px）。除面板内联的紧凑搜索（高 28px，如 JSON 结构面板的路径搜索）外，不另行手写搜索框高度与图标偏移。
 - **Focus：** `focus-visible:border-ring` 加 3px `ring-ring/50`，不保留 CodeMirror 原生虚线 outline。
 - **Disabled：** 保持布局，背景降为 `bg-input/50`、透明度 0.5，并使用不可用光标。
 

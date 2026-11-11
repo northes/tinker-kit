@@ -22,10 +22,11 @@
 - 来源管理弹窗只保留标题，不加副标题或重复说明。列表页 footer 的添加按钮使用 `common.add`（中文“添加”），放在左侧，保存放在右侧；编辑表单页沿用现有返回、操作和保存布局。
 - 来源模型包含“本机”时，管理列表必须显示该项，并禁用编辑和删除；拖动排序仍可用，视觉与手柄规则见 [drag-and-drop.md](./drag-and-drop.md)。若列表项使用 `itemDisabled`，只禁用编辑/删除操作，不要把该状态传给 sortable/DnD。新条目追加到末尾，编辑条目保留原位置。工具默认加载来源列表的首项（来源模型含“本机”时也以列表顺序为准，不再固定选中“本机”）；当前来源被删除或失效后回退到首项，列表为空时才回退到“本机”或清空。保存时提交完整有序列表，后端来源顺序与规范化规则由 [wails-integration](../wails-integration/SKILL.md) 的服务与配置节维护。
 - 工具页 header 中的字段 label 与控件纵向排列时，复用 `shared.tsx` 的 `ToolHeaderField`；需要通过 `aria-labelledby` 关联控件时传入 `labelId`。尺寸、字重、颜色和间距以镜像管理 header 的 label 为基准；不要在各工具内重复拼接 label 样式，也不要把标签的 muted 颜色放在包住控件的容器上。
+- 工具页 header 里并排的 Select、搜索框和充当选择器的下拉触发器共用 `toolHeaderControlClassName`（宽 220px），高度和字号用 Select / Input 默认档（32px、`text-sm`）。不要用 `size="sm"`、`h-[30px]`、`text-[10px]` / `text-[11px]` 或各自写死不同宽度。搜索框用 `ToolSearchField`。短数值（超时、数量）可以更窄，但不要改高度和字号。
 - 浮层在暗色下“没有阴影”通常是主题 token 问题：`--shadow-*` 明暗同值（10% 黑），在深色背景上不可见；要改的是暗色 token，不要改组件或加局部阴影覆盖。
-- 图标默认使用 phosphor 的 `weight="duotone"`（按钮、下拉项等装饰性图标）；表格排序图标例外使用 Regular 的 `CaretUpDown` / `CaretDown` / `CaretUp`。新增或调整控件时不要遗漏个别图标。
-- 工具页 header 工具栏与 footer 动作栏的动作按钮共用同一标准：复用 `shared.tsx` 的 `ToolActionBar`（footer）与 `ToolActionButton`（header），30px 高、`px-[11px]`、`text-[11px]`，统一「图标 + 文字」，图标 14px `weight="duotone"` 置于文字前，下拉型动作（`menu` / `split`）在文字右侧追加 12px `CaretDown`；不要为单个工具手写 `size="sm"`、`h-8`、`h-[32px]` 等尺寸类，也不要省略图标。纯图标按钮只在语义唯一且空间受限的 header 入口使用，统一用 `ToolIconButton`（30×30、ghost、`aria-label` 与 `title`）；字段内联的清除/搜索按钮跟随字段内部高度，不套用该尺寸。
-- 工具页操作栏中的清空按钮统一使用 phosphor `Trash`，复制按钮统一使用 `Copy`，由 `ToolActionBar` 以 `weight="duotone"` 渲染；同类操作跨工具保持图标一致，不使用 `X` 或 `ClipboardText` 替代。
+- 图标默认使用 phosphor 的 Regular（不要写 `weight="duotone"`）。只有侧边栏图标保持 Duotone。新增或调整控件时不要把侧边栏以外的图标改回 Duotone。
+- 工具页 header 工具栏与 footer 动作栏的动作按钮共用同一标准：复用 `shared.tsx` 的 `ToolActionBar`（footer）与 `ToolActionButton`（header），30px 高、`px-[11px]`、`text-[11px]`，统一「图标 + 文字」，图标 14px `weight="regular"` 置于文字前，下拉型动作（`menu` / `split`）在文字右侧追加 12px `CaretDown`；不要为单个工具手写 `size="sm"`、`h-8`、`h-[32px]` 等尺寸类，也不要省略图标。纯图标按钮只在语义唯一且空间受限的 header 入口使用，统一用 `ToolIconButton`（30×30、ghost、`aria-label` 与 `title`）；字段内联的清除/搜索按钮跟随字段内部高度，不套用该尺寸。
+- 工具页操作栏中的清空按钮统一使用 phosphor `Trash`，复制按钮统一使用 `Copy`，由 `ToolActionBar` 以 `weight="regular"` 渲染；同类操作跨工具保持图标一致，不使用 `X` 或 `ClipboardText` 替代。
 - 复制成功只通过 toast 反馈；按钮文案、`aria-label`、`title` 始终保持复制操作名称，图标保持 `Copy`，不要切换成“已复制”等成功态文案、对勾图标或延时复原状态。既有复制入口若缺少成功 toast，应补上。
 - 多个工具重复的同类字段抽为共享组件（如来源或配置选择字段），由各工具共同使用，不要在工具内各写一套 Select + 管理入口。
 - 与下拉框相关的管理入口放进该下拉框（如来源下拉框底部的「管理」项，内部哨兵值触发实际动作），不再额外放独立管理按钮；空列表时也不渲染多余的分隔线。
@@ -42,7 +43,7 @@
 - 同时支持自由输入、按输入筛选历史、鼠标与键盘选择回填。当前输入是唯一数据来源；`value` 与 `inputValue` 同步，历史选择通过 `onValueChange` 回填。不得以「是否已在历史中」决定当前控件值，否则新文字会在失焦或浮层关闭时被空选中值覆盖。删除历史项也不得清空当前输入。
 - 历史项文字直接复用 `frontend/src/components/ScrollableText.tsx` 的 `ScrollableText`：单行显示、默认展示尾部、溢出时可用滚轮横向查看完整文字、滚动不带动外层浮层。不得用 `truncate`、省略号或仅提供 tooltip 替代可滚动文字；纯空格等有意义字符也须原样保留。
 - 历史行使用 `ComboboxItem showIndicator={false}`，不显示选中对勾。行容器作为定位参照，右侧删除按钮放在绝对定位的渐变遮罩层中（`absolute inset-y-0 right-0`，`pl-6 pr-1`）；参照 SSH 收藏行在 `popover` / `accent` 之间切换遮罩颜色。不要将删除按钮直接排在文字后再保留对勾占位，造成按钮右侧大片空白。
-- 删除按钮复用 `Button variant="ghost" size="icon-xs"`，使用 14px、`weight="duotone"` 的 `Trash`。默认隐藏，在行 hover、键盘高亮或行内聚焦时显示，触屏常显；图标默认 60% 不透明度，按钮 hover / 键盘聚焦时为 80%。提供本地化 `aria-label` 与 `title`；点击删除不得冒泡触发历史选择或表单提交。具体删除确认边界遵循本文的删除规则。
+- 删除按钮复用 `Button variant="ghost" size="icon-xs"`，使用 14px、`weight="regular"` 的 `Trash`。默认隐藏，在行 hover、键盘高亮或行内聚焦时显示，触屏常显；图标默认 60% 不透明度，按钮 hover / 键盘聚焦时为 80%。提供本地化 `aria-label` 与 `title`；点击删除不得冒泡触发历史选择或表单提交。具体删除确认边界遵循本文的删除规则。
 - 只提供单项删除，不提供「清空历史」按钮、批量清理入口或相应 footer。空列表与筛选无匹配分别使用本地化空态。
 - 历史在实际确认使用后记录，最新在前、相同值去重、空字符串不记录；前后空格及仅含空格的有效输入不做 trim。多个字段分别维护历史，容量按功能需求确定（文本工具行首、行尾各最近 5 条），不要把所有工具强制设为相同容量。
 - 输入草稿、历史记录和持久化各有自己的生命周期：关闭弹窗后默认重置草稿，通过历史回填；历史由功能所属边界持有。是否跨应用重启持久化由需求决定，不因使用 Combobox 擅自引入 localStorage 或第二套状态来源。

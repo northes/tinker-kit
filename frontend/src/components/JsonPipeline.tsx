@@ -326,7 +326,7 @@ function PathField({
             title={t('jsonTool.pipeline.expandField')}
             onClick={openExpanded}
           >
-            <ArrowsOut size={12} weight="duotone" />
+            <ArrowsOut size={12} weight="regular" />
           </Button>
         </div>
       </div>
@@ -454,7 +454,7 @@ function PipelineRuleRow({
           aria-label={t('jsonTool.pipeline.drag')}
           title={t('jsonTool.pipeline.drag')}
         >
-          <DotsSixVertical size={14} weight="duotone" />
+          <DotsSixVertical size={14} weight="regular" />
         </Button>
         <span className="json-pipeline-index w-6 min-w-6 text-center font-mono text-[10px] font-medium leading-none text-muted-foreground">
           {String(index + 1).padStart(2, '0')}
@@ -481,7 +481,7 @@ function PipelineRuleRow({
           aria-label={t('jsonTool.pipeline.delete')}
           title={t('jsonTool.pipeline.delete')}
         >
-          <Trash size={14} weight="duotone" />
+          <Trash size={14} weight="regular" />
         </Button>
       </div>
       <div className="json-pipeline-item-body min-w-0 pt-3">
@@ -786,7 +786,7 @@ export function PipelineOutputPane({
             setOutputTableMode((current) => !current);
           }}
         >
-          <TableIcon weight="duotone" />
+          <TableIcon weight="regular" />
         </Button>
         {error ? (
           <JsonErrorPanel
@@ -993,7 +993,7 @@ export function PipelinePanel({
         <Empty className="json-pipeline-empty min-h-[74px] flex-1">
           <EmptyHeader>
             <EmptyMedia variant="icon">
-              <Queue weight="duotone" />
+              <Queue weight="regular" />
             </EmptyMedia>
             <EmptyTitle>{t('jsonTool.pipeline.empty')}</EmptyTitle>
           </EmptyHeader>

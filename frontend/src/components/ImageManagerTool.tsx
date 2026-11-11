@@ -107,6 +107,7 @@ import {
   ToolLayoutFooter,
   ToolLayoutToolbar,
   ToolLoadingState,
+  toolHeaderControlClassName,
   useCheckboxDragSelect,
   type PendingAction,
 } from './shared';
@@ -402,9 +403,9 @@ export default function ImageManagerTool({
         {label}
         {activeSort ? (
           sortDirection === 'asc' ? (
-            <CaretUp weight="duotone" data-icon="inline-end" aria-hidden="true" />
+            <CaretUp weight="regular" data-icon="inline-end" aria-hidden="true" />
           ) : (
-            <CaretDown weight="duotone" data-icon="inline-end" aria-hidden="true" />
+            <CaretDown weight="regular" data-icon="inline-end" aria-hidden="true" />
           )
         ) : null}
       </Button>
@@ -1110,7 +1111,7 @@ export default function ImageManagerTool({
                 >
                   <SelectTrigger
                     aria-labelledby={sourceLabelId}
-                    className="w-[220px] max-w-full max-[700px]:w-full"
+                    className={toolHeaderControlClassName}
                   >
                     <SelectValue />
                   </SelectTrigger>
@@ -1124,7 +1125,7 @@ export default function ImageManagerTool({
                       {sources.length > 0 ? <SelectSeparator /> : null}
                       <SelectItem value={MANAGE_SOURCES_VALUE}>
                         <span className="flex items-center gap-2">
-                          <GearSix size={14} weight="duotone" />
+                          <GearSix size={14} weight="regular" />
                           {t('imageManagerTool.manageSources')}
                         </span>
                       </SelectItem>
@@ -1160,7 +1161,7 @@ export default function ImageManagerTool({
                   importStarting ? (
                     <Spinner className="size-3.5" />
                   ) : (
-                    <Package className="size-3.5" weight="duotone" aria-hidden />
+                    <Package className="size-3.5" weight="regular" aria-hidden />
                   )
                 }
                 disabled={actionBlocked || importStarting}
@@ -1177,7 +1178,7 @@ export default function ImageManagerTool({
                 <ToolActionButton
                   variant="secondary"
                   label={t('imageManagerTool.refresh')}
-                  leading={<ArrowsClockwise className="size-3.5" weight="duotone" aria-hidden />}
+                  leading={<ArrowsClockwise className="size-3.5" weight="regular" aria-hidden />}
                   disabled={busy !== null || sourceProfileMissing}
                   onPress={() => {
                     refreshList();
@@ -1201,7 +1202,7 @@ export default function ImageManagerTool({
             />
           ) : contentViewState === 'error' ? (
             <div className="flex h-auto min-h-0 flex-1 flex-col items-center justify-center gap-2 text-center">
-              <Package size={28} weight="duotone" className="text-muted-foreground" />
+              <Package size={28} weight="regular" className="text-muted-foreground" />
               <div className="text-sm font-medium text-foreground">
                 {t('imageManagerTool.loadFailed')}
               </div>
@@ -1381,7 +1382,7 @@ export default function ImageManagerTool({
                               disabled={interactionBlocked}
                               onClick={() => copyImageNames(operationRows)}
                             >
-                              <Copy data-icon="inline-start" weight="duotone" />
+                              <Copy data-icon="inline-start" weight="regular" />
                               {operationRows.length > 1
                                 ? t('imageManagerTool.batchCopyName')
                                 : t('imageManagerTool.copyName')}
@@ -1390,7 +1391,7 @@ export default function ImageManagerTool({
                               disabled={interactionBlocked}
                               onClick={() => copyImageIds(operationRows)}
                             >
-                              <IdentificationCard data-icon="inline-start" weight="duotone" />
+                              <IdentificationCard data-icon="inline-start" weight="regular" />
                               {operationRows.length > 1
                                 ? t('imageManagerTool.batchCopyId')
                                 : t('imageManagerTool.copyId')}
@@ -1406,7 +1407,7 @@ export default function ImageManagerTool({
                                   : void runBatchExport(operationRows)
                               }
                             >
-                              <DownloadSimple data-icon="inline-start" weight="duotone" />
+                              <DownloadSimple data-icon="inline-start" weight="regular" />
                               {operationRows.length > 1
                                 ? t('imageManagerTool.batchExport')
                                 : t('imageManagerTool.exportTar')}
@@ -1415,7 +1416,7 @@ export default function ImageManagerTool({
                               disabled={actionBlocked || !dockerOperationAllowed}
                               onClick={() => void runPull(operationRows)}
                             >
-                              <CloudArrowDown data-icon="inline-start" weight="duotone" />
+                              <CloudArrowDown data-icon="inline-start" weight="regular" />
                               {operationRows.length > 1
                                 ? t('imageManagerTool.batchPullUpdate')
                                 : t('imageManagerTool.pullUpdate')}
@@ -1424,7 +1425,7 @@ export default function ImageManagerTool({
                               disabled={actionBlocked || !dockerOperationAllowed}
                               onClick={() => openPushDialog(operationRows)}
                             >
-                              <UploadSimple data-icon="inline-start" weight="duotone" />
+                              <UploadSimple data-icon="inline-start" weight="regular" />
                               {operationRows.length > 1
                                 ? t('imageManagerTool.batchPushRemote')
                                 : t('imageManagerTool.pushRemote')}
@@ -1433,7 +1434,7 @@ export default function ImageManagerTool({
                               disabled={actionBlocked || !tagOperationAllowed}
                               onClick={() => openRenameDialog(operationRows)}
                             >
-                              <PencilSimple data-icon="inline-start" weight="duotone" />
+                              <PencilSimple data-icon="inline-start" weight="regular" />
                               {operationRows.length > 1
                                 ? t('imageManagerTool.batchRename')
                                 : t('imageManagerTool.rename')}
@@ -1442,7 +1443,7 @@ export default function ImageManagerTool({
                               disabled={actionBlocked || !tagOperationAllowed}
                               onClick={() => openCopyTagDialog(operationRows)}
                             >
-                              <Copy data-icon="inline-start" weight="duotone" />
+                              <Copy data-icon="inline-start" weight="regular" />
                               {operationRows.length > 1
                                 ? t('imageManagerTool.batchCopyTagAction')
                                 : t('imageManagerTool.copyTagAction')}
@@ -1463,7 +1464,7 @@ export default function ImageManagerTool({
                               })
                             }
                           >
-                            <Trash data-icon="inline-start" weight="duotone" />
+                            <Trash data-icon="inline-start" weight="regular" />
                             {operationRows.length > 1
                               ? t('imageManagerTool.batchDelete')
                               : t('imageManagerTool.delete')}
@@ -1531,7 +1532,7 @@ export default function ImageManagerTool({
                       </span>
                     </>
                   ) : (
-                    <ListDashes size={14} weight="duotone" aria-hidden="true" />
+                    <ListDashes size={14} weight="regular" aria-hidden="true" />
                   )}
                 </button>
               ) : null}
@@ -1892,7 +1893,7 @@ export default function ImageManagerTool({
                     {operationDialog.platformStatus === 'loading' ? (
                       <Spinner />
                     ) : (
-                      <ArrowsClockwise weight="duotone" />
+                      <ArrowsClockwise weight="regular" />
                     )}
                   </Button>
                 </div>
@@ -2283,7 +2284,7 @@ export default function ImageManagerTool({
                         aria-label={t('imageManagerTool.copyDigest')}
                         onClick={() => void copyDigest(digest)}
                       >
-                        <Copy weight="duotone" aria-hidden="true" />
+                        <Copy weight="regular" aria-hidden="true" />
                       </Button>
                     </div>
                   ))}
@@ -2318,7 +2319,7 @@ export default function ImageManagerTool({
                         >
                           <Copy
                             size={13}
-                            weight="duotone"
+                            weight="regular"
                             className="mt-0.5 shrink-0"
                             aria-hidden="true"
                           />
@@ -2341,7 +2342,7 @@ export default function ImageManagerTool({
                           >
                             <Trash
                               size={14}
-                              weight="duotone"
+                              weight="regular"
                               className="opacity-60 group-hover/delete-tag-remove:opacity-80 group-focus-visible/delete-tag-remove:opacity-80"
                               aria-hidden="true"
                             />

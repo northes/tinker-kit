@@ -159,7 +159,7 @@ export default function UpdatePill() {
         className="flex h-full min-w-0 flex-1 items-center gap-1.5 rounded-full border-0 bg-transparent p-0 text-inherit hover:bg-transparent hover:text-inherit hover:[&_svg]:text-primary"
         onClick={start}
       >
-        <ArrowCircleUp size={14} weight="duotone" className="flex-none text-primary/70" />
+        <ArrowCircleUp size={14} weight="regular" className="flex-none text-primary/70" />
         <span className="update-pill__text min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-[10px] leading-[14px]">
           {label}
         </span>
@@ -173,7 +173,7 @@ export default function UpdatePill() {
         title={t('updatePill.dismiss')}
         onClick={dismiss}
       >
-        <X size={12} weight="duotone" />
+        <X size={12} weight="regular" />
       </Button>
     </div>
   );

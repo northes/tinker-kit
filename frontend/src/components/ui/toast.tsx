@@ -142,23 +142,23 @@ function ToastIcon({ type }: { type: string | undefined }) {
   let icon: React.ReactNode = null;
 
   if (type === 'success') {
-    icon = <CheckCircleIcon weight="duotone" aria-hidden="true" />;
+    icon = <CheckCircleIcon weight="regular" aria-hidden="true" />;
   }
 
   if (type === 'info') {
-    icon = <InfoIcon weight="duotone" aria-hidden="true" />;
+    icon = <InfoIcon weight="regular" aria-hidden="true" />;
   }
 
   if (type === 'warning') {
-    icon = <WarningIcon weight="duotone" aria-hidden="true" />;
+    icon = <WarningIcon weight="regular" aria-hidden="true" />;
   }
 
   if (type === 'error') {
-    icon = <XCircleIcon weight="duotone" className="text-destructive" aria-hidden="true" />;
+    icon = <XCircleIcon weight="regular" className="text-destructive" aria-hidden="true" />;
   }
 
   if (type === 'loading') {
-    icon = <SpinnerIcon weight="duotone" className="animate-spin" aria-hidden="true" />;
+    icon = <SpinnerIcon weight="regular" className="animate-spin" aria-hidden="true" />;
   }
 
   if (!icon) {

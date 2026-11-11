@@ -83,7 +83,7 @@ function UrlPart({
         aria-label={t('urlTool.copyPart', { part: label })}
         onClick={() => onCopy(id, value, label)}
       >
-        <Copy size={14} weight="duotone" />
+        <Copy size={14} weight="regular" />
       </Button>
     </div>
   );
@@ -332,7 +332,7 @@ export default function UrlTool({
                                     aria-label={t('urlTool.removeParam')}
                                     onClick={() => setInput(removeUrlParam(input, index))}
                                   >
-                                    <Trash size={14} weight="duotone" />
+                                    <Trash size={14} weight="regular" />
                                   </Button>
                                 </>
                               ) : (
@@ -360,7 +360,7 @@ export default function UrlTool({
                             aria-label={t('urlTool.addParam')}
                             onClick={() => setInput(appendUrlParam(input))}
                           >
-                            <Plus data-icon="inline-start" size={14} weight="duotone" />
+                            <Plus data-icon="inline-start" size={14} weight="regular" />
                             {t('urlTool.addParam')}
                           </Button>
                         ) : null}
@@ -374,7 +374,7 @@ export default function UrlTool({
                           void copyValue(urlParamsJson(parts.params), t('urlTool.params'))
                         }
                       >
-                        <Copy size={14} weight="duotone" />
+                        <Copy size={14} weight="regular" />
                       </Button>
                     </div>
                   ) : null}

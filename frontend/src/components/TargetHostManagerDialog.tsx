@@ -69,7 +69,7 @@ function SortableManagerItem({
         {...listeners}
         aria-label={label}
       >
-        <DotsSixVertical weight="duotone" />
+        <DotsSixVertical weight="regular" />
       </Button>
       {children}
     </div>
@@ -318,7 +318,7 @@ export function TargetHostManagerDialog<TItem, TDraft>({
                                 aria-label={strings.edit}
                                 onClick={() => startForm(toDraft(item))}
                               >
-                                <PencilSimple weight="duotone" />
+                                <PencilSimple weight="regular" />
                               </Button>
                               <Button
                                 variant="ghost"
@@ -328,7 +328,7 @@ export function TargetHostManagerDialog<TItem, TDraft>({
                                 aria-label={strings.remove}
                                 onClick={() => setRemoveItem(item)}
                               >
-                                <Trash weight="duotone" />
+                                <Trash weight="regular" />
                               </Button>
                             </SortableManagerItem>
                           ))}
@@ -389,7 +389,7 @@ export function TargetHostManagerDialog<TItem, TDraft>({
                   disabled={!canAdd || saving}
                   onClick={() => startForm(createDraft())}
                 >
-                  <Plus data-icon="inline-start" weight="duotone" />
+                  <Plus data-icon="inline-start" weight="regular" />
                   {t('common.add')}
                 </Button>
                 <Button disabled={saving || !collectionDirty} onClick={() => void persist()}>

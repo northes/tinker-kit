@@ -1,7 +1,7 @@
 import { mergeServiceInventory } from '../lib/service-inventory';
 import {
   ArrowsClockwise,
-  CaretDown,
+  CaretDownIcon,
   Cube,
   DesktopTower,
   GearSix,
@@ -67,6 +67,8 @@ import {
   ToolLayout,
   ToolLayoutContent,
   ToolLayoutToolbar,
+  ToolSearchField,
+  toolHeaderControlClassName,
 } from './shared';
 import { SSHProfileFormField } from './SSHProfileFormField';
 import { useSSHProfiles } from './SSHProfileManagerDialog';
@@ -122,6 +124,7 @@ export default function ServiceManagerTool({
 }) {
   const { t } = useTranslation();
   const targetLabelId = useId();
+  const statusLabelId = useId();
   const { profiles, reload } = useSSHProfiles();
   const [targets, setTargets] = useState<ServiceTarget[]>([]);
   const [targetID, setTargetID] = useState('local');
@@ -882,7 +885,7 @@ export default function ServiceManagerTool({
                 >
                   <SelectTrigger
                     aria-labelledby={targetLabelId}
-                    className="w-[220px] max-w-full max-[700px]:w-full"
+                    className={toolHeaderControlClassName}
                   >
                     <SelectValue />
                   </SelectTrigger>
@@ -896,7 +899,7 @@ export default function ServiceManagerTool({
                       {targets.length > 0 ? <SelectSeparator /> : null}
                       <SelectItem value={MANAGE_TARGETS_VALUE}>
                         <span className="flex items-center gap-2">
-                          <GearSix size={14} weight="duotone" />
+                          <GearSix size={14} weight="regular" />
                           {t('serviceManagerTool.manageTargets')}
                         </span>
                       </SelectItem>
@@ -907,22 +910,31 @@ export default function ServiceManagerTool({
                   <Badge variant="destructive">{t('serviceManagerTool.sshProfileMissing')}</Badge>
                 ) : null}
               </ToolHeaderField>
-              <div className="flex min-w-0 flex-col gap-1 max-[700px]:w-full">
-                <span className="text-[10px] font-medium text-muted-foreground">
-                  {t('serviceManagerTool.status')}
-                </span>
+              <ToolHeaderField
+                label={t('serviceManagerTool.status')}
+                labelId={statusLabelId}
+                className="max-[700px]:w-full"
+              >
                 <DropdownMenu>
                   <DropdownMenuTrigger
                     render={
-                      <Button variant="outline" size="sm" className="min-w-48 justify-between" />
+                      <Button
+                        variant="outline"
+                        aria-labelledby={statusLabelId}
+                        className={`${toolHeaderControlClassName} justify-between font-normal`}
+                      />
                     }
                   >
-                    <span className="truncate">
+                    <span className="min-w-0 flex-1 truncate text-left">
                       {statusFilter.size === 0
                         ? t('serviceManagerTool.statusAll')
                         : t('serviceManagerTool.statusSelected', { count: statusFilter.size })}
                     </span>
-                    <CaretDown weight="duotone" data-icon="inline-end" aria-hidden="true" />
+                    <CaretDownIcon
+                      className="pointer-events-none size-4 text-muted-foreground"
+                      data-icon="inline-end"
+                      aria-hidden="true"
+                    />
                   </DropdownMenuTrigger>
                   <DropdownMenuContent
                     align="start"
@@ -957,20 +969,16 @@ export default function ServiceManagerTool({
                     ) : null}
                   </DropdownMenuContent>
                 </DropdownMenu>
-              </div>
-              <div className="flex min-w-0 flex-col gap-1 max-[700px]:w-full">
-                <span className="text-[10px] font-medium text-muted-foreground">
-                  {t('serviceManagerTool.search')}
-                </span>
-                <Input
-                  value={searchDraft}
-                  onChange={(event) => setSearchDraft(event.target.value)}
-                  onKeyDown={(event) => {
-                    if (event.key === 'Enter') setSearch(searchDraft.trim().toLowerCase());
-                  }}
-                  placeholder={t('serviceManagerTool.searchPlaceholder')}
-                />
-              </div>
+              </ToolHeaderField>
+              <ToolSearchField
+                id="service-manager-search"
+                label={t('serviceManagerTool.search')}
+                value={searchDraft}
+                onValueChange={setSearchDraft}
+                onSubmit={(value) => setSearch(value.toLowerCase())}
+                placeholder={t('serviceManagerTool.searchPlaceholder')}
+                className={toolHeaderControlClassName}
+              />
             </>
           }
           right={
@@ -1004,7 +1012,7 @@ export default function ServiceManagerTool({
                 <ToolActionButton
                   variant="secondary"
                   label={t('serviceManagerTool.refresh')}
-                  leading={<ArrowsClockwise className="size-3.5" weight="duotone" aria-hidden />}
+                  leading={<ArrowsClockwise className="size-3.5" weight="regular" aria-hidden />}
                   onPress={() =>
                     void (
                       view === 'picked'
@@ -1065,7 +1073,7 @@ export default function ServiceManagerTool({
                       className="-ml-3 flex h-10 min-w-0 flex-1 items-center gap-2 px-3 text-left text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                       onClick={() => setSelection(PICKED_SELECTION)}
                     >
-                      <Queue className="size-4 flex-none text-muted-foreground" weight="duotone" />
+                      <Queue className="size-4 flex-none text-muted-foreground" weight="regular" />
                       <span className="font-medium">{t('serviceManagerTool.picked')}</span>
                       <span className="truncate text-[10px] text-muted-foreground">
                         {t('serviceManagerTool.pickedCount', {
@@ -1088,7 +1096,7 @@ export default function ServiceManagerTool({
                           });
                         }}
                       >
-                        <Trash weight="duotone" />
+                        <Trash weight="regular" />
                       </Button>
                     ) : null}
                   </div>
@@ -1119,7 +1127,7 @@ export default function ServiceManagerTool({
                           >
                             <DesktopTower
                               className="size-4 flex-none text-muted-foreground"
-                              weight="duotone"
+                              weight="regular"
                             />
                             <span className="truncate">
                               {targets.find((item) => item.id === hostID)

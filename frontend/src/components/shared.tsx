@@ -169,9 +169,12 @@ export function ToolHeaderField({
   );
 }
 
-// 工具页列表/工具栏搜索框：高度、图标位置与清空按钮由这里统一，
+// 工具页 header 里并排的 Select、搜索框和充当选择器的下拉触发器共用这一宽度。
+// 高度和字号跟 Select / Input 默认档（32px、text-sm），不要再单独写死。
+export const toolHeaderControlClassName = 'w-[220px] max-w-full max-[700px]:w-full';
+
+// 工具页列表/工具栏搜索框：与 header 里的 Select 同高同字号（32px、text-sm）。
 // 回车提交（onSubmit）、Esc 清空（onClear）；不传 onSubmit 即为即时过滤。
-// 30px 与同行的 ToolActionButton 同高，避免工具栏各行高不一致。
 export function ToolSearchField({
   id,
   label,
@@ -203,7 +206,7 @@ export function ToolSearchField({
     <div className="relative w-full min-w-0">
       <MagnifyingGlass
         size={14}
-        weight="duotone"
+        weight="regular"
         aria-hidden="true"
         className="pointer-events-none absolute top-1/2 left-2.5 -translate-y-1/2 text-muted-foreground"
       />
@@ -225,7 +228,7 @@ export function ToolSearchField({
         }}
         placeholder={placeholder}
         aria-label={label ? undefined : ariaLabel}
-        className={`h-[30px] text-[11px] ${onClear ? 'pr-8' : ''} pl-8`}
+        className={`h-8 text-sm ${onClear ? 'pr-8' : ''} pl-8`}
       />
       {onClear && value ? (
         <Button
@@ -237,7 +240,7 @@ export function ToolSearchField({
           aria-label={clearLabel ?? ariaLabel ?? label}
           onClick={onClear}
         >
-          <XCircle weight="duotone" aria-hidden="true" />
+          <XCircle weight="regular" aria-hidden="true" />
         </Button>
       ) : null}
     </div>
@@ -403,7 +406,7 @@ export function ToolLoadingState({
       action={
         onCancel ? (
           <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={onCancel}>
-            <XCircle weight="duotone" data-icon="inline-start" size={14} />
+            <XCircle weight="regular" data-icon="inline-start" size={14} />
             {cancelLabel ?? t('common.cancel')}
           </Button>
         ) : undefined
@@ -430,7 +433,7 @@ export function ToolCanceledState({
   return (
     <ToolStateShell
       className={className}
-      icon={<XCircle size={24} weight="duotone" className="text-muted-foreground" />}
+      icon={<XCircle size={24} weight="regular" className="text-muted-foreground" />}
       title={title ?? t('common.canceled')}
       hint={hint ?? t('common.canceledHint')}
       action={
@@ -464,7 +467,7 @@ export function ToolEmptyState({
     <ToolStateShell
       className={className}
       icon={
-        Icon ? <Icon size={28} weight="duotone" className="text-muted-foreground" /> : undefined
+        Icon ? <Icon size={28} weight="regular" className="text-muted-foreground" /> : undefined
       }
       title={title}
       hint={hint}
@@ -553,7 +556,7 @@ export type ToolActionVariant = keyof typeof buttonVariant;
 // 工具页动作按钮（header 工具栏与 footer 动作栏）统一尺寸：30px 高、11px 内边距、11px 字号。
 export const toolActionButtonClass = 'h-[30px] flex-none px-[11px] text-[11px]';
 
-// header 与 footer 共用的动作按钮：图标 14px duotone 置于文字前，统一「图标 + 文字」。
+// header 与 footer 共用的动作按钮：图标 14px regular 置于文字前，统一「图标 + 文字」。
 // `active` 用于可切换的视图入口，激活时切到 shadcn secondary 实心样式。
 export function ToolActionButton({
   label,
@@ -585,7 +588,7 @@ export function ToolActionButton({
     >
       {leading ??
         (IconComponent ? (
-          <IconComponent className="size-3.5" weight="duotone" aria-hidden />
+          <IconComponent className="size-3.5" weight="regular" aria-hidden />
         ) : null)}
       {label}
       {children}
@@ -618,7 +621,7 @@ export function ToolIconButton({
       title={label}
       className={`size-[30px] flex-none${className ? ` ${className}` : ''}`}
     >
-      <IconComponent className="size-4" weight="duotone" aria-hidden />
+      <IconComponent className="size-4" weight="regular" aria-hidden />
     </Button>
   );
 }
@@ -663,10 +666,10 @@ export function ToolActionBar({
               }
             >
               {action.icon ? (
-                <action.icon className="size-3.5" weight="duotone" aria-hidden />
+                <action.icon className="size-3.5" weight="regular" aria-hidden />
               ) : null}
               {action.label}
-              <CaretDown className="size-3" weight="duotone" aria-hidden />
+              <CaretDown className="size-3" weight="regular" aria-hidden />
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-max min-w-32 whitespace-nowrap">
               {groupMenuOptions(action.options).map((group, index) => (

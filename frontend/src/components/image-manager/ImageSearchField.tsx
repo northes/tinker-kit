@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { ToolSearchField } from '../shared';
+import { ToolSearchField, toolHeaderControlClassName } from '../shared';
 
 export function ImageSearchField({
   id,
@@ -28,7 +28,7 @@ export function ImageSearchField({
       value={draft}
       onValueChange={setDraft}
       onSubmit={onSearch}
-      className="w-[220px] max-[700px]:w-full"
+      className={toolHeaderControlClassName}
     />
   );
 }

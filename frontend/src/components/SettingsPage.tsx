@@ -557,7 +557,7 @@ function SSHKnownHostsDialog({
                           setEditing({ ...entry });
                         }}
                       >
-                        <PencilSimple data-icon="inline-start" weight="duotone" />
+                        <PencilSimple data-icon="inline-start" weight="regular" />
                         {t('settings.sshKnownHostsEdit')}
                       </Button>
                       <Button
@@ -569,7 +569,7 @@ function SSHKnownHostsDialog({
                           setDeleteTarget(entry);
                         }}
                       >
-                        <Trash data-icon="inline-start" weight="duotone" />
+                        <Trash data-icon="inline-start" weight="regular" />
                         {t('settings.sshKnownHostsDelete')}
                       </Button>
                     </div>
@@ -1006,7 +1006,7 @@ export default function SettingsPage({
                       aria-controls="app-sidebar"
                       onClick={onToggleSidebarManage}
                     >
-                      <SidebarSimple data-icon="inline-start" weight="duotone" />
+                      <SidebarSimple data-icon="inline-start" weight="regular" />
                       {t(sidebarManaging ? 'sidebar.done' : 'sidebar.manageAction')}
                     </Button>
                   </Setting>
@@ -1091,7 +1091,7 @@ export default function SettingsPage({
                     {testingTaskNotification ? (
                       <Spinner data-icon="inline-start" />
                     ) : (
-                      <BellRinging data-icon="inline-start" weight="duotone" />
+                      <BellRinging data-icon="inline-start" weight="regular" />
                     )}
                     {t(
                       testingTaskNotification
@@ -1109,7 +1109,7 @@ export default function SettingsPage({
               <div className={settingStackClass}>
                 <Setting label={t('settings.sshProfiles')}>
                   <Button variant="outline" onClick={() => openManager()}>
-                    <Key data-icon="inline-start" weight="duotone" />
+                    <Key data-icon="inline-start" weight="regular" />
                     {t('settings.manageSSHProfiles')}
                   </Button>
                 </Setting>
@@ -1118,7 +1118,7 @@ export default function SettingsPage({
                   description={t('settings.sshKnownHostsDesc')}
                 >
                   <Button variant="outline" onClick={() => setSSHKnownHostsOpen(true)}>
-                    <Key data-icon="inline-start" weight="duotone" />
+                    <Key data-icon="inline-start" weight="regular" />
                     {t('settings.manageSSHKnownHosts')}
                   </Button>
                 </Setting>
@@ -1132,13 +1132,13 @@ export default function SettingsPage({
                 <div className={settingStackClass}>
                   <Setting label={t('settings.exportConfig')}>
                     <Button variant="outline" onClick={() => setConfigAction('export')}>
-                      <DownloadSimple data-icon="inline-start" weight="duotone" />
+                      <DownloadSimple data-icon="inline-start" weight="regular" />
                       {t('settings.exportConfig')}
                     </Button>
                   </Setting>
                   <Setting label={t('settings.importConfig')}>
                     <Button variant="outline" onClick={() => setConfigAction('import')}>
-                      <UploadSimple data-icon="inline-start" weight="duotone" />
+                      <UploadSimple data-icon="inline-start" weight="regular" />
                       {t('settings.importConfig')}
                     </Button>
                   </Setting>
@@ -1147,7 +1147,7 @@ export default function SettingsPage({
                     description={t('settings.resetConfigDesc')}
                   >
                     <Button variant="destructive" onClick={() => setConfigAction('reset')}>
-                      <ArrowCounterClockwise data-icon="inline-start" weight="duotone" />
+                      <ArrowCounterClockwise data-icon="inline-start" weight="regular" />
                       {t('settings.resetConfig')}
                     </Button>
                   </Setting>
@@ -1178,7 +1178,7 @@ export default function SettingsPage({
                       disabled={checking}
                       onClick={() => void checkUpdates()}
                     >
-                      <ArrowsClockwise data-icon="inline-start" weight="duotone" />
+                      <ArrowsClockwise data-icon="inline-start" weight="regular" />
                       {t(checking ? 'settings.checkingUpdates' : 'settings.checkUpdates')}
                     </Button>
                   </Setting>
@@ -1188,7 +1188,7 @@ export default function SettingsPage({
                 <div className={settingControlClass}>
                   <Setting>
                     <Button variant="outline" onClick={() => void Browser.OpenURL(GITHUB_REPO_URL)}>
-                      <ArrowSquareOut data-icon="inline-start" weight="duotone" />
+                      <ArrowSquareOut data-icon="inline-start" weight="regular" />
                       {t('settings.openProject')}
                     </Button>
                   </Setting>
@@ -1198,7 +1198,7 @@ export default function SettingsPage({
                 <div className={settingControlClass}>
                   <Setting>
                     <Button variant="outline" onClick={() => setConfirmQuit(true)}>
-                      <Power data-icon="inline-start" weight="duotone" />
+                      <Power data-icon="inline-start" weight="regular" />
                       {t('settings.quitAction')}
                     </Button>
                   </Setting>

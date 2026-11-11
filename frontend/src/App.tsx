@@ -908,7 +908,7 @@ function AppShell() {
               aria-label={t('sidebar.toggle')}
               title={t('sidebar.toggle')}
             >
-              <SidebarSimple size={16} weight="duotone" />
+              <SidebarSimple size={16} weight="regular" />
             </Button>
             <div className="titlebar-navigation relative top-(--app-titlebar-item-offset) ml-1 flex h-7 items-center gap-0.5 self-center [--wails-draggable:no-drag]">
               <Button
@@ -920,7 +920,7 @@ function AppShell() {
                 aria-label={t('titlebar.back')}
                 title={t('titlebar.back')}
               >
-                <ArrowLeft size={15} weight="duotone" />
+                <ArrowLeft size={15} weight="regular" />
               </Button>
               <Button
                 variant="ghost"
@@ -931,7 +931,7 @@ function AppShell() {
                 aria-label={t('titlebar.forward')}
                 title={t('titlebar.forward')}
               >
-                <ArrowRight size={15} weight="duotone" />
+                <ArrowRight size={15} weight="regular" />
               </Button>
             </div>
           </div>

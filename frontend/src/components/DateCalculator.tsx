@@ -134,7 +134,7 @@ function ResultValue({
         title={copyLabel}
         onClick={onCopy}
       >
-        <Copy size={15} weight="duotone" />
+        <Copy size={15} weight="regular" />
       </Button>
     </div>
   );
@@ -211,7 +211,7 @@ export default function DateCalculator() {
       <div className="grid min-w-0 grid-cols-[repeat(auto-fit,minmax(17rem,1fr))] gap-x-7 gap-y-8">
         <section className="flex min-w-0 flex-col gap-4 border-b border-border pb-6">
           <div className="flex items-start gap-2.5">
-            <CalendarBlank className="mt-0.5 flex-none" size={18} weight="duotone" />
+            <CalendarBlank className="mt-0.5 flex-none" size={18} weight="regular" />
             <div className="min-w-0">
               <h2 className="m-0 text-sm font-medium text-foreground">
                 {t('timeTool.dateCalculator.differenceTitle')}
@@ -276,7 +276,7 @@ export default function DateCalculator() {
                 aria-pressed={operation === 'add'}
                 onClick={() => setOperation('add')}
               >
-                <Plus data-icon="inline-start" size={14} weight="duotone" />
+                <Plus data-icon="inline-start" size={14} weight="regular" />
                 {t('timeTool.dateCalculator.add')}
               </Button>
               <Button
@@ -284,7 +284,7 @@ export default function DateCalculator() {
                 aria-pressed={operation === 'subtract'}
                 onClick={() => setOperation('subtract')}
               >
-                <Minus data-icon="inline-start" size={14} weight="duotone" />
+                <Minus data-icon="inline-start" size={14} weight="regular" />
                 {t('timeTool.dateCalculator.subtract')}
               </Button>
             </div>

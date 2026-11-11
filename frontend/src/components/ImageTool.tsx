@@ -1322,7 +1322,7 @@ export default function ImageTool({
                                             aria-label={t('imageTool.replace')}
                                             onClick={() => void fileDrop.pick()}
                                         >
-                                            <UploadSimple weight="duotone"/>
+                                            <UploadSimple weight="regular"/>
                                         </Button>
                                     </>
                                 )}
@@ -1390,7 +1390,7 @@ export default function ImageTool({
                                                 onPressedChange={() => beginSizeEdit('crop')}
                                                 aria-label={t('imageTool.crop')}
                                             >
-                                                <Crop weight="duotone" data-icon="inline-start" />
+                                                <Crop weight="regular" data-icon="inline-start" />
                                                 {t('imageTool.crop')}
                                             </Toggle>
                                             <Toggle
@@ -1402,7 +1402,7 @@ export default function ImageTool({
                                                 onPressedChange={() => beginSizeEdit('expand')}
                                                 aria-label={t('imageTool.expand')}
                                             >
-                                                <ArrowsOut weight="duotone" data-icon="inline-start" />
+                                                <ArrowsOut weight="regular" data-icon="inline-start" />
                                                 {t('imageTool.expand')}
                                             </Toggle>
                                         </div>

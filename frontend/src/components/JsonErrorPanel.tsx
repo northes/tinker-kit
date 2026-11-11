@@ -21,7 +21,7 @@ export function JsonErrorPanel({
           className="json-pipeline-error-icon grid size-7 place-items-center rounded-full border border-[color-mix(in_oklch,var(--destructive)_58%,var(--border))] text-destructive"
           aria-hidden="true"
         >
-          <WarningCircle size={18} weight="duotone" />
+          <WarningCircle size={18} weight="regular" />
         </div>
         <div className="json-pipeline-error-content grid min-w-0 gap-2 pt-0.5">
           <div className="json-pipeline-error-heading flex min-w-0 flex-wrap items-center gap-[9px] leading-tight">

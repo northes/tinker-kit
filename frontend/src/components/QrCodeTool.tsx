@@ -327,7 +327,7 @@ export default function QrCodeTool({
                   </p>
                 ) : (
                   <div className="flex flex-col items-center gap-2 text-muted-foreground">
-                    <QrCodeIcon size={36} weight="duotone" aria-hidden />
+                    <QrCodeIcon size={36} weight="regular" aria-hidden />
                     <span className="text-[11px] normal-case tracking-normal">
                       {t('qrTool.previewEmpty')}
                     </span>

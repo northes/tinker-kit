@@ -318,7 +318,7 @@ function JsonEditorPane({
                 title={t(schemaMode ? 'jsonTool.schemaPreviewOn' : 'jsonTool.schemaPreview')}
                 onClick={onToggleSchema}
               >
-                <TreeStructure weight="duotone" />
+                <TreeStructure weight="regular" />
               </Button>
             )}
             {onToggleTable && (
@@ -335,7 +335,7 @@ function JsonEditorPane({
                 }
                 onClick={onToggleTable}
               >
-                <TableIcon weight="duotone" />
+                <TableIcon weight="regular" />
               </Button>
             )}
           </div>
@@ -1259,7 +1259,7 @@ export default function JsonTool({
             {fileDrop.over ? (
               <div className="pointer-events-none absolute inset-2 z-30 flex items-center justify-center rounded-lg border border-dashed border-primary bg-primary/10 text-primary">
                 <span className="flex items-center gap-2 text-xs font-medium">
-                  <UploadSimple size={16} weight="duotone" />
+                  <UploadSimple size={16} weight="regular" />
                   {t('fileDrop.release')}
                 </span>
               </div>
@@ -1564,7 +1564,7 @@ export default function JsonTool({
                                 }
                                 onClick={() => setResultTableMode((current) => !current)}
                               >
-                                <TableIcon weight="duotone" />
+                                <TableIcon weight="regular" />
                               </Button>
                             )}
                           </div>

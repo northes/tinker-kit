@@ -188,7 +188,7 @@ export function LogList({
             aria-label={t('serviceManagerTool.scrollToBottom')}
             onClick={scrollToBottom}
           >
-            <CaretDown weight="duotone" />
+            <CaretDown weight="regular" />
           </Button>
         ) : null}
       </div>

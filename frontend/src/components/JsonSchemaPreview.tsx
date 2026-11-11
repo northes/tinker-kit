@@ -877,7 +877,7 @@ const SchemaNode = memo(function SchemaNode({
               title={toggleLabel}
               onClick={() => setExpanded((current) => !current)}
             >
-              {expanded ? <CaretDown weight="duotone" /> : <CaretRight weight="duotone" />}
+              {expanded ? <CaretDown weight="regular" /> : <CaretRight weight="regular" />}
             </Button>
           ) : null}
         </span>
@@ -1003,7 +1003,7 @@ function SchemaSearchBar({
       <div className="relative flex w-full min-w-0 flex-1 items-center">
         <MagnifyingGlass
           className="pointer-events-none absolute left-2 size-3.5 text-muted-foreground"
-          weight="duotone"
+          weight="regular"
           aria-hidden="true"
         />
         <Input
@@ -1032,7 +1032,7 @@ function SchemaSearchBar({
             title={t('jsonTool.schemaPreviewSearchClear')}
             onClick={clear}
           >
-            <X weight="duotone" />
+            <X weight="regular" />
           </Button>
         ) : null}
       </div>
@@ -1050,7 +1050,7 @@ function SchemaSearchBar({
         title={t('jsonTool.schemaPreviewPrevMatch')}
         onClick={onPrev}
       >
-        <CaretUp weight="duotone" />
+        <CaretUp weight="regular" />
       </Button>
       <Button
         type="button"
@@ -1061,7 +1061,7 @@ function SchemaSearchBar({
         title={t('jsonTool.schemaPreviewNextMatch')}
         onClick={onNext}
       >
-        <CaretDown weight="duotone" />
+        <CaretDown weight="regular" />
       </Button>
     </>
   );
@@ -1253,7 +1253,7 @@ export function JsonSchemaPreview({ value }: { value: unknown }) {
             title={t('jsonTool.schemaPreviewExpandAll')}
             onClick={() => runTreeCommand(true)}
           >
-            <ArrowsOutLineVertical weight="duotone" />
+            <ArrowsOutLineVertical weight="regular" />
           </Button>
           <Button
             type="button"
@@ -1263,7 +1263,7 @@ export function JsonSchemaPreview({ value }: { value: unknown }) {
             title={t('jsonTool.schemaPreviewCollapseAll')}
             onClick={() => runTreeCommand(false)}
           >
-            <ArrowsInLineVertical weight="duotone" />
+            <ArrowsInLineVertical weight="regular" />
           </Button>
         </div>
       </div>

@@ -341,7 +341,7 @@ export default function Base64Tool({
               alt={sourceFile.name}
             />
           ) : (
-            <FileIcon size={42} weight="duotone" />
+            <FileIcon size={42} weight="regular" />
           )}
         </>
         <div className="flex max-w-[90%] flex-col items-center gap-0.5 text-center">
@@ -398,7 +398,7 @@ export default function Base64Tool({
             />
           ) : (
             <>
-              <FileIcon size={44} weight="duotone" />
+              <FileIcon size={44} weight="regular" />
               <strong className="text-xs font-medium">{t('base64Tool.binaryFile')}</strong>
             </>
           )}
@@ -416,7 +416,7 @@ export default function Base64Tool({
               onClick={() => void save()}
               className="h-[29px] text-[10px] [&_svg]:size-3.5"
             >
-              <DownloadSimple data-icon="inline-start" weight="duotone" />
+              <DownloadSimple data-icon="inline-start" weight="regular" />
               {t('base64Tool.save')}
             </Button>
           </footer>

@@ -508,7 +508,7 @@ function SSHProfileManagerDialog({
               className="mx-6 mt-4 flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive"
               role="alert"
             >
-              <WarningCircle weight="duotone" className="mt-0.5 size-4 shrink-0" />
+              <WarningCircle weight="regular" className="mt-0.5 size-4 shrink-0" />
               <span className="min-w-0 break-words">{listError}</span>
             </div>
           ) : null}
@@ -548,12 +548,12 @@ function SSHProfileManagerDialog({
                           aria-label={t('sshProfiles.refresh')}
                         >
                           <ArrowClockwise
-                            weight="duotone"
+                            weight="regular"
                             className={loading ? 'animate-spin motion-reduce:animate-none' : ''}
                           />
                         </Button>
                         <Button variant="outline" size="sm" onClick={startNew} disabled={busy}>
-                          <Plus data-icon="inline-start" weight="duotone" />
+                          <Plus data-icon="inline-start" weight="regular" />
                           {t('sshProfiles.add')}
                         </Button>
                       </div>
@@ -602,7 +602,7 @@ function SSHProfileManagerDialog({
                               disabled={busy}
                               aria-label={t('sshProfiles.edit')}
                             >
-                              <PencilSimple weight="duotone" />
+                              <PencilSimple weight="regular" />
                             </Button>
                             <DropdownMenu>
                               <DropdownMenuTrigger
@@ -616,7 +616,7 @@ function SSHProfileManagerDialog({
                                   />
                                 }
                               >
-                                <DotsThreeOutlineVertical weight="duotone" />
+                                <DotsThreeOutlineVertical weight="regular" />
                               </DropdownMenuTrigger>
                               <DropdownMenuContent align="end" className="min-w-48">
                                 <DropdownMenuGroup>
@@ -627,7 +627,7 @@ function SSHProfileManagerDialog({
                                     {testingID === profile.id ? (
                                       <Spinner data-icon="inline-start" />
                                     ) : (
-                                      <CheckCircle data-icon="inline-start" weight="duotone" />
+                                      <CheckCircle data-icon="inline-start" weight="regular" />
                                     )}
                                     {t('sshProfiles.test')}
                                   </DropdownMenuItem>
@@ -636,7 +636,7 @@ function SSHProfileManagerDialog({
                                       onClick={() => void refreshImported(profile)}
                                       disabled={busy}
                                     >
-                                      <ArrowClockwise data-icon="inline-start" weight="duotone" />
+                                      <ArrowClockwise data-icon="inline-start" weight="regular" />
                                       {t('sshProfiles.updateFromLocal')}
                                     </DropdownMenuItem>
                                   ) : null}
@@ -647,7 +647,7 @@ function SSHProfileManagerDialog({
                                   onClick={() => setDeleteTarget(profile)}
                                   disabled={busy}
                                 >
-                                  <Trash data-icon="inline-start" weight="duotone" />
+                                  <Trash data-icon="inline-start" weight="regular" />
                                   {t('sshProfiles.delete')}
                                 </DropdownMenuItem>
                               </DropdownMenuContent>
@@ -676,7 +676,7 @@ function SSHProfileManagerDialog({
                         aria-label={t('sshProfiles.refresh')}
                       >
                         <ArrowClockwise
-                          weight="duotone"
+                          weight="regular"
                           className={localLoading ? 'animate-spin motion-reduce:animate-none' : ''}
                         />
                       </Button>
@@ -712,7 +712,7 @@ function SSHProfileManagerDialog({
                                   t('sshProfiles.imported')
                                 ) : (
                                   <>
-                                    <DownloadSimple data-icon="inline-start" weight="duotone" />
+                                    <DownloadSimple data-icon="inline-start" weight="regular" />
                                     {t('sshProfiles.import')}
                                   </>
                                 )}
@@ -733,7 +733,7 @@ function SSHProfileManagerDialog({
               <div className="mx-auto grid w-full max-w-[560px] gap-5">
                 {imported ? (
                   <div className="flex items-start gap-2 rounded-md border border-border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
-                    <CheckCircle weight="duotone" className="mt-0.5 size-4 shrink-0" />
+                    <CheckCircle weight="regular" className="mt-0.5 size-4 shrink-0" />
                     <span>{t('sshProfiles.importedHint', { alias: draft.originAlias })}</span>
                   </div>
                 ) : null}

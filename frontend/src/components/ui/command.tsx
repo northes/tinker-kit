@@ -177,7 +177,7 @@ function CommandInput({
           {...props}
         />
         <InputGroupAddon>
-          <MagnifyingGlassIcon className="size-4 shrink-0 opacity-50" weight="duotone" />
+          <MagnifyingGlassIcon className="size-4 shrink-0 opacity-50" weight="regular" />
         </InputGroupAddon>
       </InputGroup>
     </div>

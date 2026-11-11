@@ -81,6 +81,7 @@ import {
   ToolLayoutTabs,
   ToolLoadingState,
   ToolSearchField,
+  toolHeaderControlClassName,
   WheelText,
 } from './shared';
 import { Badge } from './ui/badge';
@@ -416,7 +417,7 @@ function ForwardRow({
                 }
               }}
             >
-              <DotsSixVertical weight="duotone" />
+              <DotsSixVertical weight="regular" />
               <span className="sr-only">
                 {t('portTool.moveForwardUp', { name })}. {t('portTool.moveForwardDown', { name })}
               </span>
@@ -448,20 +449,20 @@ function ForwardRow({
       </ContextMenuTrigger>
       <ContextMenuContent className="w-40">
         <ContextMenuItem disabled={busy} onClick={onToggle}>
-          {running ? <Stop weight="duotone" /> : <Play weight="duotone" />}
+          {running ? <Stop weight="regular" /> : <Play weight="regular" />}
           {t(running ? 'portTool.stop' : 'portTool.start')}
         </ContextMenuItem>
         <ContextMenuItem onClick={onEdit}>
-          <PencilSimple weight="duotone" />
+          <PencilSimple weight="regular" />
           {t('portTool.editForward')}
         </ContextMenuItem>
         <ContextMenuItem onClick={onCopy}>
-          <Copy weight="duotone" />
+          <Copy weight="regular" />
           {t('portTool.copyForward')}
         </ContextMenuItem>
         <ContextMenuSeparator />
         <ContextMenuItem variant="destructive" onClick={onDelete}>
-          <Trash weight="duotone" />
+          <Trash weight="regular" />
           {t('portTool.delete')}
         </ContextMenuItem>
       </ContextMenuContent>
@@ -495,7 +496,7 @@ function FilterMenu({ label, groups }: { label: string; groups: FilterGroup[] })
           />
         }
       >
-        <Funnel data-icon="inline-start" weight="duotone" />
+        <Funnel data-icon="inline-start" weight="regular" />
         {label}
         {activeCount ? <Badge variant="secondary">{activeCount}</Badge> : null}
       </DropdownMenuTrigger>
@@ -549,7 +550,7 @@ function SearchField({
         onSearch('');
       }}
       clearLabel={t('portTool.clearSearch')}
-      className="w-[220px] max-[700px]:w-full"
+      className={toolHeaderControlClassName}
     />
   );
 }
@@ -1043,7 +1044,7 @@ export default function PortTool({ active }: { active: boolean }) {
                   <SelectTrigger
                     id="port-source"
                     aria-labelledby={sourceLabelId}
-                    className="w-[220px] max-w-full max-[700px]:w-full"
+                    className={toolHeaderControlClassName}
                   >
                     <SelectValue />
                   </SelectTrigger>
@@ -1057,7 +1058,7 @@ export default function PortTool({ active }: { active: boolean }) {
                       {sourceOptions.length > 0 ? <SelectSeparator /> : null}
                       <SelectItem value={MANAGE_SOURCES_VALUE}>
                         <span className="flex items-center gap-2">
-                          <GearSix size={14} weight="duotone" />
+                          <GearSix size={14} weight="regular" />
                           {t('portTool.manageSources')}
                         </span>
                       </SelectItem>
@@ -1104,12 +1105,12 @@ export default function PortTool({ active }: { active: boolean }) {
               />
               {loading ? (
                 <Button variant="outline" className="ml-auto" onClick={cancelPorts}>
-                  <XCircle data-icon="inline-start" weight="duotone" />
+                  <XCircle data-icon="inline-start" weight="regular" />
                   {t('common.cancel')}
                 </Button>
               ) : (
                 <Button variant="outline" className="ml-auto" onClick={() => void refreshPorts()}>
-                  <ArrowsClockwise data-icon="inline-start" weight="duotone" />
+                  <ArrowsClockwise data-icon="inline-start" weight="regular" />
                   {t('portTool.refresh')}
                 </Button>
               )}
@@ -1258,7 +1259,7 @@ export default function PortTool({ active }: { active: boolean }) {
                   className="h-7 px-2 text-xs"
                   onClick={() => setForwardSort(null)}
                 >
-                  <ArrowCounterClockwise weight="duotone" data-icon="inline-start" size={14} />
+                  <ArrowCounterClockwise weight="regular" data-icon="inline-start" size={14} />
                   {t('portTool.defaultOrder')}
                 </Button>
               )}

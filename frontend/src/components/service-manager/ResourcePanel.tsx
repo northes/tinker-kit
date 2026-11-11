@@ -385,7 +385,7 @@ export function ResourcePanel({
                       title={t('serviceManagerTool.wholeWord')}
                       aria-label={t('serviceManagerTool.wholeWord')}
                     >
-                      <TextB weight="duotone" />
+                      <TextB weight="regular" />
                     </ToggleGroupItem>
                     <ToggleGroupItem
                       className="h-full"
@@ -393,7 +393,7 @@ export function ResourcePanel({
                       title={t('serviceManagerTool.regex')}
                       aria-label={t('serviceManagerTool.regex')}
                     >
-                      <Asterisk weight="duotone" />
+                      <Asterisk weight="regular" />
                     </ToggleGroupItem>
                     <ToggleGroupItem
                       className="h-full"
@@ -401,7 +401,7 @@ export function ResourcePanel({
                       title={t('serviceManagerTool.caseSensitive')}
                       aria-label={t('serviceManagerTool.caseSensitive')}
                     >
-                      <TextAa weight="duotone" />
+                      <TextAa weight="regular" />
                     </ToggleGroupItem>
                   </ToggleGroup>
                 </LogFilterHistoryMenu>
@@ -414,7 +414,7 @@ export function ResourcePanel({
                   aria-label={t('serviceManagerTool.advancedSettings')}
                   onClick={() => setAdvancedOpen(true)}
                 >
-                  <GearSix weight="duotone" />
+                  <GearSix weight="regular" />
                 </Button>
                 <div className="ml-auto flex items-center gap-1">
                   <Button
@@ -426,7 +426,7 @@ export function ResourcePanel({
                     aria-label={t('serviceManagerTool.copyLogs')}
                     onClick={() => void copyLogs()}
                   >
-                    <Copy weight="duotone" />
+                    <Copy weight="regular" />
                   </Button>
                   <Button
                     variant="ghost"
@@ -437,7 +437,7 @@ export function ResourcePanel({
                     aria-label={t('serviceManagerTool.exportLogs')}
                     onClick={() => void exportLogs()}
                   >
-                    <DownloadSimple weight="duotone" />
+                    <DownloadSimple weight="regular" />
                   </Button>
                   {!scope ? (
                     <Button
@@ -449,7 +449,7 @@ export function ResourcePanel({
                       aria-label={t('serviceManagerTool.clearLogs')}
                       onClick={() => setConfirmingClear(true)}
                     >
-                      <Eraser weight="duotone" />
+                      <Eraser weight="regular" />
                     </Button>
                   ) : null}
                 </div>

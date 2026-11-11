@@ -10,7 +10,7 @@ function Spinner({ className, ...props }: React.ComponentProps<'svg'>) {
       data-slot="spinner"
       role="status"
       aria-label={t('common.loading')}
-      weight="duotone"
+      weight="regular"
       className={cn('size-4 animate-spin', className)}
       {...props}
     />

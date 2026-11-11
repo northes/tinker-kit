@@ -265,7 +265,7 @@ export default function FileDropEmpty({
           {release}
         </span>
       ) : null}
-      <Icon className="file-drop-empty-icon" size={28} weight="duotone" aria-hidden />
+      <Icon className="file-drop-empty-icon" size={28} weight="regular" aria-hidden />
       <strong className="file-drop-empty-title">
         <span className="file-drop-empty-title-idle" aria-hidden={over ? true : undefined}>
           {title}
@@ -283,7 +283,7 @@ export default function FileDropEmpty({
         className="file-drop-empty-action"
         onClick={onChooseFile}
       >
-        <UploadSimple data-icon="inline-start" weight="duotone" />
+        <UploadSimple data-icon="inline-start" weight="regular" />
         {actionLabel}
       </Button>
     </div>

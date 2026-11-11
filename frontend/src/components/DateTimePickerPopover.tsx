@@ -132,7 +132,7 @@ export default function DateTimePickerPopover({
           />
         }
       >
-        <CalendarBlank data-icon="inline-start" size={showValue ? 17 : 14} weight="duotone" />
+        <CalendarBlank data-icon="inline-start" size={showValue ? 17 : 14} weight="regular" />
         {showValue ? (
           <span className="min-w-0 truncate">
             {value ? formatDateTimeDisplay(value) : placeholder}

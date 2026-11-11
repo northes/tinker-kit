@@ -98,12 +98,12 @@ function CrashScreen({ error, onReload }: { error: Error; onReload: () => void }
           data-wails-drag
         />
         <section className="flex w-full max-w-[420px] flex-col items-center text-center">
-          <Bug size={34} weight="duotone" className="mb-4 text-destructive" />
+          <Bug size={34} weight="regular" className="mb-4 text-destructive" />
           <h1 className="text-base font-semibold">{t('crash.title')}</h1>
           <p className="mt-2 text-xs leading-5 text-muted-foreground">{t('crash.description')}</p>
           <div className="mt-6 flex flex-wrap items-center justify-center gap-2">
             <Button type="button" onClick={onReload}>
-              <ArrowsClockwise data-icon="inline-start" size={15} weight="duotone" />
+              <ArrowsClockwise data-icon="inline-start" size={15} weight="regular" />
               {t('crash.reload')}
             </Button>
             <Button
@@ -111,7 +111,7 @@ function CrashScreen({ error, onReload }: { error: Error; onReload: () => void }
               variant="outline"
               onClick={() => void Browser.OpenURL(GITHUB_REPO_URL)}
             >
-              <GithubLogo data-icon="inline-start" size={15} weight="duotone" />
+              <GithubLogo data-icon="inline-start" size={15} weight="regular" />
               {t('crash.openRepository')}
             </Button>
           </div>
@@ -140,7 +140,7 @@ function CrashScreen({ error, onReload }: { error: Error; onReload: () => void }
                     title={t('crash.copy')}
                     onClick={() => void copyErrorDetails()}
                   >
-                    <Copy size={14} weight="duotone" />
+                    <Copy size={14} weight="regular" />
                   </Button>
                 </dd>
               </div>

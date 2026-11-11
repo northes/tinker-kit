@@ -625,7 +625,7 @@ export function TaskCenter({
                   />
                 }
               >
-                <Funnel weight="duotone" />
+                <Funnel weight="regular" />
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="min-w-40">
                 <DropdownMenuRadioGroup
@@ -652,7 +652,7 @@ export function TaskCenter({
                   />
                 }
               >
-                <FunnelSimple weight="duotone" />
+                <FunnelSimple weight="regular" />
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="min-w-40">
                 <DropdownMenuGroup>
@@ -697,7 +697,7 @@ export function TaskCenter({
                   />
                 }
               >
-                <GearSix weight="duotone" />
+                <GearSix weight="regular" />
               </PopoverTrigger>
               <PopoverContent align="end" className="w-72" disableAnchorTracking>
                 <PopoverHeader>
@@ -764,7 +764,7 @@ export function TaskCenter({
             <Empty className="min-h-0 flex-1">
               <EmptyHeader>
                 <EmptyMedia variant="icon">
-                  <ListDashes weight="duotone" />
+                  <ListDashes weight="regular" />
                 </EmptyMedia>
                 <EmptyTitle>{t('taskCenter.empty')}</EmptyTitle>
               </EmptyHeader>
@@ -870,7 +870,7 @@ export function TaskCenter({
                                   title={t('taskCenter.openFolder')}
                                   onClick={() => void openTaskFolder(task)}
                                 >
-                                  <FolderSimple weight="duotone" />
+                                  <FolderSimple weight="regular" />
                                 </Button>
                               ) : null}
                               <Badge
@@ -898,7 +898,7 @@ export function TaskCenter({
                                       : void CancelImageTask(task.id)
                                   }
                                 >
-                                  <X weight="duotone" />
+                                  <X weight="regular" />
                                 </Button>
                               ) : null}
                               {canRetry ? (
@@ -909,7 +909,7 @@ export function TaskCenter({
                                   title={t('taskCenter.retry')}
                                   onClick={() => void retryTask(task)}
                                 >
-                                  <ArrowClockwise weight="duotone" />
+                                  <ArrowClockwise weight="regular" />
                                 </Button>
                               ) : null}
                             </div>

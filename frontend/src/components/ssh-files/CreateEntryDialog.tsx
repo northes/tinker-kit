@@ -115,7 +115,7 @@ export function CreateEntryDialog({
             {creating ? (
               <Spinner data-icon="inline-start" />
             ) : (
-              <Icon data-icon="inline-start" weight="duotone" />
+              <Icon data-icon="inline-start" weight="regular" />
             )}
             {t('sshFilesTool.createFolderAction')}
           </Button>

@@ -5,6 +5,7 @@ import {
   ArrowsLeftRight,
   ArrowUpRight,
   CaretDown,
+  CaretDownIcon,
   CaretRight,
   CaretUp,
   CaretUpDown,
@@ -69,6 +70,7 @@ import {
   ToolLayoutToolbar,
   ToolLoadingState,
   ToolSearchField,
+  toolHeaderControlClassName,
   useCheckboxDragSelect,
 } from './shared';
 import {
@@ -131,6 +133,8 @@ import {
   DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from './ui/dropdown-menu';
@@ -799,7 +803,7 @@ export default function SshFilesTool({ active }: Props) {
             {treeLoading.includes(path) ? (
               <Spinner />
             ) : expanded ? (
-              <CaretDown weight="duotone" size={14} />
+              <CaretDown weight="regular" size={14} />
             ) : (
               <CaretRight size={14} />
             )}
@@ -1231,7 +1235,7 @@ export default function SshFilesTool({ active }: Props) {
       {sources.length > 0 ? <SelectSeparator /> : null}
       <SelectItem value={MANAGE_SOURCES_VALUE}>
         <span className="flex items-center gap-2">
-          <GearSix size={14} weight="duotone" />
+          <GearSix size={14} weight="regular" />
           {t('sshFilesTool.manage')}
         </span>
       </SelectItem>
@@ -1303,7 +1307,7 @@ export default function SshFilesTool({ active }: Props) {
             <ToolHeaderField
               label={t('sshFilesTool.source')}
               labelId="ssh-file-source-label"
-              className="min-w-[220px] max-[700px]:w-full"
+              className="max-[700px]:w-full"
             >
               <Select
                 items={sources.map((item) => ({ value: item.id, label: item.name }))}
@@ -1328,7 +1332,7 @@ export default function SshFilesTool({ active }: Props) {
               >
                 <SelectTrigger
                   aria-labelledby="ssh-file-source-label"
-                  className="w-[220px] max-w-full max-[700px]:w-full"
+                  className={toolHeaderControlClassName}
                 >
                   <SelectValue placeholder={t('sshFilesTool.noSource')} />
                 </SelectTrigger>
@@ -1354,77 +1358,69 @@ export default function SshFilesTool({ active }: Props) {
         }
         right={
           <div className="flex min-w-0 flex-wrap items-center gap-2 max-[700px]:w-full max-[700px]:justify-end">
-            <div className="w-[min(28vw,260px)] min-w-[180px] max-[700px]:order-last max-[700px]:w-full">
-              <ToolSearchField
-                value={searchInput}
-                onValueChange={setSearchInput}
-                onSubmit={() => void executeSearch()}
-                onClear={clearSearch}
-                disabled={!sourceUsable || isLoading}
-                placeholder={t('sshFilesTool.searchPlaceholder')}
-                ariaLabel={t('sshFilesTool.search')}
-                clearLabel={t('sshFilesTool.clearSearch')}
-              />
-            </div>
+            <ToolSearchField
+              className={`${toolHeaderControlClassName} max-[700px]:order-last`}
+              value={searchInput}
+              onValueChange={setSearchInput}
+              onSubmit={() => void executeSearch()}
+              onClear={clearSearch}
+              disabled={!sourceUsable || isLoading}
+              placeholder={t('sshFilesTool.searchPlaceholder')}
+              ariaLabel={t('sshFilesTool.search')}
+              clearLabel={t('sshFilesTool.clearSearch')}
+            />
             <DropdownMenu>
               <DropdownMenuTrigger
                 render={
                   <Button
                     variant="outline"
-                    size="sm"
-                    className="h-[30px] max-w-[190px] flex-none px-2 text-[10px]"
+                    className={`${toolHeaderControlClassName} justify-between font-normal`}
                     disabled={!sourceUsable || isLoading}
                     aria-label={t('sshFilesTool.searchOptions')}
                   />
                 }
               >
-                <span className="truncate">
+                <span className="min-w-0 flex-1 truncate text-left">
                   {t('sshFilesTool.searchOptionsSummary', {
                     mode: searchModeLabel,
                     scope: searchScopeLabel,
                   })}
                 </span>
-                <CaretDown weight="duotone" data-icon="inline-end" aria-hidden="true" />
+                <CaretDownIcon
+                  className="pointer-events-none size-4 text-muted-foreground"
+                  data-icon="inline-end"
+                  aria-hidden="true"
+                />
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-64">
                 <DropdownMenuGroup>
                   <DropdownMenuLabel>{t('sshFilesTool.searchMode')}</DropdownMenuLabel>
-                  <DropdownMenuItem onClick={() => setSearchMode('name')}>
-                    <CheckCircle
-                      size={14}
-                      className={searchMode === 'name' ? 'text-primary' : 'invisible'}
-                      aria-hidden="true"
-                    />
-                    {t('sshFilesTool.searchByName')}
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => setSearchMode('content')}>
-                    <CheckCircle
-                      size={14}
-                      className={searchMode === 'content' ? 'text-primary' : 'invisible'}
-                      aria-hidden="true"
-                    />
-                    {t('sshFilesTool.searchByContent')}
-                  </DropdownMenuItem>
+                  <DropdownMenuRadioGroup
+                    value={searchMode}
+                    onValueChange={(value) => setSearchMode(value as 'name' | 'content')}
+                  >
+                    <DropdownMenuRadioItem value="name">
+                      {t('sshFilesTool.searchByName')}
+                    </DropdownMenuRadioItem>
+                    <DropdownMenuRadioItem value="content">
+                      {t('sshFilesTool.searchByContent')}
+                    </DropdownMenuRadioItem>
+                  </DropdownMenuRadioGroup>
                 </DropdownMenuGroup>
                 <DropdownMenuSeparator />
                 <DropdownMenuGroup>
                   <DropdownMenuLabel>{t('sshFilesTool.searchScope')}</DropdownMenuLabel>
-                  <DropdownMenuItem onClick={() => setSearchScope('current')}>
-                    <CheckCircle
-                      size={14}
-                      className={searchScope === 'current' ? 'text-primary' : 'invisible'}
-                      aria-hidden="true"
-                    />
-                    {t('sshFilesTool.searchCurrentDirectory')}
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => setSearchScope('recursive')}>
-                    <CheckCircle
-                      size={14}
-                      className={searchScope === 'recursive' ? 'text-primary' : 'invisible'}
-                      aria-hidden="true"
-                    />
-                    {t('sshFilesTool.searchFromCurrentDirectory')}
-                  </DropdownMenuItem>
+                  <DropdownMenuRadioGroup
+                    value={searchScope}
+                    onValueChange={(value) => setSearchScope(value as 'current' | 'recursive')}
+                  >
+                    <DropdownMenuRadioItem value="current">
+                      {t('sshFilesTool.searchCurrentDirectory')}
+                    </DropdownMenuRadioItem>
+                    <DropdownMenuRadioItem value="recursive">
+                      {t('sshFilesTool.searchFromCurrentDirectory')}
+                    </DropdownMenuRadioItem>
+                  </DropdownMenuRadioGroup>
                 </DropdownMenuGroup>
               </DropdownMenuContent>
             </DropdownMenu>
@@ -1478,7 +1474,7 @@ export default function SshFilesTool({ active }: Props) {
                 disabled={!sourceUsable || isLoading}
                 aria-label={t('sshFilesTool.navigatePath')}
               >
-                <CheckCircle weight="duotone" size={14} />
+                <CheckCircle weight="regular" size={14} />
               </Button>
               <Button
                 type="button"
@@ -1492,7 +1488,7 @@ export default function SshFilesTool({ active }: Props) {
                   setPathEditing(false);
                 }}
               >
-                <XCircle weight="duotone" size={14} />
+                <XCircle weight="regular" size={14} />
               </Button>
             </form>
           ) : (
@@ -1534,7 +1530,7 @@ export default function SshFilesTool({ active }: Props) {
                   setPathEditing(true);
                 }}
               >
-                <PencilSimple weight="duotone" size={14} />
+                <PencilSimple weight="regular" size={14} />
               </Button>
             </>
           )}
@@ -1555,12 +1551,12 @@ export default function SshFilesTool({ active }: Props) {
               ) : (
                 <Star
                   size={14}
-                  weight={isCurrentPathFavorite ? 'fill' : 'duotone'}
+                  weight={isCurrentPathFavorite ? 'fill' : 'regular'}
                   aria-hidden="true"
                 />
               )}
               <span>{t('sshFilesTool.favorites')}</span>
-              <CaretDown weight="duotone" data-icon="inline-end" aria-hidden="true" />
+              <CaretDown weight="regular" data-icon="inline-end" aria-hidden="true" />
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-72 max-w-[calc(100vw-32px)]">
               <DropdownMenuGroup>
@@ -1575,7 +1571,7 @@ export default function SshFilesTool({ active }: Props) {
                         className="pr-8"
                         onClick={() => void openFavorite(favoritePath)}
                       >
-                        <Star size={14} weight="duotone" aria-hidden="true" />
+                        <Star size={14} weight="regular" aria-hidden="true" />
                         <ScrollableText text={favoritePath} />
                       </DropdownMenuItem>
                       <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center rounded-r-md bg-linear-to-r from-transparent via-popover to-popover pl-6 pr-1 opacity-0 group-hover/favorite:via-accent group-hover/favorite:to-accent group-hover/favorite:opacity-100 group-focus-within/favorite:via-accent group-focus-within/favorite:to-accent group-focus-within/favorite:opacity-100 [@media(pointer:coarse)]:opacity-100">
@@ -1591,7 +1587,7 @@ export default function SshFilesTool({ active }: Props) {
                           }
                         >
                           <Trash
-                            weight="duotone"
+                            weight="regular"
                             size={14}
                             className="opacity-60 group-hover/favorite-remove:opacity-80 group-focus-visible/favorite-remove:opacity-80"
                             aria-hidden="true"
@@ -1614,7 +1610,7 @@ export default function SshFilesTool({ active }: Props) {
             onClick={reloadCurrentView}
             aria-label={t('sshFilesTool.refresh')}
           >
-            <ArrowClockwise weight="duotone" size={14} />
+            <ArrowClockwise weight="regular" size={14} />
           </Button>
         </div>
         <ContextMenu>
@@ -1642,7 +1638,7 @@ export default function SshFilesTool({ active }: Props) {
                 className="pointer-events-none absolute inset-2 z-20 flex items-center justify-center rounded-lg border border-dashed border-primary bg-primary/10 px-4 py-3 text-primary opacity-0 group-data-[over=true]/file-drop:opacity-100 group-[.file-drop-target-active]/file-drop:opacity-100"
               >
                 <span className="flex items-center gap-2 text-xs font-medium">
-                  <UploadSimple size={16} weight="duotone" />
+                  <UploadSimple size={16} weight="regular" />
                   {t('fileDrop.release')}
                 </span>
               </div>
@@ -1687,7 +1683,7 @@ export default function SshFilesTool({ active }: Props) {
                 />
               ) : !sourceUsable ? (
                 <div className="flex h-full flex-col items-center justify-center gap-2 p-6 text-center">
-                  <Warning size={30} weight="duotone" className="text-destructive" />
+                  <Warning size={30} weight="regular" className="text-destructive" />
                   <div className="text-sm font-medium text-foreground">
                     {t('sshFilesTool.sshProfileMissing')}
                   </div>
@@ -1697,7 +1693,7 @@ export default function SshFilesTool({ active }: Props) {
                 </div>
               ) : error && !hasSearchResults ? (
                 <div className="flex h-full flex-col items-center justify-center gap-2 p-6 text-center">
-                  <XCircle size={30} weight="duotone" className="text-destructive" />
+                  <XCircle size={30} weight="regular" className="text-destructive" />
                   <div className="text-sm font-medium text-foreground">
                     {t(searchActive ? 'sshFilesTool.searchFailed' : 'sshFilesTool.loadFailed')}
                   </div>
@@ -1707,7 +1703,7 @@ export default function SshFilesTool({ active }: Props) {
                     className="mt-1 h-8 text-xs"
                     onClick={reloadCurrentView}
                   >
-                    <ArrowClockwise weight="duotone" data-icon="inline-start" size={14} />
+                    <ArrowClockwise weight="regular" data-icon="inline-start" size={14} />
                     {t('sshFilesTool.refresh')}
                   </Button>
                 </div>
@@ -1853,7 +1849,7 @@ export default function SshFilesTool({ active }: Props) {
                                 >
                                   <EntryIcon
                                     size={16}
-                                    weight="duotone"
+                                    weight="regular"
                                     className="shrink-0 text-muted-foreground"
                                   />
                                   <span className="min-w-0 truncate">{entry.name}</span>
@@ -1921,7 +1917,7 @@ export default function SshFilesTool({ active }: Props) {
                                 disabled={operationRunning}
                                 onClick={() => void copyPathToClipboard(operationPaths)}
                               >
-                                <Copy size={14} weight="duotone" aria-hidden="true" />
+                                <Copy size={14} weight="regular" aria-hidden="true" />
                                 {t(
                                   operationPaths.length > 1
                                     ? 'sshFilesTool.batchCopyPath'
@@ -1935,7 +1931,7 @@ export default function SshFilesTool({ active }: Props) {
                                 >
                                   <Star
                                     size={14}
-                                    weight={isEntryFavorite ? 'fill' : 'duotone'}
+                                    weight={isEntryFavorite ? 'fill' : 'regular'}
                                     aria-hidden="true"
                                   />
                                   {t(
@@ -1954,7 +1950,7 @@ export default function SshFilesTool({ active }: Props) {
                                 disabled={operationRunning}
                                 onClick={() => requestFileOperation('copy', operationPaths)}
                               >
-                                <Copy size={14} weight="duotone" aria-hidden="true" />
+                                <Copy size={14} weight="regular" aria-hidden="true" />
                                 {t(
                                   operationPaths.length > 1
                                     ? 'sshFilesTool.batchCopy'
@@ -1965,7 +1961,7 @@ export default function SshFilesTool({ active }: Props) {
                                 disabled={operationRunning}
                                 onClick={() => requestFileOperation('move', operationPaths)}
                               >
-                                <ArrowsLeftRight size={14} weight="duotone" aria-hidden="true" />
+                                <ArrowsLeftRight size={14} weight="regular" aria-hidden="true" />
                                 {t(
                                   operationPaths.length > 1
                                     ? 'sshFilesTool.batchMove'
@@ -1976,7 +1972,7 @@ export default function SshFilesTool({ active }: Props) {
                                 disabled={operationRunning}
                                 onClick={() => requestFileOperation('rename', operationPaths)}
                               >
-                                <PencilSimple size={14} weight="duotone" aria-hidden="true" />
+                                <PencilSimple size={14} weight="regular" aria-hidden="true" />
                                 {t(
                                   operationPaths.length > 1
                                     ? 'sshFilesTool.batchRename'
@@ -1988,7 +1984,7 @@ export default function SshFilesTool({ active }: Props) {
                                 disabled={operationRunning}
                                 onClick={() => requestFileOperation('delete', operationPaths)}
                               >
-                                <Trash size={14} weight="duotone" aria-hidden="true" />
+                                <Trash size={14} weight="regular" aria-hidden="true" />
                                 {t(
                                   operationPaths.length > 1
                                     ? 'sshFilesTool.batchDelete'
@@ -2002,7 +1998,7 @@ export default function SshFilesTool({ active }: Props) {
                                 disabled={operationRunning || !archiveSelection}
                                 onClick={() => requestFileOperation('extract', operationPaths)}
                               >
-                                <FileArchive size={14} weight="duotone" aria-hidden="true" />
+                                <FileArchive size={14} weight="regular" aria-hidden="true" />
                                 {t(
                                   operationPaths.length > 1
                                     ? 'sshFilesTool.batchExtract'
@@ -2013,7 +2009,7 @@ export default function SshFilesTool({ active }: Props) {
                                 disabled={operationRunning}
                                 onClick={() => requestFileOperation('compress', operationPaths)}
                               >
-                                <Archive size={14} weight="duotone" aria-hidden="true" />
+                                <Archive size={14} weight="regular" aria-hidden="true" />
                                 {t(
                                   operationPaths.length > 1
                                     ? 'sshFilesTool.batchCompress'
@@ -2024,7 +2020,7 @@ export default function SshFilesTool({ active }: Props) {
                                 disabled={operationRunning}
                                 onClick={() => void downloadSelected(operationPaths)}
                               >
-                                <DownloadSimple size={14} weight="duotone" aria-hidden="true" />
+                                <DownloadSimple size={14} weight="regular" aria-hidden="true" />
                                 {t(
                                   operationPaths.length > 1
                                     ? 'sshFilesTool.batchDownload'
@@ -2052,21 +2048,21 @@ export default function SshFilesTool({ active }: Props) {
                 disabled={!sourceUsable || isLoading}
                 onClick={() => void copyPathToClipboard([currentPath])}
               >
-                <Copy size={14} weight="duotone" aria-hidden="true" />
+                <Copy size={14} weight="regular" aria-hidden="true" />
                 {t('sshFilesTool.copyPath')}
               </ContextMenuItem>
               <ContextMenuItem
                 disabled={!sourceUsable || isLoading}
                 onClick={() => requestCreateEntry('file')}
               >
-                <FilePlus size={14} weight="duotone" aria-hidden="true" />
+                <FilePlus size={14} weight="regular" aria-hidden="true" />
                 {t('sshFilesTool.createFile')}
               </ContextMenuItem>
               <ContextMenuItem
                 disabled={!sourceUsable || isLoading}
                 onClick={() => requestCreateEntry('folder')}
               >
-                <FolderSimplePlus size={14} weight="duotone" aria-hidden="true" />
+                <FolderSimplePlus size={14} weight="regular" aria-hidden="true" />
                 {t('sshFilesTool.createFolder')}
               </ContextMenuItem>
               <ContextMenuItem
@@ -2075,7 +2071,7 @@ export default function SshFilesTool({ active }: Props) {
               >
                 <Star
                   size={14}
-                  weight={isCurrentPathFavorite ? 'fill' : 'duotone'}
+                  weight={isCurrentPathFavorite ? 'fill' : 'regular'}
                   aria-hidden="true"
                 />
                 {t(
@@ -2088,7 +2084,7 @@ export default function SshFilesTool({ active }: Props) {
             <ContextMenuSeparator />
             <ContextMenuGroup>
               <ContextMenuItem disabled={!sourceUsable || isLoading} onClick={reloadCurrentView}>
-                <ArrowClockwise size={14} weight="duotone" aria-hidden="true" />
+                <ArrowClockwise size={14} weight="regular" aria-hidden="true" />
                 {t('sshFilesTool.refresh')}
               </ContextMenuItem>
             </ContextMenuGroup>
@@ -2125,7 +2121,7 @@ export default function SshFilesTool({ active }: Props) {
                     <span>{t('sshFilesTool.activeTasks', { count: activeTasks.length })}</span>
                   </>
                 ) : (
-                  <ListDashes size={14} weight="duotone" aria-hidden="true" />
+                  <ListDashes size={14} weight="regular" aria-hidden="true" />
                 )}
               </button>
             ) : null}
@@ -2335,7 +2331,7 @@ export default function SshFilesTool({ active }: Props) {
             }}
           >
             <div className="flex items-start gap-2 rounded-md border border-warning/30 bg-warning/10 px-3 py-2 text-xs text-warning">
-              <Warning size={16} weight="duotone" className="mt-0.5 shrink-0" />
+              <Warning size={16} weight="regular" className="mt-0.5 shrink-0" />
               <div className="grid min-w-0 gap-2">
                 <p className="m-0 leading-5">{t('sshFilesTool.uploadOverwriteWarning')}</p>
                 <label className="flex min-w-0 items-center gap-2 text-foreground">
@@ -2419,7 +2415,7 @@ export default function SshFilesTool({ active }: Props) {
               {uploadStarting ? (
                 <Spinner data-icon="inline-start" />
               ) : (
-                <UploadSimple weight="duotone" data-icon="inline-start" size={14} />
+                <UploadSimple weight="regular" data-icon="inline-start" size={14} />
               )}
               {t('sshFilesTool.startUpload')}
             </Button>

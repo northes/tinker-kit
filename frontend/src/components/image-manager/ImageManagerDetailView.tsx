@@ -270,7 +270,7 @@ export function ImageManagerDetailView({
             <ToolCanceledState onRetry={onRetry} retryLabel={t('common.retry')} />
           ) : error ? (
             <div className="flex h-auto min-h-0 flex-1 flex-col items-center justify-center gap-2 text-center">
-              <Package size={28} weight="duotone" className="text-muted-foreground" />
+              <Package size={28} weight="regular" className="text-muted-foreground" />
               <div className="text-sm font-medium text-foreground">
                 {t('imageManagerTool.loadFailed')}
               </div>

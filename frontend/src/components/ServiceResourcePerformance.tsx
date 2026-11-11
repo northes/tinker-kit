@@ -15,6 +15,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from './ui/select';
+import { toolHeaderControlClassName } from './shared';
 import { Spinner } from './ui/spinner';
 
 // 资源详情里的性能页展示 CPU、内存、网络与磁盘 I/O，按当前资源过滤监听点。
@@ -117,7 +118,7 @@ export function ServiceResourcePerformance({
               if (value) setRange(value as RangeValue);
             }}
           >
-            <SelectTrigger className="min-w-36">
+            <SelectTrigger className={toolHeaderControlClassName}>
               <SelectValue />
             </SelectTrigger>
             <SelectContent>

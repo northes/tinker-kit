@@ -77,7 +77,7 @@ export function SSHProfileSelect({
         aria-label={t('sshProfiles.title')}
         onClick={() => openManager(value)}
       >
-        <GearSix weight="duotone" />
+        <GearSix weight="regular" />
       </Button>
     </div>
   );

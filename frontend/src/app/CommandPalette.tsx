@@ -112,7 +112,7 @@ export function CommandPalette({
               <CommandGroup heading={group.heading}>
                 {group.items.map((item) => (
                   <CommandItem key={item.id} value={item.id} onSelect={() => run(item)}>
-                    <item.icon size={16} weight="duotone" />
+                    <item.icon size={16} weight="regular" />
                     <span>{item.label}</span>
                   </CommandItem>
                 ))}

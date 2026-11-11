@@ -206,12 +206,12 @@ export function ResourceList({
                 disabled={resourceBusy}
                 onClick={() => onAction(targetID, resource, action)}
               >
-                {action === 'start' ? <Play size={14} weight="duotone" /> : null}
-                {action === 'stop' ? <Pause size={14} weight="duotone" /> : null}
-                {action === 'restart' ? <ArrowCounterClockwise size={14} weight="duotone" /> : null}
-                {action === 'delete' ? <Trash size={14} weight="duotone" /> : null}
-                {action.startsWith('disable') ? <Power size={14} weight="duotone" /> : null}
-                {action === 'update' ? <ArrowsClockwise size={14} weight="duotone" /> : null}
+                {action === 'start' ? <Play size={14} weight="regular" /> : null}
+                {action === 'stop' ? <Pause size={14} weight="regular" /> : null}
+                {action === 'restart' ? <ArrowCounterClockwise size={14} weight="regular" /> : null}
+                {action === 'delete' ? <Trash size={14} weight="regular" /> : null}
+                {action.startsWith('disable') ? <Power size={14} weight="regular" /> : null}
+                {action === 'update' ? <ArrowsClockwise size={14} weight="regular" /> : null}
                 {t(`serviceManagerTool.actions.${action}`)}
               </ContextMenuItem>
             ))}
@@ -219,7 +219,7 @@ export function ResourceList({
               disabled={resourceBusy}
               onClick={() => onPickChange(targetID, resource)}
             >
-              {member ? <Trash size={14} weight="duotone" /> : <Plus size={14} weight="duotone" />}
+              {member ? <Trash size={14} weight="regular" /> : <Plus size={14} weight="regular" />}
               {t(member ? 'serviceManagerTool.unpick' : 'serviceManagerTool.pick')}
             </ContextMenuItem>
           </ContextMenuGroup>
@@ -230,7 +230,7 @@ export function ResourceList({
                 <ContextMenuItem
                   onClick={() => void copyText(resource.id, 'serviceManagerTool.copyIdFailed')}
                 >
-                  <Copy size={14} weight="duotone" />
+                  <Copy size={14} weight="regular" />
                   {t('serviceManagerTool.copyId')}
                 </ContextMenuItem>
                 <ContextMenuItem
@@ -238,14 +238,14 @@ export function ResourceList({
                     void copyText(resource.name || resource.id, 'serviceManagerTool.copyNameFailed')
                   }
                 >
-                  <Copy size={14} weight="duotone" />
+                  <Copy size={14} weight="regular" />
                   {t('serviceManagerTool.copyName')}
                 </ContextMenuItem>
                 <ContextMenuItem
                   disabled={!image}
                   onClick={() => void copyText(image, 'serviceManagerTool.copyImageFailed')}
                 >
-                  <Copy size={14} weight="duotone" />
+                  <Copy size={14} weight="regular" />
                   {t('serviceManagerTool.copyImage')}
                 </ContextMenuItem>
               </ContextMenuGroup>
@@ -315,7 +315,7 @@ export function ResourceList({
             {groupBusy ? (
               <Spinner className="size-3 flex-none" />
             ) : (
-              <Stack className="size-4 flex-none text-muted-foreground" weight="duotone" />
+              <Stack className="size-4 flex-none text-muted-foreground" weight="regular" />
             )}
             <span className="min-w-0 flex-1 truncate">
               {t('serviceManagerTool.composeGroup', { name: item.name })}
@@ -330,13 +330,13 @@ export function ResourceList({
                   disabled={groupBusy}
                   onClick={() => onAction(targetID, resource, action)}
                 >
-                  {action === 'start' ? <Play size={14} weight="duotone" /> : null}
-                  {action === 'stop' ? <Pause size={14} weight="duotone" /> : null}
+                  {action === 'start' ? <Play size={14} weight="regular" /> : null}
+                  {action === 'stop' ? <Pause size={14} weight="regular" /> : null}
                   {action === 'restart' ? (
-                    <ArrowCounterClockwise size={14} weight="duotone" />
+                    <ArrowCounterClockwise size={14} weight="regular" />
                   ) : null}
-                  {action === 'delete' ? <Trash size={14} weight="duotone" /> : null}
-                  {action === 'update' ? <ArrowsClockwise size={14} weight="duotone" /> : null}
+                  {action === 'delete' ? <Trash size={14} weight="regular" /> : null}
+                  {action === 'update' ? <ArrowsClockwise size={14} weight="regular" /> : null}
                   {t(`serviceManagerTool.actions.${action}`)}
                 </ContextMenuItem>
               ))}
@@ -346,9 +346,9 @@ export function ResourceList({
                     `${targetID}|${resourceKey({ runtime: 'docker', id: container.id })}`,
                   ),
                 ) ? (
-                  <Trash size={14} weight="duotone" />
+                  <Trash size={14} weight="regular" />
                 ) : (
-                  <Plus size={14} weight="duotone" />
+                  <Plus size={14} weight="regular" />
                 )}
                 {t(
                   visibleContainers.some((container) =>
@@ -426,7 +426,7 @@ export function ResourceList({
               {standaloneContainers.length ? (
                 <>
                   <div className="flex h-8 items-center gap-2 border-b px-3 text-[10px] font-medium tracking-[0.04em] text-muted-foreground">
-                    <Cube className="size-3.5" weight="duotone" />
+                    <Cube className="size-3.5" weight="regular" />
                     {t('serviceManagerTool.standalone')}
                   </div>
                   {standaloneContainers.map((container: DockerContainer) =>

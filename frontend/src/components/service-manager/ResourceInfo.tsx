@@ -275,13 +275,13 @@ function ContainerInfoView({
                 />
                 {sizeLoading ? (
                   <Button variant="ghost" size="xs" className="text-[10px]" onClick={onCancelSize}>
-                    <XCircle weight="duotone" data-icon="inline-start" size={12} />
+                    <XCircle weight="regular" data-icon="inline-start" size={12} />
                     {t('common.cancel')}
                   </Button>
                 ) : null}
                 {sizeCanceled && !sizeLoading ? (
                   <Button variant="ghost" size="xs" className="text-[10px]" onClick={onRetrySize}>
-                    <ArrowsClockwise weight="duotone" data-icon="inline-start" size={12} />
+                    <ArrowsClockwise weight="regular" data-icon="inline-start" size={12} />
                     {t('common.retry')}
                   </Button>
                 ) : null}
@@ -617,7 +617,7 @@ export function ResourceInfoTab({
         </ScrollArea>
         <div className="flex items-center justify-end border-t px-4 py-2">
           <Button variant="outline" size="sm" disabled={!info} onClick={() => setRawOpen(true)}>
-            <CodeSimple weight="duotone" data-icon="inline-start" />
+            <CodeSimple weight="regular" data-icon="inline-start" />
             {t('serviceManagerTool.detail.viewRaw')}
           </Button>
         </div>

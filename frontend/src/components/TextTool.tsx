@@ -247,7 +247,7 @@ function AffixHistoryCombobox({
                   }}
                 >
                   <Trash
-                    weight="duotone"
+                    weight="regular"
                     size={14}
                     className="opacity-60 group-hover/affix-remove:opacity-80 group-focus-visible/affix-remove:opacity-80"
                     aria-hidden="true"
@@ -531,7 +531,7 @@ export default function TextTool({
                   className="h-7 flex-none gap-1.5 px-2 text-[11px]"
                   onClick={() => void fileDrop.pick()}
                 >
-                  <UploadSimple data-icon="inline-start" weight="duotone" />
+                  <UploadSimple data-icon="inline-start" weight="regular" />
                   {t('textTool.openFile')}
                 </Button>
                 <Label className="min-w-0 gap-1.5 text-[11px] font-normal normal-case tracking-normal text-muted-foreground">

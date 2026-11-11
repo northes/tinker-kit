@@ -1,6 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Copy, GearSix, HashStraight, PencilSimple, Plus, Trash } from '@phosphor-icons/react';
+import {
+  CaretDownIcon,
+  Copy,
+  GearSix,
+  HashStraight,
+  PencilSimple,
+  Plus,
+  Trash,
+} from '@phosphor-icons/react';
 import type { TextGeneratorSource } from '../../bindings/tinkerkit/models';
 import { Button } from './ui/button';
 import { ConfirmDialog } from './ConfirmDialog';
@@ -34,7 +42,9 @@ import {
   ToolLayout,
   ToolLayoutContent,
   ToolLayoutFooter,
+  ToolHeaderField,
   ToolLayoutToolbar,
+  toolHeaderControlClassName,
   type PendingAction,
 } from './shared';
 import {
@@ -188,15 +198,22 @@ export default function TextGeneratorTool({
         <ToolLayoutToolbar
           left={
             <>
-              <div className="grid gap-1.5">
-                <Label className="text-[11px] text-muted-foreground">
-                  {t('textGeneratorTool.source')}
-                </Label>
+              <ToolHeaderField label={t('textGeneratorTool.source')} className="max-[700px]:w-full">
                 <DropdownMenu>
                   <DropdownMenuTrigger
-                    render={<Button variant="outline" className="h-8 min-w-44 justify-between" />}
+                    render={
+                      <Button
+                        variant="outline"
+                        className={`${toolHeaderControlClassName} justify-between font-normal`}
+                      />
+                    }
                   >
-                    {sourceLabel}
+                    <span className="min-w-0 flex-1 truncate text-left">{sourceLabel}</span>
+                    <CaretDownIcon
+                      className="pointer-events-none size-4 text-muted-foreground"
+                      data-icon="inline-end"
+                      aria-hidden="true"
+                    />
                   </DropdownMenuTrigger>
                   <DropdownMenuContent className="min-w-56">
                     <DropdownMenuGroup>
@@ -258,15 +275,15 @@ export default function TextGeneratorTool({
                     <DropdownMenuSeparator />
                     <DropdownMenuItem onClick={() => setManagerOpen(true)}>
                       <span className="flex items-center gap-2">
-                        <GearSix size={14} weight="duotone" />
+                        <GearSix size={14} weight="regular" />
                         {t('textGeneratorTool.manage')}
                       </span>
                     </DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>
-              </div>
-              <div className="grid min-w-72 gap-1.5">
-                <div className="flex items-center justify-between text-[11px] text-muted-foreground">
+              </ToolHeaderField>
+              <div className="grid min-w-72 gap-1">
+                <div className="flex items-center justify-between text-[10px] font-medium text-muted-foreground">
                   <Label id="text-generator-length">{t('textGeneratorTool.length')}</Label>
                   <span className="tabular-nums">{length}</span>
                 </div>
@@ -297,10 +314,9 @@ export default function TextGeneratorTool({
           }
           right={
             <>
-              <Label className="grid gap-1.5 text-[11px] text-muted-foreground">
-                {t('textGeneratorTool.quantity')}
+              <ToolHeaderField label={t('textGeneratorTool.quantity')}>
                 <Input
-                  className="w-24"
+                  className="w-24 text-sm"
                   type="number"
                   min={1}
                   max={1000}
@@ -308,26 +324,24 @@ export default function TextGeneratorTool({
                   onChange={(event) =>
                     setQuantity(Math.min(1000, Math.max(1, Number(event.target.value) || 1)))
                   }
+                  aria-label={t('textGeneratorTool.quantity')}
                 />
-              </Label>
-              <Label className="grid gap-1.5 text-[11px] text-muted-foreground">
-                {t('textGeneratorTool.separator')}
+              </ToolHeaderField>
+              <ToolHeaderField label={t('textGeneratorTool.separator')}>
                 <Input
-                  className="w-28 font-mono"
+                  className="w-28 font-mono text-sm"
                   value={separator}
                   onChange={(event) => setSeparator(event.target.value)}
+                  aria-label={t('textGeneratorTool.separator')}
                 />
-              </Label>
-              <div className="grid gap-1.5">
-                <Label className="text-[11px] text-muted-foreground">
-                  {t('textGeneratorTool.quote')}
-                </Label>
+              </ToolHeaderField>
+              <ToolHeaderField label={t('textGeneratorTool.quote')} className="max-[700px]:w-full">
                 <Select
                   items={quoteItems}
                   value={quote}
                   onValueChange={(value) => setQuote(value as QuoteMode)}
                 >
-                  <SelectTrigger className="w-32">
+                  <SelectTrigger className={toolHeaderControlClassName}>
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -340,7 +354,7 @@ export default function TextGeneratorTool({
                     </SelectGroup>
                   </SelectContent>
                 </Select>
-              </div>
+              </ToolHeaderField>
             </>
           }
         />
@@ -473,7 +487,7 @@ export default function TextGeneratorTool({
                       aria-label={t('common.edit')}
                       onClick={() => setEditing({ ...item })}
                     >
-                      <PencilSimple weight="duotone" />
+                      <PencilSimple weight="regular" />
                     </Button>
                     <Button
                       size="icon-sm"
@@ -482,7 +496,7 @@ export default function TextGeneratorTool({
                       aria-label={t('common.delete')}
                       onClick={() => setDeleteTarget(item)}
                     >
-                      <Trash weight="duotone" />
+                      <Trash weight="regular" />
                     </Button>
                   </div>
                 ))
@@ -518,7 +532,7 @@ export default function TextGeneratorTool({
                     })
                   }
                 >
-                  <Plus weight="duotone" />
+                  <Plus weight="regular" />
                   {t('common.add')}
                 </Button>
               </>

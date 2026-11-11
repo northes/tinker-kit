@@ -176,7 +176,7 @@ function TimeResultRow({
           {...sortable.listeners}
           aria-label={t('timeTool.dragResult', { label })}
         >
-          <DotsSixVertical size={16} weight="duotone" />
+          <DotsSixVertical size={16} weight="regular" />
         </Button>
       )}
       <span className="text-[10px] text-muted-foreground">{label}</span>
@@ -188,7 +188,7 @@ function TimeResultRow({
         <code className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-[13px] text-foreground">
           {value}
         </code>
-        <Copy data-icon="inline-end" size={15} weight="duotone" />
+        <Copy data-icon="inline-end" size={15} weight="regular" />
       </Button>
       {editing && (
         <Button
@@ -198,7 +198,7 @@ function TimeResultRow({
           onClick={onToggle}
           aria-label={t(hidden ? 'timeTool.showResult' : 'timeTool.hideResult', { label })}
         >
-          {hidden ? <Eye size={16} weight="duotone" /> : <EyeClosed size={16} weight="duotone" />}
+          {hidden ? <Eye size={16} weight="regular" /> : <EyeClosed size={16} weight="regular" />}
         </Button>
       )}
     </div>
@@ -363,7 +363,7 @@ export default function TimeTool({
                   <Label className="flex flex-col items-stretch gap-2 font-mono text-[10px] font-medium uppercase tracking-[.04em] text-muted-foreground">
                     <span>{t('timeTool.input')}</span>
                     <div className="flex h-[46px] min-w-0 items-center gap-2.5 rounded-lg border border-border bg-card px-3.5 focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/50">
-                      <Clock size={18} weight="duotone" />
+                      <Clock size={18} weight="regular" />
                       <Input
                         ref={inputRef}
                         className="min-w-0 flex-1 select-text border-0 bg-transparent px-0 py-0 text-[13px] shadow-none focus-visible:ring-0 dark:bg-transparent"
@@ -383,7 +383,7 @@ export default function TimeTool({
                       title={t('timeTool.timezone')}
                       onClick={() => setZonePickerOpen(true)}
                     >
-                      <Globe size={16} weight="duotone" />
+                      <Globe size={16} weight="regular" />
                     </Button>
                     <Button
                       variant="ghost"
@@ -393,7 +393,7 @@ export default function TimeTool({
                       title={t('timeTool.useSystemTimezone')}
                       onClick={applySystemTimeZone}
                     >
-                      <GpsFix size={15} weight="duotone" />
+                      <GpsFix size={15} weight="regular" />
                     </Button>
                   </div>
                 </div>
@@ -443,7 +443,7 @@ export default function TimeTool({
                                   />
                                 }
                               >
-                                <CaretDown weight="duotone" aria-hidden="true" />
+                                <CaretDown weight="regular" aria-hidden="true" />
                               </DropdownMenuTrigger>
                               <DropdownMenuContent align="end">
                                 {group.options.map((option) => (
@@ -566,7 +566,7 @@ export default function TimeTool({
                   </ScrollArea>
                 ) : (
                   <div className="flex h-full min-h-[140px] flex-col items-center justify-center gap-2 text-center text-muted-foreground">
-                    <Clock size={24} weight="duotone" />
+                    <Clock size={24} weight="regular" />
                     <strong className="text-sm font-semibold">{t('timeTool.emptyTitle')}</strong>
                     <span className="text-[11px]">{t('timeTool.emptyHint')}</span>
                   </div>

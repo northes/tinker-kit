@@ -131,7 +131,7 @@ function SortableClock({
           {...attributes}
           {...listeners}
         >
-          <DotsSixVertical size={15} weight="duotone" />
+          <DotsSixVertical size={15} weight="regular" />
         </Button>
         <span className="w-4 flex-none text-center font-mono text-[10px] tabular-nums text-muted-foreground">
           {index}
@@ -353,7 +353,7 @@ export default function RealTimePanel({
               className="flex-none"
               onClick={() => setPickerOpen(true)}
             >
-              <Plus weight="duotone" data-icon="inline-start" size={14} />
+              <Plus weight="regular" data-icon="inline-start" size={14} />
               {t('timeTool.realTime.add')}
             </Button>
             <div className="ml-auto flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
@@ -372,7 +372,7 @@ export default function RealTimePanel({
                 disabled={syncState === 'syncing'}
                 onClick={() => void sync()}
               >
-                <ArrowClockwise size={16} weight="duotone" />
+                <ArrowClockwise size={16} weight="regular" />
               </Button>
               <Button
                 variant="ghost"
@@ -382,7 +382,7 @@ export default function RealTimePanel({
                 title={t('timeTool.realTime.ntpConfigure')}
                 onClick={() => setNtpOpen(true)}
               >
-                <GearSix size={16} weight="duotone" />
+                <GearSix size={16} weight="regular" />
               </Button>
             </div>
           </div>

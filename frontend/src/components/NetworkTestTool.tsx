@@ -41,6 +41,7 @@ import {
   ToolLayoutContent,
   ToolLayoutFooter,
   ToolLayoutToolbar,
+  toolHeaderControlClassName,
 } from './shared';
 import { Input } from './ui/input';
 import { Switch } from './ui/switch';
@@ -675,7 +676,7 @@ export default function NetworkTestTool({ active }: { active: boolean }) {
                     <SelectTrigger
                       disabled={running}
                       aria-labelledby="network-test-protocol-label"
-                      className="w-[184px] max-[700px]:w-full"
+                      className={toolHeaderControlClassName}
                     >
                       <SelectValue />
                     </SelectTrigger>
@@ -708,7 +709,7 @@ export default function NetworkTestTool({ active }: { active: boolean }) {
                     <SelectTrigger
                       disabled={running}
                       aria-labelledby="network-test-source-label"
-                      className="w-[168px] max-w-full"
+                      className={toolHeaderControlClassName}
                     >
                       <SelectValue />
                     </SelectTrigger>
@@ -723,7 +724,7 @@ export default function NetworkTestTool({ active }: { active: boolean }) {
                       <SelectSeparator />
                       <SelectGroup>
                         <SelectItem value={MANAGE_NETWORK_SOURCES}>
-                          <GearSix weight="duotone" />
+                          <GearSix weight="regular" />
                           {t('networkTestTool.source.manage')}
                         </SelectItem>
                       </SelectGroup>
@@ -755,7 +756,7 @@ export default function NetworkTestTool({ active }: { active: boolean }) {
                     autoCorrect="off"
                     spellCheck={false}
                     aria-label={t('networkTestTool.target.label')}
-                    className="font-mono text-xs"
+                    className="font-mono text-sm"
                   />
                 </ToolHeaderField>
                 <ToolHeaderField label={t('networkTestTool.timeout.label')}>
@@ -770,7 +771,7 @@ export default function NetworkTestTool({ active }: { active: boolean }) {
                     }
                     onKeyDown={submitOnEnter}
                     disabled={running}
-                    className="w-[88px] font-mono text-xs"
+                    className="w-[88px] font-mono text-sm"
                     aria-label={t('networkTestTool.timeout.label')}
                   />
                 </ToolHeaderField>
@@ -1412,7 +1413,7 @@ export default function NetworkTestTool({ active }: { active: boolean }) {
                     onClick={importCurlCommand}
                     disabled={running || !curlCommand.trim()}
                   >
-                    <Code weight="duotone" />
+                    <Code weight="regular" />
                     {t('networkTestTool.curl.parse')}
                   </Button>
                 </div>
