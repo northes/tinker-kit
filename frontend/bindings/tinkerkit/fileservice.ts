@@ -106,8 +106,11 @@ export function ReadImageFile(path: string): $CancellablePromise<string> {
     return $Call.ByID(3362603762, path);
 }
 
-export function ReadRemoteTextFile(sourceID: string, remotePath: string): $CancellablePromise<$models.RemoteTextFile> {
-    return $Call.ByID(1553006640, sourceID, remotePath);
+/**
+ * ReadRemoteTextFile 读取远程文本。tailLines 为 0 时读取完整文件；大于 0 时只返回末尾相应行数。
+ */
+export function ReadRemoteTextFile(sourceID: string, remotePath: string, tailLines: number): $CancellablePromise<$models.RemoteTextFile> {
+    return $Call.ByID(1553006640, sourceID, remotePath, tailLines);
 }
 
 /**

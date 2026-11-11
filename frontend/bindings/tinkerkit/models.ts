@@ -716,6 +716,7 @@ export interface RemoteFileOperationResult {
 export interface RemoteTextFile {
     "content": string;
     "revision": string;
+    "truncated": boolean;
 }
 
 /**

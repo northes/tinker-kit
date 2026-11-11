@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import CodeMirror from '@uiw/react-codemirror';
 import { closeCompletion, completeAnyWord, completionStatus } from '@codemirror/autocomplete';
-import { EditorView, keymap } from '@codemirror/view';
+import { EditorView, keymap, ViewPlugin } from '@codemirror/view';
 import { EditorState, type Extension } from '@codemirror/state';
 import { HighlightStyle, StreamLanguage, syntaxHighlighting } from '@codemirror/language';
 import { tags } from '@lezer/highlight';
@@ -44,7 +44,15 @@ import {
 } from './ui/dialog';
 import { Spinner } from './ui/spinner';
 import { toast } from './ui/toast';
-import { formatBackendError } from '../lib/backend-error';
+import { backendErrorKey, formatBackendError } from '../lib/backend-error';
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from './ui/select';
 import '../styles/tools/editor.css';
 
 const prettierParsers: Record<string, string> = {
@@ -71,6 +79,13 @@ const prettierParsers: Record<string, string> = {
   graphql: 'graphql',
 };
 const maxFormatBytes = 128 * 1024;
+const tailLineOptions = [200, 500, 1000, 2000] as const;
+const defaultTailLines = 500;
+
+function nearBottom(view: EditorView) {
+  const scroller = view.scrollDOM;
+  return scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight <= 48;
+}
 const yamlSyntax = syntaxHighlighting(
   HighlightStyle.define([
     { tag: tags.definition(tags.propertyName), color: 'var(--primary)' },
@@ -215,6 +230,10 @@ export function RemoteTextEditorDialog({ sourceID, path, name, onClose, onSaved 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [formatting, setFormatting] = useState(false);
+  const [liveRefresh, setLiveRefresh] = useState(false);
+  const [tailLines, setTailLines] = useState(0);
+  const [truncated, setTruncated] = useState(false);
+  const [tailScroll, setTailScroll] = useState(0);
   const [content, setContent] = useState('');
   const [savedContent, setSavedContent] = useState('');
   const [revision, setRevision] = useState('');
@@ -224,16 +243,42 @@ export function RemoteTextEditorDialog({ sourceID, path, name, onClose, onSaved 
   // 补全消费过的原生 Esc：即使事件继续泄漏到 Dialog 的 document 监听，也不能再打开放弃确认。
   const consumedEscapes = useRef(new WeakSet<Event>());
   const saveRef = useRef(async () => {});
+  const followTailRef = useRef(true);
+  const autoTailRef = useRef(true);
   const dirty = content !== savedContent;
   const formatSupported = Boolean(prettierParsers[extension(name)]);
   const formatTooLarge =
     formatSupported &&
     (content.length > maxFormatBytes || new TextEncoder().encode(content).length > maxFormatBytes);
-  const canFormat = formatSupported && !formatTooLarge;
+  const canFormat = formatSupported && !formatTooLarge && !truncated;
+  const tailItems = useMemo(
+    () => [
+      { value: '0', label: t('sshFilesTool.tailLinesAll') },
+      ...tailLineOptions.map((total) => ({
+        value: String(total),
+        label: t('sshFilesTool.tailLinesLast', { total }),
+      })),
+    ],
+    [t],
+  );
   const extensions = useMemo(
     () => [
       editorLanguage(name),
       EditorView.lineWrapping,
+      ViewPlugin.fromClass(
+        class {
+          private readonly onScroll: () => void;
+          constructor(private readonly view: EditorView) {
+            this.onScroll = () => {
+              followTailRef.current = nearBottom(this.view);
+            };
+            this.view.scrollDOM.addEventListener('scroll', this.onScroll, { passive: true });
+          }
+          destroy() {
+            this.view.scrollDOM.removeEventListener('scroll', this.onScroll);
+          }
+        },
+      ),
       EditorState.languageData.of(() => [{ autocomplete: completeAnyWord }]),
       ...editorCompletions(),
       keymap.of([
@@ -250,30 +295,96 @@ export function RemoteTextEditorDialog({ sourceID, path, name, onClose, onSaved 
   );
 
   useEffect(() => {
-    const request = ReadRemoteTextFile(sourceID, path);
+    const request = ReadRemoteTextFile(sourceID, path, tailLines);
     let active = true;
+    let handedOff = false;
+    setLoading(true);
     void request
       .then((file) => {
         if (!active) return;
         setContent(file.content);
         setSavedContent(file.content);
         setRevision(file.revision);
+        setTruncated(file.truncated);
         setError('');
+        if (tailLines > 0 && followTailRef.current) setTailScroll((value) => value + 1);
       })
       .catch((reason) => {
-        if (active) setError(formatBackendError(reason));
+        if (!active) return;
+        if (
+          autoTailRef.current &&
+          tailLines === 0 &&
+          backendErrorKey(reason) === 'errors.sshFile.textTooLarge'
+        ) {
+          autoTailRef.current = false;
+          handedOff = true;
+          followTailRef.current = true;
+          setTailLines(defaultTailLines);
+          return;
+        }
+        setContent('');
+        setSavedContent('');
+        setRevision('');
+        setTruncated(false);
+        setError(formatBackendError(reason));
       })
       .finally(() => {
-        if (active) setLoading(false);
+        if (active && !handedOff) setLoading(false);
       });
     return () => {
       active = false;
       void request.cancel();
     };
-  }, [sourceID, path]);
+  }, [sourceID, path, tailLines]);
+
+  useEffect(() => {
+    if (!liveRefresh || loading) return;
+    let active = true;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let request: ReturnType<typeof ReadRemoteTextFile> | undefined;
+
+    const refresh = async () => {
+      request = ReadRemoteTextFile(sourceID, path, tailLines);
+      try {
+        const file = await request;
+        if (!active) return;
+        setContent(file.content);
+        setSavedContent(file.content);
+        setRevision(file.revision);
+        setTruncated(file.truncated);
+        setError('');
+        if (followTailRef.current) setTailScroll((value) => value + 1);
+      } catch (reason) {
+        if (!active) return;
+        if (tailLines === 0 && backendErrorKey(reason) === 'errors.sshFile.textTooLarge') {
+          followTailRef.current = true;
+          setTailLines(defaultTailLines);
+          return;
+        }
+        setError(formatBackendError(reason));
+      } finally {
+        if (active) timer = setTimeout(() => void refresh(), 1500);
+      }
+    };
+
+    timer = setTimeout(() => void refresh(), 1500);
+    return () => {
+      active = false;
+      if (timer) clearTimeout(timer);
+      void request?.cancel();
+    };
+  }, [liveRefresh, loading, sourceID, path, tailLines]);
+
+  useEffect(() => {
+    const view = viewRef.current;
+    if (!view || tailScroll === 0) return;
+    view.dispatch({
+      effects: EditorView.scrollIntoView(view.state.doc.length, { y: 'end' }),
+    });
+  }, [tailScroll]);
 
   const save = async () => {
-    if (loading || saving || formatting || !dirty) return;
+    if (truncated || liveRefresh || loading || saving || formatting || !dirty) return;
     setSaving(true);
     setError('');
     try {
@@ -297,7 +408,7 @@ export function RemoteTextEditorDialog({ sourceID, path, name, onClose, onSaved 
   };
 
   const format = async () => {
-    if (!canFormat || formatting || saving || loading) return;
+    if (!canFormat || truncated || formatting || saving || loading || liveRefresh) return;
     setFormatting(true);
     setError('');
     try {
@@ -361,6 +472,9 @@ export function RemoteTextEditorDialog({ sourceID, path, name, onClose, onSaved 
             <DialogDescription className="truncate font-mono text-xs" title={path}>
               {path}
             </DialogDescription>
+            {truncated ? (
+              <p className="text-xs text-muted-foreground">{t('sshFilesTool.tailTruncated')}</p>
+            ) : null}
           </DialogHeader>
           <div className="min-h-0 min-w-0 rounded-md border border-border bg-card">
             {loading ? (
@@ -380,7 +494,7 @@ export function RemoteTextEditorDialog({ sourceID, path, name, onClose, onSaved 
                 height="100%"
                 value={content}
                 onChange={setContent}
-                editable={!saving && !formatting}
+                editable={!truncated && !liveRefresh && !saving && !formatting}
                 onCreateEditor={(view) => {
                   viewRef.current = view;
                   view.contentDOM.setAttribute('aria-label', t('sshFilesTool.editorContent'));
@@ -392,6 +506,44 @@ export function RemoteTextEditorDialog({ sourceID, path, name, onClose, onSaved 
             )}
           </div>
           <DialogFooter>
+            <div className="mr-auto flex min-w-0 flex-wrap items-center gap-2">
+              <Select
+                items={tailItems}
+                value={String(tailLines)}
+                disabled={loading || saving || formatting || dirty}
+                onValueChange={(value) => {
+                  if (value == null) return;
+                  const next = Number(value);
+                  if (!Number.isInteger(next) || next === tailLines) return;
+                  autoTailRef.current = false;
+                  followTailRef.current = true;
+                  setTailLines(next);
+                }}
+              >
+                <SelectTrigger aria-label={t('sshFilesTool.tailLinesLabel')}>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectGroup>
+                    {tailItems.map((item) => (
+                      <SelectItem key={item.value} value={item.value}>
+                        {item.label}
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
+                </SelectContent>
+              </Select>
+              <Button
+                variant={liveRefresh ? 'secondary' : 'outline'}
+                onClick={() => setLiveRefresh((enabled) => !enabled)}
+                disabled={loading || saving || formatting || (!liveRefresh && dirty)}
+                aria-pressed={liveRefresh}
+              >
+                {liveRefresh
+                  ? t('sshFilesTool.stopLiveRefresh')
+                  : t('sshFilesTool.startLiveRefresh')}
+              </Button>
+            </div>
             {error && revision ? (
               <p className="mr-auto self-center text-xs text-destructive" role="alert">
                 {error}
@@ -403,7 +555,7 @@ export function RemoteTextEditorDialog({ sourceID, path, name, onClose, onSaved 
             <Button
               variant="outline"
               onClick={() => void format()}
-              disabled={!canFormat || loading || saving || formatting}
+              disabled={!canFormat || loading || saving || formatting || liveRefresh || truncated}
               title={
                 formatTooLarge
                   ? t('sshFilesTool.formatTooLarge')
@@ -417,7 +569,9 @@ export function RemoteTextEditorDialog({ sourceID, path, name, onClose, onSaved 
             </Button>
             <Button
               onClick={() => void save()}
-              disabled={loading || saving || formatting || !dirty || !revision}
+              disabled={
+                loading || saving || formatting || liveRefresh || truncated || !dirty || !revision
+              }
             >
               {saving ? <Spinner data-icon="inline-start" /> : null}
               {t('common.save')}

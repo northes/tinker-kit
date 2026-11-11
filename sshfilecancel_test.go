@@ -129,7 +129,7 @@ func TestReadRemoteTextFileHonorsCanceledContext(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 	service := stalledSSHFileService(t, cancel)
-	file, err := service.ReadRemoteTextFile(ctx, "source", "/etc/hosts")
+	file, err := service.ReadRemoteTextFile(ctx, "source", "/etc/hosts", 0)
 	if err != nil || file != (RemoteTextFile{}) {
 		t.Fatalf("关闭正在连接的编辑器不能向已取消的 Wails 调用返回错误: %#v, %v", file, err)
 	}
@@ -145,7 +145,7 @@ func TestCanceledFileBindingsDoNotRejectValidationErrors(t *testing.T) {
 	if _, err := service.SearchRemoteFiles(ctx, "missing", "/", "", "invalid", "invalid", false, "canceled"); err != nil {
 		t.Fatalf("已取消的搜索调用不能再返回校验错误: %v", err)
 	}
-	if _, err := service.ReadRemoteTextFile(ctx, "missing", ""); err != nil {
+	if _, err := service.ReadRemoteTextFile(ctx, "missing", "", 0); err != nil {
 		t.Fatalf("已取消的编辑器读取不能再返回校验错误: %v", err)
 	}
 	if _, err := service.GetRemoteCreationTimes(ctx, "missing", []string{"/file"}); err != nil {
@@ -157,7 +157,7 @@ func TestReadRemoteTextFilePreservesDeadlineError(t *testing.T) {
 	service := stalledSSHFileService(t)
 	ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(-time.Second))
 	defer cancel()
-	if _, err := service.ReadRemoteTextFile(ctx, "source", "/etc/hosts"); !errors.Is(err, context.DeadlineExceeded) {
+	if _, err := service.ReadRemoteTextFile(ctx, "source", "/etc/hosts", 0); !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("读取超时不能被当作主动取消: %v", err)
 	}
 }

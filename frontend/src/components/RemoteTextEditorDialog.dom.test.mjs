@@ -113,7 +113,8 @@ function loadModule(file) {
         },
       );
     if (id.endsWith('/ui/toast')) return { toast: { add() {} } };
-    if (id.endsWith('/lib/backend-error')) return { formatBackendError: String };
+    if (id.endsWith('/lib/backend-error'))
+      return { formatBackendError: String, backendErrorKey: () => null };
     if (id.endsWith('/ui/scroll-area'))
       return {
         ScrollArea: forwardRef(({ children, className }, ref) =>
