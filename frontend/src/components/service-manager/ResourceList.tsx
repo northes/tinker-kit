@@ -30,6 +30,7 @@ import {
   ContextMenuTrigger,
 } from '../ui/context-menu';
 import { ScrollArea } from '../ui/scroll-area';
+import { Spinner } from '../ui/spinner';
 import { toast } from '../ui/toast';
 import { ToolCanceledState, ToolEmptyState, ToolLoadingState } from '../shared';
 import {
@@ -158,6 +159,7 @@ export function ResourceList({
       selection.targetID === targetID &&
       resourceKey(selection.resource) === resourceKey(resource);
     const member = pickedKeys.has(`${targetID}|${resourceKey(resource)}`);
+    const resourceBusy = busy.startsWith(`${targetID}|${resourceKey(resource)}:`);
     const running = ['running', 'online', 'active'].includes(status.toLowerCase());
     const nested = resource.runtime === 'docker' && Boolean(resource.group);
     const failed = /failed|dead|exited|errored/i.test(status);
@@ -176,10 +178,14 @@ export function ResourceList({
             />
           }
         >
-          <span
-            aria-hidden="true"
-            className={`size-1.5 flex-none rounded-full ${running ? 'bg-success' : failed ? 'bg-destructive' : 'bg-muted-foreground/45'}`}
-          />
+          {resourceBusy ? (
+            <Spinner className="size-3 flex-none" />
+          ) : (
+            <span
+              aria-hidden="true"
+              className={`size-1.5 flex-none rounded-full ${running ? 'bg-success' : failed ? 'bg-destructive' : 'bg-muted-foreground/45'}`}
+            />
+          )}
           <span className="min-w-0 flex-1">
             <span className="block truncate font-medium">{resource.name || resource.id}</span>
             {description ? (
@@ -197,7 +203,7 @@ export function ResourceList({
                 variant={
                   action === 'delete' || action.startsWith('disable') ? 'destructive' : 'default'
                 }
-                disabled={busy.startsWith(`${targetID}|${resourceKey(resource)}:`)}
+                disabled={resourceBusy}
                 onClick={() => onAction(targetID, resource, action)}
               >
                 {action === 'start' ? <Play size={14} weight="duotone" /> : null}
@@ -210,7 +216,7 @@ export function ResourceList({
               </ContextMenuItem>
             ))}
             <ContextMenuItem
-              disabled={busy.startsWith(`${targetID}|${resourceKey(resource)}:`)}
+              disabled={resourceBusy}
               onClick={() => onPickChange(targetID, resource)}
             >
               {member ? <Trash size={14} weight="duotone" /> : <Plus size={14} weight="duotone" />}
@@ -267,6 +273,7 @@ export function ResourceList({
       resourceKey(selection.resource) === resourceKey(resource);
     const collapsed = !search && collapsedGroups.has(`${targetID}|${item.id}`);
     const running = containers.some((container) => container.status.toLowerCase() === 'running');
+    const groupBusy = busy.startsWith(`${targetID}|${resourceKey(resource)}:`);
     const groupActions = [running ? 'stop' : 'start', 'restart', 'delete', 'update'];
     return (
       <div key={item.id}>
@@ -305,7 +312,11 @@ export function ResourceList({
                 className={`transition-transform ${collapsed ? '-rotate-90' : ''}`}
               />
             </Button>
-            <Stack className="size-4 flex-none text-muted-foreground" weight="duotone" />
+            {groupBusy ? (
+              <Spinner className="size-3 flex-none" />
+            ) : (
+              <Stack className="size-4 flex-none text-muted-foreground" weight="duotone" />
+            )}
             <span className="min-w-0 flex-1 truncate">
               {t('serviceManagerTool.composeGroup', { name: item.name })}
             </span>
@@ -316,7 +327,7 @@ export function ResourceList({
                 <ContextMenuItem
                   key={action}
                   variant={action === 'delete' ? 'destructive' : 'default'}
-                  disabled={busy.startsWith(`${targetID}|${resourceKey(resource)}:`)}
+                  disabled={groupBusy}
                   onClick={() => onAction(targetID, resource, action)}
                 >
                   {action === 'start' ? <Play size={14} weight="duotone" /> : null}

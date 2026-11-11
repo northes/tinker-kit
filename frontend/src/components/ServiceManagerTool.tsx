@@ -518,7 +518,9 @@ export default function ServiceManagerTool({
   };
   const performAction = async (target: string, resource: ServiceResourceRef, action: string) => {
     const key = `${target}|${resourceKey(resource)}:${action}`;
-    const actionLabel = t(`serviceManagerTool.actions.${action}`);
+    const actionLabel = t(
+      `serviceManagerTool.actions.${action.startsWith('update-') ? 'update' : action}`,
+    );
     const resourceLabel = resource.name || resource.id;
     setBusy(key);
     const request = PerformServiceAction({
