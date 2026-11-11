@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next';
 import type { SystemInfo } from '../../bindings/tinkerkit/models';
 import { GetSystemInfo } from '../../bindings/tinkerkit/systeminfoservice';
 import { GetCurrentVersion } from '../../bindings/tinkerkit/updateservice';
+import { isCancelledBindingRejection } from '../lib/fatal-error';
 import { GITHUB_REPO_URL } from '../repositoryUrl';
 import { Button } from './ui/button';
 import { ScrollArea } from './ui/scroll-area';
@@ -182,6 +183,12 @@ export class FatalErrorBoundary extends React.Component<
   };
 
   handleUnhandledRejection = (event: PromiseRejectionEvent) => {
+    // Wails 取消调用后，底层 Promise 若再失败会另起一个无人接收的
+    // CancelledRejectionError。这是取消竞态，不是页面故障。
+    if (isCancelledBindingRejection(event.reason)) {
+      event.preventDefault();
+      return;
+    }
     const error = event.reason instanceof Error ? event.reason : new Error(String(event.reason));
     this.setState({ error });
   };

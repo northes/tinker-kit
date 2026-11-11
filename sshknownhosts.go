@@ -414,30 +414,18 @@ func (s *sshKnownHostStore) confirm(ctx context.Context, hostKeyErr *sshHostKeyE
 	if err := ctx.Err(); err != nil {
 		return false, err
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if err := s.ensureFileLocked(); err != nil {
-		return false, err
-	}
-	checkKnownHost, err := knownhosts.New(s.path)
+	currentErr, keyErr, err := s.currentHostKeyError(hostKeyErr)
 	if err != nil {
 		return false, err
 	}
-	currentErr := checkKnownHost(
-		hostKeyErr.address,
-		sshHostAddress(hostKeyErr.address),
-		hostKeyErr.key,
-	)
 	if currentErr == nil {
 		return true, nil
-	}
-	var keyErr *knownhosts.KeyError
-	if !errors.As(currentErr, &keyErr) {
-		return false, currentErr
 	}
 	if err := ctx.Err(); err != nil {
 		return false, err
 	}
+	// 确认框会等用户操作。这段时间不能占着 known_hosts 锁，
+	// 否则其他 SSH 握手会堵在读指纹上，取消后迟到返回错误并打崩页面。
 	var accepted bool
 	if s.prompt != nil {
 		accepted = s.prompt(hostKeyErr.language, hostKeyErr.address, hostKeyErr.key, keyErr.Want)
@@ -460,10 +448,48 @@ func (s *sshKnownHostStore) confirm(ctx context.Context, hostKeyErr *sshHostKeyE
 	if err := ctx.Err(); err != nil {
 		return false, err
 	}
+	// 等待期间指纹可能已被另一次确认更新，写回前重新核对。
+	currentErr, keyErr, err = s.currentHostKeyError(hostKeyErr)
+	if err != nil {
+		return false, err
+	}
+	if currentErr == nil {
+		return true, nil
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
 	if err := s.replaceLocked(hostKeyErr.address, hostKeyErr.key, keyErr.Want); err != nil {
 		return false, err
 	}
 	return true, nil
+}
+
+func (s *sshKnownHostStore) currentHostKeyError(hostKeyErr *sshHostKeyError) (error, *knownhosts.KeyError, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := s.ensureFileLocked(); err != nil {
+		return nil, nil, err
+	}
+	checkKnownHost, err := knownhosts.New(s.path)
+	if err != nil {
+		return nil, nil, err
+	}
+	currentErr := checkKnownHost(
+		hostKeyErr.address,
+		sshHostAddress(hostKeyErr.address),
+		hostKeyErr.key,
+	)
+	if currentErr == nil {
+		return nil, nil, nil
+	}
+	var keyErr *knownhosts.KeyError
+	if !errors.As(currentErr, &keyErr) {
+		return nil, nil, currentErr
+	}
+	return currentErr, keyErr, nil
 }
 
 func (s *sshKnownHostStore) replaceLocked(

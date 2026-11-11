@@ -240,6 +240,13 @@ func dialSSHClientOnce(ctx context.Context, dial sshHostDialer, address string, 
 	}()
 	select {
 	case result := <-handshake:
+		// 取消和握手失败可能同时就绪。select 任选其一；若此时上下文已取消，
+		// 必须返回 context.Canceled，不能把关闭连接产生的握手错误交回已取消的调用。
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			_ = netConn.Close()
+			closeSSHClient(result.client)
+			return nil, ctxErr
+		}
 		if result.err != nil {
 			_ = netConn.Close()
 			return nil, result.err
@@ -247,6 +254,10 @@ func dialSSHClientOnce(ctx context.Context, dial sshHostDialer, address string, 
 		return result.client, nil
 	case <-ctx.Done():
 		_ = netConn.Close()
+		go func() {
+			result := <-handshake
+			closeSSHClient(result.client)
+		}()
 		return nil, ctx.Err()
 	}
 }

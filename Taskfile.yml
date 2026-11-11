@@ -120,6 +120,11 @@ tasks:
     cmds:
       - node --experimental-strip-types --test frontend/src/components/ssh-files/CreateEntryDialog.test.mjs
 
+  test:fatal-error:
+    summary: Checks cancelled binding rejections are not treated as page crashes
+    cmds:
+      - node --experimental-strip-types --test frontend/src/lib/fatal-error.test.mjs
+
   test:json-repair:
     summary: Checks JSON repair handling
     cmds:

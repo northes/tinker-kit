@@ -430,6 +430,69 @@ func TestSSHKnownHostStoreTrustsAndReplacesHostKey(t *testing.T) {
 	}
 }
 
+func TestHostKeyPromptDoesNotBlockOtherSSHHandshakes(t *testing.T) {
+	_, private, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatalf("生成测试主机密钥失败: %v", err)
+	}
+	key, err := ssh.NewPublicKey(private.Public())
+	if err != nil {
+		t.Fatalf("构造测试主机公钥失败: %v", err)
+	}
+	started := make(chan struct{})
+	release := make(chan struct{})
+	var releaseOnce sync.Once
+	releasePrompt := func() { releaseOnce.Do(func() { close(release) }) }
+	defer releasePrompt()
+	store := &sshKnownHostStore{
+		path: filepath.Join(t.TempDir(), "known_hosts"),
+		prompt: func(string, string, ssh.PublicKey, []knownhosts.KnownKey) bool {
+			close(started)
+			<-release
+			return false
+		},
+	}
+	callback, err := store.callback("zh-CN")
+	if err != nil {
+		t.Fatalf("创建应用 known_hosts 回调失败: %v", err)
+	}
+	host := sshHostAddress("example.test:22")
+	err = callback(string(host), host, key)
+	var hostKeyErr *sshHostKeyError
+	if !errors.As(err, &hostKeyErr) {
+		t.Fatalf("首次连接应返回未知主机挑战，实际错误: %v", err)
+	}
+	done := make(chan struct{})
+	go func() {
+		_, _ = store.confirm(context.Background(), hostKeyErr)
+		close(done)
+	}()
+	select {
+	case <-started:
+	case <-time.After(time.Second):
+		t.Fatal("主机确认没有开始")
+	}
+	otherDone := make(chan error, 1)
+	go func() {
+		_, callbackErr := store.callback("zh-CN")
+		otherDone <- callbackErr
+	}()
+	select {
+	case err := <-otherDone:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(200 * time.Millisecond):
+		t.Fatal("等待主机密钥确认时不能挡住其他 SSH 握手")
+	}
+	releasePrompt()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("主机确认没有结束")
+	}
+}
+
 func TestSSHKnownHostStoreManagesExistingEntries(t *testing.T) {
 	_, private, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {

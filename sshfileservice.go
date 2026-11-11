@@ -475,13 +475,20 @@ func (s *FileService) GetRemoteCreationTimes(ctx context.Context, sourceID strin
 }
 
 // GetRemoteFileEntry 解析收藏路径的当前类型，不读取整个父目录。
-func (s *FileService) GetRemoteFileEntry(ctx context.Context, sourceID, remotePath string) (RemoteFileEntry, error) {
+func (s *FileService) GetRemoteFileEntry(ctx context.Context, sourceID, remotePath string) (entry RemoteFileEntry, err error) {
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	defer func() {
+		// 收藏解析会走同一条 SSH 连接。取消后若再把连接错误交回 Wails，
+		// 已取消的 Promise 会变成未处理的 CancelledRejectionError。
+		if errors.Is(ctx.Err(), context.Canceled) {
+			entry, err = RemoteFileEntry{}, nil
+		}
+	}()
 	_, conn, err := s.sourceSnapshot(sourceID)
 	if err != nil {
 		return RemoteFileEntry{}, err
 	}
-	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
-	defer cancel()
 	session, err := s.acquirePersistentSFTP(ctx, sourceID, conn)
 	if err != nil {
 		return RemoteFileEntry{}, err

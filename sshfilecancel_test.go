@@ -8,6 +8,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"golang.org/x/crypto/ssh"
 )
 
 // startStalledSSHServer 只接受 TCP 连接、从不进行 SSH 握手，用来模拟卡在连接阶段的远端。
@@ -159,5 +161,69 @@ func TestReadRemoteTextFilePreservesDeadlineError(t *testing.T) {
 	defer cancel()
 	if _, err := service.ReadRemoteTextFile(ctx, "source", "/etc/hosts", 0); !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("读取超时不能被当作主动取消: %v", err)
+	}
+}
+
+func TestGetRemoteFileEntryDoesNotRejectCanceledConnect(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	service := stalledSSHFileService(t, cancel)
+	entry, err := service.GetRemoteFileEntry(ctx, "source", "/etc/hosts")
+	if err != nil || entry != (RemoteFileEntry{}) {
+		t.Fatalf("取消正在建立的收藏解析不能向已取消的 Wails 调用返回错误: %#v, %v", entry, err)
+	}
+}
+
+func TestGetRemoteFileEntryAlreadyCanceledDoesNotReject(t *testing.T) {
+	service := stalledSSHFileService(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := service.GetRemoteFileEntry(ctx, "missing", "/etc/hosts"); err != nil {
+		t.Fatalf("已取消的条目解析不能再返回校验错误: %v", err)
+	}
+}
+
+type cancelOnReadConn struct {
+	net.Conn
+	cancel func()
+	once   sync.Once
+}
+
+func (c *cancelOnReadConn) Read(p []byte) (int, error) {
+	c.once.Do(c.cancel)
+	return 0, net.ErrClosed
+}
+
+func (c *cancelOnReadConn) Write(p []byte) (int, error) {
+	c.once.Do(c.cancel)
+	return 0, net.ErrClosed
+}
+
+func TestDialCanceledContextWinsOverHandshakeFailure(t *testing.T) {
+	for attempt := 0; attempt < 40; attempt++ {
+		left, right := net.Pipe()
+		ctx, cancel := context.WithCancel(context.Background())
+		wrapped := &cancelOnReadConn{Conn: right, cancel: cancel}
+		_, err := dialSSHClientVia(ctx, func(context.Context, string) (net.Conn, error) {
+			return wrapped, nil
+		}, "127.0.0.1:22", &ssh.ClientConfig{
+			User:            "deploy",
+			Auth:            []ssh.AuthMethod{ssh.Password("secret")},
+			HostKeyCallback: ssh.InsecureIgnoreHostKey(),
+		})
+		_ = left.Close()
+		_ = right.Close()
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("第 %d 次：取消与握手失败同时发生时必须返回 context.Canceled，实际: %v", attempt, err)
+		}
+	}
+}
+
+func TestGetRemoteFileEntryPreservesDeadlineError(t *testing.T) {
+	service := stalledSSHFileService(t)
+	ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(-time.Second))
+	defer cancel()
+	if _, err := service.GetRemoteFileEntry(ctx, "source", "/etc/hosts"); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("条目解析超时不能被当作主动取消: %v", err)
 	}
 }
