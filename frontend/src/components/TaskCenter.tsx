@@ -43,9 +43,14 @@ import {
 } from '../lib/task-notification-feedback';
 import {
   estimateTaskRemainingSeconds,
+  fileTaskMeasure,
   formatTaskBytes,
   formatTaskDuration,
+  imageTaskMeasure,
+  summarizeTaskMeasures,
+  type TaskMeasure,
 } from '../lib/task-format';
+import { TaskMeasureFill, TaskMeasureReadout } from './TaskMeasureView';
 import { formatBackendError } from '../lib/backend-error';
 import { sourceLabel } from '../lib/local-source';
 import { Badge } from './ui/badge';
@@ -98,8 +103,7 @@ type UnifiedTask = {
   status: string;
   stage: string;
   createdAt: string;
-  completed: number;
-  total: number;
+  measure: TaskMeasure;
   speed?: number;
   error?: string;
   image?: ImageTask;
@@ -120,12 +124,6 @@ export function useTaskCenter() {
 
 const terminal = (status: string) => ['success', 'failed', 'canceled'].includes(status);
 const active = (status: string) => ['queued', 'running', 'scanning', 'conflict'].includes(status);
-const hasByteSpeed = (task: UnifiedTask) =>
-  Boolean(task.file || task.image?.progressUnit === 'bytes');
-const imageValue = (task: ImageTask) =>
-  task.progressUnit === 'bytes' ? task.bytes : task.completed;
-const fileValue = (task: FileTask) => task.completed;
-
 function fileName(task: FileTask) {
   const candidate = task.paths?.[0] || task.current || task.target || '';
   const trimmed = candidate.replace(/[\\/]$/, '');
@@ -157,8 +155,7 @@ function unifiedTasks(images: ImageTask[], files: FileTask[]): UnifiedTask[] {
         status: task.status,
         stage: task.stage,
         createdAt: task.createdAt,
-        completed: imageValue(task),
-        total: task.total,
+        measure: imageTaskMeasure(task),
         error: task.error,
         image: task,
       })),
@@ -173,8 +170,7 @@ function unifiedTasks(images: ImageTask[], files: FileTask[]): UnifiedTask[] {
         status: task.status,
         stage: task.stage,
         createdAt: task.createdAt,
-        completed: fileValue(task),
-        total: task.total,
+        measure: fileTaskMeasure(task),
         error: task.error,
         file: task,
       })),
@@ -277,14 +273,15 @@ export function TaskCenter({
         statuses.current.set(task.id, task.status);
         const time = Date.now();
         const prior = samples.current.get(task.id);
+        const bytes = task.measure.unit === 'bytes' ? task.measure.current : null;
         const rate =
-          prior && time > prior.at
-            ? Math.max(0, ((task.completed - prior.bytes) * 1000) / (time - prior.at))
+          bytes !== null && prior && time > prior.at
+            ? Math.max(0, ((bytes - prior.bytes) * 1000) / (time - prior.at))
             : 0;
         samples.current.set(task.id, {
-          bytes: task.completed,
+          bytes: bytes ?? 0,
           at: time,
-          speed: prior ? prior.speed * 0.55 + rate * 0.45 : rate,
+          speed: bytes !== null && prior ? prior.speed * 0.55 + rate * 0.45 : rate,
         });
       }
     },
@@ -423,25 +420,16 @@ export function TaskCenter({
   const activeTasks = visibleTasks.filter((task) => active(task.status));
   const hasCancelableTasks = allTasks.some((task) => active(task.status));
   const hasFinishedTasks = allTasks.some((task) => !active(task.status));
-  const known = activeTasks.filter(
-    (task) => task.total > 0 && task.image?.type !== 'pull' && !task.image?.totalEstimated,
-  );
-  const hasUnknown = activeTasks.some(
-    (task) => task.total <= 0 || task.image?.type === 'pull' || Boolean(task.image?.totalEstimated),
-  );
-  const total = known.reduce((sum, task) => sum + task.total, 0);
-  const completed = known.reduce((sum, task) => sum + Math.min(task.completed, task.total), 0);
-  const totalProgress = total > 0 ? (completed / total) * 100 : 0;
+  const measureSummary = summarizeTaskMeasures(activeTasks.map((task) => task.measure));
   const totalSpeed = activeTasks.reduce(
-    (sum, task) => sum + (hasByteSpeed(task) ? (task.speed ?? 0) : 0),
+    (sum, task) => sum + (task.measure.unit === 'bytes' ? (task.speed ?? 0) : 0),
     0,
   );
-  const aggregateProgressPercent =
-    activeTasks.length > 0 && !hasUnknown && total > 0 ? Math.min(100, totalProgress) : null;
+  const aggregateProgressPercent = measureSummary.percent;
   const remainingSeconds =
-    activeTasks.length > 0 && !hasUnknown
-      ? estimateTaskRemainingSeconds(Math.max(0, total - completed), totalSpeed)
-      : null;
+    measureSummary.remainingBytes === null
+      ? null
+      : estimateTaskRemainingSeconds(measureSummary.remainingBytes, totalSpeed);
   const footerTimeText = t('taskCenter.remainingTime', {
     duration: remainingSeconds === null ? '—' : formatTaskDuration(remainingSeconds),
   });
@@ -527,25 +515,6 @@ export function TaskCenter({
 
   const statusLabel = (status: string) =>
     t(`taskCenter.status.${status}`, { defaultValue: status });
-  const progressPercent = (task: UnifiedTask) =>
-    task.status === 'success'
-      ? 100
-      : task.image?.type === 'pull' || task.image?.totalEstimated
-        ? null
-        : task.total > 0
-          ? Math.min(100, (task.completed / task.total) * 100)
-          : null;
-  const progressText = (task: UnifiedTask) =>
-    task.image?.progressUnit === 'items'
-      ? t('imageManagerTool.taskProgressCount', {
-          completed: task.image.completed,
-          total: task.image.total,
-        })
-      : task.total > 0
-        ? `${formatTaskBytes(task.completed)} / ${formatTaskBytes(task.total)}`
-        : task.file?.files
-          ? t('taskCenter.filesProgress', { done: task.file.doneFiles, total: task.file.files })
-          : '—';
   const toolOptions = (['all', 'image-manager', 'ssh-files'] as ToolFilter[]).map((value) => ({
     value,
     label: t(`taskCenter.tools.${value}`),
@@ -749,27 +718,7 @@ export function TaskCenter({
               <div style={{ height: virtualizer.getTotalSize(), position: 'relative' }}>
                 {virtualizer.getVirtualItems().map((item) => {
                   const task = visibleTasks[item.index];
-                  const progress = progressPercent(task);
                   const isActive = active(task.status);
-                  const measureText = progressText(task);
-                  const speedText =
-                    isActive && (task.speed ?? 0) > 0 && hasByteSpeed(task)
-                      ? `${formatTaskBytes(task.speed ?? 0)}/s`
-                      : '—';
-                  const remainingTaskSeconds =
-                    isActive &&
-                    task.total > 0 &&
-                    task.image?.type !== 'pull' &&
-                    !task.image?.totalEstimated
-                      ? estimateTaskRemainingSeconds(
-                          Math.max(0, task.total - task.completed),
-                          task.speed ?? 0,
-                        )
-                      : null;
-                  const percentText =
-                    progress === null
-                      ? '—'
-                      : `${progress.toLocaleString(i18n.resolvedLanguage, { maximumFractionDigits: 1 })}%`;
                   const toolName = t(
                     task.tool === 'image-manager'
                       ? 'tools.image-manager.name'
@@ -787,8 +736,6 @@ export function TaskCenter({
                     terminal(task.status) &&
                     ((task.image?.type === 'export' && Boolean(task.image.path)) ||
                       (task.file?.type === 'download' && Boolean(task.file.target)));
-                  const indeterminate = progress === null && isActive;
-                  const fillPercent = indeterminate ? 100 : (progress ?? 0);
                   return (
                     <div
                       key={task.id}
@@ -798,11 +745,7 @@ export function TaskCenter({
                       style={{ transform: `translateY(${item.start}px)` }}
                     >
                       <div className="relative overflow-hidden rounded-lg border border-border bg-card p-3">
-                        <div
-                          aria-hidden="true"
-                          className="absolute inset-y-0 left-0 bg-primary/10 transition-[width] motion-reduce:transition-none"
-                          style={{ width: `${fillPercent}%` }}
-                        />
+                        <TaskMeasureFill measure={task.measure} status={task.status} active={isActive} />
                         <div className="relative">
                           <div className="flex items-start justify-between gap-3">
                             <div className="min-w-0 flex-1">
@@ -884,43 +827,12 @@ export function TaskCenter({
                               ) : null}
                             </div>
                           </div>
-                          <div className="mt-2 grid min-w-0 grid-cols-[minmax(0,1fr)_4rem] items-center gap-x-2 gap-y-1 font-mono text-[10px] tabular-nums text-muted-foreground sm:grid-cols-[10rem_3.5rem_5.5rem_5.5rem]">
-                            <span
-                              className="min-w-0 whitespace-normal sm:whitespace-nowrap"
-                              title={measureText}
-                              aria-label={t('taskCenter.itemProgress', { value: measureText })}
-                            >
-                              {measureText}
-                            </span>
-                            <span
-                              className="text-right"
-                              aria-label={t('taskCenter.itemPercent', { value: percentText })}
-                            >
-                              {percentText}
-                            </span>
-                            <span
-                              className="text-right"
-                              aria-label={t('taskCenter.itemSpeed', { value: speedText })}
-                            >
-                              {speedText}
-                            </span>
-                            <span
-                              className="text-right"
-                              aria-label={t('taskCenter.itemRemaining', {
-                                value:
-                                  remainingTaskSeconds === null
-                                    ? '—'
-                                    : formatTaskDuration(remainingTaskSeconds),
-                              })}
-                            >
-                              {t('taskCenter.itemRemainingShort', {
-                                duration:
-                                  remainingTaskSeconds === null
-                                    ? '—'
-                                    : formatTaskDuration(remainingTaskSeconds),
-                              })}
-                            </span>
-                          </div>
+                          <TaskMeasureReadout
+                            measure={task.measure}
+                            speed={task.speed ?? 0}
+                            status={task.status}
+                            active={isActive}
+                          />
                           {task.error ? (
                             <div
                               className="mt-1 line-clamp-2 break-all text-[10px] text-destructive"

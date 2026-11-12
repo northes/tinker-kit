@@ -38,10 +38,10 @@ import type {
   DockerImageBatchResult,
   ImageImportEntry,
   ImageSource,
-  ImageTask,
   Config as Settings,
 } from '../../bindings/tinkerkit/models';
 import { formatBackendError } from '../lib/backend-error';
+import { imageTaskMeasure, taskMeasurePercent } from '../lib/task-format';
 import { sendSystemNotification } from '../lib/task-notification-feedback';
 import { imageArchitectures } from '../lib/image-architectures';
 import { ConfirmDialog } from './ConfirmDialog';
@@ -987,20 +987,10 @@ export default function ImageManagerTool({
   const activeTasks = visibleTasks.filter(
     (task) => task.status === 'queued' || task.status === 'running',
   );
-  const taskUsesBytes = (task: ImageTask) => task.progressUnit === 'bytes';
-  const taskDone = (task: ImageTask) => (taskUsesBytes(task) ? task.bytes : task.completed);
-  const taskPercent = (task: ImageTask) => {
-    if (task.status === 'success') return 100;
-    // docker pull 在管道下只输出层状态，层数会随发现新层（含“已存在”的层先报完成）
-    // 回退，用 completed/total 会先冲到 100% 再掉回来；拉取改用不确定进度，
-    // 进度文本仍显示已完成的层数。
-    if (task.type === 'pull' || task.totalEstimated) return null;
-    if (task.total <= 0) return null;
-    const percent = (taskDone(task) / task.total) * 100;
-    return Math.min(100, percent);
-  };
   const taskProgress =
-    activeTasks.length === 1 && activeTasks[0].total > 0 ? taskPercent(activeTasks[0]) : null;
+    activeTasks.length === 1
+      ? taskMeasurePercent(imageTaskMeasure(activeTasks[0]), activeTasks[0].status)
+      : null;
   const runBatchExport = async (requestedRows: ImageRow[] = selectedRows) => {
     const imageIDs = requestedRows.map(
       (row) => row.reference || imageExportReference(row.image, unnamed),
