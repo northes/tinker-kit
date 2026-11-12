@@ -1,37 +1,34 @@
 ---
 name: TinkerKit
-description: 融入日常开发工作的静默工具集
+description: 静默、紧凑、可靠的本地开发工作台
 colors:
   primary-light: "oklch(0.205 0 0)"
   on-primary-light: "oklch(0.985 0 0)"
   primary-dark: "oklch(0.922 0 0)"
   on-primary-dark: "oklch(0.205 0 0)"
-  success-green: "oklch(73.29% 0.1941 150.81)"
-  light-success-foreground: "oklch(0.5 0.13 152)"
-  dark-success-foreground: "oklch(0.84 0.17 152)"
-  light-warning-amber: "oklch(78.19% 0.159 72.33)"
-  dark-warning-amber: "oklch(82.03% 0.1392 76.34)"
-  light-warning-foreground: "oklch(0.5 0.115 66)"
-  dark-warning-foreground: "oklch(0.88 0.14 78)"
-  light-info-blue: "oklch(0.52 0.17 256)"
-  dark-info-blue: "oklch(0.72 0.14 254)"
-  light-destructive-red: "oklch(0.577 0.245 27.325)"
-  dark-destructive-red: "oklch(0.704 0.191 22.216)"
-  light-canvas: "oklch(1 0 0)"
-  light-surface: "oklch(1 0 0)"
-  light-surface-secondary: "oklch(0.97 0 0)"
-  light-foreground: "oklch(0.145 0 0)"
-  light-muted-foreground: "oklch(0.556 0 0)"
-  light-border: "oklch(0.922 0 0)"
-  light-ring: "oklch(0.708 0 0)"
-  dark-canvas: "oklch(0.145 0 0)"
-  dark-surface: "oklch(0.205 0 0)"
-  dark-surface-secondary: "oklch(0.269 0 0)"
-  dark-foreground: "oklch(0.985 0 0)"
-  dark-muted-foreground: "oklch(0.708 0 0)"
-  dark-border: "oklch(1 0 0 / 10%)"
-  dark-input: "oklch(1 0 0 / 15%)"
-  dark-ring: "oklch(0.556 0 0)"
+  canvas-light: "oklch(1 0 0)"
+  foreground-light: "oklch(0.145 0 0)"
+  muted-light: "oklch(0.97 0 0)"
+  muted-foreground-light: "oklch(0.556 0 0)"
+  border-light: "oklch(0.922 0 0)"
+  canvas-dark: "oklch(0.145 0 0)"
+  surface-dark: "oklch(0.205 0 0)"
+  secondary-dark: "oklch(0.269 0 0)"
+  foreground-dark: "oklch(0.985 0 0)"
+  muted-foreground-dark: "oklch(0.708 0 0)"
+  border-dark: "oklch(1 0 0 / 10%)"
+  input-dark: "oklch(1 0 0 / 15%)"
+  success: "oklch(73.29% 0.1941 150.81)"
+  success-foreground-light: "oklch(0.5 0.13 152)"
+  success-foreground-dark: "oklch(0.84 0.17 152)"
+  warning-light: "oklch(78.19% 0.159 72.33)"
+  warning-dark: "oklch(82.03% 0.1392 76.34)"
+  warning-foreground-light: "oklch(0.5 0.115 66)"
+  warning-foreground-dark: "oklch(0.88 0.14 78)"
+  info-light: "oklch(0.52 0.17 256)"
+  info-dark: "oklch(0.72 0.14 254)"
+  destructive-light: "oklch(0.577 0.245 27.325)"
+  destructive-dark: "oklch(0.704 0.191 22.216)"
 typography:
   title:
     fontFamily: "-apple-system, BlinkMacSystemFont, system-ui, sans-serif"
@@ -54,9 +51,6 @@ typography:
     fontSize: "16px"
     fontWeight: 400
     lineHeight: 1.6
-motion:
-  duration: "120ms"
-  easing: "ease-out"
 rounded:
   sm: "0.375rem"
   md: "0.5rem"
@@ -78,39 +72,25 @@ components:
     rounded: "{rounded.lg}"
     padding: "0 10px"
     height: "32px"
-  button-primary-hover:
-    backgroundColor: "color-mix(in oklch, {colors.primary-light}, transparent 20%)"
-    textColor: "{colors.on-primary-light}"
-    rounded: "{rounded.lg}"
-    height: "32px"
   button-outline:
-    backgroundColor: "{colors.light-canvas}"
-    textColor: "{colors.light-foreground}"
+    backgroundColor: "{colors.canvas-light}"
+    textColor: "{colors.foreground-light}"
     rounded: "{rounded.lg}"
     height: "32px"
   button-secondary:
-    backgroundColor: "{colors.light-surface-secondary}"
+    backgroundColor: "{colors.muted-light}"
     textColor: "{colors.primary-light}"
     rounded: "{rounded.lg}"
     height: "32px"
-  button-ghost:
-    textColor: "{colors.light-foreground}"
-    rounded: "{rounded.lg}"
-    height: "32px"
-  button-destructive:
-    backgroundColor: "color-mix(in oklch, {colors.light-destructive-red}, transparent 90%)"
-    textColor: "{colors.light-destructive-red}"
-    rounded: "{rounded.lg}"
-    height: "32px"
   input-field:
-    backgroundColor: "{colors.light-canvas}"
-    textColor: "{colors.light-foreground}"
+    backgroundColor: "{colors.canvas-light}"
+    textColor: "{colors.foreground-light}"
     rounded: "{rounded.lg}"
     padding: "0 10px"
     height: "32px"
   tool-action-button:
-    backgroundColor: "{colors.light-canvas}"
-    textColor: "{colors.light-foreground}"
+    backgroundColor: "{colors.canvas-light}"
+    textColor: "{colors.foreground-light}"
     rounded: "{rounded.lg}"
     padding: "0 11px"
     height: "30px"
@@ -118,177 +98,123 @@ components:
 
 # Design System: TinkerKit
 
-<!-- impeccable:design-schema 2 -->
-
 ## Overview
 
-**Creative North Star: "静默工具集（Quiet Toolset）"**
+**Creative North Star: “Quiet Toolset / 静默工具集”**
 
-TinkerKit 是一组融入开发者日常工作的工具：快速、好用、克制、优雅。它采用 Operate 模式——一台长期驻留、随取随用的本地调试仪器，而不是营销页面或展示型界面。用户通过侧栏、命令面板、系统托盘和剪贴板在工具之间切换，界面必须让定位工具、输入数据、执行动作、读取结果这一链路尽可能短。
+TinkerKit 是长期驻留的开发者工作台。它的界面专业、紧凑、可靠：让用户快速定位工具、输入数据、执行动作并读取结果，同时把界面本身留在背景。精确的网格、明确的内容层级和稳定的状态反馈建立秩序；品牌感来自一致的细节，而不是装饰。
 
-视觉世界冷静、直接、高密度。层级由稳定网格、1px 边界、明度差和克制的焦点建立；不使用卡片堆叠、渐变、玻璃拟态或装饰性动效。shadcn/Base UI 的默认浅色与默认深色是仅有的两个主题，由 `frontend/src/styles/globals.css` 的 `data-theme` 变量定义。所有工具、设置与浮层共享同一套语义 token，品牌表达落在精确的间距、字体和状态色上，而不是装饰。
+浅色与深色主题共享同一套语义角色。中性焦点组织操作，状态色只在结果或过程需要被辨认时出现。静态工作区以平面表面和细边界为主，只有真正脱离页面的浮层才表达悬浮层级。
 
 **Key Characteristics:**
-
-- Operate 优先的紧凑工作台，长期驻留、即取即用。
-- 扁平工作面、1px 分隔线、明确的内容作用域，内容直接落在页面上而非卡片里。
-- 浅色 / 深色双主题，共用中性 `primary` 焦点与克制的状态色；自定义主题遵循 `<name>-light` / `<name>-dark` 命名。
-- 系统 UI 字体承载界面，系统等宽字体承载代码、值和技术标签。
-- 统一的自定义滚动条系统（OverlayScrollbars），滚动条只作为定位提示，不争夺注意力。
-- 全项目共用一组状态过渡参数（`--motion-duration` / `--motion-ease`，120ms ease-out），位移过渡另有一组（`--motion-slide-duration` / `--motion-slide-ease`，200ms 带长尾的减速曲线）；动画只用于 Toast 进出场、主题切换揭示、工具页激活淡入、更新胶囊扫光与侧栏选中高亮位移。
+- 面向任务的紧凑桌面工作台，优先保证扫描与操作效率。
+- 明度、细边界和留白建立层级，避免内容卡片化堆叠。
+- 系统 UI 字体用于界面，系统等宽字体用于代码、值和技术标签。
+- 浅色与深色主题共享语义 token，状态色承担明确且有限的含义。
 
 ## Colors
 
-色彩以低色度中性背景组织长时间工作。`primary` 在浅色主题为近黑、深色主题为近白，承担焦点、选中和主操作；绿色、琥珀、红色只承担结果状态。完整运行时主题值只由 `frontend/src/styles/globals.css`（`:root[data-theme='default-light' | 'default-dark']`）定义，前置 token 是其提取快照。
+中性黑白构成界面主体；绿、琥珀、蓝、红作为受限的语义信号。运行时完整色值由 `frontend/src/styles/globals.css` 中的主题变量提供，前置 token 是当前实现的提取快照。
 
 ### Primary
-
-- **Neutral Focus：** 浅色主题 `--primary` 为近黑 `oklch(0.205 0 0)`、深色主题为近白 `oklch(0.922 0 0)`，用于焦点环、选中、光标与主动作；`--primary-foreground` 提供高对比前景。
+- **中性焦点（浅色）**：近黑色承担浅色主题的主操作、选中与键盘焦点；前景使用高对比浅色。
+- **中性焦点（深色）**：近白色承担深色主题的主操作、选中与键盘焦点；前景使用深色。
 
 ### Secondary
-
-- **Success Green（`--success`，`oklch(73.29% 0.1941 150.81)`）：** 仅用于成功结果、差异新增与有效状态；填充、圆点、进度条用 `--success`，浅色底上的文本用 `--success-foreground`。
-- **Warning Amber（`--warning`：浅色 `oklch(78.19% 0.159 72.33)` / 深色 `oklch(82.03% 0.1392 76.34)`）：** 仅用于警告、需要注意但不阻断的状态；琥珀底上的文本用 `--warning-foreground`。
-- **Info Blue（`--info`：浅色 `oklch(0.52 0.17 256)` / 深色 `oklch(0.72 0.14 254)`）：** 状态色中唯一的非结果色，只表示"进行中/排队中"，不表达成功或失败。
-- **Danger Red（`--destructive`：浅色 `oklch(0.577 0.245 27.325)` / 深色 `oklch(0.704 0.191 22.216)`）：** 仅用于错误、差异删除和破坏性动作。
-
-**The Status Token Rule.** 状态色只能来自 `--success` / `--warning` / `--info` / `--destructive` 及其 `-foreground`；禁止在组件里使用 Tailwind 调色板类（`emerald-500`、`amber-600`、`blue`、`neutral-950` 等）或 `ui/badge` 之外的调色板变体，否则浅深两套主题下的对比度会立刻失效。状态识别必须配合文字、图标或结构变化，不能只依赖颜色。
+- **清晰绿**：成功结果、有效状态和差异新增；浅色底上的文字使用对应深色前景 token。
+- **琥珀提示**：需要留意但不阻断的警告状态；文字使用与主题匹配的前景 token。
+- **过程蓝**：只表示进行中或排队中的信息状态，不表示成功或失败。
+- **错误红**：错误结果、差异删除和破坏性操作。
 
 ### Neutral
+- **画布与工作面**：浅色主题以白色为底；深色主题以深灰画布和稍亮工作面区分层级。
+- **正文与辅助文字**：使用当前主题的 foreground 与 muted-foreground，保持主要信息清楚、辅助信息退后。
+- **结构边界与输入边界**：使用主题 border、input 和 ring token，不在消费组件中另造中性色。
 
-- **Canvas / Surface：** 浅色为纯白画布与白色工作面；深色为 `oklch(0.145 0 0)` 画布与 `oklch(0.205 0 0)` 工作面，次级表面为 `oklch(0.269 0 0)`。
-- **Foreground / Muted / Border / Input / Ring：** 正文、辅助信息、1px 结构边界、输入边界与焦点环都必须使用当前主题对应 token，不直接写颜色常量。
-- **Overlay：** 浮层使用当前主题的实体表面（`--popover`）与 `ring-1 ring-foreground/10`，保持与页面内容的可读分离。
+**The Single Theme Authority Rule.** 完整运行时主题值只定义在 `globals.css`；组件消费语义 token，不自行建立色板或用硬编码颜色绕过主题。
 
-**The Single Theme Authority Rule.** `globals.css` 是完整 OKLCH 主题变量的唯一运行时权威；消费层不得建立另一套色板，不得用硬编码颜色绕过它。
-
-**The Derived Token Ownership Rule.** shadcn/Base UI 与 Tailwind v4 负责 hover、soft colors、二级边框、半径阶梯等派生 token；项目不得用同名变量覆盖，只能消费。
-
-**The One Primary Rule.** 每个动作作用域最多一个 primary，且位于动作序列最右端；状态色只随结果出现，且必须配合文字或图标，不能只靠颜色。
+**The Status Token Rule.** 状态只使用 success、warning、info、destructive 语义 token，并同时配合文字、图标或结构变化；不能只靠颜色传达结果。
 
 ## Typography
 
-界面字体走系统 UI 字体栈（macOS 上即 `-apple-system` 系统字体），不加载仓库字体文件。代码、计量值、分组标签和技术元数据使用系统等宽字体栈（`SF Mono / JetBrains Mono / Menlo / Monaco`）。
+**Display Font:** 系统 UI 字体栈（`-apple-system, BlinkMacSystemFont, system-ui, sans-serif`）
+**Body Font:** 系统 UI 字体栈（`-apple-system, BlinkMacSystemFont, system-ui, sans-serif`）
+**Label/Mono Font:** 系统等宽字体栈（`SF Mono, JetBrains Mono, Menlo, Monaco, monospace`）
 
-**Character:** 界面用系统 UI 字体保持中性、可读、贴近桌面应用；等宽字体只出现在编辑器、路径、时间值和结构化数据上，形成清晰的技术层与界面层分工。
+**Character:** 界面文字紧凑、中性，贴近桌面工具的阅读习惯。等宽字体为代码与技术数据提供稳定对齐，不用于替代普通界面文案。
 
 ### Hierarchy
+- **Title**（600，19px，1.25 行高）：工具页与设置页标题。
+- **Body**（400，12px，1.6 行高）：导航、设置项和常规说明。
+- **Label**（500，10px，1 行高，0.04em 字距）：字段标签、编辑区标签和元信息。
+- **Code**（400，16px，1.6 行高）：编辑器内容、代码与结构化值；编辑器字号可由用户设置。
 
-- **Title：** 19px、600、1.25 行高，用于工具页与设置页标题（`ToolLayoutHeader`），可带 10px 辅助说明。
-- **Body：** 12px、常规字重、1.6 行高，用于导航、设置项与常规信息。
-- **Label：** 10px、500、`0.04em` 字距，用于编辑区标签、分组和元信息；必要时大写。
-- **Code：** 等宽字体，基准字号由 `--code-editor-font-size` 控制（默认 16px，用户可在设置中调整），行高 1.6。
-
-**The Technical Voice Rule.** 等宽字体只表达代码、值、计量和短标签，不替代界面正文。
+**The Technical Voice Rule.** 等宽字体只表达代码、值、计量和短标签；界面说明使用系统 UI 字体。
 
 ## Layout
 
-应用壳为两行网格：38px 原生拖拽标题栏（macOS 27 起系统红绿灯区域更高，切到 `data-titlebar-variant='tall'` 时标题栏升至 52px）加自适应工作区。工作区由侧栏与内容区组成：完整侧栏 `232px`、图标侧栏 `56px`、隐藏 `0`。
+应用壳采用桌面两行网格：原生标题栏通常为 38px，在 macOS 高标题栏模式下为 52px；工作区由侧栏和内容区组成，侧栏可为 232px、56px 或隐藏。工具页统一采用 Header / Toolbar / Content / Footer 的四行骨架，内容区由内部编辑器或列表负责滚动。
 
-工具页和长页面统一使用 `ToolLayout`：`grid-rows-[auto_auto_minmax(0,1fr)_auto]` 的 Header / Toolbar（可选）/ Content / Footer（可选）骨架。固定 `ToolLayoutContent` 不滚动，内部编辑器、表格自行滚动；需要整页滚动的场景（设置页分类、对话框表单）在 `ToolLayoutContent` 内部放 `ScrollArea`，并预留 `padding-inline-end: var(--overlay-scrollbar-size)`。工具页常驻挂载以保留编辑器测量、滚动与撤销状态。
+工具页内边距通常为顶部 20px、水平 28px、底部 16px；宽度不超过 700px 时收至水平 18px、顶部 14px。常用间距节奏为 4、6、8、12、16、20、24px。内容直接使用页面工作面；只有真实集合或确有独立边界的区域才使用容器包裹。
 
-页面内边距为 20px 顶部、28px 水平、16px 底部（`px-7 pt-5 pb-4`）；700px 以下收缩为 18px 水平、14px 顶部。间距节奏为 4、6、8、12、16、20、24px。底部 `ToolActionBar` 右对齐、6px 间距、控件高 30px，窄窗口允许自然换行但不压缩控件。
-
-**The Working Surface Rule.** 工具内容直接落在页面工作面上；除统计组等真实集合外，不用独立圆角卡片包装每一块内容。
-
-**The Resident Mount Rule.** 工具页切换不卸载编辑器；隐藏工具使用 `visibility: hidden` 与绝对定位保留尺寸与状态，而不是 `display: none`。
+**The Working Surface Rule.** 工具内容落在页面工作面上；避免把每个区域都装进独立圆角卡片。
 
 ## Elevation & Depth
 
-系统扁平优先。静态工具面、编辑器、表格和设置分组不使用阴影；深度由背景/表面明度差、1px 边界和遮罩建立。只有脱离文档流的浮层（命令面板、Popover、Select、Dialog、AlertDialog、Toast）使用结构性阴影与 `ring-1`，表面保持实色，不使用 blur 或玻璃效果。
+系统扁平优先。静态工作区不使用阴影；通过背景明度差、细边界和内容分组传达层级。命令面板、菜单、Popover、Dialog 和 Toast 等脱离文档流的浮层使用实体表面、细环线和紧凑结构阴影，明确表达遮挡关系。
 
 ### Shadow Vocabulary
+- **结构浮层**（`--shadow-md` / `--shadow-lg`）：只用于确实悬浮在任务内容之上的浮层和瞬时通知。
 
-- **None：** 静态工作面使用 `none`。
-- **Overlay（`--shadow-md` / `--shadow-lg`）：** 浮层使用 shadcn 派生的紧凑结构阴影配合 `ring-1 ring-foreground/10`，只表达遮挡关系，不作为装饰。
-- **Toast（`--shadow-lg`）：** 仅在瞬时通知上使用。
-
-**The Flat-by-Default Rule.** 静态内容必须保持扁平；阴影只证明浮层确实悬浮在当前任务之上。
-
-## Motion
-
-过渡参数定义在 `frontend/src/styles/foundation.css`，分两组：状态过渡 `--motion-duration: 120ms` 与 `--motion-ease: ease-out`，位移过渡 `--motion-slide-duration: 200ms` 与 `--motion-slide-ease: cubic-bezier(0.32, 0.72, 0, 1)`。`index.css` 的 `@theme` 把状态过渡绑定到 Tailwind 的 `--default-transition-duration` / `--default-transition-timing-function`，因此 `transition-*` 工具类不写 `duration-*` 就自动取这组值；独立 CSS 文件（`fileDrop.css`、`json.css`、`editor.css`）直接引用这两个变量。新增过渡只描述被改变的属性，不引入新的时长或缓动。
-
-**允许的动画只有五种：** Toast 进出场、主题切换揭示（`::view-transition-old(root)` 遮罩）、工具页激活的透明度淡入（`Reveal`）、更新胶囊的扫光（`UpdatePill.css` 的渐变位移，产品要求保留）、侧栏选中高亮的位移（选中背景随当前项平移，只过渡 `transform`）。其余状态变化即时发生，不增加位移、缩放或持续动效，并且仍要尊重 `prefers-reduced-motion`。
-
-**The Single Motion Scale Rule.** 任何过渡都必须落在 `--motion-duration` / `--motion-ease`（状态过渡）或 `--motion-slide-duration` / `--motion-slide-ease`（位移过渡）上；禁止在组件里写 `duration-200`、`120ms ease`、`160ms` 之类的独立时长。位移那一组只服务侧栏选中高亮的滑动——整块色块平移需要更长的行程时间和长尾减速才不像跳变，状态型过渡不共用。`ui/*` 里 shadcn 自带的过渡属于官方默认，不在此约束内，也不得为单个调用点覆盖。
+**The Flat-by-Default Rule.** 静态内容保持扁平；阴影只用于说明浮层与页面之间的遮挡关系。
 
 ## Shapes
 
-主题基础圆角为 `0.625rem`（`--radius`）。按钮、输入、侧栏项、浮层统一消费基础圆角（`rounded-lg`）；更小的 `radius-sm`（0.375rem）、`radius-md`（0.5rem）等由 `index.css` 的 `@theme inline` 从基础圆角按比例派生，项目只消费、不另立阶梯。编辑器与差异面板使用细边框加派生圆角；页面结构本身不做大面积圆角裁切。
+基础圆角为 0.625rem，控件消费由基础半径派生的阶梯。边界通常为 1px；页面结构本身保持方正、轻量，不用大面积圆角裁切。浮层使用实体表面与边界分离背景，输入框则保持透明或主题输入底色。
 
-**The Single Radius Authority Rule.** 圆角只来自 `--radius` 及其派生阶梯，禁止为单个组件引入独立圆角值。
+**The Single Radius Authority Rule.** 圆角来自 `--radius` 及其派生阶梯；组件不得另立独立半径值。
 
 ## Components
 
+组件气质克制、紧凑、清晰。交互状态使用主题色、边界和焦点环表达，并保留 Base UI / shadcn 的键盘与语义行为。
+
 ### Buttons
+- **Shape：** 柔和小圆角（0.625rem），常规控件高 32px。
+- **Primary：** 中性主色底与高对比前景；常规按钮水平内边距约 10px。
+- **Outline：** 主题边界和工作面底色，hover 转为 muted 表面。
+- **Secondary / Ghost：** 次级表面或无底色，hover 以 muted 提示可操作性。
+- **Focus：** 使用 ring token 的可见焦点环；禁用态保留布局并降低可用性表现。
+- **工具动作：** 工具栏和底部动作栏高 30px、11px 内边距；使用图标加文字，图标按钮仅用于语义明确且空间受限的标题栏入口。
 
-- **Shape：** 默认高 32px（`h-8`）、圆角 `rounded-lg`、11px 水平内边距、`text-sm`；图标按钮为正方形（`icon-sm` 28px）。
-- **Primary：** `bg-primary text-primary-foreground`，hover 为 `bg-primary/80`；每个作用域最多一个，位于动作序列最右端。
-- **Outline：** `border-border bg-background`，hover 提升为 `bg-muted`；深色下使用 `border-input bg-input/30`。
-- **Secondary：** `bg-secondary text-secondary-foreground`，hover 混入少量 foreground。
-- **Ghost：** 无边框，hover 使用 `bg-muted`。
-- **Destructive：** `bg-destructive/10 text-destructive`，只用于破坏性动作，并由确认对话框承接二次确认。
-- **Tool Action Button（header 工具栏与 footer 动作栏）：** 两处共用同一套标准：高 30px、`px-[11px]`、`text-[11px]`，图标 14px `weight="regular"` 置于文字前，动作永远使用「图标 + 文字」。footer 由 `ToolActionBar` 右对齐渲染，header 由 `ToolActionButton` 渲染，variant 映射统一为 `primary → default`、`secondary → outline`、`tertiary → ghost`、`danger → destructive`。下拉型动作（`menu` / `split`）在文字右侧追加 12px `CaretDown`；下拉菜单项本身保持纯文字。工具页内的空态与错误态动作（重试、取消）同样用 `ToolActionButton`，不再手写 30px 尺寸类。
-- **Tool Icon Button：** 纯图标按钮（`ToolIconButton`）只在语义唯一且空间受限的 header 入口使用，如高级设置、刷新；必须为 30×30 正方形、ghost 变体，并提供 `aria-label` 与 `title`。
-- **尺寸阶梯：** 动作控件只有四档，按作用域选用，不手写 `h-*` 高度。① 30px：header 工具栏、footer 动作栏、空态/错误态动作（`ToolActionButton` / `ToolIconButton`）；② 32px：常规按钮与输入框（`size="default"` / `h-8`），以及输入行附属图标控件（`size="icon"`，如时间工具的时区与系统时区）；③ 28px：表格行、列表行内的紧凑动作（`size="sm"`），只可调整字号与内边距；④ 24px：字段内清除/搜索与面板内联的密集控件（`size="icon-xs"` / `size="xs"`）。
-
-### Badges
-
-- **单一尺寸：** 状态与计数徽标共用 `ui/badge` 的基准样式（高 20px、10px 字号），调用点不再覆盖 `h-*` / `text-[9px]` 一类的尺寸类。
-- **语义变体：** `variant` 只用 `secondary` / `outline` / `destructive` / `success` / `warning` / `info`，其颜色全部映射到状态 token。
+### Chips
+- **Style：** 状态徽标高 20px，使用紧凑文字、胶囊形轮廓和语义化状态变体。
+- **State：** 成功、警告、进行中和错误分别使用对应状态 token；必要时同时显示文字说明。
 
 ### Inputs / Fields
-
-- **Style：** 高 32px（`h-8`）、`rounded-lg`、`border-input`、透明背景（深色下 `bg-input/30`）、10px 水平内边距；文本使用 foreground，placeholder 使用 `text-muted-foreground`。
-- **搜索框：** 列表与工具栏搜索统一用 `ToolSearchField`：与 header 里的 Select 同为高 32px、`text-sm`，`pl-8` 预留 `left-2.5` 的 14px regular 放大镜、右侧 `size="icon-xs"` 清空按钮；回车提交、Esc 清空。并排的选择与搜索共用 `toolHeaderControlClassName`（宽 220px）。除面板内联的紧凑搜索（高 28px，如 JSON 结构面板的路径搜索）外，不另行手写搜索框高度与图标偏移。
-- **Focus：** `focus-visible:border-ring` 加 3px `ring-ring/50`，不保留 CodeMirror 原生虚线 outline。
-- **Disabled：** 保持布局，背景降为 `bg-input/50`、透明度 0.5，并使用不可用光标。
+- **Style：** 32px 高，约 10px 水平内边距，圆角随基础半径；背景透明或采用当前主题的 input 表面。
+- **Focus：** ring 与边界颜色共同标记焦点。
+- **Error / Disabled：** 错误使用 destructive 语义；禁用态保留布局并减弱表面与文字。
 
 ### Navigation
+- **Style：** 侧栏项目使用 12px 系统文字、17px 图标和紧凑间距；完整侧栏、图标侧栏与隐藏模式适配不同工作区宽度。
+- **State：** 默认态低对比，hover 使用 muted 表面，当前页使用 primary 与其前景色。
 
-- 侧栏是紧凑索引：12px 文本、17px duotone 图标（`[&_svg]:size-[17px]`）、图标与文字间距 10px、项内 `px-2 py-1.5`、项间 `gap-0.5`（2px）。
-- 默认态为 `text-muted-foreground`，hover 使用 `bg-muted`，当前页使用 `bg-primary text-primary-foreground`。
-- 标题栏保留 macOS 交通灯空间与拖拽区，显式交互控件标记为不可拖拽。
-
-### Editors and Tool Layout
-
-- CodeMirror 使用主题 surface、border、foreground 与状态 token，字号由 `--code-editor-font-size` 控制。
-- `ToolLayout` 是所有工具页与设置页的共享 Header / Toolbar / Content / Footer 骨架；固定 Content 不滚动，需要滚动的内容在 Content 内部自行用 `ScrollArea`。
-- 状态色必须同时配合文字、图标或结构变化，不能只依赖颜色。
-
-### Scrollbars
-
-- 自定义滚动条由 OverlayScrollbars 统一接管，命中区与预留宽度同为 `--overlay-scrollbar-size`（12px），视觉滑块 6px 圆角，颜色取 `muted-foreground` 42%，hover/active 提升到 68%。
-- 默认 `autoHide: 'leave'`：指针移入或滚动时出现，移出后隐藏。
-- 需要真实滚动元素 ref 的虚拟化列表（`@tanstack/react-virtual`）通过 `ScrollArea` 的 `onViewport` 指向 viewport，而不是宿主。
-- 浮层与命令面板内部滚动、CodeMirror 的 `.cm-scroller` 保持原生滚动行为；浮层（含 Dialog 表单、Popover 列表、DropdownMenu 内容）一律加 `.no-scrollbar`，隐藏滚动条但保留滚动能力。
-- 原生滚动条只允许出现在 CodeMirror 滚动层、可调整大小的 textarea 与页面内容区；其余容器走 `ScrollArea`。
-
-### Overlays
-
-- 命令面板、Popover、Select、ContextMenu、Dialog、AlertDialog 使用实体 overlay 表面、1px 边界与结构性阴影；禁止透明玻璃。
-- 浮层保留 shadcn/Base UI wrapper 的焦点、键盘和语义行为，项目样式只调整视觉消费层。
+### Overlay Surface
+- **Style：** 实色 popover 表面、细环线和结构阴影；内容在自身滚动区域内滚动，不使用玻璃效果。
 
 ## Do's and Don'ts
 
 ### Do:
-
-- **Do** 只提供 shadcn 默认浅色和默认深色两个主题，并让所有组件从当前主题语义 token 取色。
-- **Do** 用布局、1px 分隔线、明度差和明确作用域组织高密度工具界面。
-- **Do** 保持每个操作作用域最多一个 primary，并让清空到主要结果的顺序由左向右推进。
-- **Do** 让 header 工具栏与 footer 动作栏的动作按钮统一为「图标 + 文字」，由 `ToolActionBar` / `ToolActionButton` 渲染；纯图标只用于语义唯一的 header 入口。
-- **Do** 使用系统 UI 字体和系统等宽字体，保持 4–24px 的既有间距节奏。
-- **Do** 让滚动条统一走 `ScrollArea`（OverlayScrollbars），并复用 `--overlay-scrollbar-size`，不要另建滚动条样式。
-- **Do** 过渡统一取 `--motion-duration` / `--motion-ease`，侧栏选中高亮的滑动取同组的 `--motion-slide-duration` / `--motion-slide-ease`；动画只保留 Toast 进出场、主题切换揭示、工具页激活淡入、更新胶囊扫光与侧栏选中高亮位移，并继续尊重 `prefers-reduced-motion`。
+- **Do** 使用主题语义 token 表达表面、文字、边界、焦点与状态。
+- **Do** 通过网格、1px 边界、明度差和内容分组组织高密度工具界面。
+- **Do** 在每个操作作用域保留一个主要动作，并让它位于动作序列末端。
+- **Do** 将系统 UI 字体用于界面，将系统等宽字体用于代码和技术值。
+- **Do** 复用现有圆角、间距和控件尺寸阶梯。
+- **Do** 让工具页维持固定内容骨架，由内部滚动容器承载长列表与编辑器。
 
 ### Don't:
-
-- **Don't** 恢复 Graphite、Paper、Pine、Ink 或任何新的命名色板。
-- **Don't** 覆盖 shadcn/Base UI 的同名派生 token，尤其是 hover、soft color、二级边框与半径阶梯。
-- **Don't** 使用渐变、玻璃拟态、装饰性阴影、营销式大标题或卡片堆叠。
-- **Don't** 用硬编码颜色绕过 `globals.css`，也不要把项目语义适配 token 当作独立主题。
-- **Don't** 在组件里写独立过渡时长（`duration-200`、`160ms`），也不要在已列动画之外为视觉反馈增加位移、缩放或持续动效；其余状态应通过即时颜色、边界和内容变化表达。
-- **Don't** 用 Tailwind 调色板类表达状态（`emerald-500`、`amber-600`、`blue`、`neutral-950`），一律走 `--success` / `--warning` / `--info` / `--destructive` 及其 `-foreground`。
-- **Don't** 为工具栏动作按钮手写 `size="sm"`、`h-8`、`h-[32px]` 等尺寸类或省略图标；也不要新增第二套动作按钮样式。
-- **Don't** 在全局隐藏原生滚动条，或为单个容器写局部滚动条覆盖。
+- **Don't** 在组件中硬编码主题色或创建平行色板。
+- **Don't** 用单独颜色作为成功、警告、进行中或错误的唯一提示。
+- **Don't** 给静态工作区添加装饰性阴影、渐变、玻璃效果或卡片堆叠。
+- **Don't** 为单个组件引入新的圆角、阴影或过渡参数。
+- **Don't** 用等宽字体排普通界面说明，或用图标替代必要的动作文字。
