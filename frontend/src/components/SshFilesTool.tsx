@@ -2330,23 +2330,6 @@ export default function SshFilesTool({ active }: Props) {
               void confirmUpload();
             }}
           >
-            <div className="flex items-start gap-2 rounded-md border border-warning/30 bg-warning/10 px-3 py-2 text-xs text-warning">
-              <Warning size={16} weight="regular" className="mt-0.5 shrink-0" />
-              <div className="grid min-w-0 gap-2">
-                <p className="m-0 leading-5">{t('sshFilesTool.uploadOverwriteWarning')}</p>
-                <label className="flex min-w-0 items-center gap-2 text-foreground">
-                  <Checkbox
-                    id="ssh-upload-allow-overwrite"
-                    checked={allowOverwrite}
-                    disabled={uploadStarting}
-                    onCheckedChange={(checked) => setAllowOverwrite(checked === true)}
-                  />
-                  <span className="min-w-0 leading-5">
-                    {t('sshFilesTool.uploadOverwriteConfirm')}
-                  </span>
-                </label>
-              </div>
-            </div>
             <div className="grid gap-1.5">
               <div className="flex items-center justify-between gap-3">
                 <span className="text-xs font-medium text-muted-foreground">
@@ -2396,6 +2379,23 @@ export default function SshFilesTool({ active }: Props) {
                 </span>
               </div>
             ) : null}
+            <div className="flex items-start gap-2 rounded-md border border-warning/30 bg-warning/10 px-3 py-2 text-xs text-warning">
+              <Warning size={16} weight="regular" className="mt-0.5 shrink-0" />
+              <div className="grid min-w-0 gap-2">
+                <p className="m-0 leading-5">{t('sshFilesTool.uploadOverwriteWarning')}</p>
+                <label className="flex min-w-0 items-center gap-2 text-foreground">
+                  <Checkbox
+                    id="ssh-upload-allow-overwrite"
+                    checked={allowOverwrite}
+                    disabled={uploadStarting}
+                    onCheckedChange={(checked) => setAllowOverwrite(checked === true)}
+                  />
+                  <span className="min-w-0 leading-5">
+                    {t('sshFilesTool.uploadOverwriteConfirm')}
+                  </span>
+                </label>
+              </div>
+            </div>
           </form>
           <DialogFooter>
             <Button
