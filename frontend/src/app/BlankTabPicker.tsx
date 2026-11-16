@@ -84,10 +84,12 @@ export function BlankTabPicker({
                 inputRef={searchRef}
                 value={query}
                 onValueChange={setQuery}
-                onSubmit={() => {
-                  const only = filtered[0];
-                  if (filtered.length !== 1 || !only) return;
-                  choose(only);
+                onSubmit={(value) => {
+                  // 空查询不响应回车；有关键词时打开当前排序的第一个结果（可能是设置）。
+                  if (!value) return;
+                  const first = filtered[0];
+                  if (!first) return;
+                  choose(first);
                 }}
                 placeholder={t('workspaceTabs.blankSearchPlaceholder')}
                 ariaLabel={t('workspaceTabs.blankSearchLabel')}
