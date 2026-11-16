@@ -490,13 +490,21 @@ export function useRemoteFileBrowser({
         ? normalizeRemotePath(currentPath)
         : '';
     if (nextPath !== currentPath) {
+      // 路径会被默认目录改写。待刷新的是这次离开的路径就改挂到改写后的目标，否则丢掉，
+      // 避免标记留到以后某次无关导航。
+      const pending = pendingForceReloadPathRef.current;
+      if (pending != null) {
+        const normalizedCurrent = currentPath.trim() ? normalizeRemotePath(currentPath) : '';
+        pendingForceReloadPathRef.current =
+          pending === currentPath || pending === normalizedCurrent ? nextPath : null;
+      }
       setCurrentPath(nextPath);
       setPathInput(nextPath);
       return;
     }
     setPathInput(currentPath);
     const forceReload = pendingForceReloadPathRef.current === nextPath;
-    if (forceReload) pendingForceReloadPathRef.current = null;
+    pendingForceReloadPathRef.current = null;
     if (directoryLoadKeyRef.current === directoryLoadKey && !forceReload) return;
     directoryLoadKeyRef.current = directoryLoadKey;
     resetSearchState();
@@ -532,16 +540,16 @@ export function useRemoteFileBrowser({
     setError('');
     setLoading(true);
     const force = Boolean(options?.force);
+    // 新的导航覆盖尚未消费的强制刷新；不带 force 就清掉，避免稍后碰上同一路径时被带走。
+    pendingForceReloadPathRef.current = force ? normalizedPath : null;
     if (normalizedPath === currentPath) {
       // 路径没变时 currentPath effect 不会跑。来源也没变就在这里刷新；
       // 来源刚同步改过则把 force 留给 effect，避免先用旧 source 请求一次。
-      if (force) pendingForceReloadPathRef.current = normalizedPath;
       if (nextSourceID !== sourceID) return;
       void loadDirectory(nextSourceID, normalizedPath, showHidden, force);
-      if (force) pendingForceReloadPathRef.current = null;
+      pendingForceReloadPathRef.current = null;
       return;
     }
-    if (force) pendingForceReloadPathRef.current = normalizedPath;
     setCurrentPath(normalizedPath);
   };
 
