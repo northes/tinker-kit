@@ -8,7 +8,7 @@ import {
   CaretRight,
   CaretUp,
   CaretUpDown,
-  CheckCircle,
+  Check,
   Copy,
   DownloadSimple,
   File,
@@ -26,6 +26,7 @@ import {
   Trash,
   UploadSimple,
   Warning,
+  X,
   XCircle,
 } from '@phosphor-icons/react';
 import { useVirtualizer } from '@tanstack/react-virtual';
@@ -281,6 +282,7 @@ export default function SshFilesTool({ active, locate = null }: Props) {
     directoryCache,
   } = useRemoteFileBrowser({ active, profiles, manageOpen });
   const currentPathRef = useRef(currentPath);
+  const pathEditInputWrapRef = useRef<HTMLDivElement>(null);
   const creationViewKeyRef = useRef('');
   creationViewKeyRef.current = directoryListingKey(
     sourceID,
@@ -319,6 +321,54 @@ export default function SshFilesTool({ active, locate = null }: Props) {
   useEffect(() => {
     currentPathRef.current = currentPath;
   }, [currentPath]);
+
+  const beginPathEditing = useCallback(() => {
+    if (!sourceUsable || loadingSources || loading || searching) return;
+    setPathInput(currentPath);
+    setPathEditing(true);
+  }, [
+    sourceUsable,
+    loadingSources,
+    loading,
+    searching,
+    currentPath,
+    setPathInput,
+    setPathEditing,
+  ]);
+
+  useEffect(() => {
+    if (!pathEditing) return;
+    let remove = () => {};
+    // 等开始那次 pointerdown 结束再监听，避免进入编辑的同一次点击被当成点外部而立刻取消。
+    const timer = window.setTimeout(() => {
+      const handlePointerDown = (event: PointerEvent) => {
+        const wrap = pathEditInputWrapRef.current;
+        const target = event.target;
+        if (!(target instanceof Node)) return;
+        if (wrap?.contains(target)) return;
+        setPathInput(currentPath);
+        setPathEditing(false);
+      };
+      document.addEventListener('pointerdown', handlePointerDown);
+      remove = () => document.removeEventListener('pointerdown', handlePointerDown);
+    }, 0);
+    return () => {
+      window.clearTimeout(timer);
+      remove();
+    };
+  }, [pathEditing, currentPath, setPathInput, setPathEditing]);
+
+  const handlePathBarPointerDown = useCallback(
+    (event: React.PointerEvent<HTMLDivElement>) => {
+      if (pathEditing) return;
+      if (!sourceUsable || loadingSources || loading || searching) return;
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+      if (target.closest('button, a, [role="menuitem"], [role="menu"]')) return;
+      beginPathEditing();
+    },
+    [pathEditing, sourceUsable, loadingSources, loading, searching, beginPathEditing],
+  );
 
   const openUploadDialog = useCallback((paths: string[], target: string) => {
     if (!paths.length) return;
@@ -1399,57 +1449,59 @@ export default function SshFilesTool({ active, locate = null }: Props) {
               placeholder={t('sshFilesTool.searchPlaceholder')}
               ariaLabel={t('sshFilesTool.search')}
               clearLabel={t('sshFilesTool.clearSearch')}
+              trailingAddon={
+                <DropdownMenu>
+                  <DropdownMenuTrigger
+                    render={
+                      <Button
+                        variant="ghost"
+                        size="icon-xs"
+                        className="text-muted-foreground"
+                        disabled={!sourceUsable || isLoading}
+                        aria-label={t('sshFilesTool.searchOptions')}
+                        title={t('sshFilesTool.searchOptionsSummary', {
+                          mode: searchModeLabel,
+                          scope: searchScopeLabel,
+                        })}
+                      />
+                    }
+                  >
+                    <Funnel weight="regular" />
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-64">
+                    <DropdownMenuGroup>
+                      <DropdownMenuLabel>{t('sshFilesTool.searchMode')}</DropdownMenuLabel>
+                      <DropdownMenuRadioGroup
+                        value={searchMode}
+                        onValueChange={(value) => setSearchMode(value as 'name' | 'content')}
+                      >
+                        <DropdownMenuRadioItem value="name">
+                          {t('sshFilesTool.searchByName')}
+                        </DropdownMenuRadioItem>
+                        <DropdownMenuRadioItem value="content">
+                          {t('sshFilesTool.searchByContent')}
+                        </DropdownMenuRadioItem>
+                      </DropdownMenuRadioGroup>
+                    </DropdownMenuGroup>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuGroup>
+                      <DropdownMenuLabel>{t('sshFilesTool.searchScope')}</DropdownMenuLabel>
+                      <DropdownMenuRadioGroup
+                        value={searchScope}
+                        onValueChange={(value) => setSearchScope(value as 'current' | 'recursive')}
+                      >
+                        <DropdownMenuRadioItem value="current">
+                          {t('sshFilesTool.searchCurrentDirectory')}
+                        </DropdownMenuRadioItem>
+                        <DropdownMenuRadioItem value="recursive">
+                          {t('sshFilesTool.searchFromCurrentDirectory')}
+                        </DropdownMenuRadioItem>
+                      </DropdownMenuRadioGroup>
+                    </DropdownMenuGroup>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              }
             />
-            <DropdownMenu>
-              <DropdownMenuTrigger
-                render={
-                  <Button
-                    variant="outline"
-                    size="icon-sm"
-                    className="flex-none"
-                    disabled={!sourceUsable || isLoading}
-                    aria-label={t('sshFilesTool.searchOptions')}
-                    title={t('sshFilesTool.searchOptionsSummary', {
-                      mode: searchModeLabel,
-                      scope: searchScopeLabel,
-                    })}
-                  />
-                }
-              >
-                <Funnel weight="regular" />
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-64">
-                <DropdownMenuGroup>
-                  <DropdownMenuLabel>{t('sshFilesTool.searchMode')}</DropdownMenuLabel>
-                  <DropdownMenuRadioGroup
-                    value={searchMode}
-                    onValueChange={(value) => setSearchMode(value as 'name' | 'content')}
-                  >
-                    <DropdownMenuRadioItem value="name">
-                      {t('sshFilesTool.searchByName')}
-                    </DropdownMenuRadioItem>
-                    <DropdownMenuRadioItem value="content">
-                      {t('sshFilesTool.searchByContent')}
-                    </DropdownMenuRadioItem>
-                  </DropdownMenuRadioGroup>
-                </DropdownMenuGroup>
-                <DropdownMenuSeparator />
-                <DropdownMenuGroup>
-                  <DropdownMenuLabel>{t('sshFilesTool.searchScope')}</DropdownMenuLabel>
-                  <DropdownMenuRadioGroup
-                    value={searchScope}
-                    onValueChange={(value) => setSearchScope(value as 'current' | 'recursive')}
-                  >
-                    <DropdownMenuRadioItem value="current">
-                      {t('sshFilesTool.searchCurrentDirectory')}
-                    </DropdownMenuRadioItem>
-                    <DropdownMenuRadioItem value="recursive">
-                      {t('sshFilesTool.searchFromCurrentDirectory')}
-                    </DropdownMenuRadioItem>
-                  </DropdownMenuRadioGroup>
-                </DropdownMenuGroup>
-              </DropdownMenuContent>
-            </DropdownMenu>
             <ToolActionButton
               variant="primary"
               icon={UploadSimple}
@@ -1462,8 +1514,9 @@ export default function SshFilesTool({ active, locate = null }: Props) {
       />
       <ToolLayoutContent className="flex min-h-0 flex-col">
         <div
-          className="flex min-h-10 min-w-0 shrink-0 items-center gap-1 rounded-md bg-muted/20 px-2 text-xs"
+          className={`flex min-h-10 min-w-0 shrink-0 items-center gap-1 rounded-md bg-muted/20 px-2 text-xs ${!pathEditing && sourceUsable && !isLoading ? 'cursor-text' : ''}`}
           aria-label={t('sshFilesTool.path')}
+          onPointerDownCapture={handlePathBarPointerDown}
         >
           {searchActive ? (
             <Badge variant="secondary" className="flex-none">
@@ -1472,50 +1525,54 @@ export default function SshFilesTool({ active, locate = null }: Props) {
           ) : null}
           {pathEditing ? (
             <form
-              className="flex min-w-0 flex-1 items-center gap-1"
+              className="flex min-w-0 flex-1 items-center"
               onSubmit={(event) => {
                 event.preventDefault();
                 navigate(pathInput);
               }}
             >
-              <Input
-                autoFocus
-                value={pathInput}
-                onChange={(event) => setPathInput(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key !== 'Escape') return;
-                  event.preventDefault();
-                  setPathInput(currentPath);
-                  setPathEditing(false);
-                }}
-                disabled={!sourceUsable || isLoading}
-                aria-label={t('sshFilesTool.pathInput')}
-                className="h-7 min-w-0 flex-1 border-0 bg-transparent px-1 font-mono text-xs shadow-none focus-visible:ring-0"
-              />
-              <Button
-                type="submit"
-                variant="ghost"
-                size="icon-sm"
-                className="h-7 w-7 flex-none"
-                disabled={!sourceUsable || isLoading}
-                aria-label={t('sshFilesTool.navigatePath')}
-              >
-                <CheckCircle weight="regular" size={14} />
-              </Button>
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon-sm"
-                className="h-7 w-7 flex-none"
-                disabled={isLoading}
-                aria-label={t('common.cancel')}
-                onClick={() => {
-                  setPathInput(currentPath);
-                  setPathEditing(false);
-                }}
-              >
-                <XCircle weight="regular" size={14} />
-              </Button>
+              <div ref={pathEditInputWrapRef} className="relative min-w-0 flex-1">
+                <Input
+                  autoFocus
+                  value={pathInput}
+                  onChange={(event) => setPathInput(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key !== 'Escape') return;
+                    event.preventDefault();
+                    setPathInput(currentPath);
+                    setPathEditing(false);
+                  }}
+                  disabled={!sourceUsable || isLoading}
+                  aria-label={t('sshFilesTool.pathInput')}
+                  className="h-7 w-full min-w-0 border-0 bg-transparent px-1 pr-14 font-mono text-xs shadow-none focus-visible:ring-0"
+                />
+                <div className="absolute right-1 top-1/2 flex -translate-y-1/2 items-center gap-0.5">
+                  <Button
+                    type="submit"
+                    variant="ghost"
+                    size="icon-sm"
+                    className="h-6 w-6 rounded"
+                    disabled={!sourceUsable || isLoading}
+                    aria-label={t('sshFilesTool.navigatePath')}
+                  >
+                    <Check weight="regular" size={14} />
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon-sm"
+                    className="h-6 w-6 rounded"
+                    disabled={isLoading}
+                    aria-label={t('common.cancel')}
+                    onClick={() => {
+                      setPathInput(currentPath);
+                      setPathEditing(false);
+                    }}
+                  >
+                    <X weight="regular" size={14} />
+                  </Button>
+                </div>
+              </div>
             </form>
           ) : (
             <>
@@ -1523,12 +1580,12 @@ export default function SshFilesTool({ active, locate = null }: Props) {
                 className="min-w-0 flex-1 py-1"
                 options={{ overflow: { x: 'scroll', y: 'hidden' } }}
               >
-                <div className="flex items-center gap-0.5">
+                <div className="flex min-h-7 w-full items-center gap-0.5">
                   {breadcrumbs.map((crumb, index) => (
                     <span key={crumb.path} className="flex items-center whitespace-nowrap">
                       <button
                         type="button"
-                        className={`rounded px-1.5 py-1 hover:bg-accent hover:text-foreground ${index === breadcrumbs.length - 1 ? 'font-medium text-foreground' : 'text-muted-foreground'}`}
+                        className={`cursor-pointer rounded px-1.5 py-1 hover:bg-accent hover:text-foreground ${index === breadcrumbs.length - 1 ? 'font-medium text-foreground' : 'text-muted-foreground'}`}
                         disabled={!sourceUsable || isLoading}
                         aria-current={index === breadcrumbs.length - 1 ? 'page' : undefined}
                         onClick={() => navigate(crumb.path)}
@@ -1548,13 +1605,10 @@ export default function SshFilesTool({ active, locate = null }: Props) {
               <Button
                 variant="ghost"
                 size="icon-sm"
-                className="h-7 w-7 flex-none"
+                className="h-7 w-7 flex-none cursor-pointer"
                 disabled={!sourceUsable || isLoading}
                 aria-label={t('sshFilesTool.editPath')}
-                onClick={() => {
-                  setPathInput(currentPath);
-                  setPathEditing(true);
-                }}
+                onClick={beginPathEditing}
               >
                 <PencilSimple weight="regular" size={14} />
               </Button>
@@ -1566,7 +1620,7 @@ export default function SshFilesTool({ active, locate = null }: Props) {
                 <Button
                   variant={isCurrentPathFavorite ? 'secondary' : 'ghost'}
                   size="sm"
-                  className="h-7 flex-none px-2 text-[11px]"
+                  className="h-7 flex-none cursor-pointer px-2 text-[11px]"
                   disabled={!sourceUsable || isLoading || favoritesSaving}
                   aria-label={t('sshFilesTool.favorites')}
                 />
@@ -1631,7 +1685,7 @@ export default function SshFilesTool({ active, locate = null }: Props) {
           <Button
             variant="ghost"
             size="icon-sm"
-            className="h-7 w-7 flex-none"
+            className="h-7 w-7 flex-none cursor-pointer"
             disabled={!sourceUsable || isLoading}
             onClick={reloadCurrentView}
             aria-label={t('sshFilesTool.refresh')}
