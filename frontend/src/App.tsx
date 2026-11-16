@@ -784,21 +784,8 @@ function AppShell() {
       if (!tool && trayTools.has('text')) tool = 'text';
     }
     if (!tool || !enabledSidebarTools.has(tool)) return;
-    // 不再因为当前标签是差异对比就把剪贴板填进这一份。匹配结果是差异时，新开的标签仍按填入侧写入。
-    let target: 'before' | 'after' | undefined;
-    if (tool === 'diff' && currentSettings.diffClipboardTargetMode !== 'off') {
-      if (
-        currentSettings.diffClipboardTargetMode === 'before' ||
-        currentSettings.diffClipboardTargetMode === 'after'
-      ) {
-        target = currentSettings.diffClipboardTargetMode;
-      } else {
-        target = nextDiffTarget.current;
-        nextDiffTarget.current = target === 'before' ? 'after' : 'before';
-      }
-    }
     const tab = openTool(tool);
-    deliver(tab.id, { tool, action: 'open', input: text, mode, target });
+    deliver(tab.id, { tool, action: 'open', input: text, mode });
     toast.add({
       title: t('toast.trayAutoFilled', { tool: t(`tools.${tool}.name`) }),
       type: 'success',
