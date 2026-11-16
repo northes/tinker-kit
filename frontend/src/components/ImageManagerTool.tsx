@@ -1361,7 +1361,11 @@ export default function ImageManagerTool({
                               data-index={virtualRow.index}
                               data-row-key={row.key}
                               data-state={selected.has(row.key) ? 'selected' : undefined}
-                              className="select-none border-border/60"
+                              className={`select-none border-b-0 hover:bg-transparent data-[state=selected]:bg-transparent [&>td]:transition-colors${
+                                virtualRow.index % 2 === 1
+                                  ? ' [&>td]:bg-muted/30 [&>td:first-child]:rounded-l-md [&>td:last-child]:rounded-r-md'
+                                  : ''
+                              } hover:[&>td]:bg-muted/50 hover:[&>td:first-child]:rounded-l-md hover:[&>td:last-child]:rounded-r-md data-[state=selected]:[&>td]:bg-muted data-[state=selected]:[&>td:first-child]:rounded-l-md data-[state=selected]:[&>td:last-child]:rounded-r-md`}
                             />
                           }
                         >
