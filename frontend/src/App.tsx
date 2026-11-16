@@ -673,6 +673,16 @@ function AppShell() {
           commitWorkspace(cycleTabs(workspaceStateRef.current, event.shiftKey ? -1 : 1));
         return;
       }
+      // 带 Shift 的方括号在 macOS 上 key 是 { / }，所以要同时看 code。
+      const previousTabKey =
+        event.code === 'BracketLeft' || event.key === '[' || event.key === '{';
+      const nextTabKey = event.code === 'BracketRight' || event.key === ']' || event.key === '}';
+      if (command && !event.altKey && event.shiftKey && (previousTabKey || nextTabKey)) {
+        event.preventDefault();
+        if (!event.repeat)
+          commitWorkspace(cycleTabs(workspaceStateRef.current, previousTabKey ? -1 : 1));
+        return;
+      }
       if (event.key === 'Escape' && paletteOpen) closePalette();
     };
     window.addEventListener('keydown', onKey);
