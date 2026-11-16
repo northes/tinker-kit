@@ -1755,7 +1755,7 @@
     "editPath": "编辑路径",
     "navigatePath": "进入路径",
     "search": "搜索文件",
-    "searchPlaceholder": "搜索文件名或文件内容…",
+    "searchPlaceholder": "搜索…",
     "clearSearch": "清除搜索",
     "searchOptions": "搜索选项",
     "searchOptionsSummary": "{{mode}} · {{scope}}",

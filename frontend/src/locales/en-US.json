@@ -1755,7 +1755,7 @@
     "editPath": "Edit path",
     "navigatePath": "Go to path",
     "search": "Search files",
-    "searchPlaceholder": "Search file names or contents…",
+    "searchPlaceholder": "Search…",
     "clearSearch": "Clear search",
     "searchOptions": "Search options",
     "searchOptionsSummary": "{{mode}} · {{scope}}",
