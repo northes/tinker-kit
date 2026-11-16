@@ -82,14 +82,25 @@
   min-width: 100%;
   font-size: 14px;
 }
+/* 表头是一块淡底横栏：底色必须是不透明的，吸顶时才能盖住滚过的行；
+   两端圆角与行 hover 用同一档半径。 */
 .json-table-data thead th {
   padding: 6px 8px;
+  background: color-mix(in oklch, var(--muted) 45%, var(--card));
   color: var(--muted-foreground);
   font-family: inherit;
   font-size: 14px;
   font-weight: 500;
   line-height: 1.4;
   vertical-align: middle;
+}
+.json-table-data thead th:first-child {
+  border-start-start-radius: calc(var(--radius) - 4px);
+  border-end-start-radius: calc(var(--radius) - 4px);
+}
+.json-table-data thead th:last-child {
+  border-start-end-radius: calc(var(--radius) - 4px);
+  border-end-end-radius: calc(var(--radius) - 4px);
 }
 .json-table-data thead th.json-table-key {
   font-family: inherit;
