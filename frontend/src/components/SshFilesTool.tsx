@@ -339,7 +339,7 @@ export default function SshFilesTool({ active, locate = null }: Props) {
 
   useEffect(() => {
     if (!pathEditing) return;
-    // 被动 effect 在这次 pointerdown 事件结束之后才跑，所以这不会把刚打开编辑的那一次点击当成点外部。
+    // 监听 pointerdown 而不是 click：打开编辑的是 click，所以这里不会把自己那一下当成点外部。
     const handlePointerDown = (event: PointerEvent) => {
       const wrap = pathEditInputWrapRef.current;
       const target = event.target;
@@ -354,22 +354,22 @@ export default function SshFilesTool({ active, locate = null }: Props) {
 
   useEffect(() => {
     if (!pathEditing) return;
+    // 编辑在 click 之后才打开，此时鼠标的聚焦默认动作已经过去，这里聚焦不会被抹掉。
     const input = pathEditInputRef.current;
     if (!input) return;
-    // 进入编辑是在 pointerdown 里发生的，浏览器紧接着的鼠标默认动作会把焦点收回 body，
-    // 所以要在这一轮事件结束后（被动 effect）再聚焦，否则用户得再点一次输入框。
     input.focus();
     const end = input.value.length;
     input.setSelectionRange(end, end);
   }, [pathEditing]);
 
-  const handlePathBarPointerDown = useCallback(
-    (event: React.PointerEvent<HTMLDivElement>) => {
+  const handlePathBarClick = useCallback(
+    (event: React.MouseEvent<HTMLDivElement>) => {
       if (pathEditing) return;
       if (!sourceUsable || loadingSources || loading || searching) return;
       const target = event.target;
       if (!(target instanceof Element)) return;
-      if (target.closest('button, a, [role="menuitem"], [role="menu"]')) return;
+      // 面包屑、工具栏按钮和浮层滚动态的滚动条都有自己的行为。
+      if (target.closest('button, a, [role="menuitem"], [role="menu"], .os-scrollbar')) return;
       beginPathEditing();
     },
     [pathEditing, sourceUsable, loadingSources, loading, searching, beginPathEditing],
@@ -1521,7 +1521,7 @@ export default function SshFilesTool({ active, locate = null }: Props) {
         <div
           className={`flex min-h-10 min-w-0 shrink-0 items-center gap-1 rounded-md bg-muted/20 px-2 text-xs ${!pathEditing && sourceUsable && !isLoading ? 'cursor-text' : ''}`}
           aria-label={t('sshFilesTool.path')}
-          onPointerDownCapture={handlePathBarPointerDown}
+          onClick={handlePathBarClick}
         >
           {searchActive ? (
             <Badge variant="secondary" className="flex-none">
