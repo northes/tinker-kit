@@ -1,6 +1,6 @@
 ---
 name: layout-guidance
-description: 仅在改工具页布局/高度链、CodeMirror 尺寸与交互、浮层与 footer 对齐、列表勾选与批量操作、列表拖动排序、输入历史记录、弹窗表单提交等 UI 细节或 `ScrollArea` 滚动容器时使用。纯颜色或文案修改不要使用本 skill。
+description: 仅在改工具页布局/高度链、CodeMirror 尺寸与交互、浮层与 footer 对齐、列表勾选与批量操作、列表拖动排序、输入历史记录、弹窗表单提交、标签/页面切换动效等 UI 细节或 `ScrollArea` 滚动容器时使用。纯颜色或文案修改不要使用本 skill。
 user-invocable: false
 ---
 
@@ -16,7 +16,7 @@ user-invocable: false
 - 设置页层级、Select、输入历史记录（统一使用 Combobox、可滚动文字与右侧删除按钮）、来源管理、复制反馈、删除确认或弹窗表单：[forms-and-controls.md](./forms-and-controls.md)。
 - 虚拟列表、搜索、排序、右键和拖选批量操作：[lists.md](./lists.md)。
 - 列表拖动排序、被拖项视觉、手柄与键盘调序、顺序持久化：[drag-and-drop.md](./drag-and-drop.md)。
-- 浮层定位、命令面板结构或 WebView 旋转图标诊断：[overlays-and-motion.md](./overlays-and-motion.md)。
+- 浮层定位、命令面板结构、WebView 旋转图标诊断或标签/页面切换动效：[overlays-and-motion.md](./overlays-and-motion.md)。
 - `ScrollArea` 或其他滚动容器：[overlay-scrollbar.md](./overlay-scrollbar.md)。
 
 ## 工具页布局
@@ -29,15 +29,14 @@ user-invocable: false
 - footer 只由 `ToolLayout` 渲染，`ToolActionBar` 是 footer 内的 `role="toolbar"`，禁止嵌套 `<footer>`。
 - 主编辑区使用 `height: 100%`、`min-height: 0` 和 `minmax(0,1fr)`，禁止写死编辑区高度。
 - 响应式切换分栏方向时同步调整 grid rows；宽屏左右分栏共用一行，窄屏上下分栏平分可用高度。
-- 工具内容直接落在页面背景上，用 1px 分隔线表达层次，不使用带边框、圆角和独立背景的工具卡片。
-- 页面切换使用常驻挂载：隐藏工具使用 `position:absolute; inset:0; visibility:hidden; pointer-events:none`，不要用 `display:none` 卸载编辑器。
+- 工具内容直接落在页面背景上，不使用带边框、圆角和独立背景的工具卡片。层级导航、设置分组和定义列表仍可用 1px 分隔；平铺数据行的条纹见 [lists.md](./lists.md)。
+- 会话按工作区标签 id 常驻挂载，同一工具可以有多份。隐藏标签使用 `position:absolute; inset:0; visibility:hidden; pointer-events:none`，不要用 `display:none` 卸载编辑器，也不要再按工具 id 只留一份。
 
-## footer band 与共享分割线
+## footer 留白
 
-- 侧栏底部（`.sidebar-footer`，命令面板入口）与工具页 footer 共用同一条水平分割线时，两侧 band 的几何必须一致：底部内边距、分隔线到内容的顶部间距、控件高度三者取同一套值。
-- 锚点是 `ToolLayout`：`pb-4` 页面底部内边距 + footer `pt-3` + 30px 控件高度。侧栏 `.sidebar` 的底部内边距、`.sidebar-footer` 的 `pt` 与命令面板按钮高度按同一套值设置，改一侧必须同步另一侧。
+- 锚点是 `ToolLayout`：`pb-4` 页面底部内边距 + footer `pt-3` + 30px 控件高度。工具页不再有侧栏底栏与之对齐。
 - `ToolLayout` 的底部内边距是页面级留白，收紧它会同时影响所有工具页和设置页，不要只按单个页面调整。
-- 底部留白只由 `ToolLayout` 的页面 `pb` 决定，不要给 footer 内容加负 margin 或第二层 padding 来“挤出”对齐。
+- 底部留白只由 `ToolLayout` 的页面 `pb` 决定，不要给 footer 内容加负 margin 或第二层 padding 来“挤出”对齐。状态条上方不要再加一条分割线；列表溢出用 [overlay-scrollbar.md](./overlay-scrollbar.md) 的边缘渐隐。
 
 ## 静态检查
 

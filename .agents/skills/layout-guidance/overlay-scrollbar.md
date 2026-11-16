@@ -10,7 +10,10 @@
 - 命中区与滑块视觉统一由 `frontend/src/styles/foundation.css` 的 `.os-scrollbar` 变量控制；调整外观改这些变量，不要为单个容器新增局部覆盖。
 - 不要在全局隐藏原生滚动条。CodeMirror 的 `.cm-scroller` 保持原生滚动条；Base UI 浮层（Select/Dropdown/ContextMenu/Combobox）与命令面板（cmdk）内部滚动用 `.no-scrollbar` 隐藏滚动条，只保留滚动能力。
 - 虚拟化列表（`@tanstack/react-virtual`）也要用 `ScrollArea`：用 `onViewport` 拿到 OverlayScrollbars 的 viewport 元素，让 `getScrollElement` 指向它（`instance.elements().viewport`），不要把宿主当滚动元素，也不要用原生 `ref` 直连宿主。
-- `workspace`（App 主内容区）和 `sidebar` 保留原生滚动条：前者是 `.tool-slot` 常驻挂载的高度/定位参照并承载切页滚动复位，后者是 `flex-col` + `sticky` 结构。不要改成 `ScrollArea`，除非一并重构这些耦合。
+- `workspace`（App 主内容区）保留原生滚动条：它是按标签 id 常驻的 `.tool-slot` 的高度和定位参照。不要改成 `ScrollArea`。工具侧栏已经不存在，不要再为它保留滚动容器。
+- 溢出提示用 `ScrollArea` 的两个现成能力，不要自绘渐变：
+  - `scrollFade="x" | "y"`：用 mask 在滚动方向边缘渐隐内容。没有吸顶表头时用它（工作区标签条横向 20px、纵向 16px，其余默认 24px）。滚到头的一侧遮罩收到 0。
+  - `edgeOverlay`：在纵向两端叠加渐变，不使用 mask，避免淡掉吸顶表头和斑马纹。吸顶表头在滚动区内时用 `edgeOverlayTopClass` 把顶部渐变让到表头之下（表头高 40px 时为 `top-10`）。底色跟所在表面走，卡片或弹窗上不要沿用页面 `background`。
 
 ## 列表加载与空态
 

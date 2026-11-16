@@ -1,5 +1,12 @@
 # 列表与批量操作
 
+## 平铺数据行
+
+- 平铺的数据行（文件、端口、镜像、时间、URL、阶段、JSON 表和对话框里的可选列表）用隔行淡底区分：偶数行 `bg-muted/30`，行两端 `rounded-md`（表格单元格用基础半径减 4px）。这些行之间不要 `border-b` 或 `divide-y`。
+- 悬停用 `bg-muted/50`，选中用 `bg-muted` 实底，两者盖住条纹。JSON 表的斑马纹限定在 `:not(:hover)`，避免压过单元格悬停色。
+- 数据表头是一块不透明淡底横栏（muted 约 45% 混入所在表面），两端同档圆角，不要底部分割线，以便吸顶时盖住滚过的行。
+- 层级导航、设置分组和定义列表仍可用 1px 分隔，不要为了统一改成条纹。
+
 ## 长列表虚拟化
 
 - 主内容为列表时统一用 `@tanstack/react-virtual`，不以当前数据量少为理由改用全量 DOM 渲染。滚动容器加 `ref`，`useVirtualizer` 只渲染 `getVirtualItems()` 的可视行；`<table>` 用上下占位 `<tr><td colSpan={n} style={{ height }} />` 撑出滚动高度。唯一例外是需要拖动排序的列表：`SortableContext` 依赖完整行参与，这类配置型短列表全量渲染并关闭虚拟化，规则见 [drag-and-drop.md](./drag-and-drop.md#顺序语义)。
