@@ -11,7 +11,7 @@ import {
   CommandSeparator,
 } from '../components/ui/command';
 import { type IndexedItem, type Page } from './definitions';
-import { fuzzyScore } from './palette-search';
+import { normalizePaletteQuery, searchIndexedItems } from './palette-search';
 
 export function CommandPalette({
   open,
@@ -32,9 +32,8 @@ export function CommandPalette({
     if (open) setInput('');
   }, [open]);
   const matches = useMemo(() => {
-    const q = input.trim().toLowerCase().replace(/\s+/g, '');
+    const q = normalizePaletteQuery(input);
     if (!q) return null;
-    const isEnglish = /^[a-z0-9]+$/i.test(q);
     const rank = (i: IndexedItem) =>
       i.tool === page
         ? 0
@@ -43,26 +42,7 @@ export function CommandPalette({
           : i.groupKey === 'groups.nav'
             ? 2
             : 3;
-    const labelHit = (i: IndexedItem) =>
-      isEnglish && i.label.toLowerCase().replace(/\s+/g, '').includes(q) ? 1 : 0;
-    const initialsHit = (i: IndexedItem) => (isEnglish && i.initials.includes(q) ? 1 : 0);
-    const scored: Array<{ item: IndexedItem; score: number }> = [];
-    for (const item of indexed) {
-      const score = Math.max(
-        fuzzyScore(item.text, q),
-        fuzzyScore(item.pinyin, q) * 0.95,
-        fuzzyScore(item.initials, q) * 0.9,
-      );
-      if (score > 0) scored.push({ item, score });
-    }
-    scored.sort(
-      (a, b) =>
-        rank(a.item) - rank(b.item) ||
-        labelHit(b.item) - labelHit(a.item) ||
-        initialsHit(b.item) - initialsHit(a.item) ||
-        b.score - a.score,
-    );
-    return scored.map((s) => s.item);
+    return searchIndexedItems(indexed, input, (a, b) => rank(a) - rank(b));
   }, [input, indexed, page]);
   const list = matches ?? indexed;
   const groups = useMemo(() => {

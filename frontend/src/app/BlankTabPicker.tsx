@@ -6,28 +6,24 @@ import { ToolSearchField } from '../components/shared';
 import type { ToolId } from '../components/shared';
 import { Button } from '../components/ui/button';
 import { ScrollArea } from '../components/ui/scroll-area';
+import type { Romanize } from './definitions';
+import { buildIndex, searchIndexedItems } from './palette-search';
 
 const SEARCH_ID = 'workspace-blank-tab-search';
 const SETTINGS_ITEM = '__settings__';
 // 设置方块和工具并列，排在末尾；搜索关键词与命令面板的设置项保持一致。
 const SETTINGS_KEYWORDS = 'settings preferences options 设置 配置 选项';
 
-type PickerItem = {
-  id: string;
-  label: string;
-  keywords: string;
-  icon: ToolDefinition['icon'];
-  toolId?: ToolId;
-};
-
 export function BlankTabPicker({
   active,
   tools,
+  romanize,
   onSelectTool,
   onOpenSettings,
 }: {
   active: boolean;
   tools: ToolDefinition[];
+  romanize: Romanize;
   onSelectTool: (toolId: ToolId) => void;
   onOpenSettings: () => void;
 }) {
@@ -40,35 +36,40 @@ export function BlankTabPicker({
     });
     return () => cancelAnimationFrame(id);
   }, [active]);
-  const items = useMemo<PickerItem[]>(
-    () => [
-      ...tools.map((tool) => ({
-        id: tool.id,
-        label: t(tool.nameKey),
-        keywords: tool.keywords,
-        icon: tool.icon,
-        toolId: tool.id as ToolId,
-      })),
-      {
-        id: SETTINGS_ITEM,
-        label: t('settings.title'),
-        keywords: SETTINGS_KEYWORDS,
-        icon: GearSix,
-      },
-    ],
-    [t, tools],
+  const indexed = useMemo(
+    () =>
+      buildIndex(
+        [
+          ...tools.map((tool) => ({
+            id: tool.id,
+            labelKey: tool.nameKey,
+            groupKey: 'groups.tools',
+            icon: tool.icon,
+            keywords: tool.keywords,
+            tool: tool.id as ToolId,
+            label: t(tool.nameKey),
+            group: '',
+            subgroup: '',
+          })),
+          {
+            id: SETTINGS_ITEM,
+            labelKey: 'settings.title',
+            groupKey: 'groups.nav',
+            icon: GearSix,
+            keywords: SETTINGS_KEYWORDS,
+            label: t('settings.title'),
+            group: '',
+            subgroup: '',
+          },
+        ],
+        romanize,
+      ),
+    [romanize, t, tools],
   );
-  const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    if (!q) return items;
-    return items.filter(
-      (item) =>
-        item.label.toLowerCase().includes(q) || item.keywords.toLowerCase().includes(q),
-    );
-  }, [items, query]);
-  const choose = (item: PickerItem) => {
-    if (item.toolId) onSelectTool(item.toolId);
-    else onOpenSettings();
+  const filtered = useMemo(() => searchIndexedItems(indexed, query) ?? indexed, [indexed, query]);
+  const choose = (item: (typeof indexed)[number]) => {
+    if (item.id === SETTINGS_ITEM) onOpenSettings();
+    else if (item.tool) onSelectTool(item.tool);
   };
   return (
     <div className="flex h-full min-h-0 flex-col bg-background">

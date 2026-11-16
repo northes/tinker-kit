@@ -413,8 +413,9 @@ function AppShell() {
     if (settings.language && i18n.language !== settings.language)
       i18n.changeLanguage(settings.language);
   }, [i18n, settings.language]);
+  const blankPickerActive = currentTab?.kind === 'blank';
   useEffect(() => {
-    if (!paletteOpen || romanize('中') !== '中') return;
+    if ((!paletteOpen && !blankPickerActive) || romanize('中') !== '中') return;
     void import('pinyin-pro').then(({ pinyin }) =>
       setRomanize(
         () => (text) =>
@@ -424,7 +425,7 @@ function AppShell() {
             .toLowerCase(),
       ),
     );
-  }, [paletteOpen, romanize]);
+  }, [blankPickerActive, paletteOpen, romanize]);
   useEffect(() => {
     void Events.On('navigate', (event) => {
       logFrontend(`[event] navigate data=${String(event.data)}`);
@@ -850,6 +851,7 @@ function AppShell() {
         <BlankTabPicker
           active={active}
           tools={enabledTools}
+          romanize={romanize}
           onSelectTool={(toolId) =>
             commitWorkspace(convertBlankTabToTool(workspaceStateRef.current, tab.id, toolId))
           }
