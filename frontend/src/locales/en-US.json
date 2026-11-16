@@ -26,13 +26,13 @@
   "workspaceTabs": {
     "list": "Workspace tabs",
     "newTab": "New tab",
+    "blankTab": "New tab",
+    "blankSearchPlaceholder": "Search tools",
+    "resizeStrip": "Drag to resize the tab strip",
     "closeTab": "Close {{name}}"
   },
   "fileDrop": {
     "release": "Release to import"
-  },
-  "statusbar": {
-    "openPalette": "Open command palette"
   },
   "palette": {
     "title": "Command Palette",
@@ -114,6 +114,7 @@
     }
   },
   "commands": {
+    "newTab": "New tab",
     "toggleDisplayMode": "Toggle display mode (current: {{current}})",
     "toggleLanguage": "Toggle language (current: {{current}})",
     "toggleFontSize": "Toggle font size (current: {{current}})",

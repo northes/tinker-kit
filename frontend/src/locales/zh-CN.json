@@ -26,13 +26,13 @@
   "workspaceTabs": {
     "list": "工作区标签",
     "newTab": "新开标签",
+    "blankTab": "新标签",
+    "blankSearchPlaceholder": "搜索工具",
+    "resizeStrip": "拖动调整标签栏宽度",
     "closeTab": "关闭{{name}}"
   },
   "fileDrop": {
     "release": "松开即可导入"
-  },
-  "statusbar": {
-    "openPalette": "打开命令面板"
   },
   "palette": {
     "title": "命令面板",
@@ -114,6 +114,7 @@
     }
   },
   "commands": {
+    "newTab": "新建标签",
     "toggleDisplayMode": "切换显示模式（当前：{{current}}）",
     "toggleLanguage": "切换语言（当前：{{current}}）",
     "toggleFontSize": "切换字体大小（当前：{{current}}）",

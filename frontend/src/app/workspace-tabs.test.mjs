@@ -4,18 +4,27 @@ import {
   activateTab,
   closeTab,
   closeTabs,
+  convertBlankTabToTool,
   cycleTabs,
+  DEFAULT_TAB_STRIP_WIDTH,
   emptyWorkspace,
+  MAX_TAB_STRIP_WIDTH,
+  MIN_TAB_STRIP_WIDTH,
+  openBlankTab,
   openOrFocusSettings,
   openToolTab,
   parseTabCloseActivation,
   parseTabCloseButton,
   parseTabOrientation,
+  parseTabStripWidth,
+  startupWorkspace,
+  TAB_STRIP_FOCUS_PADDING,
   tabOrdinalLabel,
   visiblePaletteCommands,
 } from './workspace-tabs.ts';
 
 const commands = [
+  { id: 'nav:new-tab', workspaceAction: 'new-tab' },
   { id: 'nav:settings', page: 'settings' },
   { id: 'settings:quit', settingsAction: 'quit' },
   { id: 'open:json', page: 'json' },
@@ -36,6 +45,17 @@ test('非法标签偏好回退默认值', () => {
   assert.equal(parseTabCloseButton('hover'), 'hover');
   assert.equal(parseTabCloseButton('always'), 'always');
   assert.equal(parseTabCloseButton('bad'), 'always');
+});
+
+test('纵向标签条宽度夹在 140–360，缺失或越界回退默认值', () => {
+  assert.equal(DEFAULT_TAB_STRIP_WIDTH, 176);
+  assert.equal(parseTabStripWidth(undefined), 176);
+  assert.equal(parseTabStripWidth(0), 176);
+  assert.equal(parseTabStripWidth(Number.NaN), 176);
+  assert.equal(parseTabStripWidth(120), MIN_TAB_STRIP_WIDTH);
+  assert.equal(parseTabStripWidth(400), MAX_TAB_STRIP_WIDTH);
+  assert.equal(parseTabStripWidth(220.4), 220);
+  assert.equal(TAB_STRIP_FOCUS_PADDING, 8);
 });
 
 test('工具序号只增不回收，设置不加序号', () => {
@@ -129,12 +149,12 @@ test('一次性关掉多个标签只应用一次激活规则', () => {
   assert.equal(recent.activeId, text.id);
 });
 
-test('关掉最后一个留下空标签条，循环在不足两个时不做事', () => {
+test('关掉最后一个补一个空白标签，循环在不足两个时不做事', () => {
   const opened = openToolTab(emptyWorkspace(), 'json');
-  const empty = closeTab(opened.state, opened.tab.id, 'recent');
-  assert.deepEqual(empty.tabs, []);
-  assert.equal(empty.activeId, null);
-  assert.equal(cycleTabs(empty, 1), empty);
+  const closed = closeTab(opened.state, opened.tab.id, 'recent');
+  assert.equal(closed.tabs.length, 1);
+  assert.equal(closed.tabs[0].kind, 'blank');
+  assert.equal(closed.activeId, closed.tabs[0].id);
   assert.equal(cycleTabs(opened.state, -1), opened.state);
   const two = openToolTab(opened.state, 'text').state;
   const cycled = cycleTabs(two, 1);
@@ -144,21 +164,51 @@ test('关掉最后一个留下空标签条，循环在不足两个时不做事',
   assert.equal(cycleTabs(withSettings, 1).activeId, withSettings.tabs[0].id);
 });
 
+test('启动带一个空白标签，空白标签就地变成工具', () => {
+  const started = startupWorkspace();
+  assert.equal(started.tabs.length, 1);
+  assert.equal(started.tabs[0].kind, 'blank');
+  assert.equal(started.tabs[0].ordinal, 1);
+  const again = openBlankTab(started);
+  assert.equal(again.tab.kind, 'blank');
+  assert.equal(again.tab.ordinal, 2);
+  assert.equal(tabOrdinalLabel('新标签', again.tab.ordinal), '新标签 2');
+  const converted = convertBlankTabToTool(again.state, again.tab.id, 'json');
+  const tab = converted.tabs.find((item) => item.id === again.tab.id);
+  assert.equal(tab?.kind, 'tool');
+  assert.equal(tab?.toolId, 'json');
+  assert.equal(tab?.ordinal, 1);
+  const blankAgain = openBlankTab(converted);
+  const second = convertBlankTabToTool(blankAgain.state, blankAgain.tab.id, 'json');
+  const jsonTabs = second.tabs.filter((item) => item.toolId === 'json');
+  assert.deepEqual(
+    jsonTabs.map((item) => item.ordinal),
+    [1, 2],
+  );
+  const empty = closeTabs(second, jsonTabs.map((item) => item.id), 'recent');
+  assert.equal(empty.tabs.length, 1);
+  assert.equal(empty.tabs[0].kind, 'blank');
+});
+
 test('命令面板按当前标签过滤，打开工具的顺序跟配置走', () => {
   const enabled = ['text', 'json'];
   assert.deepEqual(
     visiblePaletteCommands(commands, { kind: 'empty' }, enabled, new Set()).map((item) => item.id),
-    ['nav:settings', 'open:text', 'open:json'],
+    ['nav:new-tab', 'nav:settings', 'open:text', 'open:json'],
+  );
+  assert.deepEqual(
+    visiblePaletteCommands(commands, { kind: 'blank' }, enabled, new Set()).map((item) => item.id),
+    ['nav:new-tab', 'nav:settings', 'open:text', 'open:json'],
   );
   assert.deepEqual(
     visiblePaletteCommands(commands, { kind: 'settings' }, enabled, new Set()).map((item) => item.id),
-    ['nav:settings', 'settings:quit', 'open:text', 'open:json'],
+    ['nav:new-tab', 'nav:settings', 'settings:quit', 'open:text', 'open:json'],
   );
   assert.deepEqual(
     visiblePaletteCommands(commands, { kind: 'tool', toolId: 'json' }, enabled, new Set()).map(
       (item) => item.id,
     ),
-    ['nav:settings', 'open:text', 'open:json', 'json:format'],
+    ['nav:new-tab', 'nav:settings', 'open:text', 'open:json', 'json:format'],
   );
   assert.deepEqual(
     visiblePaletteCommands(
@@ -167,6 +217,6 @@ test('命令面板按当前标签过滤，打开工具的顺序跟配置走', ()
       enabled,
       new Set(['json.schema']),
     ).map((item) => item.id),
-    ['nav:settings', 'open:text', 'open:json', 'json:format', 'json:schema:copy'],
+    ['nav:new-tab', 'nav:settings', 'open:text', 'open:json', 'json:format', 'json:schema:copy'],
   );
 });

@@ -86,9 +86,16 @@ export function WorkspaceTabBar({
           {tabs.map((tab) => {
             const tool = tab.kind === 'tool' ? tools.find((item) => item.id === tab.toolId) : undefined;
             const name =
-              tab.kind === 'settings' ? t('settings.title') : tool ? t(tool.nameKey) : (tab.toolId ?? '');
+              tab.kind === 'settings'
+                ? t('settings.title')
+                : tab.kind === 'blank'
+                  ? t('workspaceTabs.blankTab')
+                  : tool
+                    ? t(tool.nameKey)
+                    : (tab.toolId ?? '');
             const label = tab.kind === 'settings' ? name : tabOrdinalLabel(name, tab.ordinal);
-            const Icon = tab.kind === 'settings' ? GearSix : tool?.icon;
+            const Icon =
+              tab.kind === 'settings' ? GearSix : tab.kind === 'blank' ? Plus : tool?.icon;
             const current = tab.id === activeId;
             return (
               <div

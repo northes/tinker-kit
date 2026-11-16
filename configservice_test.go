@@ -69,6 +69,28 @@ func TestServiceLogCollapseLinesConfig(t *testing.T) {
 	}
 }
 
+func TestTabStripWidthConfig(t *testing.T) {
+	cases := []struct {
+		data string
+		want int
+	}{
+		{`{}`, defaultTabStripWidth},
+		{`{"tabStripWidth":220}`, 220},
+		{`{"tabStripWidth":0}`, defaultTabStripWidth},
+		{`{"tabStripWidth":-10}`, defaultTabStripWidth},
+		{`{"tabStripWidth":1000}`, defaultTabStripWidth},
+	}
+	for _, c := range cases {
+		cfg, err := decodeImportedConfig([]byte(c.data))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if cfg.TabStripWidth != c.want {
+			t.Fatalf("标签条宽度为 %d，期望 %d：%s", cfg.TabStripWidth, c.want, c.data)
+		}
+	}
+}
+
 func TestDecodeImportedConfigFillsDefaultsAndKeepsCredentials(t *testing.T) {
 	cfg, err := decodeImportedConfig([]byte(`{"language":"en-US","sshProfiles":[{"id":"profile-1","name":"prod","origin":"manual","host":"example.com","port":22,"username":"deploy","password":"secret"}]}`))
 	if err != nil {

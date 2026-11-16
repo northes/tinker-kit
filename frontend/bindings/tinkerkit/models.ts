@@ -35,6 +35,11 @@ export interface Config {
     "tabCloseButton": string;
 
     /**
+     * TabStripWidth 是纵向标签条的宽度（px，含焦点环留白），只影响纵向排列。
+     */
+    "tabStripWidth": number;
+
+    /**
      * ShowTabIcons 为真时，标签在名称左侧显示图标，全部标签使用同一档更宽的宽度。
      */
     "showTabIcons": boolean;

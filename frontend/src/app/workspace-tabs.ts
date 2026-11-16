@@ -1,15 +1,17 @@
 // 工作区标签的打开、关闭、序号和命令面板过滤。组件只消费这些结果。
 // 激活先后用单调序号，不用墙钟，避免同一时刻分不出先后。
 
+export const BLANK_TAB_KEY = '__blank__';
+
 export type TabOrientation = 'horizontal' | 'vertical';
 export type TabCloseActivation = 'previous' | 'next' | 'recent';
 export type TabCloseButton = 'always' | 'hover' | 'never';
 
 export type WorkspaceTab = {
   id: string;
-  kind: 'tool' | 'settings';
+  kind: 'blank' | 'tool' | 'settings';
   toolId?: string;
-  // 工具标签从 1 起计，展示时 1 不加序号。设置标签不使用序号。
+  // 工具与空白标签从 1 起计，展示时 1 不加序号。设置标签不使用序号。
   ordinal: number;
   activatedAt: number;
 };
@@ -24,6 +26,7 @@ export type WorkspaceState = {
 
 export type PaletteScope =
   | { kind: 'empty' }
+  | { kind: 'blank' }
   | { kind: 'settings' }
   | { kind: 'tool'; toolId: string };
 
@@ -31,11 +34,16 @@ export type PaletteCommand = {
   page?: string;
   tool?: string;
   settingsAction?: string;
+  workspaceAction?: string;
   context?: string;
 };
 
 export function emptyWorkspace(): WorkspaceState {
   return { tabs: [], activeId: null, nextId: 1, activationSeq: 0, nextOrdinal: {} };
+}
+
+export function startupWorkspace(): WorkspaceState {
+  return openBlankTab(emptyWorkspace()).state;
 }
 
 export function parseTabOrientation(value: string | null | undefined): TabOrientation {
@@ -48,6 +56,27 @@ export function parseTabCloseActivation(value: string | null | undefined): TabCl
 
 export function parseTabCloseButton(value: string | null | undefined): TabCloseButton {
   return value === 'hover' || value === 'never' ? value : 'always';
+}
+
+// 纵向标签条宽度：拖动范围与默认值，与 configservice.go 的同名常量保持一致。
+export const DEFAULT_TAB_STRIP_WIDTH = 176;
+export const MIN_TAB_STRIP_WIDTH = 140;
+export const MAX_TAB_STRIP_WIDTH = 360;
+// 标签条宽度本身就包含 ScrollArea 为焦点环留的 8px，标签宽度要扣掉。
+export const TAB_STRIP_FOCUS_PADDING = 8;
+
+export function clampTabStripWidth(width: number) {
+  if (!Number.isFinite(width)) return DEFAULT_TAB_STRIP_WIDTH;
+  const rounded = Math.round(width);
+  if (rounded < MIN_TAB_STRIP_WIDTH) return MIN_TAB_STRIP_WIDTH;
+  if (rounded > MAX_TAB_STRIP_WIDTH) return MAX_TAB_STRIP_WIDTH;
+  return rounded;
+}
+
+export function parseTabStripWidth(value: number | null | undefined) {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0)
+    return DEFAULT_TAB_STRIP_WIDTH;
+  return clampTabStripWidth(value);
 }
 
 export function tabOrdinalLabel(name: string, ordinal: number) {
@@ -65,6 +94,45 @@ function touch(state: WorkspaceState, id: string): WorkspaceState {
     activeId: id,
     activationSeq: activatedAt,
     tabs: state.tabs.map((tab) => (tab.id === id ? { ...tab, activatedAt } : tab)),
+  };
+}
+
+export function openBlankTab(state: WorkspaceState): { state: WorkspaceState; tab: WorkspaceTab } {
+  const ordinal = state.nextOrdinal[BLANK_TAB_KEY] ?? 1;
+  const activatedAt = state.activationSeq + 1;
+  const tab: WorkspaceTab = {
+    id: `tab-${state.nextId}`,
+    kind: 'blank',
+    ordinal,
+    activatedAt,
+  };
+  return {
+    tab,
+    state: {
+      ...state,
+      tabs: [...state.tabs, tab],
+      activeId: tab.id,
+      nextId: state.nextId + 1,
+      activationSeq: activatedAt,
+      nextOrdinal: { ...state.nextOrdinal, [BLANK_TAB_KEY]: ordinal + 1 },
+    },
+  };
+}
+
+export function convertBlankTabToTool(
+  state: WorkspaceState,
+  tabId: string,
+  toolId: string,
+): WorkspaceState {
+  const target = state.tabs.find((tab) => tab.id === tabId);
+  if (!target || target.kind !== 'blank') return state;
+  const ordinal = state.nextOrdinal[toolId] ?? 1;
+  return {
+    ...state,
+    nextOrdinal: { ...state.nextOrdinal, [toolId]: ordinal + 1 },
+    tabs: state.tabs.map((tab) =>
+      tab.id === tabId ? { ...tab, kind: 'tool', toolId, ordinal } : tab,
+    ),
   };
 }
 
@@ -115,8 +183,6 @@ export function activateTab(state: WorkspaceState, id: string): WorkspaceState {
   return touch(state, id);
 }
 
-// 前一个 / 后一个只看打开顺序。目标一侧已经没有标签时，退到另一侧；
-// 这是关掉首尾标签时「必须仍选出一个」的结果，不是另一条产品规则。
 function neighborId(
   tabs: WorkspaceTab[],
   index: number,
@@ -142,6 +208,11 @@ function recentId(tabs: WorkspaceTab[], remaining: ReadonlySet<string>): string 
   return best?.id ?? null;
 }
 
+function withBlankWhenEmpty(state: WorkspaceState): WorkspaceState {
+  if (state.tabs.length > 0) return state;
+  return openBlankTab({ ...state, tabs: [], activeId: null }).state;
+}
+
 export function closeTabs(
   state: WorkspaceState,
   ids: readonly string[],
@@ -153,7 +224,7 @@ export function closeTabs(
   const remaining = new Set(remainingTabs.map((tab) => tab.id));
   const activeClosed = state.activeId != null && closing.has(state.activeId);
   if (!activeClosed) {
-    return { ...state, tabs: remainingTabs };
+    return withBlankWhenEmpty({ ...state, tabs: remainingTabs });
   }
   const index = state.tabs.findIndex((tab) => tab.id === state.activeId);
   const nextId =
@@ -162,14 +233,19 @@ export function closeTabs(
       : activation === 'recent'
         ? recentId(state.tabs, remaining)
         : neighborId(state.tabs, index, activation === 'previous' ? -1 : 1, remaining);
-  if (!nextId) return { ...state, tabs: [], activeId: null };
-  const activatedAt = state.activationSeq + 1;
-  return {
-    ...state,
-    tabs: remainingTabs.map((tab) => (tab.id === nextId ? { ...tab, activatedAt } : tab)),
-    activeId: nextId,
-    activationSeq: activatedAt,
-  };
+  let nextState: WorkspaceState;
+  if (!nextId) {
+    nextState = { ...state, tabs: [], activeId: null };
+  } else {
+    const activatedAt = state.activationSeq + 1;
+    nextState = {
+      ...state,
+      tabs: remainingTabs.map((tab) => (tab.id === nextId ? { ...tab, activatedAt } : tab)),
+      activeId: nextId,
+      activationSeq: activatedAt,
+    };
+  }
+  return withBlankWhenEmpty(nextState);
 }
 
 export function closeTab(state: WorkspaceState, id: string, activation: TabCloseActivation): WorkspaceState {
@@ -196,6 +272,7 @@ export function visiblePaletteCommands<T extends PaletteCommand>(
 ): T[] {
   const enabled = new Set(enabledToolIds);
   const visible = items.filter((item) => {
+    if (item.workspaceAction === 'new-tab') return true;
     if (isOpenTool(item)) return enabled.has(item.page!);
     if (item.page === 'settings') return true;
     if (item.settingsAction) return scope.kind === 'settings';

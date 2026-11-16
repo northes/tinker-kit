@@ -16,6 +16,7 @@ import {
   Network,
   Package,
   Plugs,
+  Plus,
   Power,
   QrCode,
   TextAa,
@@ -52,6 +53,7 @@ export type PaletteItem = {
     | 'toggle-display-mode'
     | 'toggle-language'
     | 'toggle-font-size';
+  workspaceAction?: 'new-tab';
 };
 
 export type TranslatablePaletteItem = PaletteItem & {
@@ -182,6 +184,14 @@ export const tools: ToolDefinition[] = [
 ];
 
 export const paletteItems: PaletteItem[] = [
+  {
+    id: 'nav:new-tab',
+    labelKey: 'commands.newTab',
+    groupKey: 'groups.nav',
+    icon: Plus,
+    keywords: 'new tab blank 新标签 空白 新建',
+    workspaceAction: 'new-tab',
+  },
   {
     id: 'nav:settings',
     labelKey: 'nav.settings',

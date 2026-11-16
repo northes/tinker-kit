@@ -21,6 +21,7 @@ export const defaultSettings: Settings = {
   tabOrientation: 'horizontal',
   tabCloseActivation: 'recent',
   tabCloseButton: 'always',
+  tabStripWidth: 176,
   showTabIcons: false,
   sidebarTools: [
     { id: 'json', enabled: true },

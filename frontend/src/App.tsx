@@ -14,8 +14,8 @@ import { Log as LogFrontend } from '../bindings/tinkerkit/logservice';
 import type { Config as Settings } from '../bindings/tinkerkit/models';
 import { CheckForUpdates, SetAutoCheckEnabled } from '../bindings/tinkerkit/updateservice';
 import { detectBase64, detectJwt } from './app/clipboard';
-import { CommandPalette } from './app/CommandPalette';
-import { defaultSettings } from './app/default-settings';
+import { BlankTabPicker } from './app/BlankTabPicker';
+import { CommandPalette } from './app/CommandPalette';import { defaultSettings } from './app/default-settings';
 import {
   paletteItems,
   tools,
@@ -26,19 +26,24 @@ import {
 } from './app/definitions';
 import { isToolId, paletteToolId, resolveSidebarTools, routePath } from './app/navigation';
 import { buildIndex } from './app/palette-search';
+import { TabStripResizer } from './app/TabStripResizer';
 import { WorkspaceTabBar } from './app/WorkspaceTabBar';
 import {
   activateTab,
   activeTab,
   closeTab,
   closeTabs,
+  convertBlankTabToTool,
   cycleTabs,
-  emptyWorkspace,
+  openBlankTab,
   openOrFocusSettings,
   openToolTab,
   parseTabCloseActivation,
   parseTabCloseButton,
   parseTabOrientation,
+  parseTabStripWidth,
+  startupWorkspace,
+  TAB_STRIP_FOCUS_PADDING,
   visiblePaletteCommands,
   type WorkspaceState,
   type WorkspaceTab,
@@ -187,7 +192,7 @@ function AppShell() {
   const location = useLocation();
   const routerNavigate = useNavigate();
   const workspaceElRef = useRef<HTMLElement>(null);
-  const [workspace, setWorkspace] = useState<WorkspaceState>(emptyWorkspace);
+  const [workspace, setWorkspace] = useState<WorkspaceState>(startupWorkspace);
   const workspaceStateRef = useRef(workspace);
   workspaceStateRef.current = workspace;
   const [paletteOpen, setPaletteOpen] = useState(false);
@@ -298,8 +303,19 @@ function AppShell() {
     setWorkspace(next);
   };
   const closeActivation = () => parseTabCloseActivation(settingsRef.current.tabCloseActivation);
+  const openBlankTabSession = () => {
+    commitWorkspace(openBlankTab(workspaceStateRef.current).state);
+  };
+  // 空白标签里选工具就地变成该工具，不另开标签。
   const openTool = (toolId: ToolId) => {
-    const opened = openToolTab(workspaceStateRef.current, toolId);
+    const state = workspaceStateRef.current;
+    const current = activeTab(state);
+    if (current?.kind === 'blank') {
+      const next = convertBlankTabToTool(state, current.id, toolId);
+      commitWorkspace(next);
+      return activeTab(next) ?? current;
+    }
+    const opened = openToolTab(state, toolId);
     commitWorkspace(opened.state);
     return opened.tab;
   };
@@ -539,14 +555,39 @@ function AppShell() {
     [resolvedSidebarTools],
   );
   const enabledToolSet = useMemo(() => new Set(enabledToolIds), [enabledToolIds]);
+  const orientation = parseTabOrientation(settings.tabOrientation);
+  const horizontal = orientation === 'horizontal';
+  // 拖动过程中先用预览值，松手才写回设置，避免每帧都触发配置保存。
+  const [stripPreview, setStripPreview] = useState<number | null>(null);
+  const tabStripWidth = stripPreview ?? parseTabStripWidth(settings.tabStripWidth);
+  useLayoutEffect(() => {
+    const root = document.documentElement;
+    if (horizontal) {
+      root.style.removeProperty('--workspace-tab-strip');
+      root.style.removeProperty('--workspace-tab-width');
+      return;
+    }
+    root.style.setProperty('--workspace-tab-strip', `${tabStripWidth}px`);
+    root.style.setProperty(
+      '--workspace-tab-width',
+      `${tabStripWidth - TAB_STRIP_FOCUS_PADDING}px`,
+    );
+  }, [horizontal, tabStripWidth]);
   const toolTabCounts = useMemo(() => {
     const counts: Record<string, number> = {};
     for (const tab of workspace.tabs) {
-      if (!tab.toolId) continue;
+      if (tab.kind !== 'tool' || !tab.toolId) continue;
       counts[tab.toolId] = (counts[tab.toolId] ?? 0) + 1;
     }
     return counts;
   }, [workspace.tabs]);
+  const enabledTools = useMemo(
+    () =>
+      enabledToolIds
+        .map((id) => tools.find((tool) => tool.id === id))
+        .filter((tool): tool is (typeof tools)[number] => tool !== undefined),
+    [enabledToolIds],
+  );
   const indexed = useMemo(() => {
     const contexts = new Set<PaletteContext>();
     if (jsonSchemaOpen && currentTab?.toolId === 'json') contexts.add('json.schema');
@@ -555,7 +596,9 @@ function AppShell() {
       ? ({ kind: 'empty' } as const)
       : currentTab.kind === 'settings'
         ? ({ kind: 'settings' } as const)
-        : ({ kind: 'tool', toolId: currentTab.toolId ?? '' } as const);
+        : currentTab.kind === 'blank'
+          ? ({ kind: 'blank' } as const)
+          : ({ kind: 'tool', toolId: currentTab.toolId ?? '' } as const);
     const items = visiblePaletteCommands(paletteItems, scope, enabledToolIds, contexts);
     return buildIndex(
       items.map((item) => ({
@@ -596,10 +639,6 @@ function AppShell() {
     settings.language,
     settings.codeEditorFontSize,
   ]);
-  const openPalette = () => {
-    lastFocusedRef.current = document.activeElement;
-    setPaletteOpen(true);
-  };
   const closePalette = () => {
     setPaletteOpen(false);
     requestAnimationFrame(() => {
@@ -614,6 +653,11 @@ function AppShell() {
         event.preventDefault();
         if (!paletteOpen) lastFocusedRef.current = document.activeElement;
         setPaletteOpen((open) => !open);
+        return;
+      }
+      if (command && !event.altKey && !event.shiftKey && event.key.toLowerCase() === 't') {
+        event.preventDefault();
+        if (!event.repeat) openBlankTabSession();
         return;
       }
       if (command && !event.altKey && !event.shiftKey && event.key.toLowerCase() === 'w') {
@@ -664,6 +708,11 @@ function AppShell() {
     const toolId = paletteToolId(item);
     if (toolId && !enabledToolSet.has(toolId)) return;
     if (!item.toggle) setPaletteOpen(false);
+    if (item.workspaceAction === 'new-tab') {
+      setDelivered(null);
+      openBlankTabSession();
+      return;
+    }
     if (item.settingsAction) {
       switch (item.settingsAction) {
         case 'quit':
@@ -796,6 +845,17 @@ function AppShell() {
   const renderWorkspaceTab = (tab: WorkspaceTab) => {
     const active = tab.id === workspace.activeId;
     const pending = pendingFor(tab.id);
+    if (tab.kind === 'blank') {
+      return (
+        <BlankTabPicker
+          active={active}
+          tools={enabledTools}
+          onSelect={(toolId) =>
+            commitWorkspace(convertBlankTabToTool(workspaceStateRef.current, tab.id, toolId))
+          }
+        />
+      );
+    }
     const toolId = tab.kind === 'settings' ? 'settings' : tab.toolId;
     switch (toolId) {
       case 'json':
@@ -936,8 +996,6 @@ function AppShell() {
         return null;
     }
   };
-  const orientation = parseTabOrientation(settings.tabOrientation);
-  const horizontal = orientation === 'horizontal';
   const tabBar = (
     <WorkspaceTabBar
       orientation={orientation}
@@ -947,7 +1005,7 @@ function AppShell() {
       closeButton={parseTabCloseButton(settings.tabCloseButton)}
       onActivate={focusTab}
       onClose={closeWorkspaceTab}
-      onNewTab={openPalette}
+      onNewTab={openBlankTabSession}
     />
   );
   return (
@@ -979,6 +1037,14 @@ function AppShell() {
           >
             <div className="h-(--workspace-traffic-block) shrink-0" />
             {tabBar}
+            <TabStripResizer
+              width={tabStripWidth}
+              onPreview={setStripPreview}
+              onCommit={(width) => {
+                setStripPreview(null);
+                setSettings((current) => ({ ...current, tabStripWidth: width }));
+              }}
+            />
           </aside>
         )}
         <div className="relative z-[1] min-h-0 min-w-0">
