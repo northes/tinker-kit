@@ -1025,7 +1025,7 @@ function AppShell() {
         <div className="ambient pointer-events-none absolute inset-0 z-0" />
         {horizontal ? (
           <header
-            className="relative z-[2] flex h-full min-w-0 items-center border-b border-border bg-background pl-(--workspace-traffic-inset) [--wails-draggable:drag]"
+            className="relative z-[2] flex h-full min-w-0 cursor-default items-center border-b border-border bg-background pl-(--workspace-traffic-inset) [--wails-draggable:drag]"
             data-wails-drag
           >
             {tabBar}
@@ -1035,7 +1035,7 @@ function AppShell() {
           </header>
         ) : (
           <aside
-            className="relative z-[2] flex h-full min-h-0 w-(--workspace-tab-strip) flex-col border-r border-border bg-background [--wails-draggable:drag]"
+            className="relative z-[2] flex h-full min-h-0 w-(--workspace-tab-strip) cursor-default flex-col border-r border-border bg-background [--wails-draggable:drag]"
             data-wails-drag
           >
             <div className="h-(--workspace-traffic-block) shrink-0" />
@@ -1054,7 +1054,7 @@ function AppShell() {
           {horizontal ? null : (
             <>
               <div
-                className="absolute inset-x-0 top-0 z-20 h-(--app-titlebar-height) [--wails-draggable:drag]"
+                className="absolute inset-x-0 top-0 z-20 h-(--app-titlebar-height) cursor-default [--wails-draggable:drag]"
                 data-wails-drag
               />
               <div className="absolute top-1.5 right-3 z-30 max-w-[min(340px,40vw)]">

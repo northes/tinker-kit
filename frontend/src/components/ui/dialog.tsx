@@ -36,7 +36,7 @@ function DialogOverlay({ className, children, ...props }: DialogPrimitive.Backdr
       <div
         data-wails-drag
         aria-hidden="true"
-        className="absolute inset-x-0 top-0 h-(--app-titlebar-height) [--wails-draggable:drag]"
+        className="absolute inset-x-0 top-0 h-(--app-titlebar-height) cursor-default [--wails-draggable:drag]"
       />
       {children}
     </DialogPrimitive.Backdrop>
