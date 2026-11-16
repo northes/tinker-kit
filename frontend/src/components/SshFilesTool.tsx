@@ -5,7 +5,6 @@ import {
   ArrowsLeftRight,
   ArrowUpRight,
   CaretDown,
-  CaretDownIcon,
   CaretRight,
   CaretUp,
   CaretUpDown,
@@ -17,6 +16,7 @@ import {
   FilePlus,
   Folder,
   FolderSimplePlus,
+  Funnel,
   GearSix,
   HardDrives,
   ListDashes,
@@ -1396,23 +1396,18 @@ export default function SshFilesTool({ active, locate = null }: Props) {
                 render={
                   <Button
                     variant="outline"
-                    className={`${toolHeaderControlClassName} justify-between font-normal`}
+                    size="icon-sm"
+                    className="flex-none"
                     disabled={!sourceUsable || isLoading}
                     aria-label={t('sshFilesTool.searchOptions')}
+                    title={t('sshFilesTool.searchOptionsSummary', {
+                      mode: searchModeLabel,
+                      scope: searchScopeLabel,
+                    })}
                   />
                 }
               >
-                <span className="min-w-0 flex-1 truncate text-left">
-                  {t('sshFilesTool.searchOptionsSummary', {
-                    mode: searchModeLabel,
-                    scope: searchScopeLabel,
-                  })}
-                </span>
-                <CaretDownIcon
-                  className="pointer-events-none size-4 text-muted-foreground"
-                  data-icon="inline-end"
-                  aria-hidden="true"
-                />
+                <Funnel weight="regular" />
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-64">
                 <DropdownMenuGroup>
