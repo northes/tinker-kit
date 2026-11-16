@@ -339,30 +339,25 @@ export default function SshFilesTool({ active, locate = null }: Props) {
 
   useEffect(() => {
     if (!pathEditing) return;
-    let remove = () => {};
-    // 等开始那次 pointerdown 结束再监听，避免进入编辑的同一次点击被当成点外部而立刻取消。
-    const timer = window.setTimeout(() => {
-      const handlePointerDown = (event: PointerEvent) => {
-        const wrap = pathEditInputWrapRef.current;
-        const target = event.target;
-        if (!(target instanceof Node)) return;
-        if (wrap?.contains(target)) return;
-        setPathInput(currentPath);
-        setPathEditing(false);
-      };
-      document.addEventListener('pointerdown', handlePointerDown);
-      remove = () => document.removeEventListener('pointerdown', handlePointerDown);
-    }, 0);
-    return () => {
-      window.clearTimeout(timer);
-      remove();
+    // 被动 effect 在这次 pointerdown 事件结束之后才跑，所以这不会把刚打开编辑的那一次点击当成点外部。
+    const handlePointerDown = (event: PointerEvent) => {
+      const wrap = pathEditInputWrapRef.current;
+      const target = event.target;
+      if (!(target instanceof Node)) return;
+      if (wrap?.contains(target)) return;
+      setPathInput(currentPath);
+      setPathEditing(false);
     };
+    document.addEventListener('pointerdown', handlePointerDown);
+    return () => document.removeEventListener('pointerdown', handlePointerDown);
   }, [pathEditing, currentPath, setPathInput, setPathEditing]);
 
-  useLayoutEffect(() => {
+  useEffect(() => {
     if (!pathEditing) return;
     const input = pathEditInputRef.current;
     if (!input) return;
+    // 进入编辑是在 pointerdown 里发生的，浏览器紧接着的鼠标默认动作会把焦点收回 body，
+    // 所以要在这一轮事件结束后（被动 effect）再聚焦，否则用户得再点一次输入框。
     input.focus();
     const end = input.value.length;
     input.setSelectionRange(end, end);
@@ -1544,7 +1539,6 @@ export default function SshFilesTool({ active, locate = null }: Props) {
               <div ref={pathEditInputWrapRef} className="relative min-w-0 flex-1">
                 <Input
                   ref={pathEditInputRef}
-                  autoFocus
                   value={pathInput}
                   onChange={(event) => setPathInput(event.target.value)}
                   onKeyDown={(event) => {
