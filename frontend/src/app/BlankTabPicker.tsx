@@ -89,7 +89,6 @@ export function BlankTabPicker({
                   if (filtered.length !== 1 || !only) return;
                   choose(only);
                 }}
-                onClear={() => setQuery('')}
                 placeholder={t('workspaceTabs.blankSearchPlaceholder')}
                 ariaLabel={t('workspaceTabs.blankSearchPlaceholder')}
               />
