@@ -81,7 +81,7 @@ export function WorkspaceTabBar({
         <div
           role="tablist"
           aria-label={t('workspaceTabs.list')}
-          className={cn('flex', horizontal ? 'h-full items-center' : 'flex-col')}
+          className={cn('flex gap-1', horizontal ? 'h-full items-center' : 'flex-col')}
         >
           {tabs.map((tab) => {
             const tool = tab.kind === 'tool' ? tools.find((item) => item.id === tab.toolId) : undefined;
