@@ -73,25 +73,25 @@ export function BlankTabPicker({
   };
   return (
     <div className="flex h-full min-h-0 flex-col bg-background">
-      <div className="mx-auto flex h-full min-h-0 w-full max-w-[52rem] flex-col">
-        <div className="flex-none px-4 pb-3 pt-4">
-          <div className="mx-auto w-full max-w-[32rem]">
-            <ToolSearchField
-              id={SEARCH_ID}
-              value={query}
-              onValueChange={setQuery}
-              onSubmit={() => {
-                const only = filtered[0];
-                if (filtered.length !== 1 || !only) return;
-                choose(only);
-              }}
-              onClear={() => setQuery('')}
-              placeholder={t('workspaceTabs.blankSearchPlaceholder')}
-              ariaLabel={t('workspaceTabs.blankSearchPlaceholder')}
-            />
+      <div className="mx-auto flex h-full min-h-0 w-full max-w-[52rem] flex-col justify-center">
+        <ScrollArea className="min-h-0 max-h-full" options={{ overflow: { x: 'hidden' } }}>
+          <div className="px-4 pb-3 pt-4">
+            <div className="mx-auto w-full max-w-[32rem]">
+              <ToolSearchField
+                id={SEARCH_ID}
+                value={query}
+                onValueChange={setQuery}
+                onSubmit={() => {
+                  const only = filtered[0];
+                  if (filtered.length !== 1 || !only) return;
+                  choose(only);
+                }}
+                onClear={() => setQuery('')}
+                placeholder={t('workspaceTabs.blankSearchPlaceholder')}
+                ariaLabel={t('workspaceTabs.blankSearchPlaceholder')}
+              />
+            </div>
           </div>
-        </div>
-        <ScrollArea className="min-h-0 flex-1" options={{ overflow: { x: 'hidden' } }}>
           <div className="grid grid-cols-[repeat(auto-fill,minmax(7rem,1fr))] gap-2 px-4 pb-4 pt-1">
             {filtered.map((item) => {
               const Icon = item.icon;
