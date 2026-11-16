@@ -1,6 +1,6 @@
 cask "tinker-kit" do
-  version "0.21.1"
-  sha256 "511e63bef1664a50aa261209f001ac4bf13e9482b7f137b3f18b6d4e02debdad"
+  version "0.21.2"
+  sha256 "417f55a77e632224cbcd5e6fd098f1a965d59be2e37f309f56bc9a9a1a70695b"
 
   url "https://github.com/northes/tinker-kit/releases/download/v#{version}/TinkerKit-#{version}-darwin-universal.dmg"
   name "TinkerKit"
