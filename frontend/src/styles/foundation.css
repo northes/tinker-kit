@@ -132,35 +132,37 @@ textarea,
 [data-workspace-tab-scroll].scroll-fade-y {
   --scroll-fade-size: 16px;
 }
-/* 工作区转场：仅主内容区淡入淡出；标签条用 transition-colors，避免每个标签各建 VT。 */
+/* 标签切换改真实 DOM，不用 document view transition。
+   主题转场的 ::view-transition-old(root) 会把整页旧快照盖住约 750ms，
+   标签高亮和后续点击都落在快照上，所以切不过去。 */
+.workspace > .tool-slot.is-hidden {
+  visibility: hidden;
+  opacity: 0;
+}
 @media (prefers-reduced-motion: no-preference) {
-  @supports (view-transition-name: root) {
-    html[data-workspace-view-transition] .workspace-tool-slot-active {
-      view-transition-name: workspace-tool-content;
-    }
-    html[data-workspace-view-transition] ::view-transition-group(*) {
-      animation-duration: var(--motion-slide-duration);
-      animation-timing-function: var(--motion-slide-ease);
-    }
-    ::view-transition-old(workspace-tool-content) {
-      mix-blend-mode: normal;
-      animation: workspace-content-out var(--motion-slide-duration) var(--motion-slide-ease) both;
-    }
-    ::view-transition-new(workspace-tool-content) {
-      mix-blend-mode: normal;
-      animation: workspace-content-in var(--motion-slide-duration) var(--motion-slide-ease) both;
-    }
-    @keyframes workspace-content-out {
-      to {
-        opacity: 0;
-        transform: translateY(4px);
-      }
-    }
-    @keyframes workspace-content-in {
-      from {
-        opacity: 0;
-        transform: translateY(-4px);
-      }
+  .workspace > .tool-slot {
+    transition:
+      opacity var(--motion-duration) var(--motion-ease),
+      visibility 0s linear var(--motion-duration);
+  }
+  .workspace > .tool-slot.workspace-tool-slot-active {
+    visibility: visible;
+    opacity: 1;
+    transition:
+      opacity var(--motion-duration) var(--motion-ease),
+      visibility 0s;
+  }
+  [data-workspace-tab] {
+    transition:
+      opacity var(--motion-duration) var(--motion-ease),
+      transform var(--motion-duration) var(--motion-ease),
+      color var(--motion-duration) var(--motion-ease),
+      background-color var(--motion-duration) var(--motion-ease);
+  }
+  @starting-style {
+    [data-workspace-tab] {
+      opacity: 0;
+      transform: scale(0.96);
     }
   }
 }

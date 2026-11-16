@@ -48,7 +48,6 @@ import {
   type WorkspaceState,
   type WorkspaceTab,
 } from './app/workspace-tabs';
-import { runWorkspaceViewTransition } from './app/workspace-view-transition';
 import { parseJsonLoose, type PendingAction, type ToolId } from './components/shared';
 import { TaskCenter } from './components/TaskCenter';
 import {
@@ -185,7 +184,7 @@ const SettingsPage = lazy(() => import('./components/SettingsPage'));
 function toolSlotClass(active: boolean) {
   return active
     ? 'tool-slot workspace-tool-slot-active relative isolate z-10 h-full min-h-0 overflow-hidden bg-background'
-    : 'tool-slot absolute inset-0 isolate z-0 h-full min-h-0 overflow-hidden invisible opacity-0 pointer-events-none is-hidden';
+    : 'tool-slot is-hidden absolute inset-0 isolate z-0 h-full min-h-0 overflow-hidden pointer-events-none';
 }
 
 function AppShell() {
@@ -194,8 +193,8 @@ function AppShell() {
   const routerNavigate = useNavigate();
   const workspaceElRef = useRef<HTMLElement>(null);
   const [workspace, setWorkspace] = useState<WorkspaceState>(startupWorkspace);
-  // 工作区状态只有 commitWorkspace 一个写入口，ref 在提交时更新：
-  // 转场回调晚于事件处理执行，处理函数读到的必须是最新意图而不是上一帧的状态。
+  // 工作区状态只有 commitWorkspace 一个写入口，ref 在提交时更新，
+  // 同一次事件里的后续操作读到的是最新意图而不是上一帧的状态。
   const workspaceStateRef = useRef(workspace);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [romanize, setRomanize] = useState<Romanize>(() => (text) => text);
@@ -304,17 +303,9 @@ function AppShell() {
     workspaceStateRef.current = next;
     setWorkspace(next);
   };
-  // 用户驱动的标签变化走一次性视图转场：状态没变（点当前标签、只有一个标签时循环）
-  // 不起转场，主题转场进行中则直接提交，避免两段转场互相抢占。
-  const commitWorkspaceAnimated = (next: WorkspaceState) => {
-    const animate = next !== workspaceStateRef.current && themeTransitionRef.current === null;
-    workspaceStateRef.current = next;
-    // 回调读取 ref，避免迟到的转场回调用旧闭包覆盖后续快速切换的目标标签。
-    runWorkspaceViewTransition(() => commitWorkspace(workspaceStateRef.current), animate);
-  };
   const closeActivation = () => parseTabCloseActivation(settingsRef.current.tabCloseActivation);
   const openBlankTabSession = () => {
-    commitWorkspaceAnimated(openBlankTab(workspaceStateRef.current).state);
+    commitWorkspace(openBlankTab(workspaceStateRef.current).state);
   };
   // 空白标签里选工具就地变成该工具，不另开标签。
   const openTool = (toolId: ToolId) => {
@@ -322,21 +313,21 @@ function AppShell() {
     const current = activeTab(state);
     if (current?.kind === 'blank') {
       const next = convertBlankTabToTool(state, current.id, toolId);
-      commitWorkspaceAnimated(next);
+      commitWorkspace(next);
       return activeTab(next) ?? current;
     }
     const opened = openToolTab(state, toolId);
-    commitWorkspaceAnimated(opened.state);
+    commitWorkspace(opened.state);
     return opened.tab;
   };
   const openSettingsTab = () => {
-    commitWorkspaceAnimated(openOrFocusSettings(workspaceStateRef.current));
+    commitWorkspace(openOrFocusSettings(workspaceStateRef.current));
   };
   const focusTab = (id: string) => {
-    commitWorkspaceAnimated(activateTab(workspaceStateRef.current, id));
+    commitWorkspace(activateTab(workspaceStateRef.current, id));
   };
   const closeWorkspaceTab = (id: string) => {
-    commitWorkspaceAnimated(closeTab(workspaceStateRef.current, id, closeActivation()));
+    commitWorkspace(closeTab(workspaceStateRef.current, id, closeActivation()));
     setDelivered((current) => (current?.tabId === id ? null : current));
   };
   const closeCurrentTab = () => {
@@ -347,7 +338,7 @@ function AppShell() {
     const ids = workspaceStateRef.current.tabs
       .filter((tab) => tab.toolId === toolId)
       .map((tab) => tab.id);
-    commitWorkspaceAnimated(closeTabs(workspaceStateRef.current, ids, closeActivation()));
+    commitWorkspace(closeTabs(workspaceStateRef.current, ids, closeActivation()));
     setDelivered((current) => (current && ids.includes(current.tabId) ? null : current));
   };
   const respondSSHHostKeyPrompt = (accepted: boolean) => {
@@ -679,7 +670,7 @@ function AppShell() {
       if (event.ctrlKey && !event.metaKey && !event.altKey && event.key === 'Tab') {
         event.preventDefault();
         if (!event.repeat)
-          commitWorkspaceAnimated(cycleTabs(workspaceStateRef.current, event.shiftKey ? -1 : 1));
+          commitWorkspace(cycleTabs(workspaceStateRef.current, event.shiftKey ? -1 : 1));
         return;
       }
       if (event.key === 'Escape' && paletteOpen) closePalette();
@@ -863,7 +854,7 @@ function AppShell() {
           tools={enabledTools}
           romanize={romanize}
           onSelectTool={(toolId) =>
-            commitWorkspaceAnimated(convertBlankTabToTool(workspaceStateRef.current, tab.id, toolId))
+            commitWorkspace(convertBlankTabToTool(workspaceStateRef.current, tab.id, toolId))
           }
           onOpenSettings={openSettingsTab}
         />

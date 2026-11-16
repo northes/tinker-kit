@@ -114,8 +114,9 @@ export function WorkspaceTabBar({
                 title={label}
                 aria-label={label}
                 data-current={current ? '' : undefined}
+                data-workspace-tab=""
                 className={cn(
-                  'group/tab relative flex h-7 w-(--workspace-tab-width) shrink-0 cursor-default items-center gap-1.5 rounded-md px-2 text-left text-xs transition-colors motion-reduce:transition-none [--wails-draggable:no-drag] select-none',
+                  'group/tab relative flex h-7 w-(--workspace-tab-width) shrink-0 cursor-default items-center gap-1.5 rounded-md px-2 text-left text-xs [--wails-draggable:no-drag] select-none',
                   current
                     ? 'bg-muted text-foreground'
                     : 'text-muted-foreground hover:text-foreground',
