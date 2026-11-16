@@ -356,7 +356,7 @@ export default function SshFilesTool({ active, locate = null }: Props) {
       if (!sourceUsable || loadingSources || loading || searching) return;
       const target = event.target;
       if (!(target instanceof Element)) return;
-      if (target.closest('button, [role="menu"]')) return;
+      if (target.closest('button, a, [role="menuitem"], [role="menu"]')) return;
       beginPathEditing();
     },
     [
@@ -1469,57 +1469,59 @@ export default function SshFilesTool({ active, locate = null }: Props) {
               placeholder={t('sshFilesTool.searchPlaceholder')}
               ariaLabel={t('sshFilesTool.search')}
               clearLabel={t('sshFilesTool.clearSearch')}
+              trailingAddon={
+                <DropdownMenu>
+                  <DropdownMenuTrigger
+                    render={
+                      <Button
+                        variant="ghost"
+                        size="icon-xs"
+                        className="text-muted-foreground"
+                        disabled={!sourceUsable || isLoading}
+                        aria-label={t('sshFilesTool.searchOptions')}
+                        title={t('sshFilesTool.searchOptionsSummary', {
+                          mode: searchModeLabel,
+                          scope: searchScopeLabel,
+                        })}
+                      />
+                    }
+                  >
+                    <Funnel weight="regular" />
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-64">
+                    <DropdownMenuGroup>
+                      <DropdownMenuLabel>{t('sshFilesTool.searchMode')}</DropdownMenuLabel>
+                      <DropdownMenuRadioGroup
+                        value={searchMode}
+                        onValueChange={(value) => setSearchMode(value as 'name' | 'content')}
+                      >
+                        <DropdownMenuRadioItem value="name">
+                          {t('sshFilesTool.searchByName')}
+                        </DropdownMenuRadioItem>
+                        <DropdownMenuRadioItem value="content">
+                          {t('sshFilesTool.searchByContent')}
+                        </DropdownMenuRadioItem>
+                      </DropdownMenuRadioGroup>
+                    </DropdownMenuGroup>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuGroup>
+                      <DropdownMenuLabel>{t('sshFilesTool.searchScope')}</DropdownMenuLabel>
+                      <DropdownMenuRadioGroup
+                        value={searchScope}
+                        onValueChange={(value) => setSearchScope(value as 'current' | 'recursive')}
+                      >
+                        <DropdownMenuRadioItem value="current">
+                          {t('sshFilesTool.searchCurrentDirectory')}
+                        </DropdownMenuRadioItem>
+                        <DropdownMenuRadioItem value="recursive">
+                          {t('sshFilesTool.searchFromCurrentDirectory')}
+                        </DropdownMenuRadioItem>
+                      </DropdownMenuRadioGroup>
+                    </DropdownMenuGroup>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              }
             />
-            <DropdownMenu>
-              <DropdownMenuTrigger
-                render={
-                  <Button
-                    variant="outline"
-                    size="icon-sm"
-                    className="flex-none"
-                    disabled={!sourceUsable || isLoading}
-                    aria-label={t('sshFilesTool.searchOptions')}
-                    title={t('sshFilesTool.searchOptionsSummary', {
-                      mode: searchModeLabel,
-                      scope: searchScopeLabel,
-                    })}
-                  />
-                }
-              >
-                <Funnel weight="regular" />
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-64">
-                <DropdownMenuGroup>
-                  <DropdownMenuLabel>{t('sshFilesTool.searchMode')}</DropdownMenuLabel>
-                  <DropdownMenuRadioGroup
-                    value={searchMode}
-                    onValueChange={(value) => setSearchMode(value as 'name' | 'content')}
-                  >
-                    <DropdownMenuRadioItem value="name">
-                      {t('sshFilesTool.searchByName')}
-                    </DropdownMenuRadioItem>
-                    <DropdownMenuRadioItem value="content">
-                      {t('sshFilesTool.searchByContent')}
-                    </DropdownMenuRadioItem>
-                  </DropdownMenuRadioGroup>
-                </DropdownMenuGroup>
-                <DropdownMenuSeparator />
-                <DropdownMenuGroup>
-                  <DropdownMenuLabel>{t('sshFilesTool.searchScope')}</DropdownMenuLabel>
-                  <DropdownMenuRadioGroup
-                    value={searchScope}
-                    onValueChange={(value) => setSearchScope(value as 'current' | 'recursive')}
-                  >
-                    <DropdownMenuRadioItem value="current">
-                      {t('sshFilesTool.searchCurrentDirectory')}
-                    </DropdownMenuRadioItem>
-                    <DropdownMenuRadioItem value="recursive">
-                      {t('sshFilesTool.searchFromCurrentDirectory')}
-                    </DropdownMenuRadioItem>
-                  </DropdownMenuRadioGroup>
-                </DropdownMenuGroup>
-              </DropdownMenuContent>
-            </DropdownMenu>
             <ToolActionButton
               variant="primary"
               icon={UploadSimple}
@@ -1534,7 +1536,7 @@ export default function SshFilesTool({ active, locate = null }: Props) {
         <div
           className={`flex min-h-10 min-w-0 shrink-0 items-center gap-1 rounded-md bg-muted/20 px-2 text-xs ${!pathEditing && sourceUsable && !isLoading ? 'cursor-text' : ''}`}
           aria-label={t('sshFilesTool.path')}
-          onPointerDown={handlePathBarPointerDown}
+          onPointerDownCapture={handlePathBarPointerDown}
         >
           {searchActive ? (
             <Badge variant="secondary" className="flex-none">
@@ -1598,7 +1600,7 @@ export default function SshFilesTool({ active, locate = null }: Props) {
                 className="min-w-0 flex-1 py-1"
                 options={{ overflow: { x: 'scroll', y: 'hidden' } }}
               >
-                <div className="flex items-center gap-0.5">
+                <div className="flex min-h-7 min-w-full items-center gap-0.5">
                   {breadcrumbs.map((crumb, index) => (
                     <span key={crumb.path} className="flex items-center whitespace-nowrap">
                       <button

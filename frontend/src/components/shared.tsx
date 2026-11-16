@@ -190,6 +190,7 @@ export function ToolSearchField({
   disabled,
   className = '',
   inputRef,
+  trailingAddon,
 }: {
   id?: string;
   label?: string;
@@ -206,7 +207,10 @@ export function ToolSearchField({
   className?: string;
   /** 输入框本身的 ref。同一页面有多份搜索框时用它聚焦自己那一份。 */
   inputRef?: Ref<HTMLInputElement>;
+  /** 搜索框右侧内嵌控件（例如搜索方式菜单），显示在清空按钮左侧。 */
+  trailingAddon?: ReactNode;
 }) {
+  const showClear = Boolean(onClear && value);
   const field = (
     <div className="relative w-full min-w-0">
       <MagnifyingGlass
@@ -234,9 +238,24 @@ export function ToolSearchField({
         }}
         placeholder={placeholder}
         aria-label={label ? undefined : ariaLabel}
-        className={`h-8 text-sm ${onClear ? 'pr-8' : ''} pl-8`}
+        className={cn(
+          'h-8 pl-8 text-sm',
+          showClear && trailingAddon && 'pr-14',
+          showClear && !trailingAddon && 'pr-8',
+          !showClear && trailingAddon && 'pr-8',
+        )}
       />
-      {onClear && value ? (
+      {trailingAddon ? (
+        <div
+          className={cn(
+            'absolute top-1/2 -translate-y-1/2',
+            showClear ? 'right-8' : 'right-1.5',
+          )}
+        >
+          {trailingAddon}
+        </div>
+      ) : null}
+      {showClear ? (
         <Button
           type="button"
           variant="ghost"
