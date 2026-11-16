@@ -5,6 +5,7 @@ import {
   useState,
   type PointerEvent as ReactPointerEvent,
   type ReactNode,
+  type Ref,
 } from 'react';
 import { Button } from './ui/button';
 import { Spinner } from './ui/spinner';
@@ -188,6 +189,7 @@ export function ToolSearchField({
   clearLabel,
   disabled,
   className = '',
+  inputRef,
 }: {
   id?: string;
   label?: string;
@@ -202,6 +204,8 @@ export function ToolSearchField({
   clearLabel?: string;
   disabled?: boolean;
   className?: string;
+  /** 输入框本身的 ref。同一页面有多份搜索框时用它聚焦自己那一份。 */
+  inputRef?: Ref<HTMLInputElement>;
 }) {
   const field = (
     <div className="relative w-full min-w-0">
@@ -213,6 +217,7 @@ export function ToolSearchField({
       />
       <Input
         id={id}
+        ref={inputRef}
         value={value}
         disabled={disabled}
         onChange={(event) => onValueChange(event.target.value)}

@@ -1,5 +1,5 @@
 import { GearSix } from '@phosphor-icons/react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { ToolDefinition } from '../components/SettingsPage';
 import { ToolSearchField } from '../components/shared';
@@ -9,7 +9,6 @@ import { ScrollArea } from '../components/ui/scroll-area';
 import type { Romanize } from './definitions';
 import { buildIndex, searchIndexedItems } from './palette-search';
 
-const SEARCH_ID = 'workspace-blank-tab-search';
 const SETTINGS_ITEM = '__settings__';
 // 设置方块和工具并列，排在末尾；搜索关键词与命令面板的设置项保持一致。
 const SETTINGS_KEYWORDS = 'settings preferences options 设置 配置 选项';
@@ -28,11 +27,14 @@ export function BlankTabPicker({
   onOpenSettings: () => void;
 }) {
   const { t } = useTranslation();
+  // 多个空白标签同时常驻挂载，搜索框必须定位到自己那一份，元素 id 也要各实例独立。
+  const searchId = useId();
+  const searchRef = useRef<HTMLInputElement>(null);
   const [query, setQuery] = useState('');
   useEffect(() => {
     if (!active) return;
     const id = requestAnimationFrame(() => {
-      document.getElementById(SEARCH_ID)?.focus();
+      searchRef.current?.focus();
     });
     return () => cancelAnimationFrame(id);
   }, [active]);
@@ -78,7 +80,8 @@ export function BlankTabPicker({
           <div className="px-4 pb-3 pt-4">
             <div className="mx-auto w-full max-w-[32rem]">
               <ToolSearchField
-                id={SEARCH_ID}
+                id={searchId}
+                inputRef={searchRef}
                 value={query}
                 onValueChange={setQuery}
                 onSubmit={() => {
