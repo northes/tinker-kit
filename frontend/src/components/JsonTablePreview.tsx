@@ -165,8 +165,16 @@ function KeyValue({ value, t, path, depth = 0 }: ValueProps & { depth?: number }
   return (
     <Table containerClassName="overflow-x-visible" className="json-table-key-value">
       <TableBody>
-        {entries.map(([key, item]) => (
-          <TableRow key={key}>
+        {/* 行间线与 hover 由 json.css 处理；斑马纹限定 :not(:hover) 以免压过 hover 单元格底色 */}
+        {entries.map(([key, item], index) => (
+          <TableRow
+            key={key}
+            className={
+              index % 2 === 1
+                ? '[&:not(:hover)>:is(td,th)]:bg-muted/30 [&:not(:hover)>:first-child]:rounded-l-md [&:not(:hover)>:last-child]:rounded-r-md'
+                : undefined
+            }
+          >
             <TableHead className="json-table-key">{key}</TableHead>
             <ValueCell
               value={item}
@@ -252,8 +260,16 @@ function ObjectArray({
           ))}
         </TableHeader>
         <TableBody>
+          {/* 与 KeyValue 相同：不写 border-b-0，斑马纹与 json.css hover 共存 */}
           {table.getRowModel().rows.map((row) => (
-            <TableRow key={row.id}>
+            <TableRow
+              key={row.id}
+              className={
+                row.index % 2 === 1
+                  ? '[&:not(:hover)>:is(td,th)]:bg-muted/30 [&:not(:hover)>:first-child]:rounded-l-md [&:not(:hover)>:last-child]:rounded-r-md'
+                  : undefined
+              }
+            >
               {row.getVisibleCells().map((cell) =>
                 cell.column.id === '__rowIndex' ? (
                   <TableCell key={cell.id} className="json-table-row-index-cell">

@@ -346,7 +346,17 @@ export function ImageManagerDetailView({
                       </TableHeader>
                       <TableBody>
                         {detailLayers.map((layer, index) => (
-                          <TableRow key={`${layer.digest}-${index}`}>
+                          <TableRow
+                            key={`${layer.digest}-${index}`}
+                            className={[
+                              'border-b-0',
+                              index % 2 === 1
+                                ? '[&>:is(td,th)]:bg-muted/30 [&>:first-child]:rounded-l-md [&>:last-child]:rounded-r-md'
+                                : '',
+                            ]
+                              .filter(Boolean)
+                              .join(' ')}
+                          >
                             <TableCell className="text-muted-foreground">{index + 1}</TableCell>
                             <TableCell className="whitespace-nowrap">
                               {layer.size > 0
