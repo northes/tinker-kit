@@ -83,13 +83,12 @@
   font-size: 14px;
 }
 .json-table-data thead th {
-  height: 36px;
-  min-height: 32px;
-  padding: 8px;
+  padding: 6px 8px;
   color: var(--muted-foreground);
   font-family: inherit;
   font-size: 14px;
   font-weight: 500;
+  line-height: 1.4;
   vertical-align: middle;
 }
 .json-table-data thead th.json-table-key {
@@ -129,28 +128,41 @@
 .json-table-key-value td,
 .json-table-data td,
 .json-table-key-value tbody th.json-table-key {
-  padding: 8px;
+  padding-block: 6px;
+  padding-inline: 8px;
+  line-height: 1.5;
   vertical-align: middle;
 }
+.json-table-key-value tbody td,
 .json-table-data tbody td {
   font-family: var(--font-mono);
   font-size: var(--code-editor-font-size);
 }
-.json-table-key-value td.json-table-value-leaf,
-.json-table-data td.json-table-value-leaf,
-.json-table-data tbody td:not(.json-table-collapsible):not(.json-table-row-index-cell) {
+.json-table-leaf-text {
+  display: inline-block;
   max-width: 44ch;
-  white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  vertical-align: bottom;
+  white-space: nowrap;
+}
+.json-table-data
+  tbody
+  td:not(.json-table-collapsible):not(.json-table-row-index-cell):not(:has(.json-table-leaf-text)) {
+  max-width: 44ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .json-table-key {
   width: 1%;
-  padding: 4px 8px;
+  padding-block: 6px;
+  padding-inline: 8px;
   color: var(--muted-foreground);
   font-family: var(--font-mono);
   font-size: var(--code-editor-font-size);
   font-weight: 400;
+  line-height: 1.5;
   white-space: nowrap;
 }
 .json-table-data .is-numeric,
@@ -170,6 +182,7 @@
 }
 .json-table-child {
   margin: 4px 0 2px;
+  margin-inline-start: 4px;
   padding: 6px 8px;
   border-radius: calc(var(--radius) - 4px);
   background: color-mix(in oklch, var(--muted) 45%, transparent);
@@ -182,13 +195,13 @@
   color: var(--muted-foreground);
 }
 .json-table-string {
-  color: var(--chart-2);
+  color: color-mix(in oklch, var(--chart-2) 60%, var(--foreground));
 }
 .json-table-number {
-  color: var(--chart-1);
+  color: color-mix(in oklch, var(--chart-1) 60%, var(--foreground));
 }
 .json-table-boolean {
-  color: var(--chart-4);
+  color: color-mix(in oklch, var(--chart-4) 60%, var(--foreground));
 }
 .json-table-row-index-cell {
   width: 1%;

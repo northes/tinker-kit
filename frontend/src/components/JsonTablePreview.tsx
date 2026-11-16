@@ -29,11 +29,17 @@ const isObjectArray = (value: unknown): value is Record<string, unknown>[] =>
 
 function scalar(value: unknown, t: Props['t']) {
   if (value === null) return <span className="json-table-null">—</span>;
-  if (typeof value === 'string') return <span className="json-table-string">{value}</span>;
+  if (typeof value === 'string')
+    return <span className="json-table-string json-table-leaf-text">{value}</span>;
   if (typeof value === 'boolean')
-    return <span className="json-table-boolean">{String(value)}</span>;
-  if (typeof value === 'number') return <span className="json-table-number">{String(value)}</span>;
-  return <span className="text-muted-foreground">{t('jsonTool.tablePreviewUnsupported')}</span>;
+    return <span className="json-table-boolean json-table-leaf-text">{String(value)}</span>;
+  if (typeof value === 'number')
+    return <span className="json-table-number json-table-leaf-text">{String(value)}</span>;
+  return (
+    <span className="json-table-leaf-text text-muted-foreground">
+      {t('jsonTool.tablePreviewUnsupported')}
+    </span>
+  );
 }
 
 function leafValueTitle(value: unknown, formattedTime: string | null): string | undefined {
@@ -60,17 +66,18 @@ function ValueCell({
   const timeFormat = useContext(TimeFormatContext);
   if (!isContainer(value)) {
     const formattedTime = formatJsonTimeValue(fieldKey, value, timeFormat);
+    const display =
+      formattedTime !== null ? (
+        <span className="json-table-leaf-text">{formattedTime}</span>
+      ) : (
+        scalar(value, t)
+      );
     return (
       <TableCell
-        className={[
-          'json-table-value-leaf',
-          numeric && formattedTime === null ? 'is-numeric' : undefined,
-        ]
-          .filter(Boolean)
-          .join(' ')}
+        className={numeric && formattedTime === null ? 'is-numeric' : undefined}
         title={leafValueTitle(value, formattedTime)}
       >
-        {formattedTime ?? scalar(value, t)}
+        {display}
       </TableCell>
     );
   }
@@ -247,19 +254,17 @@ function ObjectArray({
         <TableBody>
           {table.getRowModel().rows.map((row) => (
             <TableRow key={row.id}>
-              {row
-                .getVisibleCells()
-                .map((cell) =>
-                  cell.column.id === '__rowIndex' ? (
-                    <TableCell key={cell.id} className="json-table-row-index-cell">
-                      {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                    </TableCell>
-                  ) : (
-                    <Fragment key={cell.id}>
-                      {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                    </Fragment>
-                  ),
-                )}
+              {row.getVisibleCells().map((cell) =>
+                cell.column.id === '__rowIndex' ? (
+                  <TableCell key={cell.id} className="json-table-row-index-cell">
+                    {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                  </TableCell>
+                ) : (
+                  <Fragment key={cell.id}>
+                    {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                  </Fragment>
+                ),
+              )}
             </TableRow>
           ))}
         </TableBody>
