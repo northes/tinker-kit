@@ -28,13 +28,21 @@ const isObjectArray = (value: unknown): value is Record<string, unknown>[] =>
   value.every((item) => item !== null && typeof item === 'object' && !Array.isArray(item));
 
 function scalar(value: unknown, t: Props['t']) {
-  if (value === null) return <span className="json-table-null">null</span>;
-  if (typeof value === 'string')
-    return <span className="json-table-string">&quot;{value}&quot;</span>;
+  if (value === null) return <span className="json-table-null">—</span>;
+  if (typeof value === 'string') return <span className="json-table-string">{value}</span>;
   if (typeof value === 'boolean')
     return <span className="json-table-boolean">{String(value)}</span>;
   if (typeof value === 'number') return <span className="json-table-number">{String(value)}</span>;
   return <span className="text-muted-foreground">{t('jsonTool.tablePreviewUnsupported')}</span>;
+}
+
+function leafValueTitle(value: unknown, formattedTime: string | null): string | undefined {
+  if (formattedTime !== null) return String(value);
+  if (value === null) return undefined;
+  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+    return String(value);
+  }
+  return undefined;
 }
 
 function stopToggle(event: MouseEvent) {
@@ -54,8 +62,13 @@ function ValueCell({
     const formattedTime = formatJsonTimeValue(fieldKey, value, timeFormat);
     return (
       <TableCell
-        className={numeric && formattedTime === null ? 'is-numeric' : undefined}
-        title={formattedTime !== null ? String(value) : undefined}
+        className={[
+          'json-table-value-leaf',
+          numeric && formattedTime === null ? 'is-numeric' : undefined,
+        ]
+          .filter(Boolean)
+          .join(' ')}
+        title={leafValueTitle(value, formattedTime)}
       >
         {formattedTime ?? scalar(value, t)}
       </TableCell>
@@ -238,7 +251,7 @@ function ObjectArray({
                 .getVisibleCells()
                 .map((cell) =>
                   cell.column.id === '__rowIndex' ? (
-                    <TableCell key={cell.id}>
+                    <TableCell key={cell.id} className="json-table-row-index-cell">
                       {flexRender(cell.column.columnDef.cell, cell.getContext())}
                     </TableCell>
                   ) : (

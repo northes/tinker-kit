@@ -65,9 +65,10 @@
   min-width: 0;
   overflow: auto;
 }
-.json-table-layer > .json-table-preview {
+.json-table-layer > .json-table-preview,
+.json-table-layer > .json-table-scroll {
   padding-inline: 10px;
-  padding-block-end: 10px;
+  padding-block: 8px 10px;
 }
 /* Nested sub-tables: expand with content, only the outer preview scrolls */
 .json-table-child .json-table-scroll {
@@ -79,33 +80,69 @@
 .json-table-data {
   width: max-content;
   min-width: 100%;
-  font-family: var(--font-mono);
-  font-size: var(--code-editor-font-size);
+  font-size: 14px;
 }
-/* Column headers read as the tool's tracked label style, then a single rule
-   separates the head from the data. */
 .json-table-data thead th {
-  height: max(28px, calc(var(--code-editor-font-size) * 1.4 + 8px));
-  padding: 4px 8px;
+  height: 36px;
+  min-height: 32px;
+  padding: 8px;
   color: var(--muted-foreground);
-  font-size: max(10px, calc(var(--code-editor-font-size) - 2px));
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 500;
+  vertical-align: middle;
+}
+.json-table-data thead th.json-table-key {
+  font-family: inherit;
+  font-size: 14px;
   font-weight: 500;
 }
 .json-table-data thead tr {
   border-bottom: 1px solid var(--border);
 }
-/* Body rows keep hairline separators in the same faint tone the schema
-   outline uses, so a long sheet reads as one surface. */
+.json-table-data tbody [data-slot='table-row'],
+.json-table-key-value tbody [data-slot='table-row'] {
+  border-bottom: 0;
+}
 .json-table-data tbody tr,
 .json-table-key-value tbody tr {
-  border-bottom: 1px solid color-mix(in oklch, var(--border) 62%, transparent);
+  border-bottom: 0;
+}
+.json-table-data tbody [data-slot='table-row']:hover,
+.json-table-key-value tbody [data-slot='table-row']:hover {
+  background-color: transparent;
+}
+.json-table-data tbody tr:hover > :is(td, th),
+.json-table-key-value tbody tr:hover > :is(td, th) {
+  background: color-mix(in oklch, var(--muted) 50%, transparent);
+}
+.json-table-data tbody tr:hover > :first-child,
+.json-table-key-value tbody tr:hover > :first-child {
+  border-start-start-radius: calc(var(--radius) - 4px);
+  border-end-start-radius: calc(var(--radius) - 4px);
+}
+.json-table-data tbody tr:hover > :last-child,
+.json-table-key-value tbody tr:hover > :last-child {
+  border-start-end-radius: calc(var(--radius) - 4px);
+  border-end-end-radius: calc(var(--radius) - 4px);
 }
 .json-table-key-value td,
-.json-table-data td {
-  height: max(28px, calc(var(--code-editor-font-size) * 1.4 + 8px));
-  padding: 4px 8px;
-  white-space: normal;
-  overflow-wrap: anywhere;
+.json-table-data td,
+.json-table-key-value tbody th.json-table-key {
+  padding: 8px;
+  vertical-align: middle;
+}
+.json-table-data tbody td {
+  font-family: var(--font-mono);
+  font-size: var(--code-editor-font-size);
+}
+.json-table-key-value td.json-table-value-leaf,
+.json-table-data td.json-table-value-leaf,
+.json-table-data tbody td:not(.json-table-collapsible):not(.json-table-row-index-cell) {
+  max-width: 44ch;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .json-table-key {
   width: 1%;
@@ -116,11 +153,15 @@
   font-weight: 400;
   white-space: nowrap;
 }
-.json-table-data .is-numeric {
+.json-table-data .is-numeric,
+.json-table-data thead th.is-numeric {
   text-align: right;
   font-variant-numeric: tabular-nums;
 }
 .json-table-collapsible {
+  max-width: none;
+  white-space: normal;
+  overflow: visible;
   cursor: pointer;
 }
 .json-table-nested {
@@ -128,8 +169,10 @@
   color: var(--muted-foreground);
 }
 .json-table-child {
-  margin: 4px 0 2px 16px;
-  border-inline-start: 1px solid color-mix(in oklch, var(--border) 72%, transparent);
+  margin: 4px 0 2px;
+  padding: 6px 8px;
+  border-radius: calc(var(--radius) - 4px);
+  background: color-mix(in oklch, var(--muted) 45%, transparent);
 }
 .json-table-container-label {
   font-family: var(--font-mono);
@@ -137,23 +180,29 @@
 }
 .json-table-null {
   color: var(--muted-foreground);
-  font-style: italic;
 }
 .json-table-string {
-  color: var(--success);
+  color: var(--chart-2);
 }
-.json-table-number,
+.json-table-number {
+  color: var(--chart-1);
+}
 .json-table-boolean {
-  color: var(--warning);
+  color: var(--chart-4);
+}
+.json-table-row-index-cell {
+  width: 1%;
+  padding-inline: 4px 8px;
 }
 .json-table-row-index {
   display: inline-block;
-  min-width: 20px;
-  padding-inline-end: 2px;
+  min-width: 16px;
+  padding-inline-end: 0;
   text-align: right;
-  color: var(--muted-foreground);
+  color: color-mix(in oklch, var(--muted-foreground) 72%, transparent);
   font-family: var(--font-mono);
-  font-size: max(10px, calc(var(--code-editor-font-size) - 2px));
+  font-size: max(9px, calc(var(--code-editor-font-size) - 4px));
+  font-variant-numeric: tabular-nums;
   line-height: 1;
 }
 .json-table-empty,
