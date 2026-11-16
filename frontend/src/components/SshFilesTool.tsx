@@ -8,7 +8,7 @@ import {
   CaretRight,
   CaretUp,
   CaretUpDown,
-  CheckCircle,
+  Check,
   Copy,
   DownloadSimple,
   File,
@@ -26,6 +26,7 @@ import {
   Trash,
   UploadSimple,
   Warning,
+  X,
   XCircle,
 } from '@phosphor-icons/react';
 import { useVirtualizer } from '@tanstack/react-virtual';
@@ -1493,50 +1494,54 @@ export default function SshFilesTool({ active, locate = null }: Props) {
           ) : null}
           {pathEditing ? (
             <form
-              className="flex min-w-0 flex-1 items-center gap-1"
+              className="flex min-w-0 flex-1 items-center"
               onSubmit={(event) => {
                 event.preventDefault();
                 navigate(pathInput);
               }}
             >
-              <Input
-                autoFocus
-                value={pathInput}
-                onChange={(event) => setPathInput(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key !== 'Escape') return;
-                  event.preventDefault();
-                  setPathInput(currentPath);
-                  setPathEditing(false);
-                }}
-                disabled={!sourceUsable || isLoading}
-                aria-label={t('sshFilesTool.pathInput')}
-                className="h-7 min-w-0 flex-1 border-0 bg-transparent px-1 font-mono text-xs shadow-none focus-visible:ring-0"
-              />
-              <Button
-                type="submit"
-                variant="ghost"
-                size="icon-sm"
-                className="h-7 w-7 flex-none"
-                disabled={!sourceUsable || isLoading}
-                aria-label={t('sshFilesTool.navigatePath')}
-              >
-                <CheckCircle weight="regular" size={14} />
-              </Button>
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon-sm"
-                className="h-7 w-7 flex-none"
-                disabled={isLoading}
-                aria-label={t('common.cancel')}
-                onClick={() => {
-                  setPathInput(currentPath);
-                  setPathEditing(false);
-                }}
-              >
-                <XCircle weight="regular" size={14} />
-              </Button>
+              <div className="relative min-w-0 flex-1">
+                <Input
+                  autoFocus
+                  value={pathInput}
+                  onChange={(event) => setPathInput(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key !== 'Escape') return;
+                    event.preventDefault();
+                    setPathInput(currentPath);
+                    setPathEditing(false);
+                  }}
+                  disabled={!sourceUsable || isLoading}
+                  aria-label={t('sshFilesTool.pathInput')}
+                  className="h-7 w-full min-w-0 border-0 bg-transparent px-1 pr-14 font-mono text-xs shadow-none focus-visible:ring-0"
+                />
+                <div className="absolute right-1 top-1/2 flex -translate-y-1/2 items-center gap-0.5">
+                  <Button
+                    type="submit"
+                    variant="ghost"
+                    size="icon-sm"
+                    className="h-6 w-6 rounded"
+                    disabled={!sourceUsable || isLoading}
+                    aria-label={t('sshFilesTool.navigatePath')}
+                  >
+                    <Check weight="regular" size={14} />
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon-sm"
+                    className="h-6 w-6 rounded"
+                    disabled={isLoading}
+                    aria-label={t('common.cancel')}
+                    onClick={() => {
+                      setPathInput(currentPath);
+                      setPathEditing(false);
+                    }}
+                  >
+                    <X weight="regular" size={14} />
+                  </Button>
+                </div>
+              </div>
             </form>
           ) : (
             <>
