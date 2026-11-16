@@ -132,17 +132,15 @@ textarea,
 [data-workspace-tab-scroll].scroll-fade-y {
   --scroll-fade-size: 16px;
 }
-/* 工作区转场：切换、打开、关闭标签时，内容和标签各做一次轻微位移的淡入淡出。
-   view-transition-name 只在转场期间挂上（html[data-workspace-view-transition]，
-   由 workspace-view-transition.ts 维护），主题切换的 root 遮罩转场才不会把标签和
-   内容拆成独立快照；关闭降低动画偏好后整段规则失效，切换即时生效。 */
+/* 工作区转场：仅主内容区淡入淡出；标签条用 transition-colors，避免每个标签各建 VT。 */
 @media (prefers-reduced-motion: no-preference) {
   @supports (view-transition-name: root) {
     html[data-workspace-view-transition] .workspace-tool-slot-active {
       view-transition-name: workspace-tool-content;
     }
-    html[data-workspace-view-transition] [data-workspace-tab] {
-      view-transition-name: var(--workspace-tab-vt-name);
+    html[data-workspace-view-transition] ::view-transition-group(*) {
+      animation-duration: var(--motion-slide-duration);
+      animation-timing-function: var(--motion-slide-ease);
     }
     ::view-transition-old(workspace-tool-content) {
       mix-blend-mode: normal;

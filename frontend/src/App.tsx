@@ -309,7 +309,8 @@ function AppShell() {
   const commitWorkspaceAnimated = (next: WorkspaceState) => {
     const animate = next !== workspaceStateRef.current && themeTransitionRef.current === null;
     workspaceStateRef.current = next;
-    runWorkspaceViewTransition(() => commitWorkspace(next), animate);
+    // 回调读取 ref，避免迟到的转场回调用旧闭包覆盖后续快速切换的目标标签。
+    runWorkspaceViewTransition(() => commitWorkspace(workspaceStateRef.current), animate);
   };
   const closeActivation = () => parseTabCloseActivation(settingsRef.current.tabCloseActivation);
   const openBlankTabSession = () => {

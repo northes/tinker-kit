@@ -1,5 +1,4 @@
 import { GearSix, Plus, X } from '@phosphor-icons/react';
-import type { CSSProperties } from 'react';
 import { useCallback, useLayoutEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button } from '../components/ui/button';
@@ -115,8 +114,6 @@ export function WorkspaceTabBar({
                 title={label}
                 aria-label={label}
                 data-current={current ? '' : undefined}
-                data-workspace-tab=""
-                style={{ '--workspace-tab-vt-name': `ws-${tab.id}` } as CSSProperties}
                 className={cn(
                   'group/tab relative flex h-7 w-(--workspace-tab-width) shrink-0 cursor-default items-center gap-1.5 rounded-md px-2 text-left text-xs transition-colors motion-reduce:transition-none [--wails-draggable:no-drag] select-none',
                   current

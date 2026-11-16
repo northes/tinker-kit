@@ -6,47 +6,66 @@ type ViewTransitionDocument = Document & {
   startViewTransition?: (updateCallback: () => void) => ViewTransition;
 };
 
-// 同一时刻只允许一段工作区转场：重叠调用会让前一段被跳过，回调可能不执行。
 let activeTransition: ViewTransition | null = null;
+let transitionGeneration = 0;
 
 export function prefersReducedMotion() {
   return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 }
 
-// animate 为 false 时不建转场，直接提交；转场不可用或降级动画时同样直接提交。
+function cancelActiveWorkspaceTransition() {
+  if (!activeTransition) return;
+  activeTransition.skipTransition();
+  activeTransition = null;
+  delete document.documentElement.dataset.workspaceViewTransition;
+}
+
+// animate 为 false 时不建转场；转场进行中再次切换则跳过动画并立即提交最新状态。
 export function runWorkspaceViewTransition(update: () => void, animate: boolean): void {
   const viewTransitionDocument = document as ViewTransitionDocument;
-  if (
-    !animate ||
-    activeTransition ||
-    !viewTransitionDocument.startViewTransition ||
-    prefersReducedMotion()
-  ) {
-    update();
+  const generation = ++transitionGeneration;
+  const apply = () => {
+    if (generation !== transitionGeneration) return;
+    flushSync(update);
+  };
+
+  const canAnimate =
+    animate &&
+    !prefersReducedMotion() &&
+    Boolean(viewTransitionDocument.startViewTransition);
+
+  if (!canAnimate) {
+    cancelActiveWorkspaceTransition();
+    apply();
     return;
   }
+
+  if (activeTransition) {
+    cancelActiveWorkspaceTransition();
+    apply();
+    return;
+  }
+
   const root = document.documentElement;
   let applied = false;
-  // view-transition-name 只在工作区转场期间挂上（见 foundation.css），
-  // 主题切换的 root 遮罩转场才不会把标签和内容拆成独立快照。
   root.dataset.workspaceViewTransition = '';
   let transition: ViewTransition;
   try {
-    transition = viewTransitionDocument.startViewTransition(() => {
+    transition = viewTransitionDocument.startViewTransition!(() => {
       applied = true;
-      flushSync(update);
+      apply();
     });
   } catch (error) {
     delete root.dataset.workspaceViewTransition;
     console.error('[workspace] view transition failed', error);
-    update();
+    apply();
     return;
   }
   activeTransition = transition;
   const finish = () => {
-    // 转场被外部抢占时回调可能没执行，这里补一次，避免这次操作白白丢掉。
-    if (!applied) flushSync(update);
-    if (activeTransition === transition) activeTransition = null;
+    if (activeTransition !== transition) return;
+    if (!applied) apply();
+    activeTransition = null;
     delete root.dataset.workspaceViewTransition;
   };
   void transition.finished.then(finish, finish);
