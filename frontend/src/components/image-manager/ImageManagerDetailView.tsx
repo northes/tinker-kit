@@ -332,9 +332,9 @@ export function ImageManagerDetailView({
                     {t('imageManagerTool.layersEmpty')}
                   </p>
                 ) : (
-                  <ScrollArea className="mt-2 border-y border-border">
+                  <ScrollArea className="mt-2" edgeOverlay>
                     <Table className="min-w-[42rem] text-[11px]">
-                      <TableHeader>
+                      <TableHeader className="[&_tr]:border-b-0">
                         <TableRow>
                           <TableHead className="w-14">
                             {t('imageManagerTool.detailLayerIndex')}

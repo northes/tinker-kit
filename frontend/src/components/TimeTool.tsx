@@ -529,7 +529,11 @@ export default function TimeTool({
                   </Button>
                 </div>
                 {editing || parsed ? (
-                  <ScrollArea className="min-h-0" options={{ overflow: { x: 'hidden' } }}>
+                  <ScrollArea
+                    className="min-h-0"
+                    edgeOverlay
+                    options={{ overflow: { x: 'hidden' } }}
+                  >
                     {/* 预览和编辑共用上下文，保持拖拽回调注册稳定。 */}
                     <DndContext
                       sensors={sensors}

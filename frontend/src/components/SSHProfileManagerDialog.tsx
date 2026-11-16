@@ -514,6 +514,7 @@ function SSHProfileManagerDialog({
           ) : null}
           <ScrollArea
             className="min-h-0 flex-1 px-6 py-5 [padding-inline-end:var(--overlay-scrollbar-size)]"
+            edgeOverlay
             onViewport={setViewport}
           >
             {view === 'list' ? (

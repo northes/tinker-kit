@@ -1130,6 +1130,8 @@ export default function PortTool({ active }: { active: boolean }) {
             ) : (
               <ScrollArea
                 className="min-h-0 flex-1"
+                edgeOverlay
+                edgeOverlayTopClass="top-10"
                 options={{ overflow: { x: 'scroll' } }}
                 onViewport={setPortViewport}
               >
@@ -1138,7 +1140,7 @@ export default function PortTool({ active }: { active: boolean }) {
                   style={{ minWidth: portTableMinWidth }}
                   containerClassName="overflow-x-visible"
                 >
-                  <TableHeader className="sticky top-0 z-10 bg-background">
+                  <TableHeader className="sticky top-0 z-10 bg-background [&_tr]:border-b-0">
                     <TableRow>
                       {PORT_COLUMNS.map((key, index) => (
                         <SortableHead
@@ -1281,6 +1283,8 @@ export default function PortTool({ active }: { active: boolean }) {
               >
                 <ScrollArea
                   className="min-h-0 flex-1"
+                  edgeOverlay
+                  edgeOverlayTopClass="top-10"
                   options={{ overflow: { x: 'scroll' } }}
                   onViewport={setForwardViewport}
                 >
@@ -1289,7 +1293,7 @@ export default function PortTool({ active }: { active: boolean }) {
                     style={{ minWidth: forwardTableMinWidth }}
                     containerClassName="overflow-x-visible"
                   >
-                    <TableHeader className="sticky top-0 z-10 bg-background">
+                    <TableHeader className="sticky top-0 z-10 bg-background [&_tr]:border-b-0">
                       <TableRow>
                         <TableHead style={{ width: FORWARD_HANDLE_COLUMN_WIDTH }}>
                           <span className="sr-only">{t('portTool.order')}</span>

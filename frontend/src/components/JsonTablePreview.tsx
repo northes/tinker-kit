@@ -11,6 +11,7 @@ import {
 import { flexRender, getCoreRowModel, useReactTable, type ColumnDef } from '@tanstack/react-table';
 import { CaretDown, CaretRight } from '@phosphor-icons/react';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
+import { ScrollArea } from './ui/scroll-area';
 import { Button } from './ui/button';
 import { createJsonTableExpansion, jsonTableChildPath } from '../lib/json-table-expansion';
 import { formatJsonTimeValue, type JsonTimeFormat } from '../lib/json-time-format';
@@ -242,50 +243,55 @@ function ObjectArray({
     [keys, numericKeys, path, t],
   );
   const table = useReactTable({ data: value, columns, getCoreRowModel: getCoreRowModel() });
+  const tableView = (
+    <Table containerClassName="overflow-x-visible" className="json-table-data">
+      <TableHeader className={stickyHeader ? 'sticky top-0 z-10 bg-card' : 'bg-card'}>
+        {table.getHeaderGroups().map((group) => (
+          <TableRow key={group.id}>
+            {group.headers.map((header) => (
+              <TableHead
+                key={header.id}
+                className={numericKeys.has(header.column.id) ? 'is-numeric' : undefined}
+              >
+                {flexRender(header.column.columnDef.header, header.getContext())}
+              </TableHead>
+            ))}
+          </TableRow>
+        ))}
+      </TableHeader>
+      <TableBody>
+        {/* 与 KeyValue 相同：不写 border-b-0，斑马纹与 json.css hover 共存 */}
+        {table.getRowModel().rows.map((row) => (
+          <TableRow
+            key={row.id}
+            className={
+              row.index % 2 === 1
+                ? '[&:not(:hover)>:is(td,th)]:bg-muted/30 [&:not(:hover)>:first-child]:rounded-l-md [&:not(:hover)>:last-child]:rounded-r-md'
+                : undefined
+            }
+          >
+            {row.getVisibleCells().map((cell) =>
+              cell.column.id === '__rowIndex' ? (
+                <TableCell key={cell.id} className="json-table-row-index-cell">
+                  {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                </TableCell>
+              ) : (
+                <Fragment key={cell.id}>
+                  {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                </Fragment>
+              ),
+            )}
+          </TableRow>
+        ))}
+      </TableBody>
+    </Table>
+  );
+  // 嵌套子表在 .json-table-child 里展开，不接管滚动，也不要边缘渐变。
+  if (!stickyHeader) return <div className="json-table-scroll">{tableView}</div>;
   return (
-    <div className="json-table-scroll">
-      <Table containerClassName="overflow-x-visible" className="json-table-data">
-        <TableHeader className={stickyHeader ? 'sticky top-0 z-10 bg-card' : 'bg-card'}>
-          {table.getHeaderGroups().map((group) => (
-            <TableRow key={group.id}>
-              {group.headers.map((header) => (
-                <TableHead
-                  key={header.id}
-                  className={numericKeys.has(header.column.id) ? 'is-numeric' : undefined}
-                >
-                  {flexRender(header.column.columnDef.header, header.getContext())}
-                </TableHead>
-              ))}
-            </TableRow>
-          ))}
-        </TableHeader>
-        <TableBody>
-          {/* 与 KeyValue 相同：不写 border-b-0，斑马纹与 json.css hover 共存 */}
-          {table.getRowModel().rows.map((row) => (
-            <TableRow
-              key={row.id}
-              className={
-                row.index % 2 === 1
-                  ? '[&:not(:hover)>:is(td,th)]:bg-muted/30 [&:not(:hover)>:first-child]:rounded-l-md [&:not(:hover)>:last-child]:rounded-r-md'
-                  : undefined
-              }
-            >
-              {row.getVisibleCells().map((cell) =>
-                cell.column.id === '__rowIndex' ? (
-                  <TableCell key={cell.id} className="json-table-row-index-cell">
-                    {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                  </TableCell>
-                ) : (
-                  <Fragment key={cell.id}>
-                    {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                  </Fragment>
-                ),
-              )}
-            </TableRow>
-          ))}
-        </TableBody>
-      </Table>
-    </div>
+    <ScrollArea className="json-table-scroll" edgeOverlay edgeOverlayTopClass="top-10">
+      {tableView}
+    </ScrollArea>
   );
 }
 
@@ -301,9 +307,9 @@ function TableValue({ value, t }: Props) {
       );
     if (isObjectArray(value)) return <ObjectArray value={value} t={t} path="" />;
     return (
-      <div className="json-table-preview">
+      <ScrollArea className="json-table-preview" edgeOverlay>
         <KeyValue value={value} t={t} path="" />
-      </div>
+      </ScrollArea>
     );
   }
   if (Object.keys(value).length === 0)
@@ -313,9 +319,9 @@ function TableValue({ value, t }: Props) {
       </div>
     );
   return (
-    <div className="json-table-preview">
+    <ScrollArea className="json-table-preview" edgeOverlay>
       <KeyValue value={value} t={t} path="" />
-    </div>
+    </ScrollArea>
   );
 }
 

@@ -1518,7 +1518,10 @@ export default function ServiceManagerTool({
                 : ''}
             </DialogDescription>
           </DialogHeader>
-          <ScrollArea className="min-h-0 flex-1 overscroll-contain [padding-inline-end:var(--overlay-scrollbar-size)]">
+          <ScrollArea
+            className="min-h-0 flex-1 overscroll-contain [padding-inline-end:var(--overlay-scrollbar-size)]"
+            edgeOverlay
+          >
             <div>
               {(pickDialog?.containers ?? []).map((container, index) => (
                 <Label

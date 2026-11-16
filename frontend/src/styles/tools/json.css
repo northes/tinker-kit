@@ -31,6 +31,8 @@
   border: 1px solid var(--border);
   border-radius: var(--radius);
   background: var(--card);
+  /* 表格在 card 上，边缘渐变跟这层底色，不能用页面 background。 */
+  --scroll-edge-overlay: var(--card);
   opacity: 0;
   transition: opacity var(--motion-duration) var(--motion-ease);
 }
@@ -63,6 +65,7 @@
   height: 100%;
   min-height: 0;
   min-width: 0;
+  /* pipeline 大表和标量预览仍是原生滚动。ScrollArea 宿主上这条会被 OverlayScrollbars 的 overflow:hidden !important 盖掉。 */
   overflow: auto;
 }
 .json-table-layer > .json-table-preview,
@@ -70,7 +73,7 @@
   padding-inline: 10px;
   padding-block: 8px 10px;
 }
-/* Nested sub-tables: expand with content, only the outer preview scrolls */
+/* 嵌套子表跟外层一起滚，不单独滚动，也不加边缘渐变。 */
 .json-table-child .json-table-scroll {
   height: auto;
   overflow: visible;

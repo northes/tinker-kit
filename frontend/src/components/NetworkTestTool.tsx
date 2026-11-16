@@ -830,14 +830,14 @@ export default function NetworkTestTool({
             <div className="flex h-full min-h-0 flex-col">
               {stages.length ? (
                 <div className="flex min-h-0 flex-1 flex-col">
-                  <div className="grid shrink-0 grid-cols-[150px_minmax(0,1fr)_88px] gap-3 border-b border-border py-2 text-[10px] font-medium text-muted-foreground max-[700px]:grid-cols-[112px_minmax(0,1fr)_74px]">
+                  <div className="grid shrink-0 grid-cols-[150px_minmax(0,1fr)_88px] gap-3 py-2 text-[10px] font-medium text-muted-foreground max-[700px]:grid-cols-[112px_minmax(0,1fr)_74px]">
                     <span>{t('networkTestTool.waterfall.stage')}</span>
                     <span>{t('networkTestTool.waterfall.timeline')}</span>
                     <span className="text-right">{t('networkTestTool.waterfall.duration')}</span>
                   </div>
                   <ScrollArea
                     className="min-h-0 flex-1 [padding-inline-end:var(--overlay-scrollbar-size)]"
-                    scrollFade="y"
+                    edgeOverlay
                     options={{ overflow: { x: 'hidden' } }}
                   >
                     <div className="pb-3">

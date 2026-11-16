@@ -1282,10 +1282,12 @@ export default function ImageManagerTool({
           ) : (
             <ScrollArea
               className="min-h-0 flex-1 overscroll-contain [padding-inline-end:var(--overlay-scrollbar-size)]"
+              edgeOverlay
+              edgeOverlayTopClass="top-10"
               onViewport={setImageListViewport}
             >
               <Table className="min-w-[640px]" containerClassName="overflow-visible">
-                <TableHeader className="sticky top-0 z-10 bg-background">
+                <TableHeader className="sticky top-0 z-10 bg-background [&_tr]:border-b-0">
                   <TableRow>
                     <TableHead className="w-10 whitespace-nowrap">
                       <Checkbox

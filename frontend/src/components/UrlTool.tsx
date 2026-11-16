@@ -200,7 +200,7 @@ export default function UrlTool({
                 basicSetup={compactEditorBasicSetup}
               />
             </div>
-            <ScrollArea className="min-h-0 min-w-0">
+            <ScrollArea className="min-h-0 min-w-0" edgeOverlay>
               {parts ? (
                 <>
                   <UrlPart

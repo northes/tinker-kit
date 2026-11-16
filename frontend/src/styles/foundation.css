@@ -175,3 +175,34 @@ textarea,
     transparent 100%
   );
 }
+/* ScrollArea.edgeOverlay：纵向边缘叠加渐变，高度随剩余滚动量收到 0。不用 mask，避免淡掉吸顶表头。
+   z-index 与 viewport 同层，靠插在滚动条之前盖住内容。 */
+.scroll-edge-overlay-top,
+.scroll-edge-overlay-bottom {
+  --scroll-fade-size: 24px;
+  position: absolute;
+  left: var(--scroll-edge-viewport-left, 0px);
+  right: var(--scroll-edge-viewport-right, 0px);
+  z-index: 0;
+  pointer-events: none;
+}
+.scroll-edge-overlay-top {
+  /* top 由调用方的 top-0 / top-10 决定；margin 补上 viewport 相对宿主的内边距。 */
+  margin-top: var(--scroll-edge-viewport-top, 0px);
+  height: min(var(--scroll-fade-size), var(--scroll-area-overflow-y-start, 0px));
+  background: linear-gradient(
+    to bottom,
+    var(--scroll-edge-overlay, var(--background)),
+    transparent
+  );
+}
+.scroll-edge-overlay-bottom {
+  bottom: 0;
+  margin-bottom: var(--scroll-edge-viewport-bottom, 0px);
+  height: min(var(--scroll-fade-size), var(--scroll-area-overflow-y-end, 0px));
+  background: linear-gradient(to top, var(--scroll-edge-overlay, var(--background)), transparent);
+}
+/* 弹窗底是 popover，深色下和页面 background 不是同一个颜色。 */
+[data-slot='dialog-content'] {
+  --scroll-edge-overlay: var(--popover);
+}
