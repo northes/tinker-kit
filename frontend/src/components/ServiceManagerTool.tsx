@@ -33,6 +33,7 @@ import {
   SaveServiceTargets,
   StartLogMonitors,
 } from '../../bindings/tinkerkit/servicemanagerservice';
+import { cn } from '../lib/utils';
 import { formatBackendError } from '../lib/backend-error';
 import { sendSystemNotification } from '../lib/task-notification-feedback';
 import { isLocalSource, sourceLabel } from '../lib/local-source';
@@ -1520,12 +1521,15 @@ export default function ServiceManagerTool({
             </DialogDescription>
           </DialogHeader>
           <ScrollArea className="min-h-0 flex-1 overscroll-contain [padding-inline-end:var(--overlay-scrollbar-size)]">
-            <div className="divide-y divide-border">
-              {(pickDialog?.containers ?? []).map((container) => (
+            <div>
+              {(pickDialog?.containers ?? []).map((container, index) => (
                 <Label
                   key={container.id}
                   htmlFor={`pick-container-${container.id}`}
-                  className="cursor-pointer gap-2 py-2 font-normal"
+                  className={cn(
+                    'cursor-pointer gap-2 rounded-md py-2 font-normal hover:bg-accent',
+                    index % 2 === 1 && 'bg-muted/30',
+                  )}
                 >
                   <Checkbox
                     id={`pick-container-${container.id}`}

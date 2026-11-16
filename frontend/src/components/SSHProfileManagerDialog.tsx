@@ -559,14 +559,15 @@ function SSHProfileManagerDialog({
                       </div>
                     </div>
                     {filteredProfiles.length ? (
-                      <div className="divide-y divide-border border-y border-border">
-                        {filteredProfiles.map((profile) => (
+                      <div>
+                        {filteredProfiles.map((profile, index) => (
                           <div
                             key={profile.id}
                             ref={profile.id === selectedProfileID ? selectedProfileRef : undefined}
                             aria-current={profile.id === selectedProfileID ? 'true' : undefined}
                             className={cn(
-                              'flex min-w-0 items-center gap-2 px-2 py-2.5',
+                              'flex min-w-0 items-center gap-2 rounded-md px-2 py-2.5 hover:bg-accent',
+                              index % 2 === 1 && 'bg-muted/30',
                               profile.id === selectedProfileID && 'bg-primary/20',
                             )}
                           >
@@ -682,8 +683,8 @@ function SSHProfileManagerDialog({
                       </Button>
                     </div>
                     {filteredLocalProfiles.length ? (
-                      <div className="divide-y divide-border border-y border-border">
-                        {filteredLocalProfiles.map((candidate) => {
+                      <div>
+                        {filteredLocalProfiles.map((candidate, index) => {
                           const exists = profiles.some(
                             (profile) =>
                               profile.origin === 'ssh-config' &&
@@ -692,7 +693,10 @@ function SSHProfileManagerDialog({
                           return (
                             <div
                               key={candidate.originAlias}
-                              className="flex min-w-0 items-center gap-2 py-2.5"
+                              className={cn(
+                                'flex min-w-0 items-center gap-2 rounded-md py-2.5 hover:bg-accent',
+                                index % 2 === 1 && 'bg-muted/30',
+                              )}
                             >
                               <div className="min-w-0 flex-1">
                                 <span className="block truncate text-xs font-medium text-foreground">
