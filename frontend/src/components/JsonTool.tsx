@@ -452,6 +452,12 @@ export default function JsonTool({
   const [repairPrompt, setRepairPrompt] = useState(false);
   const [repairing, setRepairing] = useState(false);
   const consumed = useRef<PendingAction | null>(null);
+  useEffect(
+    () => () => {
+      consumed.current = null;
+    },
+    [],
+  );
   const views = useRef(new Map<string, EditorView>());
   const inputRef = useRef(input);
   inputRef.current = input;
@@ -1086,58 +1092,71 @@ export default function JsonTool({
   useEffect(() => {
     if (!pending || pending.tool !== 'json' || consumed.current === pending) return;
     consumed.current = pending;
-    clearPending();
+    const releasePending = () => queueMicrotask(() => clearPending());
     const pane = pending.pane ?? 'input';
     if (pending.action === 'autoFormatOnFill') {
       onAutoFormatOnFillChange(!autoFormatRef.current);
+      releasePending();
       return;
     }
     if (pending.action === 'schema') {
       toggleSchema();
+      releasePending();
       return;
     }
     if (pending.action === 'pipeline') {
       togglePipeline();
+      releasePending();
       return;
     }
     if (pending.action === 'convert') {
       toggleConvert();
+      releasePending();
       return;
     }
     if (pending.action === 'convertCopy') {
       void copyConvert();
+      releasePending();
       return;
     }
     if (pending.action === 'convertExport') {
       void exportConvert();
+      releasePending();
       return;
     }
     if (pending.action === 'pipelineAddItem') {
       addPipelineItem();
+      releasePending();
       return;
     }
     if (pending.action === 'pipelineCopy') {
       copyPipeline();
+      releasePending();
       return;
     }
     if (pending.action === 'pipelineImport') {
       void importPipeline();
+      releasePending();
       return;
     }
     if (pending.action === 'pipelineExport') {
       void exportPipeline();
+      releasePending();
       return;
     }
     if (pending.action === 'clear') {
       pane === 'input' ? changeInput('') : setResult('');
+      releasePending();
       return;
     }
     if (pending.action === 'repair') {
       repairInput();
+      releasePending();
       return;
     }
     if (pending.action === 'format' || pending.action === 'minify') {
       requestTransform(pane, pending.action === 'minify');
+      releasePending();
       return;
     }
     if (pending.action === 'copy') {
@@ -1148,6 +1167,7 @@ export default function JsonTool({
           description: t('toast.clipboardEmptyDesc'),
           type: 'warning',
         });
+        releasePending();
         return;
       }
       void (async () => {
@@ -1159,22 +1179,19 @@ export default function JsonTool({
           toast.add({ title: t('toast.copyFailed'), type: 'error' });
         }
       })();
+      releasePending();
       return;
     }
-    if (pending.action === 'validate') {
-      changeInput(pending.input);
-      return;
+    changeInput(pending.input);
+    if (autoFormatRef.current) {
+      // 自动格式化要等后端返回；先同步展示原文，避免填入期间编辑器空白或被取消后无内容。
+      const baseline = pending.input;
+      void requestAutoFormat(pending.input).then((next) => {
+        if (next === null || inputRef.current !== baseline) return;
+        changeInput(next);
+      });
     }
-    if (!autoFormatRef.current) {
-      changeInput(pending.input);
-      return;
-    }
-    // 自动格式化要等后端返回，期间若输入已被改动（用户编辑或更新的填入请求）就以新内容为准。
-    const baseline = inputRef.current;
-    void requestAutoFormat(pending.input).then((next) => {
-      if (next === null || inputRef.current !== baseline) return;
-      changeInput(next);
-    });
+    releasePending();
   }, [pending, pipeline, requestAutoFormat]);
   useEffect(() => {
     if (!schema) return;

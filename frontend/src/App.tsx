@@ -874,6 +874,9 @@ function AppShell() {
         currentSettings.diffClipboardTargetMode === 'alternate'
       )
         nextDiffTarget.current = match.target === 'before' ? 'after' : 'before';
+      setVisited((current) =>
+        current.has(match.tool) ? current : new Set(current).add(match.tool),
+      );
       setPending({
         tool: match.tool,
         action: 'open',
