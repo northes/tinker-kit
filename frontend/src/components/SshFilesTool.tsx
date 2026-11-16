@@ -283,6 +283,7 @@ export default function SshFilesTool({ active, locate = null }: Props) {
   } = useRemoteFileBrowser({ active, profiles, manageOpen });
   const currentPathRef = useRef(currentPath);
   const pathEditInputWrapRef = useRef<HTMLDivElement>(null);
+  const pathEditInputRef = useRef<HTMLInputElement>(null);
   const creationViewKeyRef = useRef('');
   creationViewKeyRef.current = directoryListingKey(
     sourceID,
@@ -357,6 +358,15 @@ export default function SshFilesTool({ active, locate = null }: Props) {
       remove();
     };
   }, [pathEditing, currentPath, setPathInput, setPathEditing]);
+
+  useLayoutEffect(() => {
+    if (!pathEditing) return;
+    const input = pathEditInputRef.current;
+    if (!input) return;
+    input.focus();
+    const end = input.value.length;
+    input.setSelectionRange(end, end);
+  }, [pathEditing]);
 
   const handlePathBarPointerDown = useCallback(
     (event: React.PointerEvent<HTMLDivElement>) => {
@@ -1533,6 +1543,7 @@ export default function SshFilesTool({ active, locate = null }: Props) {
             >
               <div ref={pathEditInputWrapRef} className="relative min-w-0 flex-1">
                 <Input
+                  ref={pathEditInputRef}
                   autoFocus
                   value={pathInput}
                   onChange={(event) => setPathInput(event.target.value)}
