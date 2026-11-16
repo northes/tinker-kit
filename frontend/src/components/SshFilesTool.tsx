@@ -1453,7 +1453,7 @@ export default function SshFilesTool({ active, locate = null }: Props) {
       />
       <ToolLayoutContent className="flex min-h-0 flex-col">
         <div
-          className="flex min-h-10 min-w-0 items-center gap-1 border-y border-border bg-muted/20 px-2 text-xs"
+          className="flex min-h-10 min-w-0 shrink-0 items-center gap-1 rounded-md bg-muted/20 px-2 text-xs"
           aria-label={t('sshFilesTool.path')}
         >
           {searchActive ? (
@@ -1829,7 +1829,7 @@ export default function SshFilesTool({ active, locate = null }: Props) {
                                 data-index={virtualRow.index}
                                 data-row-key={entry.path}
                                 data-state={selected.includes(entry.path) ? 'selected' : undefined}
-                                className="group select-none border-border/60"
+                                className="group select-none border-border/60 hover:bg-transparent data-[state=selected]:bg-transparent [&>td]:transition-colors hover:[&>td]:bg-muted/50 data-[state=selected]:[&>td]:bg-muted hover:[&>td:first-child]:rounded-l-md hover:[&>td:last-child]:rounded-r-md data-[state=selected]:[&>td:first-child]:rounded-l-md data-[state=selected]:[&>td:last-child]:rounded-r-md"
                               />
                             }
                           >
