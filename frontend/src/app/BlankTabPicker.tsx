@@ -90,7 +90,7 @@ export function BlankTabPicker({
                   choose(only);
                 }}
                 placeholder={t('workspaceTabs.blankSearchPlaceholder')}
-                ariaLabel={t('workspaceTabs.blankSearchPlaceholder')}
+                ariaLabel={t('workspaceTabs.blankSearchLabel')}
               />
             </div>
           </div>

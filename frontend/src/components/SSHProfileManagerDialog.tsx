@@ -523,7 +523,7 @@ function SSHProfileManagerDialog({
                   onValueChange={setSearchQuery}
                   onClear={() => setSearchQuery('')}
                   placeholder={t('sshProfiles.searchPlaceholder')}
-                  ariaLabel={t('sshProfiles.searchPlaceholder')}
+                  ariaLabel={t('sshProfiles.searchLabel')}
                   clearLabel={t('sshProfiles.clearSearch')}
                 />
                 {normalizedQuery &&
