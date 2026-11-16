@@ -107,8 +107,9 @@
   font-size: 14px;
   font-weight: 500;
 }
-.json-table-data thead tr {
-  border-bottom: 1px solid var(--border);
+.json-table-data thead tr,
+.json-table-data [data-slot='table-header'] [data-slot='table-row'] {
+  border-bottom: 0;
 }
 .json-table-data tbody [data-slot='table-row'],
 .json-table-key-value tbody [data-slot='table-row'] {
