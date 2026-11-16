@@ -73,42 +73,46 @@ export function BlankTabPicker({
   };
   return (
     <div className="flex h-full min-h-0 flex-col bg-background">
-      <div className="flex-none px-4 pb-3 pt-4">
-        <ToolSearchField
-          id={SEARCH_ID}
-          value={query}
-          onValueChange={setQuery}
-          onSubmit={() => {
-            const only = filtered[0];
-            if (filtered.length !== 1 || !only) return;
-            choose(only);
-          }}
-          onClear={() => setQuery('')}
-          placeholder={t('workspaceTabs.blankSearchPlaceholder')}
-          ariaLabel={t('workspaceTabs.blankSearchPlaceholder')}
-        />
-      </div>
-      <ScrollArea className="min-h-0 flex-1" options={{ overflow: { x: 'hidden' } }}>
-        <div className="grid grid-cols-[repeat(auto-fill,minmax(7rem,1fr))] gap-2 px-4 pb-4 pt-1">
-          {filtered.map((item) => {
-            const Icon = item.icon;
-            return (
-              <Button
-                key={item.id}
-                type="button"
-                variant="ghost"
-                className="h-auto min-h-[5.5rem] w-full flex-col gap-2 px-2 py-3 text-center whitespace-normal"
-                onClick={() => choose(item)}
-              >
-                <Icon size={22} weight="regular" aria-hidden="true" className="shrink-0" />
-                <span className="line-clamp-2 w-full text-[11px] leading-tight text-foreground">
-                  {item.label}
-                </span>
-              </Button>
-            );
-          })}
+      <div className="mx-auto flex h-full min-h-0 w-full max-w-[52rem] flex-col">
+        <div className="flex-none px-4 pb-3 pt-4">
+          <div className="mx-auto w-full max-w-[32rem]">
+            <ToolSearchField
+              id={SEARCH_ID}
+              value={query}
+              onValueChange={setQuery}
+              onSubmit={() => {
+                const only = filtered[0];
+                if (filtered.length !== 1 || !only) return;
+                choose(only);
+              }}
+              onClear={() => setQuery('')}
+              placeholder={t('workspaceTabs.blankSearchPlaceholder')}
+              ariaLabel={t('workspaceTabs.blankSearchPlaceholder')}
+            />
+          </div>
         </div>
-      </ScrollArea>
+        <ScrollArea className="min-h-0 flex-1" options={{ overflow: { x: 'hidden' } }}>
+          <div className="grid grid-cols-[repeat(auto-fill,minmax(7rem,1fr))] gap-2 px-4 pb-4 pt-1">
+            {filtered.map((item) => {
+              const Icon = item.icon;
+              return (
+                <Button
+                  key={item.id}
+                  type="button"
+                  variant="ghost"
+                  className="h-auto min-h-[5.5rem] w-full flex-col gap-2 px-2 py-3 text-center whitespace-normal"
+                  onClick={() => choose(item)}
+                >
+                  <Icon size={22} weight="regular" aria-hidden="true" className="shrink-0" />
+                  <span className="line-clamp-2 w-full text-[11px] leading-tight text-foreground">
+                    {item.label}
+                  </span>
+                </Button>
+              );
+            })}
+          </div>
+        </ScrollArea>
+      </div>
     </div>
   );
 }
