@@ -141,6 +141,7 @@ function TimeResultRow({
   value,
   hidden,
   editing,
+  index,
   onCopy,
   onToggle,
 }: {
@@ -149,6 +150,7 @@ function TimeResultRow({
   value: string;
   hidden: boolean;
   editing: boolean;
+  index: number;
   onCopy: () => void;
   onToggle?: () => void;
 }) {
@@ -164,7 +166,7 @@ function TimeResultRow({
       ref={sortable.setNodeRef}
       style={style}
       data-time-result-id={id}
-      className={`grid min-h-11 items-center border-b border-border px-1 ${editing ? 'grid-cols-[30px_128px_minmax(0,1fr)_34px] select-none' : 'grid-cols-[128px_minmax(0,1fr)]'} ${hidden ? 'opacity-40' : ''} ${sortable.isDragging ? 'bg-accent' : ''}`}
+      className={`grid min-h-11 items-center px-1 ${editing ? 'grid-cols-[30px_128px_minmax(0,1fr)_34px] select-none' : 'grid-cols-[128px_minmax(0,1fr)]'} ${hidden ? 'opacity-40' : ''} ${sortable.isDragging ? 'bg-accent' : index % 2 === 1 ? 'bg-muted/30 rounded-md' : ''}`}
     >
       {editing && (
         <Button
@@ -548,7 +550,7 @@ export default function TimeTool({
                         strategy={verticalListSortingStrategy}
                       >
                         <div>
-                          {displayedResults.map((id) => (
+                          {displayedResults.map((id, index) => (
                             <TimeResultRow
                               key={id}
                               id={id}
@@ -556,6 +558,7 @@ export default function TimeTool({
                               value={values[id]}
                               hidden={editing && draftHidden.has(id)}
                               editing={editing}
+                              index={index}
                               onCopy={() => copyResult(id)}
                               onToggle={() => toggleResult(id)}
                             />

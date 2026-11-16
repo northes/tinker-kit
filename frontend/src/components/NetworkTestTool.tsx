@@ -841,7 +841,7 @@ export default function NetworkTestTool({
                     options={{ overflow: { x: 'hidden' } }}
                   >
                     <div className="pb-3">
-                      {stages.map((stage) => {
+                      {stages.map((stage, index) => {
                         const redirectMatch = /^(.+)-redirect-(\d+)$/.exec(stage.id);
                         const stageLabelID = redirectMatch?.[1] ?? stage.id;
                         const redirectCount = stage.meta?.redirectCount ?? redirectMatch?.[2];
@@ -952,7 +952,7 @@ export default function NetworkTestTool({
                         return (
                           <div
                             key={stage.id}
-                            className="grid grid-cols-[150px_minmax(0,1fr)_88px] gap-3 border-b border-border/60 py-2.5 text-xs max-[700px]:grid-cols-[112px_minmax(0,1fr)_74px]"
+                            className={`grid grid-cols-[150px_minmax(0,1fr)_88px] gap-3 py-2.5 text-xs max-[700px]:grid-cols-[112px_minmax(0,1fr)_74px] ${index % 2 === 1 ? 'bg-muted/30 rounded-md' : ''}`}
                           >
                             <div className="min-w-0">
                               <div className="truncate font-medium">
