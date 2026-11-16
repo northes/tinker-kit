@@ -351,6 +351,17 @@ function AppShell() {
       });
   };
   const navigate = navigatePage;
+  const [sshLocate, setSshLocate] = useState<{
+    id: number;
+    sourceID: string;
+    path: string;
+  } | null>(null);
+  const sshLocateIdRef = useRef(0);
+  const locateSshUploadTarget = (sourceID: string, path: string) => {
+    const id = ++sshLocateIdRef.current;
+    setSshLocate({ id, sourceID, path });
+    navigate('ssh-files');
+  };
   useEffect(() => {
     const off = Events.On('ssh:host-key', (event) => {
       const prompt = parseSSHHostKeyPrompt(event.data);
@@ -891,6 +902,7 @@ function AppShell() {
       <TaskCenter
         settings={settings}
         onSettingsChange={(patch) => setSettings((current) => ({ ...current, ...patch }))}
+        onLocateFileTarget={locateSshUploadTarget}
       />
       <div className="app-shell relative grid h-dvh grid-rows-[var(--app-titlebar-height)_minmax(0,1fr)] bg-background">
         <div className="ambient pointer-events-none absolute inset-0 z-0" />
@@ -1167,7 +1179,7 @@ function AppShell() {
             <div className={toolSlotClass(page === 'ssh-files')}>
               {visited.has('ssh-files') && (
                 <Suspense fallback={null}>
-                  <SshFilesTool active={page === 'ssh-files'} />
+                  <SshFilesTool active={page === 'ssh-files'} locate={sshLocate} />
                 </Suspense>
               )}
             </div>

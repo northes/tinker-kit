@@ -1,5 +1,5 @@
 import { Events } from '@wailsio/runtime';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type SetStateAction } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   GetFileSources,
@@ -38,6 +38,20 @@ export function useRemoteFileBrowser({
   const { t } = useTranslation();
   const [sources, setSources] = useState<ManagedFileSource[]>([]);
   const [sourceID, setSourceID] = useState('');
+  const sourceIDRef = useRef(sourceID);
+  sourceIDRef.current = sourceID;
+  const setTrackedSourceID = (value: SetStateAction<string>) => {
+    if (typeof value === 'function') {
+      setSourceID((current) => {
+        const next = value(current);
+        sourceIDRef.current = next;
+        return next;
+      });
+      return;
+    }
+    sourceIDRef.current = value;
+    setSourceID(value);
+  };
   const [currentPath, setCurrentPath] = useState('');
   const [pathInput, setPathInput] = useState('');
   const [pathEditing, setPathEditing] = useState(false);
@@ -66,6 +80,7 @@ export function useRemoteFileBrowser({
   const loadingCallsRef = useRef(new Set<CancellableCall>());
   const pendingFavoritePathRef = useRef<MissingFavoritePath | null>(null);
   const directoryLoadKeyRef = useRef('');
+  const pendingForceReloadPathRef = useRef<string | null>(null);
   const directoryCacheRef = useRef(new Map<string, CachedDirectoryListing>());
   const sourcesLoadedRef = useRef(false);
   const cancelLoading = useCallback(() => {
@@ -480,10 +495,12 @@ export function useRemoteFileBrowser({
       return;
     }
     setPathInput(currentPath);
-    if (directoryLoadKeyRef.current === directoryLoadKey) return;
+    const forceReload = pendingForceReloadPathRef.current === nextPath;
+    if (forceReload) pendingForceReloadPathRef.current = null;
+    if (directoryLoadKeyRef.current === directoryLoadKey && !forceReload) return;
     directoryLoadKeyRef.current = directoryLoadKey;
     resetSearchState();
-    void loadDirectory(sourceID, currentPath, showHidden);
+    void loadDirectory(sourceID, currentPath, showHidden, forceReload);
   }, [
     active,
     currentPath,
@@ -497,11 +514,16 @@ export function useRemoteFileBrowser({
     sourceUsable,
     t,
   ]);
-  const navigate = (nextPath: string, navigationSource: 'favorite' | 'normal' = 'normal') => {
+  const navigate = (
+    nextPath: string,
+    navigationSource: 'favorite' | 'normal' = 'normal',
+    options?: { force?: boolean },
+  ) => {
     const normalizedPath = normalizeRemotePath(nextPath);
+    const nextSourceID = sourceIDRef.current;
     pendingFavoritePathRef.current =
-      navigationSource === 'favorite' && sourceID
-        ? { sourceID, path: normalizedPath, previousPath: currentPath }
+      navigationSource === 'favorite' && nextSourceID
+        ? { sourceID: nextSourceID, path: normalizedPath, previousPath: currentPath }
         : null;
     resetSearchState();
     setPathEditing(false);
@@ -509,10 +531,17 @@ export function useRemoteFileBrowser({
     setSelected([]);
     setError('');
     setLoading(true);
+    const force = Boolean(options?.force);
     if (normalizedPath === currentPath) {
-      void loadDirectory(sourceID, normalizedPath, showHidden);
+      // 路径没变时 currentPath effect 不会跑。来源也没变就在这里刷新；
+      // 来源刚同步改过则把 force 留给 effect，避免先用旧 source 请求一次。
+      if (force) pendingForceReloadPathRef.current = normalizedPath;
+      if (nextSourceID !== sourceID) return;
+      void loadDirectory(nextSourceID, normalizedPath, showHidden, force);
+      if (force) pendingForceReloadPathRef.current = null;
       return;
     }
+    if (force) pendingForceReloadPathRef.current = normalizedPath;
     setCurrentPath(normalizedPath);
   };
 
@@ -524,6 +553,7 @@ export function useRemoteFileBrowser({
     reloadCurrentView,
     sourceUsable,
     loadingSources,
+    sourcesLoaded: sourcesLoadedRef.current,
     loading,
     searching,
     searchRevision: searchRequestRef.current,
@@ -543,7 +573,7 @@ export function useRemoteFileBrowser({
     navigate,
     searchActive,
     setEntries,
-    setSourceID,
+    setSourceID: setTrackedSourceID,
     searchMode,
     searchScope,
     setLoading,

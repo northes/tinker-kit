@@ -14,6 +14,7 @@ import {
   ArrowClockwise,
   Funnel,
   FunnelSimple,
+  FolderOpen,
   FolderSimple,
   GearSix,
   ListDashes,
@@ -180,9 +181,11 @@ function unifiedTasks(images: ImageTask[], files: FileTask[]): UnifiedTask[] {
 export function TaskCenter({
   settings,
   onSettingsChange,
+  onLocateFileTarget,
 }: {
   settings: TaskSettings;
   onSettingsChange: (patch: Partial<TaskSettings>) => void;
+  onLocateFileTarget?: (sourceID: string, path: string) => void;
 }) {
   const { t, i18n } = useTranslation();
   const [open, setOpen] = useState(false);
@@ -736,6 +739,11 @@ export function TaskCenter({
                     terminal(task.status) &&
                     ((task.image?.type === 'export' && Boolean(task.image.path)) ||
                       (task.file?.type === 'download' && Boolean(task.file.target)));
+                  const canLocateUploadTarget =
+                    Boolean(onLocateFileTarget) &&
+                    task.file?.type === 'upload' &&
+                    task.status === 'success' &&
+                    Boolean(task.file.target);
                   return (
                     <div
                       key={task.id}
@@ -784,6 +792,23 @@ export function TaskCenter({
                                   onClick={() => void openTaskFolder(task)}
                                 >
                                   <FolderSimple weight="regular" />
+                                </Button>
+                              ) : null}
+                              {canLocateUploadTarget ? (
+                                <Button
+                                  variant="ghost"
+                                  size="icon-xs"
+                                  aria-label={t('taskCenter.locateUploadTarget')}
+                                  title={t('taskCenter.locateUploadTarget')}
+                                  onClick={() => {
+                                    onLocateFileTarget!(
+                                      task.file!.sourceID,
+                                      task.file!.target!,
+                                    );
+                                    setOpen(false);
+                                  }}
+                                >
+                                  <FolderOpen weight="regular" />
                                 </Button>
                               ) : null}
                               <Badge

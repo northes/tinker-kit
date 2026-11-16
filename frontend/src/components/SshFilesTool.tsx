@@ -159,7 +159,10 @@ const RemoteTextEditorDialog = lazy(async () => ({
   default: (await import('./RemoteTextEditorDialog')).RemoteTextEditorDialog,
 }));
 
-type Props = { active: boolean };
+type Props = {
+  active: boolean;
+  locate?: { id: number; sourceID: string; path: string } | null;
+};
 type CreateEntryTarget = {
   kind: CreateEntryKind;
   sourceID: string;
@@ -169,7 +172,7 @@ type CreateEntryTarget = {
   cacheScope: string;
 };
 
-export default function SshFilesTool({ active }: Props) {
+export default function SshFilesTool({ active, locate = null }: Props) {
   const { t, i18n } = useTranslation();
   const { profiles } = useSSHProfiles();
   const [sortKey, setSortKey] = useState<FileSortKey>('name');
@@ -221,6 +224,7 @@ export default function SshFilesTool({ active }: Props) {
   const refreshedUploadTasks = useRef(new Set<string>());
   const refreshedOperationTasks = useRef(new Set<string>());
   const handledConflictTasks = useRef(new Set<string>());
+  const handledLocateRef = useRef<number | null>(null);
   const taskRevisionRef = useRef(0);
   const {
     currentPath,
@@ -230,6 +234,7 @@ export default function SshFilesTool({ active }: Props) {
     reloadCurrentView,
     sourceUsable,
     loadingSources,
+    sourcesLoaded,
     loading,
     searching,
     searchRevision,
@@ -376,6 +381,23 @@ export default function SshFilesTool({ active }: Props) {
     sourceUsable,
     tasks,
   ]);
+
+  useEffect(() => {
+    if (
+      !active ||
+      !locate ||
+      locate.id === handledLocateRef.current ||
+      loadingSources ||
+      !sourcesLoaded
+    ) {
+      return;
+    }
+    handledLocateRef.current = locate.id;
+    // 来源已被删掉时不要落到当前机器的同名路径上。
+    if (!sources.some((item) => item.id === locate.sourceID)) return;
+    if (locate.sourceID !== sourceID) setSourceID(locate.sourceID);
+    navigate(locate.path, 'normal', { force: true });
+  }, [active, locate, loadingSources, navigate, sourceID, sources, sourcesLoaded]);
 
   useEffect(() => {
     for (const task of tasks) {
@@ -2318,9 +2340,6 @@ export default function SshFilesTool({ active }: Props) {
         <DialogContent className="flex w-[min(520px,calc(100vw-32px))] max-w-none flex-col gap-5 sm:max-w-none">
           <DialogHeader>
             <DialogTitle className="text-base">{t('sshFilesTool.uploadTitle')}</DialogTitle>
-            <DialogDescription className="text-xs leading-5">
-              {t('sshFilesTool.uploadDesc', { count: uploadPaths.length })}
-            </DialogDescription>
           </DialogHeader>
           <form
             className="grid gap-4"
@@ -2331,14 +2350,9 @@ export default function SshFilesTool({ active }: Props) {
             }}
           >
             <div className="grid gap-1.5">
-              <div className="flex items-center justify-between gap-3">
-                <span className="text-xs font-medium text-muted-foreground">
-                  {t('sshFilesTool.uploadItems')}
-                </span>
-                <span className="font-mono text-[10px] text-muted-foreground">
-                  {uploadPaths.length}
-                </span>
-              </div>
+              <span className="text-xs font-medium text-muted-foreground">
+                {t('sshFilesTool.uploadItems', { count: uploadPaths.length })}
+              </span>
               <ScrollArea
                 id="ssh-upload-items"
                 className="max-h-32 rounded-md border border-border bg-muted/20 px-3 py-2 text-xs"
