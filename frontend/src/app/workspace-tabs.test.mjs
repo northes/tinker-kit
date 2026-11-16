@@ -58,6 +58,22 @@ test('纵向标签条宽度夹在 140–360，缺失或越界回退默认值', (
   assert.equal(TAB_STRIP_FOCUS_PADDING, 8);
 });
 
+test('该工具标签全部关掉后再开，序号从 1 重新计', () => {
+  let state = emptyWorkspace();
+  const a = openToolTab(state, 'json');
+  state = openToolTab(a.state, 'json').state;
+  state = openToolTab(state, 'json').state;
+  const jsonTabs = state.tabs.filter((tab) => tab.toolId === 'json');
+  assert.deepEqual(
+    jsonTabs.map((tab) => tab.ordinal),
+    [1, 2, 3],
+  );
+  state = closeTabs(state, jsonTabs.map((tab) => tab.id), 'recent');
+  const reopened = openToolTab(state, 'json');
+  assert.equal(reopened.tab.ordinal, 1);
+  assert.equal(tabOrdinalLabel('JSON', reopened.tab.ordinal), 'JSON');
+});
+
 test('工具序号只增不回收，设置不加序号', () => {
   let state = emptyWorkspace();
   const first = openToolTab(state, 'json');

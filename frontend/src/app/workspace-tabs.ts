@@ -208,6 +208,23 @@ function recentId(tabs: WorkspaceTab[], remaining: ReadonlySet<string>): string 
   return best?.id ?? null;
 }
 
+/** 某工具或空白标签一条都不剩时，丢掉 nextOrdinal 记录，下次再开从 1 计。 */
+function pruneNextOrdinals(
+  tabs: WorkspaceTab[],
+  prev: Record<string, number>,
+): Record<string, number> {
+  const activeKeys = new Set<string>();
+  for (const tab of tabs) {
+    if (tab.kind === 'blank') activeKeys.add(BLANK_TAB_KEY);
+    else if (tab.kind === 'tool' && tab.toolId) activeKeys.add(tab.toolId);
+  }
+  const next = { ...prev };
+  for (const key of Object.keys(next)) {
+    if (!activeKeys.has(key)) delete next[key];
+  }
+  return next;
+}
+
 function withBlankWhenEmpty(state: WorkspaceState): WorkspaceState {
   if (state.tabs.length > 0) return state;
   return openBlankTab({ ...state, tabs: [], activeId: null }).state;
@@ -222,9 +239,10 @@ export function closeTabs(
   if (closing.size === 0) return state;
   const remainingTabs = state.tabs.filter((tab) => !closing.has(tab.id));
   const remaining = new Set(remainingTabs.map((tab) => tab.id));
+  const nextOrdinal = pruneNextOrdinals(remainingTabs, state.nextOrdinal);
   const activeClosed = state.activeId != null && closing.has(state.activeId);
   if (!activeClosed) {
-    return withBlankWhenEmpty({ ...state, tabs: remainingTabs });
+    return withBlankWhenEmpty({ ...state, tabs: remainingTabs, nextOrdinal });
   }
   const index = state.tabs.findIndex((tab) => tab.id === state.activeId);
   const nextId =
@@ -235,7 +253,7 @@ export function closeTabs(
         : neighborId(state.tabs, index, activation === 'previous' ? -1 : 1, remaining);
   let nextState: WorkspaceState;
   if (!nextId) {
-    nextState = { ...state, tabs: [], activeId: null };
+    nextState = { ...state, tabs: [], activeId: null, nextOrdinal };
   } else {
     const activatedAt = state.activationSeq + 1;
     nextState = {
@@ -243,6 +261,7 @@ export function closeTabs(
       tabs: remainingTabs.map((tab) => (tab.id === nextId ? { ...tab, activatedAt } : tab)),
       activeId: nextId,
       activationSeq: activatedAt,
+      nextOrdinal,
     };
   }
   return withBlankWhenEmpty(nextState);
