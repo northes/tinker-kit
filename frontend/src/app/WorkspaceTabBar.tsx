@@ -73,9 +73,13 @@ export function WorkspaceTabBar({
       )}
     >
       <ScrollArea
+        data-workspace-tab-scroll=""
         className={cn('min-h-0 min-w-0', horizontal ? 'h-full flex-1' : 'w-full flex-1')}
         scrollFade={horizontal ? 'x' : 'y'}
-        options={{ overflow: horizontal ? { y: 'hidden' } : { x: 'hidden' } }}
+        options={{
+          overflow: horizontal ? { y: 'hidden' } : { x: 'hidden' },
+          scrollbars: horizontal ? { visibility: 'hidden' } : undefined,
+        }}
         onViewport={onViewport}
       >
         <div
