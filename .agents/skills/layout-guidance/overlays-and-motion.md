@@ -22,3 +22,9 @@
 - 不要仅凭旋转后的 `getBoundingClientRect()` 或 `getScreenCTM()` 判断中心漂移：旋转会改变轴对齐包围盒，变换矩阵也会反映正在执行的动画。用未旋转的固定尺寸外层记录布局位置，并以原生 WebView 的连续截图或像素重心对比验证实际绘制结果。
 - 只有确认是设备像素对齐问题后，才在具体调用处增加固定尺寸、非旋转的外层，并在 `useLayoutEffect` 中按 `round(position * dpr) / dpr - position` 平移承载原 Spinner 的内层。窗口缩放、滚动、分栏拖动可能只改变位置而不改变图标尺寸，因此通过 `ResizeObserver`、`resize` 和捕获阶段 `scroll` 重新对齐。
 - 保留共享 `Spinner` 的官方实现和动画；不要用 `transform-box`、额外 `transform-origin`、文字基线调整或写死 `0.25px` 掩盖问题。修复后在目标 WebView 连续采样，确认中心波动消失，并移除诊断代码。
+
+## 会话切换
+
+- 工作区标签切换、页面切换不要用 `document.startViewTransition`。它先把整页截成快照再播动画，而主题切换留在 `globals.css` 的 `::view-transition-old(root)` 遮罩会顺带盖住这张快照约 750ms：标签高亮比点击晚一大截才动，后续点击也落在快照上，连续点标签会像卡住。
+- 切换直接改状态，用真实 DOM 的短过渡表达变化：`.tool-slot` 过渡 `opacity` 并在过渡结束后才切 `visibility`，标签过渡 `background-color`、`color` 和 `opacity`，新建标签用 `@starting-style` 入场。过渡时长与曲线走 `--motion-duration` / `--motion-ease`，`prefers-reduced-motion` 下不播。
+- 关闭标签不要为了播完离场动画而延迟卸载或排队下一次点击。先保证当次点击立即生效，再谈动画。
