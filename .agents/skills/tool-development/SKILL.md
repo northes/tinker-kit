@@ -27,14 +27,14 @@ user-invocable: false
    - pending effect 必须校验 `pending.tool === '<id>'`。
    - 工具动作使用 `ToolActionBar`，不要自行拼装 `.tool-actions` 或 footer。
    - 仅确需工具专属样式时放在组件旁并由组件引入；不得为单个控件新增 CSS 覆盖（见 `AGENTS.md`）；`.cm-*` 覆盖必须收敛在工具根类作用域下。
-3. `frontend/src/App.tsx`
-   - `tools` 数组加入侧栏和路由定义。
-   - 加入常驻 `tool-slot` 渲染，切页只隐藏不卸载。
-   - `paletteItems` 加入 `open:<id>` 导航命令和实际存在的工具动作命令。
+3. `frontend/src/App.tsx` 与 `frontend/src/app/`
+   - 工具目录加入 `frontend/src/app/definitions.ts`，并接入工作区标签渲染。会话键是标签 id：每个标签一份 `tool-slot`，隐藏标签不卸载。不要按工具 id 只挂一份，也不要恢复工具侧栏。
+   - 从命令面板或托盘打开工具是再开一个标签；只有当前是空白标签时才就地变成该工具。设置同时只有一个标签。产品规则见 `docs/workspace-tabs.md` 的「已定」。
+   - `paletteItems` 加入 `open:<id>` 导航命令和实际存在的工具动作命令。命令按当前标签上下文过滤。
 4. locale
    - `frontend/src/locales/zh-CN.json` 和 `frontend/src/locales/en-US.json` 同步增加 `tools.<id>`、导航命令和工具文案。
 5. 页面恢复
-   - 不要为新工具新增设置类 localStorage；页面恢复 key 见 `AGENTS.md`。
+   - 不要为新工具新增设置类 localStorage，也不要写 `devutils.lastPage`。标签和输入只活在本次运行，见 `AGENTS.md`。
 
 ## 命令面板
 
@@ -50,7 +50,7 @@ user-invocable: false
 工具需要接收本地文件时，统一使用 `frontend/src/components/fileDrop.tsx`，不要各自实现 HTML5 drop、隐藏 `<input type=file>` 或 window 级监听：
 
 - `useFileDrop({ id, enabled, pick, onPaths, onError })` 同时接入 Wails 原生拖入事件 `files-dropped` 与 Wails 文件选择器 `Dialogs.OpenFile`，两者都以本地路径回调 `onPaths`。把返回的 `dropProps` 展开到一个常驻的 drop target 容器（`enabled=false` 时不注册），用 `over` 做悬停反馈。
-- 每个工具使用唯一 `id`（连同 `data-file-drop-target` 由 `dropProps` 提供）；只有当前可见工具会被命中，常驻挂载的隐藏页不会误触发。
+- 每个工具使用唯一 `id`（连同 `data-file-drop-target` 由 `dropProps` 提供），不要按标签再造一份 id。`enabled` 必须跟该标签是否可见走；同一工具的隐藏标签不注册，避免多份实例抢同一次拖入。
 - 空态使用共享 `FileDropEmpty`：`onChooseFile` 传 `fileDrop.pick`，`over` 传 `fileDrop.over`。
 - 剪贴板文件粘贴使用共享 `useClipboardFilePaste({ enabled, accept, onFile })`，不要各自监听 `paste`。
 - 按路径读取内容使用共享 `readLocalFile(path, maxBytes)`（Go `FileService.ReadFile`，返回 data URL 与元数据）；文本工具用 `dataUrlToText`，剪贴板文件用 `fileToDataUrl`。
