@@ -1069,7 +1069,7 @@ export default function NetworkTestTool({
             </div>
           </ToolLayoutContent>
           <ToolLayoutFooter>
-            <div className="flex items-center justify-between gap-3 border-t border-border pt-3">
+            <div className="flex items-center justify-between gap-3 pt-3">
               {result ? (
                 <div className="flex min-w-0 flex-1 items-center gap-x-3 text-xs">
                   <span
