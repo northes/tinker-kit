@@ -1233,6 +1233,27 @@ export default function SshFilesTool({ active, locate = null }: Props) {
     fileVirtualRows.length > 0
       ? fileRowVirtualizer.getTotalSize() - fileVirtualRows[fileVirtualRows.length - 1].end
       : 0;
+  // 上下渐变遮罩只关心「能否继续滚动」两个布尔值：边界未变化时不触发重渲染。
+  const [fileListScrollEdges, setFileListScrollEdges] = useState({ atTop: true, atBottom: false });
+  useEffect(() => {
+    const viewport = fileListViewport;
+    if (!viewport) return;
+    const syncEdges = () => {
+      const atTop = viewport.scrollTop <= 0;
+      const atBottom = viewport.scrollTop + viewport.clientHeight >= viewport.scrollHeight - 1;
+      setFileListScrollEdges((current) =>
+        current.atTop === atTop && current.atBottom === atBottom ? current : { atTop, atBottom },
+      );
+    };
+    const observer = new ResizeObserver(syncEdges);
+    observer.observe(viewport);
+    viewport.addEventListener('scroll', syncEdges, { passive: true });
+    syncEdges();
+    return () => {
+      viewport.removeEventListener('scroll', syncEdges);
+      observer.disconnect();
+    };
+  }, [fileListViewport]);
   const calculatingSizePaths = useMemo(
     () =>
       new Set(
@@ -1265,6 +1286,15 @@ export default function SshFilesTool({ active, locate = null }: Props) {
   );
   const isLoading = loadingSources || loading || searching;
   const hasSearchResults = searchActive && entries.length > 0;
+  // 与下面渲染 Table 的分支保持同一条件：加载态、空态、错误态都不出现滚动遮罩。
+  const fileListTableVisible =
+    Boolean(sourceID) &&
+    sourceUsable &&
+    entries.length > 0 &&
+    !loadingSources &&
+    !(loading && !hasSearchResults) &&
+    !(loadingCanceled && !hasSearchResults) &&
+    !(error && !hasSearchResults);
   const searchModeLabel = t(
     searchMode === 'name' ? 'sshFilesTool.searchByName' : 'sshFilesTool.searchByContent',
   );
@@ -1829,7 +1859,11 @@ export default function SshFilesTool({ active, locate = null }: Props) {
                                 data-index={virtualRow.index}
                                 data-row-key={entry.path}
                                 data-state={selected.includes(entry.path) ? 'selected' : undefined}
-                                className="group select-none border-border/60 hover:bg-transparent data-[state=selected]:bg-transparent [&>td]:transition-colors hover:[&>td]:bg-muted/50 data-[state=selected]:[&>td]:bg-muted hover:[&>td:first-child]:rounded-l-md hover:[&>td:last-child]:rounded-r-md data-[state=selected]:[&>td:first-child]:rounded-l-md data-[state=selected]:[&>td:last-child]:rounded-r-md"
+                                className={`group select-none border-b-0 hover:bg-transparent data-[state=selected]:bg-transparent [&>td]:transition-colors hover:[&>td]:bg-muted/50 data-[state=selected]:[&>td]:bg-muted hover:[&>td:first-child]:rounded-l-md hover:[&>td:last-child]:rounded-r-md data-[state=selected]:[&>td:first-child]:rounded-l-md data-[state=selected]:[&>td:last-child]:rounded-r-md ${
+                  virtualRow.index % 2 === 1 && !selected.includes(entry.path)
+                    ? '[&>td]:bg-muted/30 [&>td:first-child]:rounded-l-md [&>td:last-child]:rounded-r-md'
+                    : ''
+                }`}
                               />
                             }
                           >
@@ -2058,6 +2092,22 @@ export default function SshFilesTool({ active, locate = null }: Props) {
                 </Table>
               )}
             </ScrollArea>
+            {fileListTableVisible ? (
+              <>
+                <div
+                  aria-hidden="true"
+                  className={`pointer-events-none absolute inset-x-0 top-10 z-10 h-3 bg-linear-to-b from-background to-transparent transition-opacity ${
+                    fileListScrollEdges.atTop ? 'opacity-0' : 'opacity-100'
+                  }`}
+                />
+                <div
+                  aria-hidden="true"
+                  className={`pointer-events-none absolute inset-x-0 bottom-0 z-10 h-3 bg-linear-to-t from-background to-transparent transition-opacity ${
+                    fileListScrollEdges.atBottom ? 'opacity-0' : 'opacity-100'
+                  }`}
+                />
+              </>
+            ) : null}
           </ContextMenuTrigger>
           <ContextMenuContent className="min-w-44">
             <ContextMenuGroup>
