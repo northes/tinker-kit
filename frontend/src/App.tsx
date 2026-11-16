@@ -850,9 +850,10 @@ function AppShell() {
         <BlankTabPicker
           active={active}
           tools={enabledTools}
-          onSelect={(toolId) =>
+          onSelectTool={(toolId) =>
             commitWorkspace(convertBlankTabToTool(workspaceStateRef.current, tab.id, toolId))
           }
+          onOpenSettings={openSettingsTab}
         />
       );
     }
