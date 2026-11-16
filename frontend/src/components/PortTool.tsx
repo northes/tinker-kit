@@ -345,6 +345,7 @@ function ForwardRow({
   sourceName,
   sortable,
   busy,
+  rowIndex,
   onToggle,
   onEdit,
   onCopy,
@@ -355,6 +356,7 @@ function ForwardRow({
   sourceName: string;
   sortable: boolean;
   busy: boolean;
+  rowIndex: number;
   onToggle: () => void;
   onEdit: () => void;
   onCopy: () => void;
@@ -390,7 +392,7 @@ function ForwardRow({
           <TableRow
             ref={setNodeRef}
             style={style}
-            className={`${running ? '' : 'text-muted-foreground'} ${isDragging ? 'bg-accent' : ''}`}
+            className={`border-b-0 hover:bg-transparent [&>td]:transition-colors hover:[&>td]:bg-muted/50 hover:[&>td:first-child]:rounded-l-md hover:[&>td:last-child]:rounded-r-md ${rowIndex % 2 === 1 ? '[&>td]:bg-muted/30 [&>td:first-child]:rounded-l-md [&>td:last-child]:rounded-r-md' : ''} ${running ? '' : 'text-muted-foreground'} ${isDragging ? 'bg-accent' : ''}`}
           />
         }
       >
@@ -1165,6 +1167,7 @@ export default function PortTool({ active }: { active: boolean }) {
                           key={row.key}
                           ref={portVirtualizer.measureElement}
                           data-index={row.index}
+                          className={`border-b-0 hover:bg-transparent [&>td]:transition-colors hover:[&>td]:bg-muted/50 hover:[&>td:first-child]:rounded-l-md hover:[&>td:last-child]:rounded-r-md ${row.index % 2 === 1 ? '[&>td]:bg-muted/30 [&>td:first-child]:rounded-l-md [&>td:last-child]:rounded-r-md' : ''}`}
                         >
                           <TableCell>{entry.port}</TableCell>
                           <TableCell>
@@ -1306,7 +1309,7 @@ export default function PortTool({ active }: { active: boolean }) {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {visibleForwardData.map((forward) => (
+                      {visibleForwardData.map((forward, index) => (
                         <ForwardRow
                           key={forward.id}
                           forward={forward}
@@ -1315,6 +1318,7 @@ export default function PortTool({ active }: { active: boolean }) {
                           }
                           sortable={forwardSort === null}
                           busy={busyForward !== ''}
+                          rowIndex={index}
                           onToggle={() =>
                             isForwardRunning(forward)
                               ? void stopForward(forward)
