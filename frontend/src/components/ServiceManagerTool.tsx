@@ -489,6 +489,11 @@ export default function ServiceManagerTool({
     inventoryLoadVersion.current++;
     setSelection(null);
     setInventory(null);
+    // 搜索与日志过滤只属于当前目标，切换目标后回到未过滤状态。
+    setSearchDraft('');
+    setSearch('');
+    setLogDraft('');
+    setLogQuery('');
     setTargetID(next);
   };
   const openPicked = () => {
