@@ -1602,16 +1602,6 @@ export default function SshFilesTool({ active, locate = null }: Props) {
                   ))}
                 </div>
               </ScrollArea>
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                className="h-7 w-7 flex-none cursor-pointer"
-                disabled={!sourceUsable || isLoading}
-                aria-label={t('sshFilesTool.editPath')}
-                onClick={beginPathEditing}
-              >
-                <PencilSimple weight="regular" size={14} />
-              </Button>
             </>
           )}
           <DropdownMenu>

@@ -1754,7 +1754,6 @@
     "refresh": "刷新",
     "path": "远程路径",
     "pathInput": "远程路径输入",
-    "editPath": "编辑路径",
     "navigatePath": "进入路径",
     "search": "搜索文件",
     "searchPlaceholder": "搜索…",
