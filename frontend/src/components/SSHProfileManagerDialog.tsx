@@ -568,7 +568,8 @@ function SSHProfileManagerDialog({
                             className={cn(
                               'flex min-w-0 items-center gap-2 rounded-md px-2 py-2.5 hover:bg-accent',
                               index % 2 === 1 && 'bg-muted/30',
-                              profile.id === selectedProfileID && 'bg-primary/20',
+                              profile.id === selectedProfileID &&
+                                'bg-primary/20 hover:bg-primary/20',
                             )}
                           >
                             <div className="min-w-0 flex-1">

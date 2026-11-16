@@ -112,19 +112,6 @@ export default function UrlTool({
   const consumed = useRef<PendingAction | null>(null);
   const parts = useMemo(() => parseSupportedUrl(input), [input]);
   const invalid = !!input.trim() && !parts;
-  // 按当前真正渲染出来的字段行编号，条件隐藏的字段不占斑马纹序号。
-  const visibleUrlRows = parts
-    ? [
-        'protocol',
-        'hostname',
-        ...(editResults || parts.port ? ['port'] : []),
-        'base',
-        ...(editResults || parts.username || parts.password ? ['username', 'password'] : []),
-        'path',
-        ...(editResults || parts.hash ? ['hash'] : []),
-        ...(editResults || parts.params.length > 0 ? ['params'] : []),
-      ]
-    : [];
   useFocusOnActivate(active, () => inputView.current?.focus());
   const output = parts ? JSON.stringify(parts, null, 2) : '';
   const copyValue = async (value: string, label: string) => {
@@ -176,6 +163,8 @@ export default function UrlTool({
     }
     setInput(pending.input);
   }, [pending, parts]);
+  // 斑马纹序号与渲染条件同源：仅在真正渲染一行时递增。
+  let rowIndex = 0;
   return (
     <Reveal index={0} fill active={active}>
       <ToolLayout>
@@ -220,7 +209,7 @@ export default function UrlTool({
                     id="protocol"
                     editable={editResults}
                     fallback=""
-                    index={visibleUrlRows.indexOf('protocol')}
+                    index={rowIndex++}
                     onChange={(value) => setInput(updateUrlPart(input, { protocol: value }))}
                     onCopy={copyValue}
                   />
@@ -230,7 +219,7 @@ export default function UrlTool({
                     id="hostname"
                     editable={editResults}
                     fallback=""
-                    index={visibleUrlRows.indexOf('hostname')}
+                    index={rowIndex++}
                     onChange={(value) => setInput(updateUrlPart(input, { hostname: value }))}
                     onCopy={copyValue}
                   />
@@ -241,7 +230,7 @@ export default function UrlTool({
                       id="port"
                       editable={editResults}
                       fallback=""
-                      index={visibleUrlRows.indexOf('port')}
+                      index={rowIndex++}
                       onChange={(value) => setInput(updateUrlPart(input, { port: value }))}
                       onCopy={copyValue}
                     />
@@ -251,7 +240,7 @@ export default function UrlTool({
                     value={parts.base}
                     id="base"
                     editable={editResults}
-                    index={visibleUrlRows.indexOf('base')}
+                    index={rowIndex++}
                     onChange={(value) => setInput(updateUrlPart(input, { base: value }))}
                     onCopy={copyValue}
                   />
@@ -263,7 +252,7 @@ export default function UrlTool({
                         id="username"
                         editable={editResults}
                         fallback=""
-                        index={visibleUrlRows.indexOf('username')}
+                        index={rowIndex++}
                         onChange={(value) => setInput(updateUrlPart(input, { username: value }))}
                         onCopy={copyValue}
                       />
@@ -273,7 +262,7 @@ export default function UrlTool({
                         id="password"
                         editable={editResults}
                         fallback=""
-                        index={visibleUrlRows.indexOf('password')}
+                        index={rowIndex++}
                         onChange={(value) => setInput(updateUrlPart(input, { password: value }))}
                         onCopy={copyValue}
                       />
@@ -284,7 +273,7 @@ export default function UrlTool({
                     value={parts.path}
                     id="path"
                     editable={editResults}
-                    index={visibleUrlRows.indexOf('path')}
+                    index={rowIndex++}
                     onChange={(value) => setInput(updateUrlPart(input, { path: value }))}
                     onCopy={copyValue}
                   />
@@ -294,7 +283,7 @@ export default function UrlTool({
                       value={parts.hash}
                       id="hash"
                       editable={editResults}
-                      index={visibleUrlRows.indexOf('hash')}
+                      index={rowIndex++}
                       onChange={(value) => setInput(updateUrlPart(input, { hash: value }))}
                       onCopy={copyValue}
                     />
@@ -302,7 +291,7 @@ export default function UrlTool({
                   {editResults || parts.params.length > 0 ? (
                     <div
                       className={`grid grid-cols-[104px_minmax(0,1fr)_32px] items-start gap-3 px-0.5 py-[13px] ${
-                        visibleUrlRows.indexOf('params') % 2 === 1 ? 'bg-muted/30 rounded-md' : ''
+                        rowIndex++ % 2 === 1 ? 'bg-muted/30 rounded-md' : ''
                       }`}
                     >
                       <span

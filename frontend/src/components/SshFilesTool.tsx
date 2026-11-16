@@ -1253,7 +1253,7 @@ export default function SshFilesTool({ active, locate = null }: Props) {
       viewport.removeEventListener('scroll', syncEdges);
       observer.disconnect();
     };
-  }, [fileListViewport]);
+  }, [fileListViewport, sortedEntries.length, fileRowVirtualizer.getTotalSize()]);
   const calculatingSizePaths = useMemo(
     () =>
       new Set(
@@ -1860,10 +1860,10 @@ export default function SshFilesTool({ active, locate = null }: Props) {
                                 data-row-key={entry.path}
                                 data-state={selected.includes(entry.path) ? 'selected' : undefined}
                                 className={`group select-none border-b-0 hover:bg-transparent data-[state=selected]:bg-transparent [&>td]:transition-colors hover:[&>td]:bg-muted/50 data-[state=selected]:[&>td]:bg-muted hover:[&>td:first-child]:rounded-l-md hover:[&>td:last-child]:rounded-r-md data-[state=selected]:[&>td:first-child]:rounded-l-md data-[state=selected]:[&>td:last-child]:rounded-r-md ${
-                  virtualRow.index % 2 === 1 && !selected.includes(entry.path)
-                    ? '[&>td]:bg-muted/30 [&>td:first-child]:rounded-l-md [&>td:last-child]:rounded-r-md'
-                    : ''
-                }`}
+                                  virtualRow.index % 2 === 1 && !selected.includes(entry.path)
+                                    ? '[&>td]:bg-muted/30 [&>td:first-child]:rounded-l-md [&>td:last-child]:rounded-r-md'
+                                    : ''
+                                }`}
                               />
                             }
                           >

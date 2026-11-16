@@ -33,7 +33,7 @@ import {
   SaveServiceTargets,
   StartLogMonitors,
 } from '../../bindings/tinkerkit/servicemanagerservice';
-import { cn } from '../lib/utils';
+import { cn } from '@/lib/utils';
 import { formatBackendError } from '../lib/backend-error';
 import { sendSystemNotification } from '../lib/task-notification-feedback';
 import { isLocalSource, sourceLabel } from '../lib/local-source';
@@ -600,9 +600,7 @@ export default function ServiceManagerTool({
         notifyRestart(
           partial ? 'partial' : 'failed',
           detail,
-          partial
-            ? { successTotal: succeeded.length, failedTotal: failed.length }
-            : undefined,
+          partial ? { successTotal: succeeded.length, failedTotal: failed.length } : undefined,
         );
       } else {
         toast.add({
