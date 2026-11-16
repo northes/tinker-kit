@@ -38,7 +38,6 @@ import {
   Key,
   PencilSimple,
   Power,
-  SidebarSimple,
   Trash,
   UploadSimple,
 } from '@phosphor-icons/react';
@@ -69,6 +68,8 @@ import { Spinner } from './ui/spinner';
 import { Textarea } from './ui/textarea';
 import { useSSHProfiles } from './SSHProfileManagerDialog';
 import { ConfirmDialog } from './ConfirmDialog';
+import { ToolOrderList } from '../app/ToolOrderList';
+import { resolveSidebarTools } from '../app/navigation';
 import { formatBackendError } from '../lib/backend-error';
 import { showTaskNotificationPermissionDialog } from '../lib/task-notification-feedback';
 import {
@@ -103,7 +104,7 @@ export type ToolDefinition = {
   icon: Icon;
   keywords: string;
 };
-type BooleanSettingKey = 'trayMatchEnabled' | 'autoOverwrite' | 'autoCheckUpdates';
+type BooleanSettingKey = 'trayMatchEnabled' | 'autoCheckUpdates';
 type ChoiceOption<T extends string | number> = { id: T; label: string };
 type SettingsCategory = 'preferences' | 'automation' | 'connections' | 'data' | 'about';
 
@@ -635,8 +636,8 @@ export default function SettingsPage({
   setSettings,
   setThemeMode: setThemeModeWithTransition,
   tools,
-  sidebarManaging,
-  onToggleSidebarManage,
+  toolTabCounts,
+  onCloseToolTabs,
   commandRequest,
   onCommandRequestHandled,
   flushSettingsSave,
@@ -646,8 +647,8 @@ export default function SettingsPage({
   setSettings: React.Dispatch<React.SetStateAction<Settings>>;
   setThemeMode: (update: React.SetStateAction<Settings>) => void;
   tools: ToolDefinition[];
-  sidebarManaging: boolean;
-  onToggleSidebarManage: () => void;
+  toolTabCounts: Record<string, number>;
+  onCloseToolTabs: (id: ToolId) => void;
   commandRequest: { id: number; action: 'quit' } | null;
   onCommandRequestHandled: (id: number) => void;
   flushSettingsSave: () => Promise<void>;
@@ -656,6 +657,7 @@ export default function SettingsPage({
   const { t } = useTranslation();
   const { openManager } = useSSHProfiles();
   const [confirmQuit, setConfirmQuit] = useState(false);
+  const [disableToolId, setDisableToolId] = useState<ToolId | null>(null);
   const [configAction, setConfigAction] = useState<'export' | 'import' | 'reset' | null>(null);
   const [configBusy, setConfigBusy] = useState(false);
   const [checking, setChecking] = useState(false);
@@ -710,6 +712,20 @@ export default function SettingsPage({
   };
   const update = (key: BooleanSettingKey, value: boolean) =>
     setSettings((current) => ({ ...current, [key]: value }));
+  const setToolEnabled = (id: ToolId, enabled: boolean) =>
+    setSettings((current) => ({
+      ...current,
+      sidebarTools: resolveSidebarTools(current.sidebarTools).map((item) =>
+        item.id === id ? { ...item, enabled } : item,
+      ),
+    }));
+  const requestDisableTool = (id: ToolId) => {
+    if ((toolTabCounts[id] ?? 0) === 0) {
+      setToolEnabled(id, false);
+      return;
+    }
+    setDisableToolId(id);
+  };
   const checkUpdates = async () => {
     setChecking(true);
     window.dispatchEvent(new CustomEvent('tinkerkit:update-check', { detail: 'checking' }));
@@ -996,21 +1012,73 @@ export default function SettingsPage({
                   />
                 </div>
               </SettingsGroup>
-              <SettingsGroup title={t('settings.adjustSidebar')}>
-                <div className={settingControlClass}>
-                  <Setting>
-                    <Button
-                      id="sidebar-manage-trigger"
-                      variant="outline"
-                      aria-expanded={sidebarManaging}
-                      aria-controls="app-sidebar"
-                      onClick={onToggleSidebarManage}
-                    >
-                      <SidebarSimple data-icon="inline-start" weight="regular" />
-                      {t(sidebarManaging ? 'sidebar.done' : 'sidebar.manageAction')}
-                    </Button>
+              <SettingsGroup title={t('settings.workspace')}>
+                <div className="flex flex-col gap-3">
+                  <ChoiceGroup
+                    label={t('settings.tabOrientation')}
+                    value={
+                      settings.tabOrientation === 'vertical' ? 'vertical' : 'horizontal'
+                    }
+                    options={[
+                      { id: 'horizontal', label: t('settings.tabOrientationHorizontal') },
+                      { id: 'vertical', label: t('settings.tabOrientationVertical') },
+                    ]}
+                    onChange={(tabOrientation) =>
+                      setSettings((current) => ({ ...current, tabOrientation }))
+                    }
+                  />
+                  <ChoiceGroup
+                    label={t('settings.tabCloseActivation')}
+                    value={
+                      settings.tabCloseActivation === 'previous' ||
+                      settings.tabCloseActivation === 'next'
+                        ? settings.tabCloseActivation
+                        : 'recent'
+                    }
+                    options={[
+                      { id: 'previous', label: t('settings.tabCloseActivationPrevious') },
+                      { id: 'next', label: t('settings.tabCloseActivationNext') },
+                      { id: 'recent', label: t('settings.tabCloseActivationRecent') },
+                    ]}
+                    onChange={(tabCloseActivation) =>
+                      setSettings((current) => ({ ...current, tabCloseActivation }))
+                    }
+                  />
+                  <ChoiceGroup
+                    label={t('settings.tabCloseButton')}
+                    value={
+                      settings.tabCloseButton === 'hover' || settings.tabCloseButton === 'never'
+                        ? settings.tabCloseButton
+                        : 'always'
+                    }
+                    options={[
+                      { id: 'always', label: t('settings.tabCloseButtonAlways') },
+                      { id: 'hover', label: t('settings.tabCloseButtonHover') },
+                      { id: 'never', label: t('settings.tabCloseButtonNever') },
+                    ]}
+                    onChange={(tabCloseButton) =>
+                      setSettings((current) => ({ ...current, tabCloseButton }))
+                    }
+                  />
+                  <Setting label={t('settings.showTabIcons')}>
+                    <SettingSwitch
+                      selected={settings.showTabIcons === true}
+                      onChange={(showTabIcons) =>
+                        setSettings((current) => ({ ...current, showTabIcons }))
+                      }
+                    />
                   </Setting>
                 </div>
+              </SettingsGroup>
+              <SettingsGroup title={t('settings.tools')}>
+                <ToolOrderList
+                  sidebarTools={resolveSidebarTools(settings.sidebarTools)}
+                  tools={tools}
+                  onChange={(sidebarTools) =>
+                    setSettings((current) => ({ ...current, sidebarTools }))
+                  }
+                  onRequestDisable={requestDisableTool}
+                />
               </SettingsGroup>
             </>
           );
@@ -1029,17 +1097,7 @@ export default function SettingsPage({
                         onChange={(value) => update('trayMatchEnabled', value)}
                       />
                     </Setting>
-                    {settings.trayMatchEnabled ? (
-                      <Setting
-                        label={t('settings.autoFill')}
-                        description={t('settings.autoFillDesc')}
-                      >
-                        <SettingSwitch
-                          selected={settings.autoOverwrite}
-                          onChange={(value) => update('autoOverwrite', value)}
-                        />
-                      </Setting>
-                    ) : null}
+
                   </div>
                   {settings.trayMatchEnabled ? (
                     <div className="flex flex-col gap-3 border-t border-border pt-3">
@@ -1306,6 +1364,27 @@ export default function SettingsPage({
         destructive={configAction === 'reset'}
         busy={configBusy}
         onConfirm={() => void runConfigAction()}
+      />
+      <ConfirmDialog
+        open={disableToolId !== null}
+        onOpenChange={(open) => {
+          if (!open) setDisableToolId(null);
+        }}
+        title={t('settings.disableToolTitle', {
+          name: disableToolId ? t(`tools.${disableToolId}.name`) : '',
+        })}
+        description={t('settings.disableToolDescription', {
+          name: disableToolId ? t(`tools.${disableToolId}.name`) : '',
+          total: disableToolId ? (toolTabCounts[disableToolId] ?? 0) : 0,
+        })}
+        confirmLabel={t('settings.disableToolConfirm')}
+        destructive
+        onConfirm={() => {
+          if (!disableToolId) return;
+          onCloseToolTabs(disableToolId);
+          setToolEnabled(disableToolId, false);
+          setDisableToolId(null);
+        }}
       />
       <ConfirmDialog
         open={confirmQuit}

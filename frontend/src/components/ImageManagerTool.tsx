@@ -45,6 +45,7 @@ import { imageTaskMeasure, taskMeasurePercent } from '../lib/task-format';
 import { sendSystemNotification } from '../lib/task-notification-feedback';
 import { imageArchitectures } from '../lib/image-architectures';
 import { ConfirmDialog } from './ConfirmDialog';
+import ImageManagerDetailPage from './ImageManagerDetailPage';
 import { ImageSearchField } from './image-manager/ImageSearchField';
 import { runImageBatches } from './image-manager/batch';
 import {
@@ -163,14 +164,12 @@ export default function ImageManagerTool({
   active,
   settings,
   onSettingsChange,
-  onOpenDetail,
   pending,
   clearPending,
 }: {
   active: boolean;
   settings: Settings;
   onSettingsChange: (patch: Pick<Settings, 'dockerCLIPath' | 'imageSources'>) => Promise<void>;
-  onOpenDetail: (sourceId: string, imageId: string) => void;
   pending: PendingAction | null;
   clearPending: () => void;
 }) {
@@ -215,6 +214,10 @@ export default function ImageManagerTool({
   const [confirm, setConfirm] = useState<ConfirmState>(null);
   const [operationDialog, setOperationDialog] = useState<ImageOperationDialogState>(null);
   const [operationError, setOperationError] = useState('');
+  const [detailTarget, setDetailTarget] = useState<{
+    sourceId: string;
+    imageId: string;
+  } | null>(null);
   const [search, setSearch] = useState('');
   const [sortKey, setSortKey] = useState<SortKey>('name');
   const [sortDirection, setSortDirection] = useState<SortDirection>('asc');
@@ -474,7 +477,8 @@ export default function ImageManagerTool({
 
   const startCheckboxDrag = useCheckboxDragSelect((key) => selected.has(key), toggleRow);
 
-  const viewRow = (row: ImageRow) => onOpenDetail(source.id, row.image.id);
+  const viewRow = (row: ImageRow) =>
+    setDetailTarget({ sourceId: source.id, imageId: row.image.id });
 
   const copyImageName = async (name: string) => {
     try {
@@ -1120,7 +1124,15 @@ export default function ImageManagerTool({
 
   return (
     <Reveal index={0} fill active={active}>
-      <ToolLayout>
+      <div className="relative h-full min-h-0">
+        <div
+          className={
+            detailTarget
+              ? 'pointer-events-none invisible absolute inset-0 overflow-hidden'
+              : 'h-full min-h-0'
+          }
+        >
+          <ToolLayout>
         <ToolLayoutToolbar
           left={
             <div className="flex min-w-0 flex-wrap items-end gap-4 max-[700px]:w-full">
@@ -2051,7 +2063,19 @@ export default function ImageManagerTool({
             </DialogFooter>
           </DialogContent>
         </Dialog>
-      </ToolLayout>
+          </ToolLayout>
+        </div>
+        {detailTarget ? (
+          <div className="absolute inset-0 min-h-0">
+            <ImageManagerDetailPage
+              active={active}
+              imageId={detailTarget.imageId}
+              sourceId={detailTarget.sourceId}
+              onBack={() => setDetailTarget(null)}
+            />
+          </div>
+        ) : null}
+      </div>
       {importPlan && importPlan.sourceConfigKey === sourceConfigKey ? (
         <ImageImportDialog
           entries={importPlan.entries}

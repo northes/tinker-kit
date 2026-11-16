@@ -13,13 +13,31 @@ export interface CompletionOption {
 export interface Config {
     "trayMatchEnabled": boolean;
     "trayMatchTools": string[] | null;
-    "autoOverwrite": boolean;
     "autoCheckUpdates": boolean;
     "taskConcurrency": number;
     "taskChunkConcurrency": number;
     "taskNotificationMode": string;
     "language": string;
-    "sidebarMode": string;
+
+    /**
+     * TabOrientation 是标签条方向：horizontal（顶部）或 vertical（左侧）。
+     */
+    "tabOrientation": string;
+
+    /**
+     * TabCloseActivation 是关掉当前标签后激活哪一个：previous、next 或 recent。
+     */
+    "tabCloseActivation": string;
+
+    /**
+     * TabCloseButton 是关闭按钮可见方式：always、hover 或 never。
+     */
+    "tabCloseButton": string;
+
+    /**
+     * ShowTabIcons 为真时，标签在名称左侧显示图标，全部标签使用同一档更宽的宽度。
+     */
+    "showTabIcons": boolean;
     "sidebarTools": SidebarToolConfig[] | null;
     "themeMode": string;
     "lightTheme": string;

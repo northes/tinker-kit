@@ -202,7 +202,7 @@ func main() {
 			// },
 			TitleBar: application.MacTitleBarHiddenInset,
 			WebviewPreferences: application.MacWebviewPreferences{
-				AllowsBackForwardNavigationGestures: application.Enabled,
+				AllowsBackForwardNavigationGestures: application.Disabled,
 			},
 		},
 	})
@@ -212,25 +212,11 @@ func main() {
 			"details": event.Context().DropTargetDetails(),
 		})
 	})
-	log.Printf("[startup] window created; WebKit back-forward gestures enabled")
+	log.Printf("[startup] window created; WebKit back-forward gestures disabled")
 	window.OnWindowEvent(events.Common.WindowRuntimeReady, func(_ *application.WindowEvent) {
 		configureLocalInspector(window)
 	})
 	window.Show()
-	log.Printf("[startup] window shown; installing local swipe monitor")
-	installMouseNavigationMonitor()
-	installMouseNavigationSwipeMonitor(func(direction, phase int) {
-		log.Printf("[mouse] local swipe direction=%d phase=%d", direction, phase)
-		if phase != 8 {
-			return
-		}
-		if direction == 2 {
-			app.Event.Emit("mouse:navigate", "back")
-		} else if direction == 1 {
-			app.Event.Emit("mouse:navigate", "forward")
-		}
-	})
-	log.Printf("[startup] local swipe monitor installed")
 	updateService.setBeforeRestart(func() {
 		// 更新重启走真实退出，避免 WindowClosing 钩子把它当成隐藏到托盘。
 		isQuitting = true
@@ -427,6 +413,16 @@ func main() {
 	viewMenu.AddRole(application.ToggleFullscreen)
 	appMenu.AddRole(application.WindowMenu)
 	appMenu.AddRole(application.HelpMenu)
+	// Cmd/Ctrl+W 交给前端关闭当前标签。系统「关闭窗口」会抢在 WebView 之前把窗口隐藏。
+	for _, role := range []application.Role{application.FileMenu, application.WindowMenu} {
+		menuItem := appMenu.FindByRole(role)
+		if menuItem == nil || menuItem.GetSubmenu() == nil {
+			continue
+		}
+		if closeItem := menuItem.GetSubmenu().FindByRole(application.CloseWindow); closeItem != nil {
+			menuItem.GetSubmenu().RemoveMenuItem(closeItem)
+		}
+	}
 	helpMenu := appMenu.FindByRole(application.HelpMenu).GetSubmenu()
 	helpMenu.Clear()
 	helpMenu.Add("Project Homepage").OnClick(func(_ *application.Context) {

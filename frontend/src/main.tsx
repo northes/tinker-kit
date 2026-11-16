@@ -13,13 +13,22 @@ document.addEventListener('contextmenu', (event) => {
   event.preventDefault();
 });
 
+// 首帧先按 UA 判断红绿灯，避免系统信息返回前标签钻进窗口按钮下面。
+if (/Macintosh|Mac OS X/.test(navigator.userAgent)) {
+  document.documentElement.dataset.windowControls = 'traffic-lights';
+}
+
 // macOS 27 起系统窗口的红绿灯区域更宽更高，标题栏需切换为 tall 几何；
-// 其余平台（含旧版 macOS）沿用默认标题栏实现。
+// 其余平台（含旧版 macOS）沿用默认标题栏实现。没有红绿灯的平台不为窗口按钮留白。
 void GetSystemInfo()
   .then((info) => {
-    const major = Number.parseInt(info.version, 10);
-    if (info.os === 'darwin' && Number.isFinite(major) && major >= 27) {
-      document.documentElement.dataset.titlebarVariant = 'tall';
+    const root = document.documentElement;
+    if (info.os === 'darwin') {
+      root.dataset.windowControls = 'traffic-lights';
+      const major = Number.parseInt(info.version, 10);
+      if (Number.isFinite(major) && major >= 27) root.dataset.titlebarVariant = 'tall';
+    } else {
+      delete root.dataset.windowControls;
     }
   })
   .catch(() => {

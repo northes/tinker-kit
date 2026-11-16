@@ -6,7 +6,6 @@ import "github.com/wailsapp/wails/v3/pkg/application"
 func applicationMenuLanguageUpdater(menu *application.Menu) func(Config) {
 	translations := map[string]string{
 		"File":                  "文件",
-		"Close":                 "关闭",
 		"Quit":                  "退出",
 		"Quit TinkerKit":        "退出 TinkerKit",
 		"Edit":                  "编辑",

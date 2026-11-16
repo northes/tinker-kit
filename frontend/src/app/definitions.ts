@@ -1,6 +1,4 @@
 import {
-  CaretLeft as ArrowLeft,
-  CaretRight as ArrowRight,
   ArrowsClockwise,
   BracketsCurly,
   Clock,
@@ -20,7 +18,6 @@ import {
   Plugs,
   Power,
   QrCode,
-  SidebarSimple,
   TextAa,
   TextT,
   Translate,
@@ -29,9 +26,7 @@ import {
 import type { ToolDefinition } from '../components/SettingsPage';
 import { type Icon, type ToolId } from '../components/shared';
 
-export type Page = 'settings' | ToolId | 'image-manager-detail';
-
-export type SidebarMode = 'full' | 'icon' | 'hidden';
+export type Page = 'settings' | ToolId;
 
 export type PaletteContext = string;
 
@@ -50,15 +45,13 @@ export type PaletteItem = {
   subgroupKey?: string;
   needsInput?: boolean;
   context?: PaletteContext;
-  historyDelta?: -1 | 1;
   toggle?: boolean;
   settingsAction?:
     | 'quit'
     | 'check-updates'
     | 'toggle-display-mode'
     | 'toggle-language'
-    | 'toggle-font-size'
-    | 'toggle-sidebar';
+    | 'toggle-font-size';
 };
 
 export type TranslatablePaletteItem = PaletteItem & {
@@ -190,22 +183,6 @@ export const tools: ToolDefinition[] = [
 
 export const paletteItems: PaletteItem[] = [
   {
-    id: 'nav:back',
-    labelKey: 'commands.back',
-    groupKey: 'groups.nav',
-    icon: ArrowLeft,
-    keywords: 'back previous 后退 返回',
-    historyDelta: -1,
-  },
-  {
-    id: 'nav:forward',
-    labelKey: 'commands.forward',
-    groupKey: 'groups.nav',
-    icon: ArrowRight,
-    keywords: 'forward next 前进',
-    historyDelta: 1,
-  },
-  {
     id: 'nav:settings',
     labelKey: 'nav.settings',
     groupKey: 'groups.nav',
@@ -255,14 +232,6 @@ export const paletteItems: PaletteItem[] = [
     keywords: 'font size editor text 大小 字体 编辑器',
     toggle: true,
     settingsAction: 'toggle-font-size',
-  },
-  {
-    id: 'settings:toggle-sidebar',
-    labelKey: 'settings.adjustSidebar',
-    groupKey: 'groups.settings',
-    icon: SidebarSimple,
-    keywords: 'sidebar customize manage 侧边栏 调整 管理',
-    settingsAction: 'toggle-sidebar',
   },
   {
     id: 'open:json',

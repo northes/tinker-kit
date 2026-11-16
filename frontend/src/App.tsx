@@ -1,14 +1,9 @@
-import {
-  CaretLeft as ArrowLeft,
-  CaretRight as ArrowRight,
-  SidebarSimple,
-} from '@phosphor-icons/react';
 import { Clipboard, Events } from '@wailsio/runtime';
 import type { SetStateAction } from 'react';
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
 import { useTranslation } from 'react-i18next';
-import { useLocation, useNavigate, useNavigationType } from 'react-router';
+import { useLocation, useNavigate } from 'react-router';
 import {
   Get as GetConfig,
   ResolveSSHHostKeyPrompt,
@@ -16,7 +11,7 @@ import {
   SaveImageSources,
 } from '../bindings/tinkerkit/configservice';
 import { Log as LogFrontend } from '../bindings/tinkerkit/logservice';
-import type { Config as Settings, SidebarToolConfig } from '../bindings/tinkerkit/models';
+import type { Config as Settings } from '../bindings/tinkerkit/models';
 import { CheckForUpdates, SetAutoCheckEnabled } from '../bindings/tinkerkit/updateservice';
 import { detectBase64, detectJwt } from './app/clipboard';
 import { CommandPalette } from './app/CommandPalette';
@@ -28,23 +23,26 @@ import {
   type Page,
   type PaletteContext,
   type Romanize,
-  type SidebarMode,
 } from './app/definitions';
-import { restoreFocusAfterManage } from './app/focus';
-import {
-  availablePage,
-  IMAGE_MANAGER_DETAIL_PATH,
-  imageManagerDetailRoute,
-  isPage,
-  isToolId,
-  pageFromLocation,
-  paletteToolId,
-  resolveSidebarTools,
-  routeMatchesPage,
-  routePath,
-} from './app/navigation';
+import { isToolId, paletteToolId, resolveSidebarTools, routePath } from './app/navigation';
 import { buildIndex } from './app/palette-search';
-import { Sidebar } from './app/Sidebar';
+import { WorkspaceTabBar } from './app/WorkspaceTabBar';
+import {
+  activateTab,
+  activeTab,
+  closeTab,
+  closeTabs,
+  cycleTabs,
+  emptyWorkspace,
+  openOrFocusSettings,
+  openToolTab,
+  parseTabCloseActivation,
+  parseTabCloseButton,
+  parseTabOrientation,
+  visiblePaletteCommands,
+  type WorkspaceState,
+  type WorkspaceTab,
+} from './app/workspace-tabs';
 import { parseJsonLoose, type PendingAction, type ToolId } from './components/shared';
 import { TaskCenter } from './components/TaskCenter';
 import {
@@ -57,7 +55,6 @@ import {
   DialogTitle,
 } from './components/ui/dialog';
 import { Button } from './components/ui/button';
-import { ScrollArea } from './components/ui/scroll-area';
 import { toast, Toaster } from './components/ui/toast';
 import UpdatePill from './components/UpdatePill';
 import { SUPPORTED_LANGUAGES } from './i18n';
@@ -169,8 +166,6 @@ const ImageTool = lazy(() => import('./components/ImageTool'));
 
 const ImageManagerTool = lazy(() => import('./components/ImageManagerTool'));
 
-const ImageManagerDetailPage = lazy(() => import('./components/ImageManagerDetailPage'));
-
 const ServiceManagerTool = lazy(() => import('./components/ServiceManagerTool'));
 
 const SshFilesTool = lazy(() => import('./components/SshFilesTool'));
@@ -187,24 +182,20 @@ function toolSlotClass(active: boolean) {
     : 'tool-slot absolute inset-0 isolate z-0 h-full min-h-0 overflow-hidden invisible opacity-0 pointer-events-none is-hidden';
 }
 
-function historyIndex() {
-  const index = window.history.state?.idx;
-  return typeof index === 'number' ? index : 0;
-}
-
 function AppShell() {
   const { t, i18n } = useTranslation();
   const location = useLocation();
-  const navigationType = useNavigationType();
   const routerNavigate = useNavigate();
-  const workspaceRef = useRef<HTMLElement>(null);
-  const page = pageFromLocation(location.pathname, location.search);
-  const imageDetailRoute = imageManagerDetailRoute(location.pathname, location.search);
-  const [visited, setVisited] = useState<Set<Page>>(() => new Set([page]));
-  const pageRef = useRef<Page>(page);
+  const workspaceElRef = useRef<HTMLElement>(null);
+  const [workspace, setWorkspace] = useState<WorkspaceState>(emptyWorkspace);
+  const workspaceStateRef = useRef(workspace);
+  workspaceStateRef.current = workspace;
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [romanize, setRomanize] = useState<Romanize>(() => (text) => text);
-  const [pending, setPending] = useState<PendingAction | null>(null);
+  const [delivered, setDelivered] = useState<{
+    tabId: string;
+    action: PendingAction;
+  } | null>(null);
   const [settingsCommandRequest, setSettingsCommandRequest] = useState<{
     id: number;
     action: 'quit';
@@ -212,14 +203,7 @@ function AppShell() {
   const settingsCommandId = useRef(0);
   const [jsonSchemaOpen, setJsonSchemaOpen] = useState(false);
   const [jsonPipelineOpen, setJsonPipelineOpen] = useState(false);
-  const [matchDialog, setMatchDialog] = useState<null | {
-    tool: ToolId;
-    input: string;
-    mode?: string;
-    target?: 'before' | 'after';
-  }>(null);
   const [settings, setSettings] = useState<Settings>(defaultSettings);
-  const [sidebarManaging, setSidebarManaging] = useState(false);
   const [sshHostKeyPrompt, setSSHHostKeyPrompt] = useState<SSHHostKeyPrompt | null>(null);
   const sshHostKeyPromptResponseRef = useRef<string | null>(null);
   const [systemDark, setSystemDark] = useState(
@@ -240,8 +224,6 @@ function AppShell() {
       console.error('[settings] persist failed', error);
     });
   };
-  const manageEntered = useRef(false);
-  const manageFocusRestoreRef = useRef<HTMLElement | null>(null);
   const lastFocusedRef = useRef<Element | null>(null);
   const themeTransitionRef = useRef<{
     transition: ViewTransition;
@@ -311,24 +293,36 @@ function AppShell() {
       console.error('[theme] transition update failed', error);
     });
   };
-  const currentHistoryIndex = historyIndex();
-  const [maxHistoryIndex, setMaxHistoryIndex] = useState(currentHistoryIndex);
-  const canGoBack = currentHistoryIndex > 0;
-  const canGoForward = currentHistoryIndex < maxHistoryIndex;
-  const dismissOverlays = () => {
-    closePalette();
-    document.body.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
-    document.body.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+  const commitWorkspace = (next: WorkspaceState) => {
+    workspaceStateRef.current = next;
+    setWorkspace(next);
   };
-  const navigatePage = (next: Page) => {
-    logFrontend(`[route] navigatePage from=${page} to=${next}`);
-    routerNavigate(routePath(next));
-    dismissOverlays();
+  const closeActivation = () => parseTabCloseActivation(settingsRef.current.tabCloseActivation);
+  const openTool = (toolId: ToolId) => {
+    const opened = openToolTab(workspaceStateRef.current, toolId);
+    commitWorkspace(opened.state);
+    return opened.tab;
   };
-  const openImageManagerDetail = (sourceId: string, imageId: string) => {
-    const params = new URLSearchParams({ source: sourceId, image: imageId });
-    routerNavigate(`${IMAGE_MANAGER_DETAIL_PATH}?${params.toString()}`);
-    dismissOverlays();
+  const openSettingsTab = () => {
+    commitWorkspace(openOrFocusSettings(workspaceStateRef.current));
+  };
+  const focusTab = (id: string) => {
+    commitWorkspace(activateTab(workspaceStateRef.current, id));
+  };
+  const closeWorkspaceTab = (id: string) => {
+    commitWorkspace(closeTab(workspaceStateRef.current, id, closeActivation()));
+    setDelivered((current) => (current?.tabId === id ? null : current));
+  };
+  const closeCurrentTab = () => {
+    const id = workspaceStateRef.current.activeId;
+    if (id) closeWorkspaceTab(id);
+  };
+  const closeToolTabs = (toolId: string) => {
+    const ids = workspaceStateRef.current.tabs
+      .filter((tab) => tab.toolId === toolId)
+      .map((tab) => tab.id);
+    commitWorkspace(closeTabs(workspaceStateRef.current, ids, closeActivation()));
+    setDelivered((current) => (current && ids.includes(current.tabId) ? null : current));
   };
   const respondSSHHostKeyPrompt = (accepted: boolean) => {
     const prompt = sshHostKeyPrompt;
@@ -350,17 +344,17 @@ function AppShell() {
         }
       });
   };
-  const navigate = navigatePage;
   const [sshLocate, setSshLocate] = useState<{
-    id: number;
-    sourceID: string;
-    path: string;
+    tabId: string;
+    locate: { id: number; sourceID: string; path: string };
   } | null>(null);
   const sshLocateIdRef = useRef(0);
   const locateSshUploadTarget = (sourceID: string, path: string) => {
-    const id = ++sshLocateIdRef.current;
-    setSshLocate({ id, sourceID, path });
-    navigate('ssh-files');
+    const tab = openTool('ssh-files');
+    setSshLocate({
+      tabId: tab.id,
+      locate: { id: ++sshLocateIdRef.current, sourceID, path },
+    });
   };
   useEffect(() => {
     const off = Events.On('ssh:host-key', (event) => {
@@ -370,14 +364,19 @@ function AppShell() {
     });
     return () => off();
   }, []);
+  const currentTab = activeTab(workspace);
+  const currentToolId = currentTab?.toolId;
+  const routePage: Page | null = !currentTab
+    ? null
+    : currentTab.kind === 'settings'
+      ? 'settings'
+      : currentToolId && isToolId(currentToolId)
+        ? currentToolId
+        : null;
+  const workspacePath = routePath(routePage);
   useEffect(() => {
-    const next = pageFromLocation(location.pathname, location.search);
-    logFrontend(
-      `[route] location pathname=${location.pathname} key=${location.key} type=${navigationType} page=${next}`,
-    );
-    if (!routeMatchesPage(location.pathname, location.search, next))
-      routerNavigate(routePath(next), { replace: true });
-  }, [location.key, location.pathname, location.search, navigationType, routerNavigate]);
+    if (location.pathname !== workspacePath) routerNavigate(workspacePath, { replace: true });
+  }, [location.pathname, routerNavigate, workspacePath]);
   useLayoutEffect(() => {
     const root = document.documentElement;
     const dark = theme.endsWith('-dark');
@@ -385,7 +384,8 @@ function AppShell() {
     root.dataset.theme = theme;
     root.style.colorScheme = dark ? 'dark' : 'light';
     root.style.setProperty('--code-editor-font-size', `${settings.codeEditorFontSize || 16}px`);
-  }, [theme, settings.codeEditorFontSize]);
+    root.dataset.showTabIcons = settings.showTabIcons ? 'true' : 'false';
+  }, [theme, settings.codeEditorFontSize, settings.showTabIcons]);
   useEffect(() => {
     const media = window.matchMedia('(prefers-color-scheme: dark)');
     const onChange = (event: MediaQueryListEvent) => setSystemDark(event.matches);
@@ -410,40 +410,12 @@ function AppShell() {
     );
   }, [paletteOpen, romanize]);
   useEffect(() => {
-    pageRef.current = page;
-    setVisited((current) => (current.has(page) ? current : new Set(current).add(page)));
-  }, [page]);
-  useEffect(() => {
-    setMaxHistoryIndex((current) => {
-      const next =
-        navigationType === 'PUSH' ? currentHistoryIndex : Math.max(current, currentHistoryIndex);
-      return current === next ? current : next;
-    });
-  }, [currentHistoryIndex, location.key, navigationType]);
-  useEffect(() => {
     void Events.On('navigate', (event) => {
       logFrontend(`[event] navigate data=${String(event.data)}`);
-      if (isPage(event.data)) navigatePage(event.data);
+      if (event.data === 'settings') openSettingsTab();
+      else if (isToolId(String(event.data))) openTool(String(event.data) as ToolId);
     });
   }, []);
-  useEffect(() => {
-    const off = Events.On('mouse:navigate', (event) => {
-      logFrontend(`[event] mouse:navigate data=${String(event.data)}`);
-      if (event.data === 'back') routerNavigate(-1);
-      if (event.data === 'forward') routerNavigate(1);
-    });
-    const onMouse = (event: MouseEvent) => {
-      if (event.button === 3 || event.button === 4)
-        logFrontend(`[dom] mouse button=${event.button} type=${event.type}`);
-    };
-    window.addEventListener('mousedown', onMouse);
-    window.addEventListener('mouseup', onMouse);
-    return () => {
-      off();
-      window.removeEventListener('mousedown', onMouse);
-      window.removeEventListener('mouseup', onMouse);
-    };
-  }, [routerNavigate]);
   useEffect(() => {
     const onSchema = (event: Event) => setJsonSchemaOpen((event as CustomEvent<boolean>).detail);
     window.addEventListener('tinkerkit:json-schema', onSchema);
@@ -456,21 +428,12 @@ function AppShell() {
     return () => window.removeEventListener('tinkerkit:json-pipeline', onPipeline);
   }, []);
   useEffect(() => {
-    const onMouseDown = (event: MouseEvent) => {
-      if (event.button !== 3 && event.button !== 4) return;
-      event.preventDefault();
-      routerNavigate(event.button === 3 ? -1 : 1);
-    };
-    window.addEventListener('mousedown', onMouseDown, true);
-    return () => window.removeEventListener('mousedown', onMouseDown, true);
-  }, [routerNavigate]);
-  useEffect(() => {
     const off = Events.On('tray:analyze', (event) => {
       if (typeof event.data === 'string') analyzeClipboard(event.data);
     });
     return () => off();
   }, []);
-  useLayoutEffect(() => workspaceRef.current?.scrollTo(0, 0), [page]);
+  useLayoutEffect(() => workspaceElRef.current?.scrollTo(0, 0), [workspace.activeId]);
   useEffect(() => {
     GetConfig()
       .then((c) => {
@@ -564,12 +527,6 @@ function AppShell() {
     saveQueued.current = true;
     startPersistLatest();
   }, [settings]);
-  useEffect(() => {
-    const lastPage = page === 'image-manager-detail' ? 'image-manager' : page;
-    localStorage.setItem('devutils.lastPage', JSON.stringify(lastPage));
-  }, [page]);
-  const sidebarMode = (settings.sidebarMode as SidebarMode) || 'full';
-  const layoutSidebarMode = sidebarManaging ? 'full' : sidebarMode;
   const resolvedSidebarTools = useMemo(
     () => resolveSidebarTools(settings.sidebarTools),
     [settings.sidebarTools],
@@ -582,43 +539,24 @@ function AppShell() {
     [resolvedSidebarTools],
   );
   const enabledToolSet = useMemo(() => new Set(enabledToolIds), [enabledToolIds]);
-  const sidebarPage = page === 'image-manager-detail' ? 'image-manager' : page;
-  useLayoutEffect(() => {
-    if (sidebarManaging) return;
-    const next = availablePage(page, resolvedSidebarTools);
-    if (next !== page) routerNavigate(routePath(next), { replace: true });
-  }, [page, resolvedSidebarTools, routerNavigate, sidebarManaging]);
-  useLayoutEffect(() => {
-    if (sidebarManaging) {
-      if (!manageEntered.current) {
-        manageEntered.current = true;
-        const active = document.activeElement;
-        manageFocusRestoreRef.current = active instanceof HTMLElement ? active : null;
-        const handle = document.querySelector<HTMLElement>('[data-sidebar-drag-handle]');
-        (handle ?? document.getElementById('sidebar-manage-done'))?.focus();
-      }
-      return;
+  const toolTabCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const tab of workspace.tabs) {
+      if (!tab.toolId) continue;
+      counts[tab.toolId] = (counts[tab.toolId] ?? 0) + 1;
     }
-    if (!manageEntered.current) return;
-    if (availablePage(page, resolvedSidebarTools) !== page) return;
-    manageEntered.current = false;
-    const previous = manageFocusRestoreRef.current;
-    manageFocusRestoreRef.current = null;
-    restoreFocusAfterManage(previous);
-  }, [page, resolvedSidebarTools, sidebarManaging]);
+    return counts;
+  }, [workspace.tabs]);
   const indexed = useMemo(() => {
-    const isTool = tools.some((tool) => tool.id === page);
     const contexts = new Set<PaletteContext>();
-    if (jsonSchemaOpen && page === 'json') contexts.add('json.schema');
-    if (jsonPipelineOpen && page === 'json') contexts.add('json.pipeline');
-    const items = paletteItems.filter((item) => {
-      const toolId = paletteToolId(item);
-      if (toolId && !enabledToolSet.has(toolId)) return false;
-      return (
-        (!isTool || !item.tool || item.tool === page) &&
-        (!item.context || contexts.has(item.context))
-      );
-    });
+    if (jsonSchemaOpen && currentTab?.toolId === 'json') contexts.add('json.schema');
+    if (jsonPipelineOpen && currentTab?.toolId === 'json') contexts.add('json.pipeline');
+    const scope = !currentTab
+      ? ({ kind: 'empty' } as const)
+      : currentTab.kind === 'settings'
+        ? ({ kind: 'settings' } as const)
+        : ({ kind: 'tool', toolId: currentTab.toolId ?? '' } as const);
+    const items = visiblePaletteCommands(paletteItems, scope, enabledToolIds, contexts);
     return buildIndex(
       items.map((item) => ({
         ...item,
@@ -651,23 +589,13 @@ function AppShell() {
     t,
     jsonSchemaOpen,
     jsonPipelineOpen,
-    page,
+    currentTab,
     romanize,
-    enabledToolSet,
+    enabledToolIds,
     settings.themeMode,
     settings.language,
     settings.codeEditorFontSize,
   ]);
-  const cycleSidebar = () => {
-    if (sidebarManaging) return;
-    setSettings((s) => ({
-      ...s,
-      sidebarMode: s.sidebarMode === 'full' ? 'icon' : s.sidebarMode === 'icon' ? 'hidden' : 'full',
-    }));
-  };
-  const toggleSidebarManage = () => setSidebarManaging((current) => !current);
-  const updateSidebarTools = (sidebarTools: SidebarToolConfig[]) =>
-    setSettings((current) => ({ ...current, sidebarTools }));
   const openPalette = () => {
     lastFocusedRef.current = document.activeElement;
     setPaletteOpen(true);
@@ -681,16 +609,29 @@ function AppShell() {
   };
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
+      const command = event.metaKey || event.ctrlKey;
+      if (command && !event.altKey && !event.shiftKey && event.key.toLowerCase() === 'k') {
         event.preventDefault();
         if (!paletteOpen) lastFocusedRef.current = document.activeElement;
         setPaletteOpen((open) => !open);
-      } else if (event.key === 'Escape' && paletteOpen) closePalette();
-      else if (event.key === 'Escape' && sidebarManaging) setSidebarManaging(false);
+        return;
+      }
+      if (command && !event.altKey && !event.shiftKey && event.key.toLowerCase() === 'w') {
+        event.preventDefault();
+        if (!event.repeat) closeCurrentTab();
+        return;
+      }
+      if (event.ctrlKey && !event.metaKey && !event.altKey && event.key === 'Tab') {
+        event.preventDefault();
+        if (!event.repeat)
+          commitWorkspace(cycleTabs(workspaceStateRef.current, event.shiftKey ? -1 : 1));
+        return;
+      }
+      if (event.key === 'Escape' && paletteOpen) closePalette();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [paletteOpen, closePalette, sidebarManaging]);
+  }, [paletteOpen, closePalette]);
   const checkForUpdates = useCallback(() => {
     void (async () => {
       window.dispatchEvent(new CustomEvent('tinkerkit:update-check', { detail: 'checking' }));
@@ -716,6 +657,9 @@ function AppShell() {
     const off = Events.On('check-updates', checkForUpdates);
     return () => off();
   }, [checkForUpdates]);
+  const deliver = (tabId: string, action: PendingAction) => {
+    setDelivered({ tabId, action });
+  };
   const run = (item: IndexedItem) => {
     const toolId = paletteToolId(item);
     if (toolId && !enabledToolSet.has(toolId)) return;
@@ -725,7 +669,7 @@ function AppShell() {
         case 'quit':
           settingsCommandId.current += 1;
           setSettingsCommandRequest({ id: settingsCommandId.current, action: item.settingsAction });
-          if (page !== 'settings') navigate('settings');
+          openSettingsTab();
           return;
         case 'check-updates':
           checkForUpdates();
@@ -760,21 +704,21 @@ function AppShell() {
             };
           });
           return;
-        case 'toggle-sidebar':
-          toggleSidebarManage();
-          return;
       }
     }
-    if (item.historyDelta) {
-      setPending(null);
-      routerNavigate(item.historyDelta);
+    if (item.page === 'settings') {
+      setDelivered(null);
+      openSettingsTab();
       return;
     }
-    if (!item.tool) {
-      setPending(null);
-      navigate(item.page!);
+    if (item.page && isToolId(item.page)) {
+      setDelivered(null);
+      openTool(item.page);
       return;
     }
+    if (!item.tool) return;
+    const tab = activeTab(workspaceStateRef.current);
+    if (!tab || tab.toolId !== item.tool) return;
     const tool = item.tool;
     const action = item.action ?? 'open';
     const needsInput = !!item.needsInput;
@@ -783,8 +727,6 @@ function AppShell() {
       if (needsInput) {
         input = (await Clipboard.Text().catch(() => '')) || '';
         if (!input.trim()) {
-          setPending(null);
-          navigate(tool);
           toast.add({
             title: t('toast.clipboardEmpty'),
             description: t('toast.clipboardEmptyDesc'),
@@ -794,13 +736,12 @@ function AppShell() {
         }
       }
       if (tool === 'diff' && action === 'fill' && item.target === 'alternate') {
-        const t = nextDiffTarget.current;
-        nextDiffTarget.current = t === 'before' ? 'after' : 'before';
-        setPending({ tool, action, input, target: t });
-        navigate(tool);
+        const side = nextDiffTarget.current;
+        nextDiffTarget.current = side === 'before' ? 'after' : 'before';
+        deliver(tab.id, { tool, action, input, target: side });
         return;
       }
-      setPending({
+      deliver(tab.id, {
         tool,
         action,
         input,
@@ -808,17 +749,14 @@ function AppShell() {
         target: item.target === 'alternate' ? undefined : item.target,
         pane: item.pane,
       });
-      navigate(tool);
     };
-    apply();
+    void apply();
   };
   const analyzeClipboard = (text: string) => {
-    if (!settingsRef.current.trayMatchEnabled) return;
     const currentSettings = settingsRef.current;
     if (!currentSettings.trayMatchEnabled) return;
     const s = text.trim();
     if (!s) return;
-    const currentPage = pageRef.current;
     const enabledSidebarTools = new Set(
       resolveSidebarTools(currentSettings.sidebarTools)
         .filter((item) => item.enabled)
@@ -831,74 +769,200 @@ function AppShell() {
     );
     let tool: ToolId | null = null;
     let mode: string | undefined;
-    let target: 'before' | 'after' | undefined;
-    if (
-      currentPage === 'diff' &&
-      trayTools.has('diff') &&
-      enabledSidebarTools.has('diff') &&
-      currentSettings.diffClipboardTargetMode !== 'off'
-    ) {
-      tool = 'diff';
-      target =
-        currentSettings.diffClipboardTargetMode === 'before'
-          ? 'before'
-          : currentSettings.diffClipboardTargetMode === 'after'
-            ? 'after'
-            : nextDiffTarget.current;
-    } else {
-      const parsedTime = parseTimeInput(s);
-      if (parsedTime && trayTools.has('time')) tool = 'time';
-      else if (trayTools.has('url') && parseSupportedUrl(s)) tool = 'url';
-      else if (trayTools.has('jwt') && detectJwt(s)) tool = 'jwt';
-      else {
-        mode = detectBase64(s) ?? undefined;
-        if (mode && trayTools.has('base64')) tool = 'base64';
-        else
-          try {
-            parseJsonLoose(s);
-            if (trayTools.has('json')) tool = 'json';
-          } catch {}
-        if (!tool && trayTools.has('text')) tool = 'text';
-      }
+    const parsedTime = parseTimeInput(s);
+    if (parsedTime && trayTools.has('time')) tool = 'time';
+    else if (trayTools.has('url') && parseSupportedUrl(s)) tool = 'url';
+    else if (trayTools.has('jwt') && detectJwt(s)) tool = 'jwt';
+    else {
+      mode = detectBase64(s) ?? undefined;
+      if (mode && trayTools.has('base64')) tool = 'base64';
+      else
+        try {
+          parseJsonLoose(s);
+          if (trayTools.has('json')) tool = 'json';
+        } catch {}
+      if (!tool && trayTools.has('text')) tool = 'text';
     }
     if (!tool || !enabledSidebarTools.has(tool)) return;
-    const apply = (match: {
-      tool: ToolId;
-      input: string;
-      mode?: string;
-      target?: 'before' | 'after';
-    }) => {
+    // 不再因为当前标签是差异对比就把剪贴板填进这一份。匹配结果是差异时，新开的标签仍按填入侧写入。
+    let target: 'before' | 'after' | undefined;
+    if (tool === 'diff' && currentSettings.diffClipboardTargetMode !== 'off') {
       if (
-        match.tool === 'diff' &&
-        match.target &&
-        currentSettings.diffClipboardTargetMode === 'alternate'
-      )
-        nextDiffTarget.current = match.target === 'before' ? 'after' : 'before';
-      setVisited((current) =>
-        current.has(match.tool) ? current : new Set(current).add(match.tool),
-      );
-      setPending({
-        tool: match.tool,
-        action: 'open',
-        input: match.input,
-        mode: match.mode,
-        target: match.target,
-      });
-      navigate(match.tool);
-      toast.add({
-        title: t('toast.trayAutoFilled', { tool: t(`tools.${match.tool}.name`) }),
-        type: 'success',
-      });
-    };
-    const match = { tool, input: text, mode, target };
-    if (currentSettings.autoOverwrite) {
-      apply(match);
-    } else {
-      // 关闭自动覆盖时，先跳到对应工具（让用户看到将被填入/覆盖的内容），再弹窗询问。
-      navigate(tool);
-      setMatchDialog(match);
+        currentSettings.diffClipboardTargetMode === 'before' ||
+        currentSettings.diffClipboardTargetMode === 'after'
+      ) {
+        target = currentSettings.diffClipboardTargetMode;
+      } else {
+        target = nextDiffTarget.current;
+        nextDiffTarget.current = target === 'before' ? 'after' : 'before';
+      }
+    }
+    const tab = openTool(tool);
+    deliver(tab.id, { tool, action: 'open', input: text, mode, target });
+    toast.add({
+      title: t('toast.trayAutoFilled', { tool: t(`tools.${tool}.name`) }),
+      type: 'success',
+    });
+  };
+  const clearDelivered = () => setDelivered(null);
+  const pendingFor = (tabId: string) => (delivered?.tabId === tabId ? delivered.action : null);
+  const renderWorkspaceTab = (tab: WorkspaceTab) => {
+    const active = tab.id === workspace.activeId;
+    const pending = pendingFor(tab.id);
+    const toolId = tab.kind === 'settings' ? 'settings' : tab.toolId;
+    switch (toolId) {
+      case 'json':
+        return (
+          <JsonTool
+            active={active}
+            theme={theme}
+            autoFormatOnFill={settings.jsonAutoFormatOnFill !== false}
+            onAutoFormatOnFillChange={(jsonAutoFormatOnFill) =>
+              setSettings((current) => ({ ...current, jsonAutoFormatOnFill }))
+            }
+            pending={pending}
+            clearPending={clearDelivered}
+          />
+        );
+      case 'time':
+        return (
+          <TimeTool
+            active={active}
+            resultOrder={settings.timeResultOrder ?? []}
+            hiddenResults={settings.hiddenTimeResults ?? []}
+            weekStart={settings.timeWeekStart === 'sunday' ? 'sunday' : 'monday'}
+            ntpServers={settings.ntpServers ?? []}
+            onSaveResults={(timeResultOrder, hiddenTimeResults) =>
+              setSettings((current) => ({ ...current, timeResultOrder, hiddenTimeResults }))
+            }
+            onWeekStartChange={(timeWeekStart) =>
+              setSettings((current) => ({ ...current, timeWeekStart }))
+            }
+            onNtpServersChange={(ntpServers) => setSettings((current) => ({ ...current, ntpServers }))}
+            pending={pending}
+            clearPending={clearDelivered}
+          />
+        );
+      case 'text':
+        return (
+          <TextTool
+            active={active}
+            theme={theme}
+            alwaysShowSearch={settings.textAlwaysShowSearch === true}
+            onAlwaysShowSearchChange={(textAlwaysShowSearch) =>
+              setSettings((current) => ({ ...current, textAlwaysShowSearch }))
+            }
+            pending={pending}
+            clearPending={clearDelivered}
+          />
+        );
+      case 'text-generator':
+        return (
+          <TextGeneratorTool
+            active={active}
+            sources={settings.textGeneratorSources ?? []}
+            onSourcesChange={(textGeneratorSources) =>
+              setSettings((current) => ({ ...current, textGeneratorSources }))
+            }
+            pending={pending}
+            clearPending={clearDelivered}
+          />
+        );
+      case 'base64':
+        return (
+          <Base64Tool active={active} theme={theme} pending={pending} clearPending={clearDelivered} />
+        );
+      case 'diff':
+        return (
+          <DiffTool active={active} theme={theme} pending={pending} clearPending={clearDelivered} />
+        );
+      case 'jwt':
+        return <JwtTool active={active} pending={pending} clearPending={clearDelivered} />;
+      case 'url':
+        return (
+          <UrlTool active={active} theme={theme} pending={pending} clearPending={clearDelivered} />
+        );
+      case 'qrcode':
+        return <QrCodeTool active={active} pending={pending} clearPending={clearDelivered} />;
+      case 'image':
+        return <ImageTool active={active} pending={pending} clearPending={clearDelivered} />;
+      case 'image-manager':
+        return (
+          <ImageManagerTool
+            active={active}
+            settings={settings}
+            onSettingsChange={saveImageManagerSettings}
+            pending={pending}
+            clearPending={clearDelivered}
+          />
+        );
+      case 'service-manager':
+        return (
+          <ServiceManagerTool
+            active={active}
+            highlightLevels={settings.serviceLogHighlightLevels}
+            setHighlightLevels={(value) =>
+              setSettings((current) => ({ ...current, serviceLogHighlightLevels: value }))
+            }
+            collapseLines={settings.serviceLogCollapseLines}
+            setCollapseLines={(value) =>
+              setSettings((current) => ({ ...current, serviceLogCollapseLines: value }))
+            }
+            taskNotificationMode={settings.taskNotificationMode}
+          />
+        );
+      case 'ports':
+        return <PortTool active={active} />;
+      case 'network-test':
+        return (
+          <NetworkTestTool active={active} taskNotificationMode={settings.taskNotificationMode} />
+        );
+      case 'ssh-files':
+        return (
+          <SshFilesTool
+            active={active}
+            locate={sshLocate?.tabId === tab.id ? sshLocate.locate : null}
+          />
+        );
+      case 'settings':
+        return (
+          <SettingsPage
+            settings={settings}
+            setSettings={setSettings}
+            setThemeMode={setSettingsWithThemeTransition}
+            onConfigReplaced={(config) => {
+              setSettingsWithThemeTransition(config);
+              void i18n.changeLanguage(config.language || 'zh-CN');
+              void SetAutoCheckEnabled(config.autoCheckUpdates);
+            }}
+            tools={tools}
+            toolTabCounts={toolTabCounts}
+            onCloseToolTabs={closeToolTabs}
+            commandRequest={settingsCommandRequest}
+            onCommandRequestHandled={(id) =>
+              setSettingsCommandRequest((current) => (current?.id === id ? null : current))
+            }
+            flushSettingsSave={flushSettingsSave}
+          />
+        );
+      default:
+        return null;
     }
   };
+  const orientation = parseTabOrientation(settings.tabOrientation);
+  const horizontal = orientation === 'horizontal';
+  const tabBar = (
+    <WorkspaceTabBar
+      orientation={orientation}
+      tabs={workspace.tabs}
+      activeId={workspace.activeId}
+      showIcons={settings.showTabIcons === true}
+      closeButton={parseTabCloseButton(settings.tabCloseButton)}
+      onActivate={focusTab}
+      onClose={closeWorkspaceTab}
+      onNewTab={openPalette}
+    />
+  );
   return (
     <>
       <Toaster />
@@ -907,319 +971,60 @@ function AppShell() {
         onSettingsChange={(patch) => setSettings((current) => ({ ...current, ...patch }))}
         onLocateFileTarget={locateSshUploadTarget}
       />
-      <div className="app-shell relative grid h-dvh grid-rows-[var(--app-titlebar-height)_minmax(0,1fr)] bg-background">
+      <div
+        className={`app-shell relative h-dvh bg-background ${horizontal ? 'grid grid-rows-[var(--app-titlebar-height)_minmax(0,1fr)]' : 'grid grid-cols-[var(--workspace-tab-strip)_minmax(0,1fr)]'}`}
+      >
         <div className="ambient pointer-events-none absolute inset-0 z-0" />
-        <header
-          className="titlebar relative z-[2] grid grid-cols-3 h-full cursor-default pointer-events-auto select-none items-center border-b border-border bg-background px-4 [--wails-draggable:drag]"
-          data-wails-drag
-        >
-          <div className="flex min-w-0 items-center pl-[calc(var(--app-titlebar-pad-left)-1rem)]">
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              className="sidebar-toggle relative top-(--app-titlebar-toggle-offset) flex-none self-center rounded-lg text-muted-foreground [--wails-draggable:no-drag] hover:bg-muted hover:text-foreground"
-              onClick={cycleSidebar}
-              disabled={sidebarManaging}
-              aria-label={t('sidebar.toggle')}
-              title={t('sidebar.toggle')}
-            >
-              <SidebarSimple size={16} weight="regular" />
-            </Button>
-            <div className="titlebar-navigation relative top-(--app-titlebar-item-offset) ml-1 flex h-7 items-center gap-0.5 self-center [--wails-draggable:no-drag]">
-              <Button
-                variant="ghost"
-                disabled={!canGoBack}
-                size="icon-sm"
-                className="titlebar-navigation-button flex-none text-muted-foreground hover:bg-muted hover:text-foreground [&_svg]:size-[15px]"
-                onClick={() => routerNavigate(-1)}
-                aria-label={t('titlebar.back')}
-                title={t('titlebar.back')}
-              >
-                <ArrowLeft size={15} weight="regular" />
-              </Button>
-              <Button
-                variant="ghost"
-                disabled={!canGoForward}
-                size="icon-sm"
-                className="titlebar-navigation-button flex-none text-muted-foreground hover:bg-muted hover:text-foreground [&_svg]:size-[15px]"
-                onClick={() => routerNavigate(1)}
-                aria-label={t('titlebar.forward')}
-                title={t('titlebar.forward')}
-              >
-                <ArrowRight size={15} weight="regular" />
-              </Button>
-            </div>
-          </div>
-          <div className="pointer-events-none flex min-w-0 items-center justify-center">
-            <h1 className="m-0 truncate text-sm font-semibold text-foreground">
-              {t(
-                sidebarPage === 'settings' ? 'settings.title' : `tools.${sidebarPage}.name`,
-              )}
-            </h1>
-          </div>
-          <div className="flex min-w-0 items-center justify-end [&>*]:max-w-full">
-            <UpdatePill />
-          </div>
-        </header>
-        <div
-          className={`main relative z-[1] grid min-h-0 ${layoutSidebarMode === 'hidden' ? 'grid-cols-[0px_minmax(0,1fr)] [&_.sidebar]:invisible [&_.sidebar]:overflow-hidden' : layoutSidebarMode === 'icon' ? 'grid-cols-[56px_minmax(0,1fr)] [&_.sidebar]:overflow-hidden [&_.sidebar]:pt-3 [&_.sidebar-heading]:hidden [&_.sidebar-item]:justify-center [&_.sidebar-item]:px-0 [&_.sidebar-item_span]:hidden [&_.sidebar-palette_kbd]:hidden [&_.sidebar-palette_span]:hidden [&_.sidebar-palette]:justify-center' : 'grid-cols-[232px_minmax(0,1fr)]'}`}
-        >
-          <Sidebar
-            page={sidebarPage}
-            onNavigate={navigate}
-            onOpenPalette={openPalette}
-            managing={sidebarManaging}
-            sidebarTools={resolvedSidebarTools}
-            onSidebarToolsChange={updateSidebarTools}
-            onExitManage={() => setSidebarManaging(false)}
-          />
-          <main
-            className={`workspace relative min-h-0 w-full overflow-x-hidden overflow-y-auto bg-background${tools.some((tool) => tool.id === page) || page === 'settings' || page === 'image-manager-detail' ? ' overflow-y-hidden' : ''}`}
-            ref={workspaceRef}
+        {horizontal ? (
+          <header
+            className="relative z-[2] flex h-full min-w-0 items-center border-b border-border bg-background pl-(--workspace-traffic-inset) [--wails-draggable:drag]"
+            data-wails-drag
           >
-            {' '}
-            <div className={toolSlotClass(page === 'json')}>
-              {visited.has('json') && (
-                <Suspense fallback={null}>
-                  <JsonTool
-                    active={page === 'json'}
-                    theme={theme}
-                    autoFormatOnFill={settings.jsonAutoFormatOnFill !== false}
-                    onAutoFormatOnFillChange={(jsonAutoFormatOnFill) =>
-                      setSettings((current) => ({ ...current, jsonAutoFormatOnFill }))
-                    }
-                    pending={pending}
-                    clearPending={() => setPending(null)}
-                  />
-                </Suspense>
-              )}
+            {tabBar}
+            <div className="flex min-w-0 items-center pr-3 [&>*]:max-w-full">
+              <UpdatePill />
             </div>
-            <div className={toolSlotClass(page === 'time')}>
-              {visited.has('time') && (
-                <Suspense fallback={null}>
-                  <TimeTool
-                    active={page === 'time'}
-                    resultOrder={settings.timeResultOrder ?? []}
-                    hiddenResults={settings.hiddenTimeResults ?? []}
-                    weekStart={settings.timeWeekStart === 'sunday' ? 'sunday' : 'monday'}
-                    ntpServers={settings.ntpServers ?? []}
-                    onSaveResults={(timeResultOrder, hiddenTimeResults) =>
-                      setSettings((current) => ({ ...current, timeResultOrder, hiddenTimeResults }))
-                    }
-                    onWeekStartChange={(timeWeekStart) =>
-                      setSettings((current) => ({ ...current, timeWeekStart }))
-                    }
-                    onNtpServersChange={(ntpServers) =>
-                      setSettings((current) => ({ ...current, ntpServers }))
-                    }
-                    pending={pending}
-                    clearPending={() => setPending(null)}
-                  />
-                </Suspense>
-              )}
-            </div>
-            <div className={toolSlotClass(page === 'text')}>
-              {visited.has('text') && (
-                <Suspense fallback={null}>
-                  <TextTool
-                    active={page === 'text'}
-                    theme={theme}
-                    alwaysShowSearch={settings.textAlwaysShowSearch === true}
-                    onAlwaysShowSearchChange={(textAlwaysShowSearch) =>
-                      setSettings((current) => ({ ...current, textAlwaysShowSearch }))
-                    }
-                    pending={pending}
-                    clearPending={() => setPending(null)}
-                  />
-                </Suspense>
-              )}
-            </div>
-            <div className={toolSlotClass(page === 'text-generator')}>
-              {visited.has('text-generator') && (
-                <Suspense fallback={null}>
-                  <TextGeneratorTool
-                    active={page === 'text-generator'}
-                    sources={settings.textGeneratorSources ?? []}
-                    onSourcesChange={(textGeneratorSources) =>
-                      setSettings((current) => ({ ...current, textGeneratorSources }))
-                    }
-                    pending={pending}
-                    clearPending={() => setPending(null)}
-                  />
-                </Suspense>
-              )}
-            </div>
-            <div className={toolSlotClass(page === 'base64')}>
-              {visited.has('base64') && (
-                <Suspense fallback={null}>
-                  <Base64Tool
-                    active={page === 'base64'}
-                    theme={theme}
-                    pending={pending}
-                    clearPending={() => setPending(null)}
-                  />
-                </Suspense>
-              )}
-            </div>
-            <div className={toolSlotClass(page === 'diff')}>
-              {visited.has('diff') && (
-                <Suspense fallback={null}>
-                  <DiffTool
-                    active={page === 'diff'}
-                    theme={theme}
-                    pending={pending}
-                    clearPending={() => setPending(null)}
-                  />
-                </Suspense>
-              )}
-            </div>
-            <div className={toolSlotClass(page === 'jwt')}>
-              {visited.has('jwt') && (
-                <Suspense fallback={null}>
-                  <JwtTool
-                    active={page === 'jwt'}
-                    pending={pending}
-                    clearPending={() => setPending(null)}
-                  />
-                </Suspense>
-              )}
-            </div>
-            <div className={toolSlotClass(page === 'url')}>
-              {visited.has('url') && (
-                <Suspense fallback={null}>
-                  <UrlTool
-                    active={page === 'url'}
-                    theme={theme}
-                    pending={pending}
-                    clearPending={() => setPending(null)}
-                  />
-                </Suspense>
-              )}
-            </div>
-            <div className={toolSlotClass(page === 'qrcode')}>
-              {visited.has('qrcode') && (
-                <Suspense fallback={null}>
-                  <QrCodeTool
-                    active={page === 'qrcode'}
-                    pending={pending}
-                    clearPending={() => setPending(null)}
-                  />
-                </Suspense>
-              )}
-            </div>
-            <div className={toolSlotClass(page === 'image')}>
-              {visited.has('image') && (
-                <Suspense fallback={null}>
-                  <ImageTool
-                    active={page === 'image'}
-                    pending={pending}
-                    clearPending={() => setPending(null)}
-                  />
-                </Suspense>
-              )}
-            </div>
-            <div className={toolSlotClass(page === 'image-manager')}>
-              {visited.has('image-manager') && (
-                <Suspense fallback={null}>
-                  <ImageManagerTool
-                    active={page === 'image-manager'}
-                    settings={settings}
-                    onSettingsChange={saveImageManagerSettings}
-                    onOpenDetail={openImageManagerDetail}
-                    pending={pending}
-                    clearPending={() => setPending(null)}
-                  />
-                </Suspense>
-              )}
-            </div>
-            <div className={toolSlotClass(page === 'image-manager-detail')}>
-              {visited.has('image-manager-detail') && imageDetailRoute ? (
-                <Suspense fallback={null}>
-                  <ImageManagerDetailPage
-                    active={page === 'image-manager-detail'}
-                    imageId={imageDetailRoute.imageId}
-                    onBack={() => routerNavigate(-1)}
-                    sourceId={imageDetailRoute.sourceId}
-                  />
-                </Suspense>
-              ) : null}
-            </div>
-            <div className={toolSlotClass(page === 'service-manager')}>
-              {visited.has('service-manager') && (
-                <Suspense fallback={null}>
-                  <ServiceManagerTool
-                    active={page === 'service-manager'}
-                    highlightLevels={settings.serviceLogHighlightLevels}
-                    setHighlightLevels={(value) =>
-                      setSettings((current) => ({ ...current, serviceLogHighlightLevels: value }))
-                    }
-                    collapseLines={settings.serviceLogCollapseLines}
-                    setCollapseLines={(value) =>
-                      setSettings((current) => ({ ...current, serviceLogCollapseLines: value }))
-                    }
-                    taskNotificationMode={settings.taskNotificationMode}
-                  />
-                </Suspense>
-              )}
-            </div>
-            <div className={toolSlotClass(page === 'ports')}>
-              {visited.has('ports') && (
-                <Suspense fallback={null}>
-                  <PortTool active={page === 'ports'} />
-                </Suspense>
-              )}
-            </div>
-            <div className={toolSlotClass(page === 'network-test')}>
-              {visited.has('network-test') && (
-                <Suspense fallback={null}>
-                  <NetworkTestTool
-                    active={page === 'network-test'}
-                    taskNotificationMode={settings.taskNotificationMode}
-                  />
-                </Suspense>
-              )}
-            </div>
-            <div className={toolSlotClass(page === 'ssh-files')}>
-              {visited.has('ssh-files') && (
-                <Suspense fallback={null}>
-                  <SshFilesTool active={page === 'ssh-files'} locate={sshLocate} />
-                </Suspense>
-              )}
-            </div>
-            <div className={toolSlotClass(page === 'settings')}>
-              {page === 'settings' && (
-                <Suspense fallback={null}>
-                  <SettingsPage
-                    settings={settings}
-                    setSettings={setSettings}
-                    setThemeMode={setSettingsWithThemeTransition}
-                    onConfigReplaced={(config) => {
-                      setSettingsWithThemeTransition(config);
-                      void i18n.changeLanguage(config.language || 'zh-CN');
-                      void SetAutoCheckEnabled(config.autoCheckUpdates);
-                    }}
-                    tools={tools}
-                    sidebarManaging={sidebarManaging}
-                    onToggleSidebarManage={toggleSidebarManage}
-                    commandRequest={settingsCommandRequest}
-                    onCommandRequestHandled={(id) =>
-                      setSettingsCommandRequest((current) => (current?.id === id ? null : current))
-                    }
-                    flushSettingsSave={flushSettingsSave}
-                  />
-                </Suspense>
-              )}
-            </div>
+          </header>
+        ) : (
+          <aside
+            className="relative z-[2] flex h-full min-h-0 w-(--workspace-tab-strip) flex-col border-r border-border bg-background [--wails-draggable:drag]"
+            data-wails-drag
+          >
+            <div className="h-(--workspace-traffic-block) shrink-0" />
+            {tabBar}
+          </aside>
+        )}
+        <div className="relative z-[1] min-h-0 min-w-0">
+          {horizontal ? null : (
+            <>
+              <div
+                className="absolute inset-x-0 top-0 z-20 h-(--app-titlebar-height) [--wails-draggable:drag]"
+                data-wails-drag
+              />
+              <div className="absolute top-1.5 right-3 z-30 max-w-[min(340px,40vw)]">
+                <UpdatePill />
+              </div>
+            </>
+          )}
+          <main
+            className="workspace relative h-full min-h-0 w-full overflow-hidden bg-background"
+            ref={workspaceElRef}
+          >
+            {workspace.tabs.map((tab) => (
+              <div key={tab.id} className={toolSlotClass(tab.id === workspace.activeId)}>
+                <Suspense fallback={null}>{renderWorkspaceTab(tab)}</Suspense>
+              </div>
+            ))}
           </main>
         </div>
-        <CommandPalette
-          open={paletteOpen}
-          onClose={closePalette}
-          indexed={indexed}
-          run={run}
-          page={sidebarPage}
-        />
       </div>
+      <CommandPalette
+        open={paletteOpen}
+        onClose={closePalette}
+        indexed={indexed}
+        run={run}
+        page={routePage ?? 'settings'}
+      />
       <Dialog
         open={sshHostKeyPrompt !== null}
         onOpenChange={(open) => {
@@ -1272,60 +1077,6 @@ function AppShell() {
             </DialogClose>
             <Button onClick={() => respondSSHHostKeyPrompt(true)}>
               {t(sshHostKeyPrompt?.changed ? 'sshHostKeyDialog.update' : 'sshHostKeyDialog.trust')}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-      <Dialog
-        open={matchDialog !== null}
-        onOpenChange={(open) => {
-          if (!open) setMatchDialog(null);
-        }}
-      >
-        <DialogContent showCloseButton={false}>
-          <DialogHeader>
-            <DialogTitle>{t('matchDialog.title')}</DialogTitle>
-            <DialogDescription render={<div />} className="w-full">
-              <p className="m-0">
-                {t('matchDialog.bodyPrefix')}
-                <strong>{matchDialog ? t(`tools.${matchDialog.tool}.name`) : ''}</strong>
-                {t('matchDialog.bodySuffix')}
-              </p>
-              {matchDialog ? (
-                <ScrollArea className="mt-2 h-24 rounded-md border bg-muted/30 px-2 py-1">
-                  <code className="block text-xs leading-5 break-all whitespace-pre-wrap">
-                    {matchDialog.input}
-                  </code>
-                </ScrollArea>
-              ) : null}
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <DialogClose render={<Button variant="outline" />}>
-              {t('matchDialog.cancel')}
-            </DialogClose>
-            <Button
-              onClick={() => {
-                const d = matchDialog;
-                setMatchDialog(null);
-                if (d && enabledToolSet.has(d.tool)) {
-                  if (
-                    d.tool === 'diff' &&
-                    d.target &&
-                    settings.diffClipboardTargetMode === 'alternate'
-                  )
-                    nextDiffTarget.current = d.target === 'before' ? 'after' : 'before';
-                  setPending({
-                    tool: d.tool,
-                    action: 'open',
-                    input: d.input,
-                    mode: d.mode,
-                    target: d.target,
-                  });
-                }
-              }}
-            >
-              {t('matchDialog.confirm')}
             </Button>
           </DialogFooter>
         </DialogContent>

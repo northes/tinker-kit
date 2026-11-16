@@ -15,23 +15,18 @@
     "error": "Error details",
     "unknown": "Unknown"
   },
-  "titlebar": {
-    "settings": "Settings",
-    "back": "Back",
-    "forward": "Forward"
-  },
   "sidebar": {
-    "toggle": "Toggle sidebar",
-    "manageTitle": "Customize sidebar",
-    "manageAction": "Manage",
-    "manageHint": "Drag to reorder. Use the eye icon to show or hide tools.",
-    "done": "Done",
     "dragTool": "Drag {{name}} to reorder",
     "moveToolUp": "Move {{name}} up",
     "moveToolDown": "Move {{name}} down",
     "showTool": "Show {{name}}",
     "hideTool": "Hide {{name}}",
-    "movedTool": "{{name}} moved to position {{position}} of {{count}}"
+    "movedTool": "{{name}} moved to position {{position}} of {{total}}"
+  },
+  "workspaceTabs": {
+    "list": "Workspace tabs",
+    "newTab": "New tab",
+    "closeTab": "Close {{name}}"
   },
   "fileDrop": {
     "release": "Release to import"
@@ -119,8 +114,6 @@
     }
   },
   "commands": {
-    "back": "Back",
-    "forward": "Forward",
     "toggleDisplayMode": "Toggle display mode (current: {{current}})",
     "toggleLanguage": "Toggle language (current: {{current}})",
     "toggleFontSize": "Toggle font size (current: {{current}})",
@@ -1530,7 +1523,22 @@
     "lightTheme": "Light theme",
     "darkTheme": "Dark theme",
     "workspace": "Workspace",
-    "adjustSidebar": "Customize sidebar",
+    "tabOrientation": "Tab bar direction",
+    "tabOrientationHorizontal": "Horizontal",
+    "tabOrientationVertical": "Vertical",
+    "tabCloseActivation": "After closing the current tab",
+    "tabCloseActivationPrevious": "Previous",
+    "tabCloseActivationNext": "Next",
+    "tabCloseActivationRecent": "Recently used",
+    "tabCloseButton": "Close button",
+    "tabCloseButtonAlways": "Always",
+    "tabCloseButtonHover": "On hover",
+    "tabCloseButtonNever": "Hidden",
+    "showTabIcons": "Tab icons",
+    "tools": "Tools",
+    "disableToolTitle": "Disable {{name}}?",
+    "disableToolDescription": "This closes {{total}} {{name}} tabs and disables the tool.",
+    "disableToolConfirm": "Close and disable",
     "themeDefault": "Default",
     "language": "Language",
     "languages": {
@@ -1540,11 +1548,9 @@
     "trayRecognition": "Tray recognition",
     "trayRecognitionEnabled": "Enabled",
     "trayRecognitionEnabledDesc": "When enabled, right-clicking the tray icon matches clipboard content and opens the corresponding tool. When disabled, the tray menu opens instead.",
-    "autoFill": "Auto-fill",
-    "autoFillDesc": "When enabled, matched clipboard content is filled into the corresponding tool. When disabled, you’ll be asked to confirm before filling.",
     "matchableTools": "Matchable tools",
     "matchableToolsMin": "Keep at least one matching tool.",
-    "trayMatchToolSidebarDisabled": "Enable this tool in the sidebar first.",
+    "trayMatchToolSidebarDisabled": "Enable this tool first.",
     "editor": "Code editor",
     "editorFontSize": "Font size",
     "updates": "Software updates",
@@ -1984,13 +1990,6 @@
     "taskBytes": "{{completed}} / {{total}}",
     "taskExtractedUnknown": "Extracted {{completed}} / Unknown",
     "noTasks": "No tasks"
-  },
-  "matchDialog": {
-    "title": "Content matched",
-    "confirm": "Fill in",
-    "cancel": "Cancel",
-    "bodyPrefix": "Clipboard matched ",
-    "bodySuffix": ". Fill it in?"
   },
   "sshHostKeyDialog": {
     "title": "SSH host key verification",

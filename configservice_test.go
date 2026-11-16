@@ -131,13 +131,13 @@ func TestReplaceConfigReplacesAllOwnedFieldsAndNotifiesSubscribers(t *testing.T)
 
 	cfg := defaultConfig()
 	cfg.Language = "en-US"
-	cfg.AutoOverwrite = true
+	cfg.TabOrientation = "vertical"
 	cfg.SSHProfiles = []SSHProfile{{ID: "new", Name: "new", Origin: "manual", Host: "new-host", Username: "user", Password: "new-secret", Port: 22}}
 	if err := service.replaceConfig(cfg); err != nil {
 		t.Fatalf("replaceConfig() error = %v", err)
 	}
 	got := service.Get()
-	if len(got.SSHProfiles) != 1 || got.SSHProfiles[0].ID != "new" || got.SSHProfiles[0].Password != "new-secret" || got.AutoOverwrite != true {
+	if len(got.SSHProfiles) != 1 || got.SSHProfiles[0].ID != "new" || got.SSHProfiles[0].Password != "new-secret" || got.TabOrientation != "vertical" {
 		t.Fatalf("configuration was not replaced: %#v", got)
 	}
 	if changes != 2 {

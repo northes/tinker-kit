@@ -13,13 +13,15 @@ import { DEFAULT_NTP_SERVERS, TIME_RESULT_IDS } from '../utils/time';
 export const defaultSettings: Settings = {
   trayMatchEnabled: true,
   trayMatchTools: ['json', 'time', 'text', 'base64', 'diff', 'jwt', 'url'],
-  autoOverwrite: true,
   autoCheckUpdates: true,
   taskConcurrency: 4,
   taskChunkConcurrency: 4,
   taskNotificationMode: 'unfocused',
   language: 'zh-CN',
-  sidebarMode: 'full',
+  tabOrientation: 'horizontal',
+  tabCloseActivation: 'recent',
+  tabCloseButton: 'always',
+  showTabIcons: false,
   sidebarTools: [
     { id: 'json', enabled: true },
     { id: 'time', enabled: true },

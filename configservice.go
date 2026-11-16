@@ -17,15 +17,21 @@ import (
 )
 
 type Config struct {
-	TrayMatchEnabled        bool                  `json:"trayMatchEnabled"`
-	TrayMatchTools          []string              `json:"trayMatchTools"`
-	AutoOverwrite           bool                  `json:"autoOverwrite"`
-	AutoCheckUpdates        bool                  `json:"autoCheckUpdates"`
-	TaskConcurrency         int                   `json:"taskConcurrency"`
-	TaskChunkConcurrency    int                   `json:"taskChunkConcurrency"`
-	TaskNotificationMode    string                `json:"taskNotificationMode"`
-	Language                string                `json:"language"`
-	SidebarMode             string                `json:"sidebarMode"`
+	TrayMatchEnabled     bool     `json:"trayMatchEnabled"`
+	TrayMatchTools       []string `json:"trayMatchTools"`
+	AutoCheckUpdates     bool     `json:"autoCheckUpdates"`
+	TaskConcurrency      int      `json:"taskConcurrency"`
+	TaskChunkConcurrency int      `json:"taskChunkConcurrency"`
+	TaskNotificationMode string   `json:"taskNotificationMode"`
+	Language             string   `json:"language"`
+	// TabOrientation 是标签条方向：horizontal（顶部）或 vertical（左侧）。
+	TabOrientation string `json:"tabOrientation"`
+	// TabCloseActivation 是关掉当前标签后激活哪一个：previous、next 或 recent。
+	TabCloseActivation string `json:"tabCloseActivation"`
+	// TabCloseButton 是关闭按钮可见方式：always、hover 或 never。
+	TabCloseButton string `json:"tabCloseButton"`
+	// ShowTabIcons 为真时，标签在名称左侧显示图标，全部标签使用同一档更宽的宽度。
+	ShowTabIcons            bool                  `json:"showTabIcons"`
 	SidebarTools            []SidebarToolConfig   `json:"sidebarTools"`
 	ThemeMode               string                `json:"themeMode"`
 	LightTheme              string                `json:"lightTheme"`
@@ -207,7 +213,7 @@ func defaultSidebarTools() []SidebarToolConfig {
 }
 
 func defaultConfig() Config {
-	return Config{TrayMatchEnabled: true, TrayMatchTools: []string{"json", "time", "text", "base64", "diff", "jwt", "url"}, AutoOverwrite: true, AutoCheckUpdates: true, TaskConcurrency: 4, TaskChunkConcurrency: 4, TaskNotificationMode: "unfocused", Language: "zh-CN", SidebarMode: "full", SidebarTools: defaultSidebarTools(), ThemeMode: "dark", LightTheme: "default-light", DarkTheme: "default-dark", DiffClipboardTargetMode: "alternate", CodeEditorFontSize: 16, TimeResultOrder: []string{"local", "dateTime", "dateOnly", "timeOnly", "zonedIso8601", "rfc3339", "utc", "compact", "underscore", "unixSeconds", "unixMilliseconds", "unixNanoseconds"}, TimeWeekStart: "monday", NtpServers: defaultNtpServers(), NetworkTestSettings: defaultNetworkTestSettings(), NetworkTestSources: defaultNetworkTestSources(), JsonAutoFormatOnFill: true, ImageSources: defaultImageSources(), SSHProfiles: []SSHProfile{}, FileSources: []FileSource{}, ServiceTargets: defaultServiceTargets(), ServiceLogHighlight: true, ServiceLogCollapseLines: defaultServiceLogCollapseLines, PortSources: defaultPortSources(), PortForwards: []PortForwardConfig{}, PortColumnWidths: PortColumnWidths{Ports: map[string][]int{}}}
+	return Config{TrayMatchEnabled: true, TrayMatchTools: []string{"json", "time", "text", "base64", "diff", "jwt", "url"}, AutoCheckUpdates: true, TaskConcurrency: 4, TaskChunkConcurrency: 4, TaskNotificationMode: "unfocused", Language: "zh-CN", TabOrientation: "horizontal", TabCloseActivation: "recent", TabCloseButton: "always", SidebarTools: defaultSidebarTools(), ThemeMode: "dark", LightTheme: "default-light", DarkTheme: "default-dark", DiffClipboardTargetMode: "alternate", CodeEditorFontSize: 16, TimeResultOrder: []string{"local", "dateTime", "dateOnly", "timeOnly", "zonedIso8601", "rfc3339", "utc", "compact", "underscore", "unixSeconds", "unixMilliseconds", "unixNanoseconds"}, TimeWeekStart: "monday", NtpServers: defaultNtpServers(), NetworkTestSettings: defaultNetworkTestSettings(), NetworkTestSources: defaultNetworkTestSources(), JsonAutoFormatOnFill: true, ImageSources: defaultImageSources(), SSHProfiles: []SSHProfile{}, FileSources: []FileSource{}, ServiceTargets: defaultServiceTargets(), ServiceLogHighlight: true, ServiceLogCollapseLines: defaultServiceLogCollapseLines, PortSources: defaultPortSources(), PortForwards: []PortForwardConfig{}, PortColumnWidths: PortColumnWidths{Ports: map[string][]int{}}}
 }
 
 func normalizeThemeID(theme string, defaultID string) string {
@@ -656,6 +662,21 @@ func normalizeConfig(cfg Config) Config {
 	case "off", "always", "unfocused":
 	default:
 		cfg.TaskNotificationMode = "unfocused"
+	}
+	switch cfg.TabOrientation {
+	case "horizontal", "vertical":
+	default:
+		cfg.TabOrientation = "horizontal"
+	}
+	switch cfg.TabCloseActivation {
+	case "previous", "next", "recent":
+	default:
+		cfg.TabCloseActivation = "recent"
+	}
+	switch cfg.TabCloseButton {
+	case "always", "hover", "never":
+	default:
+		cfg.TabCloseButton = "always"
 	}
 	cfg.TextGeneratorSources = normalizeTextGeneratorSources(cfg.TextGeneratorSources)
 	cfg.DockerCLIPath = normalizeDockerCLIPath(cfg.DockerCLIPath)

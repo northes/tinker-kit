@@ -844,11 +844,14 @@ export default function JsonTool({
     }
   };
   useEffect(() => {
+    // 同一工具可以有多份标签。只有当前这份把面板状态报给命令面板，避免互相覆盖。
+    if (!active) return;
     window.dispatchEvent(new CustomEvent('tinkerkit:json-schema', { detail: schema }));
-  }, [schema]);
+  }, [active, schema]);
   useEffect(() => {
+    if (!active) return;
     window.dispatchEvent(new CustomEvent('tinkerkit:json-pipeline', { detail: pipelineMode }));
-  }, [pipelineMode]);
+  }, [active, pipelineMode]);
   useEffect(() => {
     if (!schema) return;
     setPath((current) => {

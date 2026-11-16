@@ -15,23 +15,18 @@
     "error": "详细错误",
     "unknown": "未知"
   },
-  "titlebar": {
-    "settings": "设置",
-    "back": "后退",
-    "forward": "前进"
-  },
   "sidebar": {
-    "toggle": "收起或展开侧边栏",
-    "manageTitle": "调整侧边栏",
-    "manageAction": "管理",
-    "manageHint": "拖拽调整顺序，点击眼睛显示或隐藏工具。",
-    "done": "完成",
     "dragTool": "拖动{{name}}以调整顺序",
     "moveToolUp": "将{{name}}上移",
     "moveToolDown": "将{{name}}下移",
     "showTool": "显示{{name}}",
     "hideTool": "隐藏{{name}}",
-    "movedTool": "{{name}} 已移到第 {{position}} 位，共 {{count}} 项"
+    "movedTool": "{{name}} 已移到第 {{position}} 位，共 {{total}} 项"
+  },
+  "workspaceTabs": {
+    "list": "工作区标签",
+    "newTab": "新开标签",
+    "closeTab": "关闭{{name}}"
   },
   "fileDrop": {
     "release": "松开即可导入"
@@ -119,8 +114,6 @@
     }
   },
   "commands": {
-    "back": "后退",
-    "forward": "前进",
     "toggleDisplayMode": "切换显示模式（当前：{{current}}）",
     "toggleLanguage": "切换语言（当前：{{current}}）",
     "toggleFontSize": "切换字体大小（当前：{{current}}）",
@@ -1530,7 +1523,22 @@
     "lightTheme": "浅色主题",
     "darkTheme": "深色主题",
     "workspace": "工作区",
-    "adjustSidebar": "调整侧边栏",
+    "tabOrientation": "标签方向",
+    "tabOrientationHorizontal": "横向",
+    "tabOrientationVertical": "纵向",
+    "tabCloseActivation": "关闭当前标签后",
+    "tabCloseActivationPrevious": "前一个",
+    "tabCloseActivationNext": "后一个",
+    "tabCloseActivationRecent": "最近使用",
+    "tabCloseButton": "关闭按钮",
+    "tabCloseButtonAlways": "一直显示",
+    "tabCloseButtonHover": "悬停时显示",
+    "tabCloseButtonNever": "不显示",
+    "showTabIcons": "标签图标",
+    "tools": "工具",
+    "disableToolTitle": "禁用{{name}}？",
+    "disableToolDescription": "将关闭 {{total}} 个「{{name}}」标签，并禁用该工具。",
+    "disableToolConfirm": "关闭并禁用",
     "themeDefault": "默认",
     "language": "语言",
     "languages": {
@@ -1540,11 +1548,9 @@
     "trayRecognition": "托盘识别",
     "trayRecognitionEnabled": "开启",
     "trayRecognitionEnabledDesc": "开启后右键点击托盘根据剪切板内容匹配并打开对应工具，关闭后回归右键菜单。",
-    "autoFill": "自动填入",
-    "autoFillDesc": "开启后若成功匹配到工具，则将剪切板内容填入对应工具内，关闭则弹框二次确认。",
     "matchableTools": "可匹配的工具",
     "matchableToolsMin": "至少保留一个匹配工具。",
-    "trayMatchToolSidebarDisabled": "请先在侧栏中启用该工具。",
+    "trayMatchToolSidebarDisabled": "请先启用该工具。",
     "editor": "代码编辑器",
     "editorFontSize": "字体大小",
     "updates": "软件更新",
@@ -1984,13 +1990,6 @@
     "taskBytes": "{{completed}} / {{total}}",
     "taskExtractedUnknown": "已解压 {{completed}} / 未知",
     "noTasks": "暂无任务"
-  },
-  "matchDialog": {
-    "title": "匹配到内容",
-    "bodyPrefix": "剪贴板匹配到 ",
-    "bodySuffix": "，是否填入？",
-    "confirm": "填入",
-    "cancel": "取消"
   },
   "sshHostKeyDialog": {
     "title": "SSH 主机指纹确认",

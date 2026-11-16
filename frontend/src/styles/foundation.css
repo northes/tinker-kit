@@ -3,6 +3,12 @@
   --app-titlebar-pad-left: 76px;
   --app-titlebar-item-offset: 1px;
   --app-titlebar-toggle-offset: 1px;
+  /* 标签固定宽度。无图标一档；打开图标后全部标签加宽同一截。纵向标签条在此基础上
+     加上 ScrollArea 为焦点环预留的 8px，避免标签被 padding 挤窄或撑出横向滚动。 */
+  --workspace-tab-width: 168px;
+  --workspace-tab-strip: calc(var(--workspace-tab-width) + 8px);
+  --workspace-traffic-inset: 0px;
+  --workspace-traffic-block: 0px;
   --code-editor-font-size: 16px;
   --overlay-scrollbar-size: 12px;
   /* 统一过渡：项目内的所有过渡共用这一组时长与缓动；Tailwind 的默认过渡值
@@ -23,6 +29,13 @@
   --app-titlebar-pad-left: 96px;
   --app-titlebar-item-offset: 3px;
   --app-titlebar-toggle-offset: 2px;
+}
+:root[data-show-tab-icons='true'] {
+  --workspace-tab-width: 192px;
+}
+:root[data-window-controls='traffic-lights'] {
+  --workspace-traffic-inset: var(--app-titlebar-pad-left);
+  --workspace-traffic-block: var(--app-titlebar-height);
 }
 .cm-content,
 .cm-content * {
