@@ -107,7 +107,7 @@ export function WorkspaceTabBar({
                   'group/tab relative flex h-7 w-(--workspace-tab-width) shrink-0 cursor-default items-center gap-1.5 rounded-md px-2 text-left text-xs [--wails-draggable:no-drag] select-none',
                   current
                     ? 'bg-muted text-foreground'
-                    : 'text-muted-foreground hover:bg-muted hover:text-foreground',
+                    : 'text-muted-foreground hover:text-foreground',
                 )}
                 onClick={() => onActivate(tab.id)}
                 onMouseDown={(event) => {
@@ -129,9 +129,7 @@ export function WorkspaceTabBar({
                   <div
                     className={cn(
                       'absolute inset-y-0 right-0 flex items-center rounded-r-md bg-linear-to-r from-transparent pl-6 pr-1',
-                      current
-                        ? 'via-muted to-muted'
-                        : 'via-background to-background group-hover/tab:via-muted group-hover/tab:to-muted group-focus-within/tab:via-muted group-focus-within/tab:to-muted',
+                      current ? 'via-muted to-muted' : 'via-background to-background',
                       closeButton === 'always' || current
                         ? 'pointer-events-auto opacity-100'
                         : 'pointer-events-none opacity-0 group-hover/tab:pointer-events-auto group-hover/tab:opacity-100 group-focus-within/tab:pointer-events-auto group-focus-within/tab:opacity-100 [@media(pointer:coarse)]:pointer-events-auto [@media(pointer:coarse)]:opacity-100',
