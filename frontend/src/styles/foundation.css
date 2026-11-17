@@ -6,6 +6,10 @@
   /* 标签宽度。无图标一档；打开图标后全部标签加宽同一截。 */
   --workspace-tab-width: 128px;
   --workspace-traffic-inset: 0px;
+  /* 外壳缝与面板圆角：楔形补块和外圆角都由这两个值派生，别在别处写死 8px / 22px。 */
+  --window-frame-inset: 8px;
+  /* rounded-xl 就是 --radius * 1.4（index.css 的 --radius-xl），这里跟着同一个乘积走。 */
+  --window-frame-radius: calc(var(--radius) * 1.4);
   --code-editor-font-size: 16px;
   --native-scrollbar-size: 4px;
   /* OverlayScrollbars 命中区；滑块视觉宽度为 size 减去两侧 --os-padding-perpendicular。 */
@@ -76,9 +80,100 @@ body {
 }
 /* 左、右、底 8px 缝用边框而不是父层铺底，避免半透明窗底从圆角面板下面再透出来。 */
 .window-frame {
+  /* 外壳外圆角 = 面板圆角 + 缝宽；底部两个角与面板同心，补块尺寸也由它派生。 */
+  --window-frame-outer-radius: calc(var(--window-frame-radius) + var(--window-frame-inset));
   border-style: solid;
   border-color: var(--chrome-fill);
-  border-width: 0 8px 8px;
+  border-width: 0 var(--window-frame-inset) var(--window-frame-inset);
+  /* 外半径减边框宽度正好等于面板半径，边框就贴着面板的弧走。 */
+  border-radius: 0 0 var(--window-frame-outer-radius) var(--window-frame-outer-radius);
+}
+/* 面板的圆角比外壳的直边小，圆角外面会空出四块楔形；补块把它填成窗底色。
+   顶部楔形是面板半径的反圆角（上面两条缝为 0）；底部楔形落在外圆角之外，边框只到外半径，
+   而原生窗底在首帧之后 alpha 为 0，不补就会在窗口两个下角透出毛玻璃/桌面。
+   补块在面板之下（z-index: -1），内侧被反圆角挖掉，所以不会和半透明的面板叠成两层。
+   每侧一条补块，顶部与底部各一层 mask，尺寸/定位决定它落在哪一块楔形上。 */
+.window-frame::before,
+.window-frame::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  /* 补块要伸到边框外缘，底部楔形才会和外圆角接上。 */
+  bottom: calc(-1 * var(--window-frame-inset));
+  z-index: -1;
+  width: var(--window-frame-outer-radius);
+  background-color: var(--chrome-fill);
+  pointer-events: none;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-size:
+    var(--window-frame-radius) var(--window-frame-radius),
+    var(--window-frame-outer-radius) var(--window-frame-outer-radius);
+  mask-size:
+    var(--window-frame-radius) var(--window-frame-radius),
+    var(--window-frame-outer-radius) var(--window-frame-outer-radius);
+}
+.window-frame::before {
+  left: calc(-1 * var(--window-frame-inset));
+  -webkit-mask-image:
+    radial-gradient(
+      circle at 100% 100%,
+      transparent calc(var(--window-frame-radius) - 0.5px),
+      #000 var(--window-frame-radius)
+    ),
+    radial-gradient(
+      circle at 100% 0,
+      transparent calc(var(--window-frame-outer-radius) - 0.5px),
+      #000 var(--window-frame-outer-radius)
+    );
+  mask-image:
+    radial-gradient(
+      circle at 100% 100%,
+      transparent calc(var(--window-frame-radius) - 0.5px),
+      #000 var(--window-frame-radius)
+    ),
+    radial-gradient(
+      circle at 100% 0,
+      transparent calc(var(--window-frame-outer-radius) - 0.5px),
+      #000 var(--window-frame-outer-radius)
+    );
+  -webkit-mask-position:
+    var(--window-frame-inset) 0,
+    left bottom;
+  mask-position:
+    var(--window-frame-inset) 0,
+    left bottom;
+}
+.window-frame::after {
+  right: calc(-1 * var(--window-frame-inset));
+  -webkit-mask-image:
+    radial-gradient(
+      circle at 0 100%,
+      transparent calc(var(--window-frame-radius) - 0.5px),
+      #000 var(--window-frame-radius)
+    ),
+    radial-gradient(
+      circle at 0 0,
+      transparent calc(var(--window-frame-outer-radius) - 0.5px),
+      #000 var(--window-frame-outer-radius)
+    );
+  mask-image:
+    radial-gradient(
+      circle at 0 100%,
+      transparent calc(var(--window-frame-radius) - 0.5px),
+      #000 var(--window-frame-radius)
+    ),
+    radial-gradient(
+      circle at 0 0,
+      transparent calc(var(--window-frame-outer-radius) - 0.5px),
+      #000 var(--window-frame-outer-radius)
+    );
+  -webkit-mask-position:
+    left top,
+    right bottom;
+  mask-position:
+    left top,
+    right bottom;
 }
 .workspace {
   background: var(--panel-fill);
