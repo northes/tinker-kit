@@ -39,7 +39,9 @@
     "renameTitle": "重命名标签",
     "renameLabel": "名称",
     "renameHint": "留空则恢复默认名称",
-    "pinnedTab": "已固定，{{name}}"
+    "pinnedTab": "已固定，{{name}}",
+    "dragTab": "拖动{{name}}以调整顺序",
+    "movedTab": "{{name}} 已移到第 {{position}} 位，共 {{total}} 项"
   },
   "fileDrop": {
     "release": "松开即可导入"

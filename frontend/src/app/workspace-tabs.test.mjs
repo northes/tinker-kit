@@ -18,6 +18,7 @@ import {
   parseTabCloseButton,
   parseTabOrientation,
   parseTabStripWidth,
+  reorderWorkspaceTabs,
   setTabCustomTitle,
   sortTabsForDisplay,
   startupWorkspace,
@@ -257,6 +258,86 @@ test('固定的标签排到最前，组内相对顺序不变', () => {
     unsorted.map((tab) => tab.id),
     [json.id, text.id, time.id],
   );
+});
+
+test('只在同一固定组内调整顺序，跨组取消，新标签仍加在未固定区末尾', () => {
+  let state = openToolTab(emptyWorkspace(), 'json').state;
+  state = openToolTab(state, 'text').state;
+  state = openToolTab(state, 'time').state;
+  state = openToolTab(state, 'base64').state;
+  const [json, text, time, base64] = state.tabs;
+  state = toggleTabPin(state, json.id);
+  state = toggleTabPin(state, text.id);
+  assert.deepEqual(
+    state.tabs.map((tab) => tab.id),
+    [json.id, text.id, time.id, base64.id],
+  );
+
+  const swappedPinned = reorderWorkspaceTabs(state, text.id, json.id);
+  assert.notEqual(swappedPinned, state);
+  assert.deepEqual(
+    swappedPinned.tabs.map((tab) => tab.id),
+    [text.id, json.id, time.id, base64.id],
+  );
+  assert.equal(swappedPinned.tabs[0].pinned, true);
+  assert.equal(swappedPinned.tabs[1].pinned, true);
+  assert.equal(swappedPinned.activeId, state.activeId);
+  assert.equal(swappedPinned.nextId, state.nextId);
+  assert.equal(swappedPinned.activationSeq, state.activationSeq);
+  assert.deepEqual(swappedPinned.nextOrdinal, state.nextOrdinal);
+
+  const swappedUnpinned = reorderWorkspaceTabs(state, base64.id, time.id);
+  assert.deepEqual(
+    swappedUnpinned.tabs.map((tab) => tab.id),
+    [json.id, text.id, base64.id, time.id],
+  );
+  const unpinnedGroup = toggleTabPin(state, text.id);
+  assert.deepEqual(
+    unpinnedGroup.tabs.map((tab) => tab.id),
+    [json.id, text.id, time.id, base64.id],
+  );
+  const movedForward = reorderWorkspaceTabs(unpinnedGroup, base64.id, text.id);
+  assert.deepEqual(
+    movedForward.tabs.map((tab) => tab.id),
+    [json.id, base64.id, text.id, time.id],
+  );
+  const movedBackward = reorderWorkspaceTabs(unpinnedGroup, text.id, base64.id);
+  assert.deepEqual(
+    movedBackward.tabs.map((tab) => tab.id),
+    [json.id, time.id, base64.id, text.id],
+  );
+
+  assert.equal(reorderWorkspaceTabs(state, json.id, time.id), state);
+  assert.equal(reorderWorkspaceTabs(state, time.id, text.id), state);
+  assert.equal(reorderWorkspaceTabs(state, json.id, json.id), state);
+  assert.equal(reorderWorkspaceTabs(state, 'missing', time.id), state);
+  assert.equal(reorderWorkspaceTabs(state, json.id, 'missing'), state);
+  assert.equal(reorderWorkspaceTabs(state, '', time.id), state);
+
+  const opened = openToolTab(swappedUnpinned, 'cron');
+  assert.deepEqual(
+    opened.state.tabs.map((tab) => tab.toolId),
+    ['json', 'text', 'base64', 'time', 'cron'],
+  );
+  const blank = openBlankTab(swappedUnpinned);
+  assert.equal(blank.state.tabs.at(-1)?.kind, 'blank');
+  assert.equal(blank.state.tabs.at(-1)?.pinned, undefined);
+
+  const unpinned = toggleTabPin(swappedPinned, text.id);
+  assert.deepEqual(
+    unpinned.tabs.map((tab) => tab.id),
+    [json.id, text.id, time.id, base64.id],
+  );
+  assert.equal(unpinned.tabs[0].pinned, true);
+  assert.equal(unpinned.tabs[1].pinned, undefined);
+
+  const pinnedAgain = toggleTabPin(swappedUnpinned, base64.id);
+  assert.deepEqual(
+    pinnedAgain.tabs.map((tab) => tab.id),
+    [json.id, text.id, base64.id, time.id],
+  );
+  assert.equal(pinnedAgain.tabs[2].pinned, true);
+  assert.equal(pinnedAgain.tabs[3].pinned, undefined);
 });
 
 test('关闭其他标签保留固定和被右键的标签，并激活后者', () => {

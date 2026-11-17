@@ -39,7 +39,9 @@
     "renameTitle": "Rename tab",
     "renameLabel": "Name",
     "renameHint": "Leave blank to restore the default name",
-    "pinnedTab": "Pinned, {{name}}"
+    "pinnedTab": "Pinned, {{name}}",
+    "dragTab": "Drag {{name}} to reorder",
+    "movedTab": "{{name}} moved to position {{position}} of {{total}}"
   },
   "fileDrop": {
     "release": "Release to import"

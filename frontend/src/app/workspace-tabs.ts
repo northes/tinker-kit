@@ -129,6 +129,24 @@ export function toggleTabPin(state: WorkspaceState, id: string): WorkspaceState 
   return normalizeTabOrder({ ...state, tabs });
 }
 
+// 同一固定组内按落点下标移动；跨过固定/未固定分界则原样返回。顺序只活在本次会话。
+export function reorderWorkspaceTabs(
+  state: WorkspaceState,
+  activeId: string,
+  overId: string,
+): WorkspaceState {
+  if (!activeId || activeId === overId) return state;
+  const from = state.tabs.findIndex((tab) => tab.id === activeId);
+  const to = state.tabs.findIndex((tab) => tab.id === overId);
+  if (from < 0 || to < 0 || from === to) return state;
+  if (Boolean(state.tabs[from].pinned) !== Boolean(state.tabs[to].pinned)) return state;
+  const tabs = state.tabs.slice();
+  const [moved] = tabs.splice(from, 1);
+  if (!moved) return state;
+  tabs.splice(to, 0, moved);
+  return { ...state, tabs };
+}
+
 export function setTabCustomTitle(
   state: WorkspaceState,
   id: string,

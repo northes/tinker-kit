@@ -53,6 +53,7 @@ import {
   parseTabCloseButton,
   parseTabOrientation,
   parseTabStripWidth,
+  reorderWorkspaceTabs,
   setTabCustomTitle,
   startupWorkspace,
   TAB_STRIP_FOCUS_PADDING,
@@ -416,6 +417,9 @@ function AppShell() {
   };
   const toggleWorkspaceTabPin = (id: string) => {
     commitWorkspace(toggleTabPin(workspaceStateRef.current, id));
+  };
+  const reorderWorkspaceTab = (activeId: string, overId: string) => {
+    commitWorkspace(reorderWorkspaceTabs(workspaceStateRef.current, activeId, overId));
   };
   const requestRenameWorkspaceTab = (id: string) => {
     const tab = workspaceStateRef.current.tabs.find((item) => item.id === id);
@@ -1123,6 +1127,7 @@ function AppShell() {
       onClose={closeWorkspaceTab}
       onCloseOthers={closeOtherWorkspaceTabs}
       onTogglePin={toggleWorkspaceTabPin}
+      onReorder={reorderWorkspaceTab}
       onRename={requestRenameWorkspaceTab}
       onNewTab={openBlankTabSession}
     />
