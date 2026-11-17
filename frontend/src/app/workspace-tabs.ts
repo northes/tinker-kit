@@ -14,6 +14,9 @@ export type WorkspaceTab = {
   // 工具与空白标签从 1 起计，展示时 1 不加序号。设置标签不使用序号。
   ordinal: number;
   activatedAt: number;
+  // 固定与自定义名称只活在本次运行，不写入配置。
+  pinned?: boolean;
+  customTitle?: string;
 };
 
 export type WorkspaceState = {
@@ -25,10 +28,7 @@ export type WorkspaceState = {
 };
 
 export type PaletteScope =
-  | { kind: 'empty' }
-  | { kind: 'blank' }
-  | { kind: 'settings' }
-  | { kind: 'tool'; toolId: string };
+  { kind: 'empty' } | { kind: 'blank' } | { kind: 'settings' } | { kind: 'tool'; toolId: string };
 
 export type PaletteCommand = {
   page?: string;
@@ -81,6 +81,74 @@ export function parseTabStripWidth(value: number | null | undefined) {
 
 export function tabOrdinalLabel(name: string, ordinal: number) {
   return ordinal <= 1 ? name : `${name} ${ordinal}`;
+}
+
+// 有自定义名称时不再拼工具名和序号。只有工具标签会带 customTitle。
+export function workspaceTabLabel(tab: WorkspaceTab, baseName: string) {
+  if (tab.kind === 'tool' && tab.customTitle) return tab.customTitle;
+  return tab.kind === 'settings' ? baseName : tabOrdinalLabel(baseName, tab.ordinal);
+}
+
+// 固定的在前，未固定的在后；各组内部保持原来的相对顺序。
+export function sortTabsForDisplay(tabs: readonly WorkspaceTab[]): WorkspaceTab[] {
+  const pinned: WorkspaceTab[] = [];
+  const unpinned: WorkspaceTab[] = [];
+  for (const tab of tabs) {
+    if (tab.pinned) pinned.push(tab);
+    else unpinned.push(tab);
+  }
+  return [...pinned, ...unpinned];
+}
+
+export function normalizeTabOrder(state: WorkspaceState): WorkspaceState {
+  const tabs = sortTabsForDisplay(state.tabs);
+  if (tabs.every((tab, index) => tab === state.tabs[index])) return state;
+  return { ...state, tabs };
+}
+
+function withoutPin(tab: WorkspaceTab): WorkspaceTab {
+  if (!tab.pinned) return tab;
+  const next = { ...tab };
+  delete next.pinned;
+  return next;
+}
+
+function withoutCustomTitle(tab: WorkspaceTab): WorkspaceTab {
+  if (!tab.customTitle) return tab;
+  const next = { ...tab };
+  delete next.customTitle;
+  return next;
+}
+
+export function toggleTabPin(state: WorkspaceState, id: string): WorkspaceState {
+  const index = state.tabs.findIndex((tab) => tab.id === id);
+  if (index < 0) return state;
+  const current = state.tabs[index];
+  const tabs = state.tabs.slice();
+  tabs[index] = current.pinned ? withoutPin(current) : { ...current, pinned: true };
+  return normalizeTabOrder({ ...state, tabs });
+}
+
+export function setTabCustomTitle(
+  state: WorkspaceState,
+  id: string,
+  title: string | null,
+): WorkspaceState {
+  const index = state.tabs.findIndex((tab) => tab.id === id);
+  if (index < 0) return state;
+  const current = state.tabs[index];
+  if (current.kind !== 'tool') return state;
+  const trimmed = title?.trim() ?? '';
+  const tabs = state.tabs.slice();
+  if (!trimmed) {
+    if (!current.customTitle) return state;
+    tabs[index] = withoutCustomTitle(current);
+  } else if (current.customTitle === trimmed) {
+    return state;
+  } else {
+    tabs[index] = { ...current, customTitle: trimmed };
+  }
+  return { ...state, tabs };
 }
 
 export function activeTab(state: WorkspaceState): WorkspaceTab | null {
@@ -136,7 +204,10 @@ export function convertBlankTabToTool(
   };
 }
 
-export function openToolTab(state: WorkspaceState, toolId: string): { state: WorkspaceState; tab: WorkspaceTab } {
+export function openToolTab(
+  state: WorkspaceState,
+  toolId: string,
+): { state: WorkspaceState; tab: WorkspaceTab } {
   const ordinal = state.nextOrdinal[toolId] ?? 1;
   const activatedAt = state.activationSeq + 1;
   const tab: WorkspaceTab = {
@@ -267,8 +338,32 @@ export function closeTabs(
   return withBlankWhenEmpty(nextState);
 }
 
-export function closeTab(state: WorkspaceState, id: string, activation: TabCloseActivation): WorkspaceState {
+export function closeTab(
+  state: WorkspaceState,
+  id: string,
+  activation: TabCloseActivation,
+): WorkspaceState {
   return closeTabs(state, [id], activation);
+}
+
+// 留下固定标签和被右键的标签，然后总是激活后者。activation 与单标签关闭同一调用形状，这里不采用。
+export function closeOtherTabs(
+  state: WorkspaceState,
+  keepId: string,
+  activation: TabCloseActivation,
+): WorkspaceState {
+  void activation;
+  if (!state.tabs.some((tab) => tab.id === keepId)) return state;
+  const remainingTabs = state.tabs.filter((tab) => tab.id === keepId || tab.pinned);
+  const nextOrdinal = pruneNextOrdinals(remainingTabs, state.nextOrdinal);
+  const activatedAt = state.activationSeq + 1;
+  return {
+    ...state,
+    tabs: remainingTabs.map((tab) => (tab.id === keepId ? { ...tab, activatedAt } : tab)),
+    activeId: keepId,
+    activationSeq: activatedAt,
+    nextOrdinal,
+  };
 }
 
 export function cycleTabs(state: WorkspaceState, direction: -1 | 1): WorkspaceState {
@@ -296,7 +391,8 @@ export function visiblePaletteCommands<T extends PaletteCommand>(
     if (item.page === 'settings') return true;
     if (item.settingsAction) return scope.kind === 'settings';
     if (item.tool) {
-      if (scope.kind !== 'tool' || scope.toolId !== item.tool || !enabled.has(item.tool)) return false;
+      if (scope.kind !== 'tool' || scope.toolId !== item.tool || !enabled.has(item.tool))
+        return false;
       return !item.context || contexts.has(item.context);
     }
     return false;

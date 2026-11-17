@@ -30,7 +30,16 @@
     "blankSearchPlaceholder": "Search…",
     "blankSearchLabel": "Search tools",
     "resizeStrip": "Drag to resize the tab strip",
-    "closeTab": "Close {{name}}"
+    "closeTab": "Close {{name}}",
+    "pin": "Pin tab",
+    "unpin": "Unpin",
+    "closeOtherTabs": "Close other tabs",
+    "rename": "Rename",
+    "close": "Close tab",
+    "renameTitle": "Rename tab",
+    "renameLabel": "Name",
+    "renameHint": "Leave blank to restore the default name",
+    "pinnedTab": "Pinned, {{name}}"
   },
   "fileDrop": {
     "release": "Release to import"

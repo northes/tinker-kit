@@ -30,7 +30,16 @@
     "blankSearchPlaceholder": "搜索…",
     "blankSearchLabel": "搜索工具",
     "resizeStrip": "拖动调整标签栏宽度",
-    "closeTab": "关闭{{name}}"
+    "closeTab": "关闭{{name}}",
+    "pin": "固定标签",
+    "unpin": "取消固定",
+    "closeOtherTabs": "关闭其他标签",
+    "rename": "重命名",
+    "close": "关闭标签",
+    "renameTitle": "重命名标签",
+    "renameLabel": "名称",
+    "renameHint": "留空则恢复默认名称",
+    "pinnedTab": "已固定，{{name}}"
   },
   "fileDrop": {
     "release": "松开即可导入"

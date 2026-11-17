@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   activateTab,
+  closeOtherTabs,
   closeTab,
   closeTabs,
   convertBlankTabToTool,
@@ -17,10 +18,14 @@ import {
   parseTabCloseButton,
   parseTabOrientation,
   parseTabStripWidth,
+  setTabCustomTitle,
+  sortTabsForDisplay,
   startupWorkspace,
   TAB_STRIP_FOCUS_PADDING,
   tabOrdinalLabel,
+  toggleTabPin,
   visiblePaletteCommands,
+  workspaceTabLabel,
 } from './workspace-tabs.ts';
 
 const commands = [
@@ -68,7 +73,11 @@ test('该工具标签全部关掉后再开，序号从 1 重新计', () => {
     jsonTabs.map((tab) => tab.ordinal),
     [1, 2, 3],
   );
-  state = closeTabs(state, jsonTabs.map((tab) => tab.id), 'recent');
+  state = closeTabs(
+    state,
+    jsonTabs.map((tab) => tab.id),
+    'recent',
+  );
   const reopened = openToolTab(state, 'json');
   assert.equal(reopened.tab.ordinal, 1);
   assert.equal(tabOrdinalLabel('JSON', reopened.tab.ordinal), 'JSON');
@@ -142,7 +151,9 @@ test('最近使用按单调激活序号，而不是打开顺序', () => {
   state = activateTab(state, state.tabs[0].id);
   const closed = closeTab(state, state.tabs[0].id, 'recent');
   assert.equal(closed.activeId, state.tabs[2].id);
-  assert.ok(closed.tabs.find((tab) => tab.id === closed.activeId).activatedAt > state.activationSeq);
+  assert.ok(
+    closed.tabs.find((tab) => tab.id === closed.activeId).activatedAt > state.activationSeq,
+  );
 });
 
 test('一次性关掉多个标签只应用一次激活规则', () => {
@@ -201,9 +212,105 @@ test('启动带一个空白标签，空白标签就地变成工具', () => {
     jsonTabs.map((item) => item.ordinal),
     [1, 2],
   );
-  const empty = closeTabs(second, jsonTabs.map((item) => item.id), 'recent');
+  const empty = closeTabs(
+    second,
+    jsonTabs.map((item) => item.id),
+    'recent',
+  );
   assert.equal(empty.tabs.length, 1);
   assert.equal(empty.tabs[0].kind, 'blank');
+});
+
+test('固定的标签排到最前，组内相对顺序不变', () => {
+  let state = openToolTab(emptyWorkspace(), 'json').state;
+  state = openToolTab(state, 'text').state;
+  state = openToolTab(state, 'time').state;
+  const [json, text, time] = state.tabs;
+  state = toggleTabPin(state, time.id);
+  assert.deepEqual(
+    state.tabs.map((tab) => tab.id),
+    [time.id, json.id, text.id],
+  );
+  assert.equal(state.tabs[0].pinned, true);
+  state = toggleTabPin(state, json.id);
+  assert.deepEqual(
+    state.tabs.map((tab) => tab.id),
+    [time.id, json.id, text.id],
+  );
+  assert.equal(state.tabs[1].pinned, true);
+  state = toggleTabPin(state, time.id);
+  assert.deepEqual(
+    state.tabs.map((tab) => tab.id),
+    [json.id, time.id, text.id],
+  );
+  assert.equal(state.tabs[0].pinned, true);
+  assert.equal(state.tabs[1].pinned, undefined);
+  assert.equal('pinned' in state.tabs[1], false);
+  const opened = openToolTab(state, 'base64');
+  assert.deepEqual(
+    opened.state.tabs.map((tab) => tab.toolId),
+    ['json', 'time', 'text', 'base64'],
+  );
+  assert.equal(toggleTabPin(state, 'missing'), state);
+  const unsorted = sortTabsForDisplay([text, { ...json, pinned: true }, time]);
+  assert.deepEqual(
+    unsorted.map((tab) => tab.id),
+    [json.id, text.id, time.id],
+  );
+});
+
+test('关闭其他标签保留固定和被右键的标签，并激活后者', () => {
+  let state = openToolTab(emptyWorkspace(), 'json').state;
+  state = openToolTab(state, 'text').state;
+  state = openToolTab(state, 'time').state;
+  state = openToolTab(state, 'json').state;
+  const [json, text, time, json2] = state.tabs;
+  state = toggleTabPin(state, json.id);
+  assert.equal(state.activeId, json2.id);
+  const closed = closeOtherTabs(state, time.id, 'previous');
+  assert.deepEqual(
+    closed.tabs.map((tab) => tab.id),
+    [json.id, time.id],
+  );
+  assert.equal(closed.activeId, time.id);
+  assert.ok(closed.activationSeq > state.activationSeq);
+  assert.equal(closed.tabs.find((tab) => tab.id === time.id).activatedAt, closed.activationSeq);
+  assert.equal(closed.tabs.find((tab) => tab.id === json.id).activatedAt, json.activatedAt);
+  assert.equal(closed.nextOrdinal.json, state.nextOrdinal.json);
+  assert.equal(closed.nextOrdinal.time, state.nextOrdinal.time);
+  assert.equal(closed.nextOrdinal.text, undefined);
+  const again = closeOtherTabs(closed, time.id, 'next');
+  assert.deepEqual(
+    again.tabs.map((tab) => tab.id),
+    [json.id, time.id],
+  );
+  assert.equal(again.activeId, time.id);
+  assert.ok(again.activationSeq > closed.activationSeq);
+  assert.equal(closeOtherTabs(state, 'missing', 'recent'), state);
+  const onlyPinned = closeOtherTabs(
+    toggleTabPin(toggleTabPin(state, text.id), time.id),
+    json2.id,
+    'recent',
+  );
+  assert.equal(onlyPinned.activeId, json2.id);
+  assert.equal(onlyPinned.tabs.length, state.tabs.length);
+});
+
+test('工具标签可以改显示名，空白则恢复默认', () => {
+  const opened = openToolTab(emptyWorkspace(), 'json');
+  const named = setTabCustomTitle(opened.state, opened.tab.id, '  草稿  ');
+  assert.equal(named.tabs[0].customTitle, '草稿');
+  assert.equal(workspaceTabLabel(named.tabs[0], 'JSON'), '草稿');
+  const cleared = setTabCustomTitle(named, opened.tab.id, '   ');
+  assert.equal(cleared.tabs[0].customTitle, undefined);
+  assert.equal('customTitle' in cleared.tabs[0], false);
+  assert.equal(workspaceTabLabel(cleared.tabs[0], 'JSON'), 'JSON');
+  assert.equal(setTabCustomTitle(named, opened.tab.id, '草稿'), named);
+  const blank = openBlankTab(emptyWorkspace());
+  assert.equal(setTabCustomTitle(blank.state, blank.tab.id, '名字'), blank.state);
+  const settings = openOrFocusSettings(emptyWorkspace());
+  assert.equal(setTabCustomTitle(settings, settings.tabs[0].id, '名字'), settings);
+  assert.equal(setTabCustomTitle(opened.state, 'missing', '名字'), opened.state);
 });
 
 test('命令面板按当前标签过滤，打开工具的顺序跟配置走', () => {
@@ -217,7 +324,9 @@ test('命令面板按当前标签过滤，打开工具的顺序跟配置走', ()
     ['nav:new-tab', 'nav:settings', 'open:text', 'open:json'],
   );
   assert.deepEqual(
-    visiblePaletteCommands(commands, { kind: 'settings' }, enabled, new Set()).map((item) => item.id),
+    visiblePaletteCommands(commands, { kind: 'settings' }, enabled, new Set()).map(
+      (item) => item.id,
+    ),
     ['nav:new-tab', 'nav:settings', 'settings:quit', 'open:text', 'open:json'],
   );
   assert.deepEqual(

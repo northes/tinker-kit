@@ -1,6 +1,15 @@
 import { Clipboard, Events } from '@wailsio/runtime';
 import type { SetStateAction } from 'react';
-import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import {
+  lazy,
+  Suspense,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { flushSync } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import { useLocation, useNavigate } from 'react-router';
@@ -15,7 +24,8 @@ import type { Config as Settings } from '../bindings/tinkerkit/models';
 import { CheckForUpdates, SetAutoCheckEnabled } from '../bindings/tinkerkit/updateservice';
 import { detectBase64, detectJwt } from './app/clipboard';
 import { BlankTabPicker } from './app/BlankTabPicker';
-import { CommandPalette } from './app/CommandPalette';import { defaultSettings } from './app/default-settings';
+import { CommandPalette } from './app/CommandPalette';
+import { defaultSettings } from './app/default-settings';
 import {
   paletteItems,
   tools,
@@ -27,10 +37,11 @@ import {
 import { isToolId, paletteToolId, resolveSidebarTools, routePath } from './app/navigation';
 import { buildIndex } from './app/palette-search';
 import { TabStripResizer } from './app/TabStripResizer';
-import { WorkspaceTabBar } from './app/WorkspaceTabBar';
+import { workspaceTabBaseName, WorkspaceTabBar } from './app/WorkspaceTabBar';
 import {
   activateTab,
   activeTab,
+  closeOtherTabs,
   closeTab,
   closeTabs,
   convertBlankTabToTool,
@@ -42,8 +53,11 @@ import {
   parseTabCloseButton,
   parseTabOrientation,
   parseTabStripWidth,
+  setTabCustomTitle,
   startupWorkspace,
   TAB_STRIP_FOCUS_PADDING,
+  tabOrdinalLabel,
+  toggleTabPin,
   visiblePaletteCommands,
   type WorkspaceState,
   type WorkspaceTab,
@@ -60,6 +74,8 @@ import {
   DialogTitle,
 } from './components/ui/dialog';
 import { Button } from './components/ui/button';
+import { Input } from './components/ui/input';
+import { Label } from './components/ui/label';
 import { toast, Toaster } from './components/ui/toast';
 import UpdatePill from './components/UpdatePill';
 import { SUPPORTED_LANGUAGES } from './i18n';
@@ -181,6 +197,62 @@ const NetworkTestTool = lazy(() => import('./components/NetworkTestTool'));
 
 const SettingsPage = lazy(() => import('./components/SettingsPage'));
 
+function RenameWorkspaceTabDialog({
+  initialTitle,
+  placeholder,
+  onSubmit,
+  onClose,
+}: {
+  initialTitle: string;
+  placeholder: string;
+  onSubmit: (title: string | null) => void;
+  onClose: () => void;
+}) {
+  const { t } = useTranslation();
+  const [title, setTitle] = useState(initialTitle);
+  return (
+    <Dialog
+      open
+      onOpenChange={(open) => {
+        if (!open) onClose();
+      }}
+    >
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>{t('workspaceTabs.renameTitle')}</DialogTitle>
+          <DialogDescription>{t('workspaceTabs.renameHint')}</DialogDescription>
+        </DialogHeader>
+        <form
+          id="workspace-tab-rename-form"
+          className="grid gap-2"
+          onSubmit={(event) => {
+            event.preventDefault();
+            const trimmed = title.trim();
+            onSubmit(trimmed ? trimmed : null);
+          }}
+        >
+          <Label htmlFor="workspace-tab-rename">{t('workspaceTabs.renameLabel')}</Label>
+          <Input
+            id="workspace-tab-rename"
+            value={title}
+            placeholder={placeholder}
+            autoFocus
+            onChange={(event) => setTitle(event.target.value)}
+          />
+        </form>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>
+            {t('common.cancel')}
+          </Button>
+          <Button type="submit" form="workspace-tab-rename-form">
+            {t('common.save')}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 function toolSlotClass(active: boolean) {
   return active
     ? 'tool-slot workspace-tool-slot-active relative isolate z-10 h-full min-h-0 overflow-hidden bg-background'
@@ -193,6 +265,7 @@ function AppShell() {
   const routerNavigate = useNavigate();
   const workspaceElRef = useRef<HTMLElement>(null);
   const [workspace, setWorkspace] = useState<WorkspaceState>(startupWorkspace);
+  const [renameTabId, setRenameTabId] = useState<string | null>(null);
   // 工作区状态只有 commitWorkspace 一个写入口，ref 在提交时更新，
   // 同一次事件里的后续操作读到的是最新意图而不是上一帧的状态。
   const workspaceStateRef = useRef(workspace);
@@ -329,6 +402,31 @@ function AppShell() {
   const closeWorkspaceTab = (id: string) => {
     commitWorkspace(closeTab(workspaceStateRef.current, id, closeActivation()));
     setDelivered((current) => (current?.tabId === id ? null : current));
+    setRenameTabId((current) => (current === id ? null : current));
+  };
+  const closeOtherWorkspaceTabs = (id: string) => {
+    const closing = new Set(
+      workspaceStateRef.current.tabs
+        .filter((tab) => tab.id !== id && !tab.pinned)
+        .map((tab) => tab.id),
+    );
+    commitWorkspace(closeOtherTabs(workspaceStateRef.current, id, closeActivation()));
+    setDelivered((current) => (current && closing.has(current.tabId) ? null : current));
+    setRenameTabId((current) => (current && closing.has(current) ? null : current));
+  };
+  const toggleWorkspaceTabPin = (id: string) => {
+    commitWorkspace(toggleTabPin(workspaceStateRef.current, id));
+  };
+  const requestRenameWorkspaceTab = (id: string) => {
+    const tab = workspaceStateRef.current.tabs.find((item) => item.id === id);
+    if (tab?.kind !== 'tool') return;
+    setRenameTabId(id);
+  };
+  const submitRenameWorkspaceTab = (title: string | null) => {
+    const id = renameTabId;
+    if (!id) return;
+    commitWorkspace(setTabCustomTitle(workspaceStateRef.current, id, title));
+    setRenameTabId(null);
   };
   const closeCurrentTab = () => {
     const id = workspaceStateRef.current.activeId;
@@ -340,6 +438,7 @@ function AppShell() {
       .map((tab) => tab.id);
     commitWorkspace(closeTabs(workspaceStateRef.current, ids, closeActivation()));
     setDelivered((current) => (current && ids.includes(current.tabId) ? null : current));
+    setRenameTabId((current) => (current && ids.includes(current) ? null : current));
   };
   const respondSSHHostKeyPrompt = (accepted: boolean) => {
     const prompt = sshHostKeyPrompt;
@@ -570,10 +669,7 @@ function AppShell() {
       return;
     }
     root.style.setProperty('--workspace-tab-strip', `${tabStripWidth}px`);
-    root.style.setProperty(
-      '--workspace-tab-width',
-      `${tabStripWidth - TAB_STRIP_FOCUS_PADDING}px`,
-    );
+    root.style.setProperty('--workspace-tab-width', `${tabStripWidth - TAB_STRIP_FOCUS_PADDING}px`);
   }, [horizontal, tabStripWidth]);
   const toolTabCounts = useMemo(() => {
     const counts: Record<string, number> = {};
@@ -674,8 +770,7 @@ function AppShell() {
         return;
       }
       // 带 Shift 的方括号在 macOS 上 key 是 { / }，所以要同时看 code。
-      const previousTabKey =
-        event.code === 'BracketLeft' || event.key === '[' || event.key === '{';
+      const previousTabKey = event.code === 'BracketLeft' || event.key === '[' || event.key === '{';
       const nextTabKey = event.code === 'BracketRight' || event.key === ']' || event.key === '}';
       if (command && !event.altKey && event.shiftKey && (previousTabKey || nextTabKey)) {
         event.preventDefault();
@@ -899,7 +994,9 @@ function AppShell() {
             onWeekStartChange={(timeWeekStart) =>
               setSettings((current) => ({ ...current, timeWeekStart }))
             }
-            onNtpServersChange={(ntpServers) => setSettings((current) => ({ ...current, ntpServers }))}
+            onNtpServersChange={(ntpServers) =>
+              setSettings((current) => ({ ...current, ntpServers }))
+            }
             pending={pending}
             clearPending={clearDelivered}
           />
@@ -931,7 +1028,12 @@ function AppShell() {
         );
       case 'base64':
         return (
-          <Base64Tool active={active} theme={theme} pending={pending} clearPending={clearDelivered} />
+          <Base64Tool
+            active={active}
+            theme={theme}
+            pending={pending}
+            clearPending={clearDelivered}
+          />
         );
       case 'diff':
         return (
@@ -1019,9 +1121,16 @@ function AppShell() {
       closeButton={parseTabCloseButton(settings.tabCloseButton)}
       onActivate={focusTab}
       onClose={closeWorkspaceTab}
+      onCloseOthers={closeOtherWorkspaceTabs}
+      onTogglePin={toggleWorkspaceTabPin}
+      onRename={requestRenameWorkspaceTab}
       onNewTab={openBlankTabSession}
     />
   );
+  const renamingTab = renameTabId
+    ? workspace.tabs.find((tab) => tab.id === renameTabId && tab.kind === 'tool')
+    : undefined;
+  const renamingBaseName = renamingTab ? workspaceTabBaseName(renamingTab, (key) => t(key)) : '';
   return (
     <>
       <Toaster />
@@ -1092,6 +1201,15 @@ function AppShell() {
         run={run}
         page={routePage ?? 'settings'}
       />
+      {renamingTab ? (
+        <RenameWorkspaceTabDialog
+          key={renamingTab.id}
+          initialTitle={renamingTab.customTitle ?? ''}
+          placeholder={tabOrdinalLabel(renamingBaseName, renamingTab.ordinal)}
+          onSubmit={submitRenameWorkspaceTab}
+          onClose={() => setRenameTabId(null)}
+        />
+      ) : null}
       <Dialog
         open={sshHostKeyPrompt !== null}
         onOpenChange={(open) => {
