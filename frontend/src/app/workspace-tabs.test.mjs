@@ -18,8 +18,10 @@ import {
   parseTabCloseButton,
   parseTabOrientation,
   parseTabStripWidth,
+  nextDragOverId,
   reorderWorkspaceTabs,
   setTabCustomTitle,
+  tabDragShift,
   sortTabsForDisplay,
   startupWorkspace,
   TAB_STRIP_FOCUS_PADDING,
@@ -338,6 +340,24 @@ test('只在同一固定组内调整顺序，跨组取消，新标签仍加在�
   );
   assert.equal(pinnedAgain.tabs[2].pinned, true);
   assert.equal(pinnedAgain.tabs[3].pinned, undefined);
+});
+
+test('越过相邻标签后，中线前回摆不会把落点弹回去', () => {
+  const slots = [
+    { id: 'a', mid: 50 },
+    { id: 'b', mid: 150 },
+    { id: 'c', mid: 250 },
+  ];
+  assert.equal(nextDragOverId(slots, 'a', 149), 'a');
+  assert.equal(nextDragOverId(slots, 'a', 150), 'b');
+  assert.equal(nextDragOverId(slots, 'b', 149), 'b');
+  assert.equal(nextDragOverId(slots, 'b', 151), 'b');
+  assert.equal(nextDragOverId(slots, 'b', 50), 'a');
+  assert.equal(nextDragOverId(slots, 'b', 250), 'c');
+  assert.equal(tabDragShift(0, 2, 0, 100), 0);
+  assert.equal(tabDragShift(0, 2, 1, 100), -100);
+  assert.equal(tabDragShift(0, 2, 2, 100), -100);
+  assert.equal(tabDragShift(2, 0, 1, 100), 100);
 });
 
 test('关闭其他标签保留固定和被右键的标签，并激活后者', () => {

@@ -89,6 +89,53 @@ export function workspaceTabLabel(tab: WorkspaceTab, baseName: string) {
   return tab.kind === 'settings' ? baseName : tabOrdinalLabel(baseName, tab.ordinal);
 }
 
+export type DragSlot = {
+  id: string;
+  // 拖动开始时的标签中心，之后不再跟布局变化。
+  mid: number;
+};
+
+// 只有中心越过下一枚标签的中线才切换目标。停在两条中线之间保持当前目标，
+// 这样边界上的轻微回摆不会让相邻标签反复成为落点。
+export function nextDragOverId(
+  slots: readonly DragSlot[],
+  currentId: string | null,
+  center: number,
+): string | null {
+  if (slots.length === 0 || !Number.isFinite(center)) return null;
+  const index = currentId == null ? -1 : slots.findIndex((slot) => slot.id === currentId);
+  if (index < 0) {
+    let best = slots[0];
+    let bestDistance = Math.abs(best.mid - center);
+    for (let cursor = 1; cursor < slots.length; cursor += 1) {
+      const distance = Math.abs(slots[cursor].mid - center);
+      if (distance < bestDistance) {
+        best = slots[cursor];
+        bestDistance = distance;
+      }
+    }
+    return best.id;
+  }
+  const next = slots[index + 1];
+  const previous = slots[index - 1];
+  if (next && center >= next.mid) return next.id;
+  if (previous && center <= previous.mid) return previous.id;
+  return slots[index].id;
+}
+
+// 被拖项自己跟指针走。中间这些标签只让出一格，间距用拖动开始时的固定值。
+export function tabDragShift(
+  activeIndex: number,
+  overIndex: number,
+  index: number,
+  pitch: number,
+): number {
+  if (!Number.isFinite(pitch) || pitch === 0 || activeIndex < 0 || overIndex < 0) return 0;
+  if (index > activeIndex && index <= overIndex) return -pitch;
+  if (index < activeIndex && index >= overIndex) return pitch;
+  return 0;
+}
+
 // 固定的在前，未固定的在后；各组内部保持原来的相对顺序。
 export function sortTabsForDisplay(tabs: readonly WorkspaceTab[]): WorkspaceTab[] {
   const pinned: WorkspaceTab[] = [];
