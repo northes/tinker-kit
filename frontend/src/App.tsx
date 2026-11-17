@@ -63,7 +63,12 @@ import {
   type WorkspaceState,
   type WorkspaceTab,
 } from './app/workspace-tabs';
-import { parseJsonLoose, type PendingAction, type ToolId } from './components/shared';
+import {
+  parseJsonLoose,
+  ToolFreshFocusContext,
+  type PendingAction,
+  type ToolId,
+} from './components/shared';
 import { TaskCenter } from './components/TaskCenter';
 import {
   Dialog,
@@ -305,6 +310,10 @@ function AppShell() {
     });
   };
   const lastFocusedRef = useRef<Element | null>(null);
+  // 执行命令关掉面板时不要把焦点还给打开前的元素；Esc 等其它关闭仍恢复。
+  const suppressPaletteFocusRestoreRef = useRef(false);
+  // 这次运行里新开的工具标签。启动时的空白标签不算。
+  const freshToolTabIdsRef = useRef(new Set<string>());
   const themeTransitionRef = useRef<{
     transition: ViewTransition;
     restore: () => void;
@@ -386,11 +395,13 @@ function AppShell() {
     const state = workspaceStateRef.current;
     const current = activeTab(state);
     if (current?.kind === 'blank') {
+      freshToolTabIdsRef.current.add(current.id);
       const next = convertBlankTabToTool(state, current.id, toolId);
       commitWorkspace(next);
       return activeTab(next) ?? current;
     }
     const opened = openToolTab(state, toolId);
+    freshToolTabIdsRef.current.add(opened.tab.id);
     commitWorkspace(opened.state);
     return opened.tab;
   };
@@ -742,7 +753,10 @@ function AppShell() {
     settings.codeEditorFontSize,
   ]);
   const closePalette = () => {
+    const suppressFocusRestore = suppressPaletteFocusRestoreRef.current;
+    suppressPaletteFocusRestoreRef.current = false;
     setPaletteOpen(false);
+    if (suppressFocusRestore) return;
     requestAnimationFrame(() => {
       const el = lastFocusedRef.current;
       if (el instanceof HTMLElement) el.focus();
@@ -753,7 +767,11 @@ function AppShell() {
       const command = event.metaKey || event.ctrlKey;
       if (command && !event.altKey && !event.shiftKey && event.key.toLowerCase() === 'k') {
         event.preventDefault();
-        if (!paletteOpen) lastFocusedRef.current = document.activeElement;
+        if (!paletteOpen) {
+          lastFocusedRef.current = document.activeElement;
+          // 上次执行命令若没走到 closePalette，别把抑制留到这次 Esc。
+          suppressPaletteFocusRestoreRef.current = false;
+        }
         setPaletteOpen((open) => !open);
         return;
       }
@@ -818,7 +836,10 @@ function AppShell() {
   const run = (item: IndexedItem) => {
     const toolId = paletteToolId(item);
     if (toolId && !enabledToolSet.has(toolId)) return;
-    if (!item.toggle) setPaletteOpen(false);
+    if (!item.toggle) {
+      suppressPaletteFocusRestoreRef.current = true;
+      setPaletteOpen(false);
+    }
     if (item.workspaceAction === 'new-tab') {
       setDelivered(null);
       openBlankTabSession();
@@ -962,9 +983,10 @@ function AppShell() {
           active={active}
           tools={enabledTools}
           romanize={romanize}
-          onSelectTool={(toolId) =>
-            commitWorkspace(convertBlankTabToTool(workspaceStateRef.current, tab.id, toolId))
-          }
+          onSelectTool={(toolId) => {
+            freshToolTabIdsRef.current.add(tab.id);
+            commitWorkspace(convertBlankTabToTool(workspaceStateRef.current, tab.id, toolId));
+          }}
           onOpenSettings={openSettingsTab}
         />
       );
@@ -1193,7 +1215,9 @@ function AppShell() {
           >
             {workspace.tabs.map((tab) => (
               <div key={tab.id} className={toolSlotClass(tab.id === workspace.activeId)}>
-                <Suspense fallback={null}>{renderWorkspaceTab(tab)}</Suspense>
+                <ToolFreshFocusContext.Provider value={freshToolTabIdsRef.current.has(tab.id)}>
+                  <Suspense fallback={null}>{renderWorkspaceTab(tab)}</Suspense>
+                </ToolFreshFocusContext.Provider>
               </div>
             ))}
           </main>

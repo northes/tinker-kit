@@ -1,5 +1,7 @@
 import {
   Fragment,
+  createContext,
+  useContext,
   useEffect,
   useRef,
   useState,
@@ -817,14 +819,55 @@ export function undoRedoKey(e: React.KeyboardEvent, undo: () => void, redo: () =
   return false;
 }
 
-export function useFocusOnActivate(active: boolean, focus: () => void) {
-  const prev = useRef(active);
+// 这次运行里新开的工具标签才为 true。切回已有标签时保持 false，避免再抢焦点。
+export const ToolFreshFocusContext = createContext(false);
+
+// 大约盖过命令面板 100ms 关闭动画。
+const freshFocusFrameLimit = 15;
+
+export function useFocusOnActivate(active: boolean, focus: () => boolean) {
+  const fresh = useContext(ToolFreshFocusContext);
   const focusRef = useRef(focus);
   focusRef.current = focus;
+  const startedRef = useRef(false);
+  const attemptedRef = useRef(false);
+
   useEffect(() => {
-    if (active && !prev.current) focusRef.current();
-    prev.current = active;
-  }, [active]);
+    // 只有新开、当前激活、且这次挂载还没试过，才聚焦一次。
+    if (!fresh) return;
+    if (!active) {
+      if (startedRef.current) attemptedRef.current = true;
+      return;
+    }
+    if (attemptedRef.current) return;
+    startedRef.current = true;
+
+    let frame = 0;
+    let raf = 0;
+    let cancelled = false;
+
+    const tick = () => {
+      if (cancelled) return;
+      frame += 1;
+      // 弹窗还盖着就先别聚焦；关掉后再试。超时仍开着（例如 SSH host key）则放弃，不再补。
+      const dialogOpen = document.querySelector('[data-slot="dialog-content"][data-open]');
+      if (!dialogOpen && focusRef.current()) {
+        attemptedRef.current = true;
+        return;
+      }
+      if (frame >= freshFocusFrameLimit) {
+        attemptedRef.current = true;
+        return;
+      }
+      raf = requestAnimationFrame(tick);
+    };
+
+    raf = requestAnimationFrame(tick);
+    return () => {
+      cancelled = true;
+      cancelAnimationFrame(raf);
+    };
+  }, [fresh, active]);
 }
 
 // 勾选框列按住滑动多选：按下即切换起始行，滑过的每个勾选框各切换一次，仅识别首列内的指针位置。

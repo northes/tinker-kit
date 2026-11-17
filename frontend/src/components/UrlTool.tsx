@@ -112,7 +112,13 @@ export default function UrlTool({
   const consumed = useRef<PendingAction | null>(null);
   const parts = useMemo(() => parseSupportedUrl(input), [input]);
   const invalid = !!input.trim() && !parts;
-  useFocusOnActivate(active, () => inputView.current?.focus());
+  useFocusOnActivate(active, () => {
+    const view = inputView.current;
+    if (!view) return false;
+    if (typeof view.dom.checkVisibility === 'function' && !view.dom.checkVisibility()) return true;
+    view.focus();
+    return true;
+  });
   const output = parts ? JSON.stringify(parts, null, 2) : '';
   const copyValue = async (value: string, label: string) => {
     try {

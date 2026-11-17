@@ -422,7 +422,13 @@ export default function TextTool({
     },
     onError: () => toast.add({ title: t('textTool.openFileFailed'), type: 'error' }),
   });
-  useFocusOnActivate(active, () => inputView.current?.focus());
+  useFocusOnActivate(active, () => {
+    const view = inputView.current;
+    if (!view) return false;
+    if (typeof view.dom.checkVisibility === 'function' && !view.dom.checkVisibility()) return true;
+    view.focus();
+    return true;
+  });
   const stats = useMemo(() => analyzeText(value), [value]);
   const apply = (fn: (input: string) => string) => {
     setValue(fn(value));

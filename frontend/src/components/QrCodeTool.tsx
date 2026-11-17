@@ -116,7 +116,13 @@ export default function QrCodeTool({
   const consumed = useRef<PendingAction | null>(null);
   const exportRef = useRef<() => Promise<void>>(async () => {});
   const textBytes = new TextEncoder().encode(text).length;
-  useFocusOnActivate(active, () => inputView.current?.focus());
+  useFocusOnActivate(active, () => {
+    const view = inputView.current;
+    if (!view) return false;
+    if (typeof view.dom.checkVisibility === 'function' && !view.dom.checkVisibility()) return true;
+    view.focus();
+    return true;
+  });
 
   // 文本稳定后生成二维码预览。
   useEffect(() => {

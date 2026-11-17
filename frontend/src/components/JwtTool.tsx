@@ -127,7 +127,13 @@ export default function JwtTool({
   const [input, setInput] = useState('');
   const consumed = useRef<PendingAction | null>(null);
   const inputView = useRef<EditorView | null>(null);
-  useFocusOnActivate(active, () => inputView.current?.focus());
+  useFocusOnActivate(active, () => {
+    const view = inputView.current;
+    if (!view) return false;
+    if (typeof view.dom.checkVisibility === 'function' && !view.dom.checkVisibility()) return true;
+    view.focus();
+    return true;
+  });
   const decoded = useMemo(() => decodeJwt(input), [input]);
   const copy = async (kind: 'header' | 'payload' | 'signature') => {
     if (!decoded) return;

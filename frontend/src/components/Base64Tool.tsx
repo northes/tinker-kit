@@ -122,7 +122,13 @@ export default function Base64Tool({
   const consumed = useRef<PendingAction | null>(null);
   const revision = useRef(0);
   const inputView = useRef<EditorView | null>(null);
-  useFocusOnActivate(active, () => inputView.current?.focus());
+  useFocusOnActivate(active, () => {
+    const view = inputView.current;
+    if (!view) return false;
+    if (typeof view.dom.checkVisibility === 'function' && !view.dom.checkVisibility()) return true;
+    view.focus();
+    return true;
+  });
   const run = (action: 'encode' | 'decodeText' | 'decodeImage' | 'decodeFile', value: string) =>
     new Promise<{ output: string; bytes: number; mime?: string; ext?: string }>(
       (resolve, reject) => {

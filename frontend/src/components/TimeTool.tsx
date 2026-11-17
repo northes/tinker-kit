@@ -260,7 +260,13 @@ export default function TimeTool({
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   );
-  useFocusOnActivate(active, () => inputRef.current?.focus());
+  useFocusOnActivate(active, () => {
+    const input = inputRef.current;
+    if (!input) return false;
+    if (typeof input.checkVisibility === 'function' && !input.checkVisibility()) return true;
+    input.focus();
+    return true;
+  });
   const parsed = useMemo(() => parseTimeInput(input, new Date(), timeZone), [input, timeZone]);
   const values = useMemo<Record<TimeResultId, string>>(() => {
     if (!parsed)

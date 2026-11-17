@@ -488,7 +488,13 @@ export default function JsonTool({
     },
     [],
   );
-  useFocusOnActivate(active, () => views.current.get('input')?.focus());
+  useFocusOnActivate(active, () => {
+    const view = views.current.get('input');
+    if (!view) return false;
+    if (typeof view.dom.checkVisibility === 'function' && !view.dom.checkVisibility()) return true;
+    view.focus();
+    return true;
+  });
   const splitMode = schema || pipelineMode || convertMode;
   const splitRootRef = useRef<HTMLDivElement>(null);
   const [splitStacked, setSplitStacked] = useState(false);
