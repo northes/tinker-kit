@@ -111,6 +111,7 @@ import {
   ToolLoadingState,
   toolHeaderControlClassName,
   useCheckboxDragSelect,
+  useFocusOnActivate,
   type PendingAction,
 } from './shared';
 import { SSHProfileFormField } from './SSHProfileFormField';
@@ -219,6 +220,15 @@ export default function ImageManagerTool({
     imageId: string;
   } | null>(null);
   const [search, setSearch] = useState('');
+  const searchRef = useRef<HTMLInputElement>(null);
+  useFocusOnActivate(active, () => {
+    if (detailTarget) return true; // 详情页盖住列表时放弃，不要补
+    const el = searchRef.current;
+    if (!el) return false;
+    if (typeof el.checkVisibility === 'function' && !el.checkVisibility()) return true;
+    el.focus();
+    return true;
+  });
   const [sortKey, setSortKey] = useState<SortKey>('name');
   const [sortDirection, setSortDirection] = useState<SortDirection>('asc');
   const [batchExportStarting, setBatchExportStarting] = useState(false);
@@ -1186,6 +1196,7 @@ export default function ImageManagerTool({
               </ToolHeaderField>
               <ImageSearchField
                 id="image-manager-search"
+                inputRef={searchRef}
                 label={t('imageManagerTool.search')}
                 value={search}
                 onSearch={setSearch}

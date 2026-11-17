@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type Ref } from 'react';
 import { ToolSearchField, toolHeaderControlClassName } from '../shared';
 
 export function ImageSearchField({
@@ -7,12 +7,14 @@ export function ImageSearchField({
   placeholder,
   value,
   onSearch,
+  inputRef,
 }: {
   id: string;
   label: string;
   placeholder: string;
   value: string;
   onSearch: (value: string) => void;
+  inputRef?: Ref<HTMLInputElement>;
 }) {
   const [draft, setDraft] = useState(value);
 
@@ -29,6 +31,7 @@ export function ImageSearchField({
       onValueChange={setDraft}
       onSubmit={onSearch}
       className={toolHeaderControlClassName}
+      inputRef={inputRef}
     />
   );
 }
