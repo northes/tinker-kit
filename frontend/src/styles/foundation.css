@@ -152,18 +152,30 @@ textarea,
       opacity var(--motion-duration) var(--motion-ease),
       visibility 0s;
   }
-  [data-workspace-tab] {
+  /* 颜色过渡画在可视表面上。transform 不能常驻：内层也承担拖拽位移，
+     常驻过渡会让拖动跟手变慢。开合补位只在 data-workspace-tab-motion 期间过渡位移。
+     @starting-style 对 React 插入的节点在 WebView 里不可靠，新开标签改由一帧入场属性驱动。 */
+  [data-workspace-tab-surface] {
     transition:
-      opacity var(--motion-duration) var(--motion-ease),
-      transform var(--motion-duration) var(--motion-ease),
       color var(--motion-duration) var(--motion-ease),
-      background-color var(--motion-duration) var(--motion-ease);
+      background-color var(--motion-duration) var(--motion-ease),
+      opacity var(--motion-duration) var(--motion-ease);
   }
-  @starting-style {
-    [data-workspace-tab] {
-      opacity: 0;
-      transform: scale(0.96);
-    }
+  [data-workspace-tab-surface][data-workspace-tab-motion] {
+    transition:
+      color var(--motion-duration) var(--motion-ease),
+      background-color var(--motion-duration) var(--motion-ease),
+      opacity var(--motion-duration) var(--motion-ease),
+      transform var(--motion-slide-duration) var(--motion-slide-ease);
+  }
+  [data-workspace-tab-surface][data-workspace-tab-enter] {
+    opacity: 0;
+  }
+  [data-workspace-tab-surface][data-workspace-tab-axis='x'][data-workspace-tab-enter] {
+    transform: translate3d(6px, 0, 0) scale(0.96);
+  }
+  [data-workspace-tab-surface][data-workspace-tab-axis='y'][data-workspace-tab-enter] {
+    transform: translate3d(0, 6px, 0) scale(0.96);
   }
 }
 /* ScrollArea.scrollFade：按滚动偏移在可滚动方向边缘渐隐内容。 */

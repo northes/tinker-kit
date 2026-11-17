@@ -37,6 +37,10 @@ import {
   type WorkspaceState,
   type WorkspaceTab,
 } from './workspace-tabs';
+import {
+  useWorkspaceTabStripMotion,
+  type WorkspaceTabStripMotion,
+} from './useWorkspaceTabStripMotion';
 
 // 锁的是碰撞用的位移，不只是画出来的位置。否则垂直抖动会让相邻标签反复成为 over。
 const restrictToTabAxis = (horizontal: boolean): Modifier =>
@@ -83,6 +87,7 @@ function WorkspaceTabItem({
   canCloseOthers,
   registerTab,
   suppressClickRef,
+  motion,
   onActivate,
   onClose,
   onCloseOthers,
@@ -97,6 +102,7 @@ function WorkspaceTabItem({
   canCloseOthers: boolean;
   registerTab: (id: string, node: HTMLElement | null) => void;
   suppressClickRef: { current: boolean };
+  motion: WorkspaceTabStripMotion | null;
   onActivate: (id: string) => void;
   onClose: (id: string) => void;
   onCloseOthers: (id: string) => void;
@@ -104,7 +110,7 @@ function WorkspaceTabItem({
   onRename: (id: string) => void;
 }) {
   const { t } = useTranslation();
-  // 位移画在内层，避免外层测量跟着图层抖。被拖的那枚 sortable 不加过渡，其余标签用默认让位动画。
+  // 位移画在内层，避免外层测量跟着图层抖。拖拽让位仍由 dnd-kit 的 transform；关闭补位只在没在拖时叠到同一层。
   const { listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: tab.id });
   const setNodeRefLatest = useRef(setNodeRef);
   const registerTabLatest = useRef(registerTab);
@@ -127,10 +133,31 @@ function WorkspaceTabItem({
         : tools.find((item) => item.id === tab.toolId)?.icon;
   const canRename = tab.kind === 'tool';
   const dragDescriptionId = `workspace-tab-drag-${tab.id}`;
-  const shift =
+  const sortableShift =
     transform && (transform.x || transform.y)
       ? `translate3d(${transform.x}px, ${transform.y}px, 0)`
       : undefined;
+  const holding = motion?.phase === 'from' || motion?.phase === 'arm';
+  const fillDelta =
+    !isDragging && sortableShift == null && holding ? motion?.shifts.get(tab.id) : undefined;
+  const fillShift =
+    fillDelta != null
+      ? horizontal
+        ? `translate3d(${fillDelta}px, 0, 0)`
+        : `translate3d(0, ${fillDelta}px, 0)`
+      : undefined;
+  const entering = Boolean(!isDragging && holding && motion?.entering.has(tab.id));
+  const sliding = Boolean(
+    !isDragging &&
+    (motion?.phase === 'arm' || motion?.phase === 'play') &&
+    motion.sliding.has(tab.id),
+  );
+  const surfaceTransition =
+    sortableShift || isDragging
+      ? transition
+      : motion?.phase === 'from' && (fillShift || entering)
+        ? 'none'
+        : undefined;
   return (
     <ContextMenu>
       <ContextMenuTrigger
@@ -175,52 +202,60 @@ function WorkspaceTabItem({
         }
       >
         <div
+          data-workspace-tab-surface=""
+          data-workspace-tab-axis={horizontal ? 'x' : 'y'}
+          data-workspace-tab-enter={entering ? '' : undefined}
+          data-workspace-tab-motion={sliding ? '' : undefined}
           className={cn(
             'absolute inset-0 flex cursor-default items-center gap-1.5 rounded-md px-2 text-left text-xs',
             current ? 'bg-muted text-foreground' : 'text-muted-foreground hover:text-foreground',
             isDragging && 'bg-accent text-foreground shadow-md',
           )}
-          style={{ transform: shift, transition }}
+          style={{
+            transform: sortableShift ?? fillShift,
+            // 补位第一帧关掉过渡，避免从新位置滑向旧位置。
+            transition: surfaceTransition,
+          }}
         >
-        <span id={dragDescriptionId} className="sr-only">
-          {t('workspaceTabs.dragTab', { name: label })}
-        </span>
-        {showIcons && Icon ? (
-          <Icon size={14} weight="regular" className="shrink-0" aria-hidden="true" />
-        ) : null}
-        {tab.pinned ? (
-          <PushPin size={12} weight="regular" className="shrink-0" aria-hidden="true" />
-        ) : null}
-        <span className="min-w-0 flex-1 truncate">{label}</span>
-        {closeButton === 'never' ? null : (
-          <div
-            className={cn(
-              'absolute inset-y-0 right-0 flex items-center rounded-r-md bg-linear-to-r from-transparent pl-6 pr-1',
-              isDragging
-                ? 'via-accent to-accent'
-                : current
-                  ? 'via-muted to-muted'
-                  : 'via-background to-background',
-              closeButton === 'always' || current
-                ? 'pointer-events-auto opacity-100'
-                : 'pointer-events-none opacity-0 group-hover/tab:pointer-events-auto group-hover/tab:opacity-100 group-focus-within/tab:pointer-events-auto group-focus-within/tab:opacity-100 [@media(pointer:coarse)]:pointer-events-auto [@media(pointer:coarse)]:opacity-100',
-            )}
-          >
-            <Button
-              variant="ghost"
-              size="icon-xs"
-              aria-label={t('workspaceTabs.closeTab', { name: label })}
-              title={t('workspaceTabs.closeTab', { name: label })}
-              onPointerDown={(event) => event.stopPropagation()}
-              onClick={(event) => {
-                event.stopPropagation();
-                onClose(tab.id);
-              }}
+          <span id={dragDescriptionId} className="sr-only">
+            {t('workspaceTabs.dragTab', { name: label })}
+          </span>
+          {showIcons && Icon ? (
+            <Icon size={14} weight="regular" className="shrink-0" aria-hidden="true" />
+          ) : null}
+          {tab.pinned ? (
+            <PushPin size={12} weight="regular" className="shrink-0" aria-hidden="true" />
+          ) : null}
+          <span className="min-w-0 flex-1 truncate">{label}</span>
+          {closeButton === 'never' ? null : (
+            <div
+              className={cn(
+                'absolute inset-y-0 right-0 flex items-center rounded-r-md bg-linear-to-r from-transparent pl-6 pr-1',
+                isDragging
+                  ? 'via-accent to-accent'
+                  : current
+                    ? 'via-muted to-muted'
+                    : 'via-background to-background',
+                closeButton === 'always' || current
+                  ? 'pointer-events-auto opacity-100'
+                  : 'pointer-events-none opacity-0 group-hover/tab:pointer-events-auto group-hover/tab:opacity-100 group-focus-within/tab:pointer-events-auto group-focus-within/tab:opacity-100 [@media(pointer:coarse)]:pointer-events-auto [@media(pointer:coarse)]:opacity-100',
+              )}
             >
-              <X size={14} weight="regular" aria-hidden="true" />
-            </Button>
-          </div>
-        )}
+              <Button
+                variant="ghost"
+                size="icon-xs"
+                aria-label={t('workspaceTabs.closeTab', { name: label })}
+                title={t('workspaceTabs.closeTab', { name: label })}
+                onPointerDown={(event) => event.stopPropagation()}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onClose(tab.id);
+                }}
+              >
+                <X size={14} weight="regular" aria-hidden="true" />
+              </Button>
+            </div>
+          )}
         </div>
       </ContextMenuTrigger>
       <ContextMenuContent className="min-w-44" side={horizontal ? 'bottom' : 'right'} align="start">
@@ -293,9 +328,12 @@ export function WorkspaceTabBar({
 }) {
   const { t } = useTranslation();
   const viewportRef = useRef<HTMLElement | null>(null);
+  const listRef = useRef<HTMLDivElement | null>(null);
   const tabRefs = useRef(new Map<string, HTMLElement>());
   const tabsRef = useRef(tabs);
   const suppressClickRef = useRef(false);
+  const draggingRef = useRef(false);
+  const [dragging, setDragging] = useState(false);
   const slotsRef = useRef<DragSlot[]>([]);
   const overIdRef = useRef<string | null>(null);
   const grabOffsetRef = useRef(0);
@@ -306,9 +344,7 @@ export function WorkspaceTabBar({
   activeIdRef.current = activeId;
   orientationRef.current = orientation;
   const [liveMessage, setLiveMessage] = useState('');
-  const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
-  );
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }));
   // 默认公告会把内部 id 用英文念出来。结果改由下面的 polite 区域播报。
   const silentAnnouncements = useMemo(
     () => ({
@@ -343,7 +379,12 @@ export function WorkspaceTabBar({
       ? { x: shift, y: 0, scaleX: 1, scaleY: 1 }
       : { x: 0, y: shift, scaleX: 1, scaleY: 1 };
   }, []);
+  const setDragActive = (active: boolean) => {
+    draggingRef.current = active;
+    setDragging(active);
+  };
   const onDragStart = (event: DragStartEvent) => {
+    setDragActive(true);
     const dragId = String(event.active.id);
     const horizontalNow = orientationRef.current === 'horizontal';
     const activeTab = tabsRef.current.find((tab) => tab.id === dragId);
@@ -379,6 +420,7 @@ export function WorkspaceTabBar({
     });
   };
   const onDragEnd = (event: DragEndEvent) => {
+    setDragActive(false);
     clearDragGeometry();
     suppressClickAfterDrag();
     const { active, over } = event;
@@ -417,6 +459,16 @@ export function WorkspaceTabBar({
     scrollTabIntoView(viewport, tab, orientation);
   }, [activeId, orientation, tabs]);
 
+  const tabMotion = useWorkspaceTabStripMotion({
+    tabIds: tabs.map((tab) => tab.id),
+    orientation,
+    tabNodes: tabRefs,
+    listRef,
+    viewportRef,
+    draggingRef,
+    dragging,
+  });
+
   return (
     <div
       className={cn(
@@ -439,6 +491,7 @@ export function WorkspaceTabBar({
         onDragStart={onDragStart}
         onDragEnd={onDragEnd}
         onDragCancel={() => {
+          setDragActive(false);
           clearDragGeometry();
           suppressClickAfterDrag();
         }}
@@ -455,6 +508,7 @@ export function WorkspaceTabBar({
         >
           <SortableContext items={tabs.map((tab) => tab.id)} strategy={sortingStrategy}>
             <div
+              ref={listRef}
               role="tablist"
               aria-label={t('workspaceTabs.list')}
               className={cn('flex gap-1', horizontal ? 'h-full items-center' : 'flex-col')}
@@ -470,6 +524,7 @@ export function WorkspaceTabBar({
                   canCloseOthers={tabs.some((item) => item.id !== tab.id && !item.pinned)}
                   registerTab={registerTab}
                   suppressClickRef={suppressClickRef}
+                  motion={tabMotion}
                   onActivate={onActivate}
                   onClose={onClose}
                   onCloseOthers={onCloseOthers}
