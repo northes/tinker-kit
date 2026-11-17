@@ -181,17 +181,31 @@ function TimeResultRow({
           <DotsSixVertical size={16} weight="regular" />
         </Button>
       )}
-      <span className="text-[10px] text-muted-foreground">{label}</span>
-      <Button
-        variant="ghost"
-        className="min-h-9 min-w-0 justify-start gap-2.5 rounded-lg px-3 text-muted-foreground"
-        onClick={onCopy}
-      >
-        <code className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-[13px] text-foreground">
-          {value}
-        </code>
-        <Copy data-icon="inline-end" size={15} weight="regular" />
-      </Button>
+      <span className="pl-3 text-[10px] text-muted-foreground">{label}</span>
+      {editing ? (
+        // 编辑态只做排序与显隐，复制入口关闭，避免拖拽时误触。
+        <div className="flex min-h-9 min-w-0 items-center px-3">
+          <code className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-[13px] text-foreground">
+            {value}
+          </code>
+        </div>
+      ) : (
+        <Button
+          variant="ghost"
+          className="min-h-9 min-w-0 justify-start gap-2.5 rounded-lg px-3 text-muted-foreground"
+          onClick={onCopy}
+        >
+          <code className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-[13px] text-foreground">
+            {value}
+          </code>
+          <Copy
+            data-icon="inline-end"
+            size={15}
+            weight="regular"
+            className="text-muted-foreground/60"
+          />
+        </Button>
+      )}
       {editing && (
         <Button
           variant="ghost"
@@ -516,14 +530,14 @@ export default function TimeTool({
                     />
                   </div>
                 </div>
-                <div className="mt-3.5 flex min-h-[39px] items-center justify-between gap-3 border-b border-border px-1 py-1.5">
+                <div className="mt-3.5 flex min-h-[39px] items-center justify-between gap-3 px-1 py-1.5">
                   <span className="text-[10px] text-muted-foreground">
                     {editing ? t('timeTool.editHint') : ''}
                   </span>
                   <Button
                     variant={editing ? 'default' : 'ghost'}
                     onClick={editing ? finishEditing : startEditing}
-                    className="h-[26px] px-2.5 text-[11px]"
+                    className={`h-[26px] px-2.5 text-[11px]${editing ? '' : ' text-muted-foreground hover:text-foreground'}`}
                   >
                     {t(editing ? 'timeTool.done' : 'timeTool.edit')}
                   </Button>
