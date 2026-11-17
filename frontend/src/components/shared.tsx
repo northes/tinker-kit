@@ -211,6 +211,9 @@ export function ToolSearchField({
   trailingAddon?: ReactNode;
 }) {
   const showClear = Boolean(onClear && value);
+  // WebKit 用回车确认候选时，compositionend 之后还会同步再派发一次
+  // isComposing 为 false 的 Enter。标记保留到当前事件轮结束，避免上屏被当成提交。
+  const imeConfirmToken = useRef(0);
   const field = (
     <div className="relative w-full min-w-0">
       <MagnifyingGlass
@@ -225,16 +228,31 @@ export function ToolSearchField({
         value={value}
         disabled={disabled}
         onChange={(event) => onValueChange(event.target.value)}
+        onCompositionEnd={() => {
+          const token = ++imeConfirmToken.current;
+          setTimeout(() => {
+            if (imeConfirmToken.current === token) imeConfirmToken.current = 0;
+          }, 0);
+        }}
         onKeyDown={(event) => {
           if (event.key === 'Escape' && onClear && value) {
             event.preventDefault();
             onClear();
             return;
           }
-          if (event.key === 'Enter' && onSubmit && !event.nativeEvent.isComposing) {
-            event.preventDefault();
-            onSubmit(value.trim());
+          const native = event.nativeEvent;
+          // 组合中的回车（含 keyCode 229，此时 isComposing 可能已经是 false）只上屏。
+          if (
+            event.key !== 'Enter' ||
+            !onSubmit ||
+            native.isComposing ||
+            native.keyCode === 229 ||
+            imeConfirmToken.current !== 0
+          ) {
+            return;
           }
+          event.preventDefault();
+          onSubmit(value.trim());
         }}
         placeholder={placeholder}
         aria-label={label ? undefined : ariaLabel}
