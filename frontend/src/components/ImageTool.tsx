@@ -1182,7 +1182,7 @@ export default function ImageTool({
                                 data-over={over ? 'true' : undefined}
                                 data-dragging={pointer.dragging ? 'true' : undefined}
                                 {...fileDrop.dropProps}
-                                className="image-tool-stage relative min-h-0 flex-1 overflow-hidden"
+                                className="image-tool-stage relative min-h-0 flex-1 overflow-hidden outline-none focus-visible:ring-3 focus-visible:ring-ring/50 ring-inset"
                             >
                                 {over ? (
                                     <span className="sr-only" role="status">
@@ -1242,7 +1242,7 @@ export default function ImageTool({
                                                         <button
                                                             key={handle}
                                                             type="button"
-                                                            className="image-tool-handle"
+                                                            className="image-tool-handle outline-none focus-visible:ring-3 focus-visible:ring-ring/50 ring-inset"
                                                             style={{
                                                                 ...HANDLE_POS[handle],
                                                                 cursor: HANDLE_CURSOR[handle]
@@ -1305,7 +1305,7 @@ export default function ImageTool({
                                                     <button
                                                         key={handle}
                                                         type="button"
-                                                        className="image-tool-handle"
+                                                        className="image-tool-handle outline-none focus-visible:ring-3 focus-visible:ring-ring/50 ring-inset"
                                                         style={{...HANDLE_POS[handle], cursor: HANDLE_CURSOR[handle]}}
                                                         aria-label={t('imageTool.cropHandle', {
                                                             handle: t(HANDLE_KEY[handle]),
