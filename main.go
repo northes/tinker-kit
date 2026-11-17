@@ -128,6 +128,7 @@ func main() {
 			application.NewService(networkTestService),
 			application.NewService(dockService),
 			application.NewService(taskNotificationService),
+			application.NewService(NewWindowAppearanceService()),
 		},
 		Mac: application.MacOptions{
 			ActivationPolicy: application.ActivationPolicyRegular,
@@ -176,24 +177,31 @@ func main() {
 	app.OnShutdown(jsonPipelineService.shutdown)
 	app.OnShutdown(networkTestService.shutdown)
 
+	startupCfg := cfgService.Get()
+	startupDark := windowChromeDark(startupCfg)
+	appearance := application.NSAppearanceNameDarkAqua
+	if !startupDark {
+		appearance = application.NSAppearanceNameAqua
+	}
 	window := app.Window.NewWithOptions(application.WebviewWindowOptions{
-		Name:             appName,
-		Title:            appName,
-		Width:            width,
-		Height:           height,
-		X:                x,
-		Y:                y,
-		InitialPosition:  application.WindowXY,
-		MinWidth:         640,
-		MinHeight:        440,
-		DisableResize:    false,
-		EnableFileDrop:   true,
-		DevToolsEnabled:  devToolsEnabled,
-		// 默认深色主题的窗底，必须与 globals.css 深色 --chrome（oklch(0.22 0 0)）一致。
-		BackgroundColour: application.NewRGB(27, 27, 27),
+		Name:            appName,
+		Title:           appName,
+		Width:           width,
+		Height:          height,
+		X:               x,
+		Y:               y,
+		InitialPosition: application.WindowXY,
+		MinWidth:        640,
+		MinHeight:       440,
+		DisableResize:   false,
+		EnableFileDrop:  true,
+		DevToolsEnabled: devToolsEnabled,
+		// 27,27,27 与 235,235,235 必须和 globals.css 的 --chrome 一致：深色 oklch(0.22 0 0)，浅色 oklch(0.94 0 0)。
+		// macOS 上 alpha 跟随 windowOpacity，避免窗口先以不透明底色显示。
+		BackgroundColour: initialBackgroundColour(startupCfg),
 		URL:              "/",
 		Mac: application.MacWindow{
-			Appearance: application.NSAppearanceNameDarkAqua,
+			Appearance: appearance,
 			Backdrop:   application.MacBackdropTranslucent,
 			// TitleBar: application.MacTitleBar{
 			// 	AppearsTransparent: true,
@@ -216,6 +224,14 @@ func main() {
 	log.Printf("[startup] window created; WebKit back-forward gestures disabled")
 	window.OnWindowEvent(events.Common.WindowRuntimeReady, func(_ *application.WindowEvent) {
 		configureLocalInspector(window)
+	})
+	// 钩子在显示窗口的监听器之前同步执行，模糊开关关着时不会先闪一帧毛玻璃。
+	window.RegisterHook(events.Mac.WebViewDidFinishNavigation, func(*application.WindowEvent) {
+		if runtime.GOOS != "darwin" {
+			return
+		}
+		cfg := cfgService.Get()
+		applyWindowEffect(window.NativeWindow(), windowChromeDark(cfg), cfg.WindowBlur)
 	})
 	window.Show()
 	updateService.setBeforeRestart(func() {

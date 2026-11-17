@@ -41,6 +41,8 @@ export const defaultSettings: Settings = {
   themeMode: 'dark',
   lightTheme: 'default-light',
   darkTheme: 'default-dark',
+  windowOpacity: 100,
+  windowBlur: true,
   diffClipboardTargetMode: 'alternate',
   codeEditorFontSize: 16,
   timeResultOrder: [...TIME_RESULT_IDS],

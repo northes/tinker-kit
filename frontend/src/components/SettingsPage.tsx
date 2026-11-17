@@ -19,6 +19,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from './ui/select';
+import { Slider } from './ui/slider';
 import { Switch } from './ui/switch';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
 import {
@@ -60,6 +61,14 @@ import { ToolActionButton, ToolLayout, ToolLayoutContent, type Icon, type ToolId
 import { toast } from './ui/toast';
 import { GITHUB_REPO_URL } from '../repositoryUrl';
 import { THEME_MODE_OPTIONS, type ThemeMode } from '../theme';
+import {
+  WINDOW_OPACITY_MAX,
+  WINDOW_OPACITY_MIN,
+  applyWindowOpacity,
+  clampWindowOpacity,
+  hostOS,
+  setWindowOpacityPreview,
+} from '../app/window-appearance';
 import { EDITOR_FONT_SIZES } from '../settings-options';
 import { cn } from '@/lib/utils';
 import { Input } from './ui/input';
@@ -631,6 +640,66 @@ function trayMatchToolSet(toolIds: string[] | null | undefined) {
   return new Set((toolIds ?? TRAY_MATCHABLE_TOOLS) as ToolId[]);
 }
 
+function sliderNumber(value: number | readonly number[]): number | null {
+  const next = Array.isArray(value) ? value[0] : value;
+  return typeof next === 'number' ? next : null;
+}
+
+function WindowAppearanceSettings({
+  settings,
+  setSettings,
+}: {
+  settings: Settings;
+  setSettings: React.Dispatch<React.SetStateAction<Settings>>;
+}) {
+  const { t } = useTranslation();
+  const [opacityPreview, setOpacityPreview] = useState<number | null>(null);
+  const opacity = opacityPreview ?? clampWindowOpacity(settings.windowOpacity);
+  const previewOpacity = (value: number | readonly number[]) => {
+    const next = sliderNumber(value);
+    if (next == null) return;
+    setOpacityPreview(next);
+    setWindowOpacityPreview(next);
+    applyWindowOpacity(settings.windowOpacity);
+  };
+  const commitOpacity = (value: number | readonly number[]) => {
+    const next = sliderNumber(value);
+    setOpacityPreview(null);
+    setWindowOpacityPreview(null);
+    if (next == null) return;
+    setSettings((current) => ({ ...current, windowOpacity: clampWindowOpacity(next) }));
+  };
+  return (
+    <SettingsGroup title={t('settings.windowAppearance')}>
+      <div className="flex flex-col gap-3">
+        <Setting label={t('settings.windowOpacity')}>
+          <div className="flex w-52 max-w-full items-center gap-3">
+            <Slider
+              aria-label={t('settings.windowOpacity')}
+              className="w-36"
+              min={WINDOW_OPACITY_MIN}
+              max={WINDOW_OPACITY_MAX}
+              step={1}
+              value={[opacity]}
+              onValueChange={previewOpacity}
+              onValueCommitted={commitOpacity}
+            />
+            <span className="w-9 shrink-0 text-right text-xs tabular-nums text-muted-foreground">
+              {t('settings.windowOpacityValue', { value: opacity })}
+            </span>
+          </div>
+        </Setting>
+        <Setting label={t('settings.windowBlur')}>
+          <SettingSwitch
+            selected={settings.windowBlur !== false}
+            onChange={(windowBlur) => setSettings((current) => ({ ...current, windowBlur }))}
+          />
+        </Setting>
+      </div>
+    </SettingsGroup>
+  );
+}
+
 export default function SettingsPage({
   settings,
   setSettings,
@@ -985,6 +1054,9 @@ export default function SettingsPage({
                   />
                 </div>
               </SettingsGroup>
+              {hostOS === 'darwin' ? (
+                <WindowAppearanceSettings settings={settings} setSettings={setSettings} />
+              ) : null}
               <SettingsGroup title={t('settings.language')}>
                 <div className={settingControlClass}>
                   <ChoiceGroup

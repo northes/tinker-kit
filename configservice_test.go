@@ -735,6 +735,40 @@ func TestNormalizeTaskCenterSettingsDefaultsAndBounds(t *testing.T) {
 	}
 }
 
+func TestNormalizeWindowAppearance(t *testing.T) {
+	defaults := defaultConfig()
+	if defaults.WindowOpacity != 100 || !defaults.WindowBlur {
+		t.Fatalf("默认窗口外观为 %d/%v，期望 100/true", defaults.WindowOpacity, defaults.WindowBlur)
+	}
+
+	legacy := defaultConfig()
+	if err := json.Unmarshal([]byte(`{"language":"en-US"}`), &legacy); err != nil {
+		t.Fatal(err)
+	}
+	legacy = normalizeConfig(legacy)
+	if legacy.WindowOpacity != 100 || !legacy.WindowBlur {
+		t.Fatalf("缺字段的老配置应为 100/true，得到 %d/%v", legacy.WindowOpacity, legacy.WindowBlur)
+	}
+
+	low := defaultConfig()
+	if err := json.Unmarshal([]byte(`{"windowOpacity":12,"windowBlur":false}`), &low); err != nil {
+		t.Fatal(err)
+	}
+	low = normalizeConfig(low)
+	if low.WindowOpacity != 30 || low.WindowBlur {
+		t.Fatalf("低于下限应收到 30 并保留关闭模糊，得到 %d/%v", low.WindowOpacity, low.WindowBlur)
+	}
+
+	high := defaultConfig()
+	if err := json.Unmarshal([]byte(`{"windowOpacity":180,"windowBlur":true}`), &high); err != nil {
+		t.Fatal(err)
+	}
+	high = normalizeConfig(high)
+	if high.WindowOpacity != 100 || !high.WindowBlur {
+		t.Fatalf("高于上限应收到 100，得到 %d/%v", high.WindowOpacity, high.WindowBlur)
+	}
+}
+
 // User-Agent 会被原样写进请求报文：规范化只去掉首尾空白与 CR/LF，空值表示使用工具默认标识。
 func TestNormalizeNetworkTestUserAgent(t *testing.T) {
 	settings := normalizeNetworkTestSettings(NetworkTestSettings{UserAgent: "  Mozilla/5.0\r\nInjected: 1  "})

@@ -1,4 +1,4 @@
-import { Clipboard, Events, Window } from '@wailsio/runtime';
+import { Clipboard, Events } from '@wailsio/runtime';
 import type { SetStateAction } from 'react';
 import {
   lazy,
@@ -26,6 +26,8 @@ import { detectBase64, detectJwt } from './app/clipboard';
 import { BlankTabPicker } from './app/BlankTabPicker';
 import { CommandPalette } from './app/CommandPalette';
 import { defaultSettings } from './app/default-settings';
+import { applyWindowOpacity, bootSettings, hostOS } from './app/window-appearance';
+import { ApplyWindowEffect } from '../bindings/tinkerkit/windowappearanceservice';
 import {
   paletteItems,
   tools,
@@ -257,7 +259,7 @@ function RenameWorkspaceTabDialog({
 
 function toolSlotClass(active: boolean) {
   return active
-    ? 'tool-slot workspace-tool-slot-active relative isolate z-10 h-full min-h-0 overflow-hidden bg-background'
+    ? 'tool-slot workspace-tool-slot-active relative isolate z-10 h-full min-h-0 overflow-hidden'
     : 'tool-slot is-hidden absolute inset-0 isolate z-0 h-full min-h-0 overflow-hidden pointer-events-none';
 }
 
@@ -284,7 +286,7 @@ function AppShell() {
   const settingsCommandId = useRef(0);
   const [jsonSchemaOpen, setJsonSchemaOpen] = useState(false);
   const [jsonPipelineOpen, setJsonPipelineOpen] = useState(false);
-  const [settings, setSettings] = useState<Settings>(defaultSettings);
+  const [settings, setSettings] = useState<Settings>(bootSettings ?? defaultSettings);
   const [sshHostKeyPrompt, setSSHHostKeyPrompt] = useState<SSHHostKeyPrompt | null>(null);
   const sshHostKeyPromptResponseRef = useRef<string | null>(null);
   const [systemDark, setSystemDark] = useState(
@@ -294,7 +296,7 @@ function AppShell() {
   const settingsRef = useRef(settings);
   settingsRef.current = settings;
   const nextDiffTarget = useRef<'before' | 'after'>('before');
-  const settingsReady = useRef(false);
+  const settingsReady = useRef(bootSettings !== null);
   const saveInFlight = useRef(false);
   const saveQueued = useRef(false);
   const saveWaiters = useRef<SaveWaiter[]>([]);
@@ -512,12 +514,19 @@ function AppShell() {
     root.style.colorScheme = dark ? 'dark' : 'light';
     root.style.setProperty('--code-editor-font-size', `${settings.codeEditorFontSize || 16}px`);
     root.dataset.showTabIcons = settings.showTabIcons ? 'true' : 'false';
-    // 27,27,27 与 235,235,235 必须和 globals.css 的 --chrome 一致：深色 oklch(0.22 0 0)，浅色 oklch(0.94 0 0)。
-    const [r, g, b] = dark ? [27, 27, 27] : [235, 235, 235];
-    void Window.SetBackgroundColour(r, g, b, 255).catch((error: unknown) => {
-      console.error(error);
-    });
-  }, [theme, settings.codeEditorFontSize, settings.showTabIcons]);
+    applyWindowOpacity(settings.windowOpacity);
+    if (hostOS === 'darwin') {
+      void ApplyWindowEffect(dark, settings.windowBlur !== false).catch((error: unknown) => {
+        console.error(error);
+      });
+    }
+  }, [
+    theme,
+    settings.codeEditorFontSize,
+    settings.showTabIcons,
+    settings.windowOpacity,
+    settings.windowBlur,
+  ]);
   useEffect(() => {
     const media = window.matchMedia('(prefers-color-scheme: dark)');
     const onChange = (event: MediaQueryListEvent) => setSystemDark(event.matches);
@@ -568,6 +577,7 @@ function AppShell() {
   }, []);
   useLayoutEffect(() => workspaceElRef.current?.scrollTo(0, 0), [workspace.activeId]);
   useEffect(() => {
+    if (settingsReady.current) return;
     GetConfig()
       .then((c) => {
         settingsReady.current = true;
@@ -1158,11 +1168,11 @@ function AppShell() {
         onLocateFileTarget={locateSshUploadTarget}
       />
       <div
-        className="app-shell relative grid h-dvh grid-rows-[var(--app-titlebar-height)_minmax(0,1fr)] bg-chrome [--wails-draggable:drag]"
+        className="app-shell relative grid h-dvh grid-rows-[var(--app-titlebar-height)_minmax(0,1fr)] [--wails-draggable:drag]"
         data-wails-drag
       >
         <header
-          className="relative z-[2] flex h-full min-w-0 cursor-default items-center bg-chrome pl-(--workspace-traffic-inset) [--wails-draggable:drag]"
+          className="app-titlebar relative z-[2] flex h-full min-w-0 cursor-default items-center pl-(--workspace-traffic-inset) [--wails-draggable:drag]"
           data-wails-drag
         >
           {tabBar}
@@ -1170,10 +1180,10 @@ function AppShell() {
             <UpdatePill />
           </div>
         </header>
-        {/* 左、右、底 8px 缝在 padding 上，不设 no-drag，才能拖窗口。 */}
-        <div className="relative z-[1] min-h-0 min-w-0 px-2 pb-2">
+        {/* 左、右、底 8px 缝在边框上，不设 no-drag，才能拖窗口。 */}
+        <div className="window-frame relative z-[1] min-h-0 min-w-0">
           <main
-            className="workspace relative h-full min-h-0 w-full overflow-hidden rounded-xl bg-background [--wails-draggable:no-drag]"
+            className="workspace relative h-full min-h-0 w-full overflow-hidden rounded-xl [--wails-draggable:no-drag]"
             ref={workspaceElRef}
           >
             {workspace.tabs.map((tab) => (

@@ -37,6 +37,16 @@ export interface Config {
     "themeMode": string;
     "lightTheme": string;
     "darkTheme": string;
+
+    /**
+     * WindowOpacity 是整窗背景透明度，整数百分比 30–100。只在 macOS 应用。
+     */
+    "windowOpacity": number;
+
+    /**
+     * WindowBlur 为真时窗口背后是毛玻璃，为假时是清晰桌面。只在 macOS 应用。
+     */
+    "windowBlur": boolean;
     "diffClipboardTargetMode": string;
     "codeEditorFontSize": number;
     "timeResultOrder": string[] | null;

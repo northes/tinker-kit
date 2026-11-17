@@ -19,6 +19,8 @@
      状态型过渡（淡入、遮罩、Toast）仍用上面的 120ms。 */
   --motion-slide-duration: 200ms;
   --motion-slide-ease: cubic-bezier(0.32, 0.72, 0, 1);
+  /* 整窗透明度只落在 --chrome-fill / --panel-fill 这一层，默认不透明。 */
+  --window-opacity: 1;
   font-synthesis: none;
   -webkit-font-smoothing: antialiased;
 }
@@ -46,7 +48,8 @@ body,
   margin: 0;
   width: 100%;
   height: 100%;
-  background: var(--chrome);
+  /* 不在文档根上再铺一层窗底，否则会和外壳的半透明叠成两层。 */
+  background: transparent;
 }
 html,
 body {
@@ -59,6 +62,28 @@ body {
 /* 固定桌面外壳：任何子元素都不应让文档/外壳产生滚动（例如编辑器搜索选中命中项时）。 */
 .app-shell {
   overflow: hidden;
+  background: transparent;
+}
+.app-titlebar {
+  background: var(--chrome-fill);
+}
+/* 左、右、底 8px 缝用边框而不是父层铺底，避免半透明窗底从圆角面板下面再透出来。 */
+.window-frame {
+  border-style: solid;
+  border-color: var(--chrome-fill);
+  border-width: 0 8px 8px;
+}
+.workspace {
+  background: var(--panel-fill);
+}
+.workspace-tab-fade-chrome {
+  background-image: linear-gradient(to right, transparent, var(--chrome-fill));
+}
+.workspace-tab-fade-panel {
+  background-image: linear-gradient(to right, transparent, var(--panel-fill));
+}
+.workspace-tab-highlight {
+  background: var(--panel-fill);
 }
 /* Base UI Dialog 的内部 inert 遮罩也必须覆盖原生标题栏，避免在标题栏留下未模糊区域。 */
 [data-base-ui-inert][role='presentation'] {
@@ -219,7 +244,7 @@ textarea,
   height: min(var(--scroll-fade-size), var(--scroll-area-overflow-y-start, 0px));
   background: linear-gradient(
     to bottom,
-    var(--scroll-edge-overlay, var(--background)),
+    var(--scroll-edge-overlay, var(--panel-fill)),
     transparent
   );
 }
@@ -227,7 +252,7 @@ textarea,
   bottom: 0;
   margin-bottom: var(--scroll-edge-viewport-bottom, 0px);
   height: min(var(--scroll-fade-size), var(--scroll-area-overflow-y-end, 0px));
-  background: linear-gradient(to top, var(--scroll-edge-overlay, var(--background)), transparent);
+  background: linear-gradient(to top, var(--scroll-edge-overlay, var(--panel-fill)), transparent);
 }
 /* 弹窗底是 popover，深色下和页面 background 不是同一个颜色。 */
 [data-slot='dialog-content'] {

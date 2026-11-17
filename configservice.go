@@ -29,11 +29,15 @@ type Config struct {
 	// TabCloseButton 是关闭按钮可见方式：always、hover 或 never。
 	TabCloseButton string `json:"tabCloseButton"`
 	// ShowTabIcons 为真时，标签在名称左侧显示图标，全部标签使用同一档更宽的宽度。
-	ShowTabIcons            bool                  `json:"showTabIcons"`
-	SidebarTools            []SidebarToolConfig   `json:"sidebarTools"`
-	ThemeMode               string                `json:"themeMode"`
-	LightTheme              string                `json:"lightTheme"`
-	DarkTheme               string                `json:"darkTheme"`
+	ShowTabIcons bool                `json:"showTabIcons"`
+	SidebarTools []SidebarToolConfig `json:"sidebarTools"`
+	ThemeMode    string              `json:"themeMode"`
+	LightTheme   string              `json:"lightTheme"`
+	DarkTheme    string              `json:"darkTheme"`
+	// WindowOpacity 是整窗背景透明度，整数百分比 30–100。只在 macOS 应用。
+	WindowOpacity int `json:"windowOpacity"`
+	// WindowBlur 为真时窗口背后是毛玻璃，为假时是清晰桌面。只在 macOS 应用。
+	WindowBlur              bool                  `json:"windowBlur"`
 	DiffClipboardTargetMode string                `json:"diffClipboardTargetMode"`
 	CodeEditorFontSize      int                   `json:"codeEditorFontSize"`
 	TimeResultOrder         []string              `json:"timeResultOrder"`
@@ -211,7 +215,7 @@ func defaultSidebarTools() []SidebarToolConfig {
 }
 
 func defaultConfig() Config {
-	return Config{TrayMatchEnabled: true, TrayMatchTools: []string{"json", "time", "text", "base64", "diff", "jwt", "url"}, AutoCheckUpdates: true, TaskConcurrency: 4, TaskChunkConcurrency: 4, TaskNotificationMode: "unfocused", Language: "zh-CN", TabCloseActivation: "recent", TabCloseButton: "always", ShowTabIcons: false, SidebarTools: defaultSidebarTools(), ThemeMode: "dark", LightTheme: "default-light", DarkTheme: "default-dark", DiffClipboardTargetMode: "alternate", CodeEditorFontSize: 16, TimeResultOrder: []string{"local", "dateTime", "dateOnly", "timeOnly", "zonedIso8601", "rfc3339", "utc", "compact", "underscore", "unixSeconds", "unixMilliseconds", "unixNanoseconds"}, TimeWeekStart: "monday", NtpServers: defaultNtpServers(), NetworkTestSettings: defaultNetworkTestSettings(), NetworkTestSources: defaultNetworkTestSources(), JsonAutoFormatOnFill: true, ImageSources: defaultImageSources(), SSHProfiles: []SSHProfile{}, FileSources: []FileSource{}, ServiceTargets: defaultServiceTargets(), ServiceLogHighlight: true, ServiceLogCollapseLines: defaultServiceLogCollapseLines, PortSources: defaultPortSources(), PortForwards: []PortForwardConfig{}, PortColumnWidths: PortColumnWidths{Ports: map[string][]int{}}}
+	return Config{TrayMatchEnabled: true, TrayMatchTools: []string{"json", "time", "text", "base64", "diff", "jwt", "url"}, AutoCheckUpdates: true, TaskConcurrency: 4, TaskChunkConcurrency: 4, TaskNotificationMode: "unfocused", Language: "zh-CN", TabCloseActivation: "recent", TabCloseButton: "always", ShowTabIcons: false, SidebarTools: defaultSidebarTools(), ThemeMode: "dark", LightTheme: "default-light", DarkTheme: "default-dark", WindowOpacity: defaultWindowOpacity, WindowBlur: true, DiffClipboardTargetMode: "alternate", CodeEditorFontSize: 16, TimeResultOrder: []string{"local", "dateTime", "dateOnly", "timeOnly", "zonedIso8601", "rfc3339", "utc", "compact", "underscore", "unixSeconds", "unixMilliseconds", "unixNanoseconds"}, TimeWeekStart: "monday", NtpServers: defaultNtpServers(), NetworkTestSettings: defaultNetworkTestSettings(), NetworkTestSources: defaultNetworkTestSources(), JsonAutoFormatOnFill: true, ImageSources: defaultImageSources(), SSHProfiles: []SSHProfile{}, FileSources: []FileSource{}, ServiceTargets: defaultServiceTargets(), ServiceLogHighlight: true, ServiceLogCollapseLines: defaultServiceLogCollapseLines, PortSources: defaultPortSources(), PortForwards: []PortForwardConfig{}, PortColumnWidths: PortColumnWidths{Ports: map[string][]int{}}}
 }
 
 func normalizeThemeID(theme string, defaultID string) string {
@@ -219,6 +223,23 @@ func normalizeThemeID(theme string, defaultID string) string {
 		return defaultID
 	}
 	return theme
+}
+
+const (
+	defaultWindowOpacity = 100
+	minWindowOpacity     = 30
+	maxWindowOpacity     = 100
+)
+
+// normalizeWindowOpacity 把透明度收到 30–100。缺字段不会走到这里：读取时先填入 defaultConfig 的 100。
+func normalizeWindowOpacity(value int) int {
+	if value < minWindowOpacity {
+		return minWindowOpacity
+	}
+	if value > maxWindowOpacity {
+		return maxWindowOpacity
+	}
+	return value
 }
 
 func stringSlicesEqual(a []string, b []string) bool {
@@ -752,6 +773,7 @@ func normalizeConfig(cfg Config) Config {
 	}
 	cfg.LightTheme = normalizeThemeID(cfg.LightTheme, "default-light")
 	cfg.DarkTheme = normalizeThemeID(cfg.DarkTheme, "default-dark")
+	cfg.WindowOpacity = normalizeWindowOpacity(cfg.WindowOpacity)
 	switch cfg.DiffClipboardTargetMode {
 	case "off", "alternate", "before", "after":
 	default:

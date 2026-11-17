@@ -13,6 +13,7 @@ import * as SSHProfileService from "./sshprofileservice.js";
 import * as ServiceManagerService from "./servicemanagerservice.js";
 import * as SystemInfoService from "./systeminfoservice.js";
 import * as UpdateService from "./updateservice.js";
+import * as WindowAppearanceService from "./windowappearanceservice.js";
 export {
     ConfigService,
     FileService,
@@ -25,7 +26,8 @@ export {
     SSHProfileService,
     ServiceManagerService,
     SystemInfoService,
-    UpdateService
+    UpdateService,
+    WindowAppearanceService
 };
 
 export type {

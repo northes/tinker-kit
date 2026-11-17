@@ -76,7 +76,7 @@
     @apply border-border outline-ring/50;
   }
   body {
-    background-color: var(--chrome);
+    background-color: transparent;
     color: var(--foreground);
   }
   .app-shell ::selection {

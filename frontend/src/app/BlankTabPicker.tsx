@@ -74,7 +74,7 @@ export function BlankTabPicker({
     else if (item.tool) onSelectTool(item.tool);
   };
   return (
-    <div className="flex h-full min-h-0 flex-col bg-background">
+    <div className="flex h-full min-h-0 flex-col">
       <div className="mx-auto flex h-full min-h-0 w-full max-w-[52rem] flex-col justify-center">
         <ScrollArea className="min-h-0 max-h-full" options={{ overflow: { x: 'hidden' } }}>
           <div className="px-4 pb-3 pt-4">
