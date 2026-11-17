@@ -48,7 +48,6 @@ import {
     ToolLayout,
     ToolLayoutContent,
     ToolLayoutFooter,
-    useFocusOnActivate,
 } from './shared';
 import {toast} from './ui/toast';
 import FileDropEmpty, {readLocalFile, useFileDrop} from './fileDrop';
@@ -529,11 +528,6 @@ export default function ImageTool({
     const sourceFormat = source ? sourceFormatOf(source) : '';
     const jpgFlattenColor = sizeMode === 'expand' && !fillTransparent ? fillColor : '#ffffff';
     const showQuality = outputFormat === 'jpg' || outputFormat === 'webp';
-
-    useFocusOnActivate(active, () => {
-        if (source) previewRef.current?.focus();
-        else emptyRef.current?.focus();
-    });
 
     useEffect(() => {
         const el = previewRef.current;
