@@ -8,7 +8,11 @@ import { GetSystemInfo } from '../bindings/tinkerkit/systeminfoservice';
 import type { SystemInfo } from '../bindings/tinkerkit/models';
 import { SSHProfileProvider } from './components/SSHProfileManagerDialog';
 import { defaultSettings } from './app/default-settings';
-import { applyWindowOpacity, clearNativeWindowBackground, rememberBoot } from './app/window-appearance';
+import {
+  applyWindowOpacity,
+  clearNativeWindowBackground,
+  rememberBoot,
+} from './app/window-appearance';
 import { resolveTheme } from './theme';
 import './i18n';
 import './index.css';
@@ -65,15 +69,15 @@ async function boot() {
   // 渲染前只写 CSS 变量。原生窗底仍盖着首帧，避免先透出桌面。
   applyWindowOpacity(cfg.windowOpacity);
   ReactDOM.createRoot(document.getElementById('root') as HTMLElement).render(
-  <React.StrictMode>
-    <HashRouter>
-      <FatalErrorBoundaryRoot>
-        <SSHProfileProvider>
-          <App />
-        </SSHProfileProvider>
-      </FatalErrorBoundaryRoot>
-    </HashRouter>
-  </React.StrictMode>,
+    <React.StrictMode>
+      <HashRouter>
+        <FatalErrorBoundaryRoot>
+          <SSHProfileProvider>
+            <App />
+          </SSHProfileProvider>
+        </FatalErrorBoundaryRoot>
+      </HashRouter>
+    </React.StrictMode>,
   );
   clearNativeWindowBackground();
 }
