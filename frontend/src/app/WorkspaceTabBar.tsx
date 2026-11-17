@@ -1,11 +1,13 @@
 import {
   closestCenter,
   DndContext,
+  MeasuringStrategy,
   PointerSensor,
   useSensor,
   useSensors,
   type CollisionDetection,
   type DragEndEvent,
+  type Modifier,
 } from '@dnd-kit/core';
 import {
   horizontalListSortingStrategy,
@@ -37,6 +39,12 @@ import {
   type WorkspaceState,
   type WorkspaceTab,
 } from './workspace-tabs';
+
+// 锁的是碰撞用的位移，不只是画出来的位置。否则垂直抖动会让相邻标签反复成为 over。
+const restrictToTabAxis = (horizontal: boolean): Modifier =>
+  horizontal
+    ? ({ transform }) => ({ ...transform, y: 0 })
+    : ({ transform }) => ({ ...transform, x: 0 });
 
 function tabDragPreview(tabs: WorkspaceTab[], activeId: string, overId: string) {
   const probe: WorkspaceState = {
@@ -92,7 +100,11 @@ function WorkspaceTabItem({
   onRename: (id: string) => void;
 }) {
   const { t } = useTranslation();
-  const { listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: tab.id });
+  // 不做默认 200ms ease：布局盒不动，缓动会和指针错开，看起来像往回弹。
+  const { listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id: tab.id,
+    transition: null,
+  });
   const setNodeRefLatest = useRef(setNodeRef);
   const registerTabLatest = useRef(registerTab);
   setNodeRefLatest.current = setNodeRef;
@@ -130,7 +142,7 @@ function WorkspaceTabItem({
             data-pinned={tab.pinned ? '' : undefined}
             data-workspace-tab=""
             style={{
-              transform: CSS.Transform.toString(transform),
+              transform: CSS.Translate.toString(transform),
               transition,
               zIndex: isDragging ? 20 : undefined,
             }}
@@ -283,7 +295,7 @@ export function WorkspaceTabBar({
   orientationRef.current = orientation;
   const [liveMessage, setLiveMessage] = useState('');
   const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { delay: 300, tolerance: 5 } }),
+    useSensor(PointerSensor, { activationConstraint: { delay: 100, tolerance: 5 } }),
   );
   // 默认公告会把内部 id 用英文念出来。结果改由下面的 polite 区域播报。
   const silentAnnouncements = useMemo(
@@ -349,6 +361,7 @@ export function WorkspaceTabBar({
     if (viewport && tab) scrollTabIntoView(viewport, tab, orientationRef.current);
   }, []);
   const horizontal = orientation === 'horizontal';
+  const axisModifier = useMemo(() => restrictToTabAxis(horizontal), [horizontal]);
 
   useLayoutEffect(() => {
     const viewport = viewportRef.current;
@@ -367,6 +380,9 @@ export function WorkspaceTabBar({
       <DndContext
         sensors={sensors}
         collisionDetection={collisionDetection}
+        modifiers={[axisModifier]}
+        // 拖动时只有 transform，布局盒不变。WhileDragging 会按帧重测并读 computed style，造成掉帧。
+        measuring={{ droppable: { strategy: MeasuringStrategy.BeforeDragging } }}
         // OverlayScrollbars 的 viewport 和 dnd-kit 自动滚动会抢标签条，拖动时不自动滚。
         autoScroll={false}
         accessibility={{
