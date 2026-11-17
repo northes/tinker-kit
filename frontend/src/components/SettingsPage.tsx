@@ -654,6 +654,15 @@ function WindowAppearanceSettings({
 }) {
   const { t } = useTranslation();
   const [opacityPreview, setOpacityPreview] = useState<number | null>(null);
+  const savedOpacityRef = useRef(settings.windowOpacity);
+  savedOpacityRef.current = settings.windowOpacity;
+  useEffect(() => {
+    return () => {
+      setOpacityPreview(null);
+      setWindowOpacityPreview(null);
+      applyWindowOpacity(savedOpacityRef.current);
+    };
+  }, []);
   const opacity = opacityPreview ?? clampWindowOpacity(settings.windowOpacity);
   const previewOpacity = (value: number | readonly number[]) => {
     const next = sliderNumber(value);

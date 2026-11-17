@@ -197,7 +197,7 @@ func main() {
 		EnableFileDrop:  true,
 		DevToolsEnabled: devToolsEnabled,
 		// 27,27,27 与 235,235,235 必须和 globals.css 的 --chrome 一致：深色 oklch(0.22 0 0)，浅色 oklch(0.94 0 0)。
-		// macOS 上 alpha 跟随 windowOpacity，避免窗口先以不透明底色显示。
+		// 创建时保持不透明，盖住 webview 首帧之前的空窗。透明度由 CSS 承担。
 		BackgroundColour: initialBackgroundColour(startupCfg),
 		URL:              "/",
 		Mac: application.MacWindow{
