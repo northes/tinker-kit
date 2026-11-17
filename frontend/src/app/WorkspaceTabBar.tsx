@@ -7,15 +7,10 @@ import {
   useSensors,
   type CollisionDetection,
   type DragEndEvent,
+  type DragStartEvent,
   type Modifier,
 } from '@dnd-kit/core';
-import {
-  horizontalListSortingStrategy,
-  SortableContext,
-  useSortable,
-  verticalListSortingStrategy,
-} from '@dnd-kit/sortable';
-import { CSS } from '@dnd-kit/utilities';
+import { SortableContext, useSortable, type SortingStrategy } from '@dnd-kit/sortable';
 import { GearSix, Plus, PushPin, X } from '@phosphor-icons/react';
 import { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -32,8 +27,11 @@ import { ScrollArea } from '../components/ui/scroll-area';
 import { cn } from '@/lib/utils';
 import { tools } from './definitions';
 import {
+  nextDragOverId,
   reorderWorkspaceTabs,
+  tabDragShift,
   workspaceTabLabel,
+  type DragSlot,
   type TabCloseButton,
   type TabOrientation,
   type WorkspaceState,
@@ -45,6 +43,13 @@ const restrictToTabAxis = (horizontal: boolean): Modifier =>
   horizontal
     ? ({ transform }) => ({ ...transform, y: 0 })
     : ({ transform }) => ({ ...transform, x: 0 });
+
+function pointerPosition(event: Event) {
+  if (!('clientX' in event) || !('clientY' in event)) return null;
+  const { clientX, clientY } = event;
+  if (typeof clientX !== 'number' || typeof clientY !== 'number') return null;
+  return { x: clientX, y: clientY };
+}
 
 function tabDragPreview(tabs: WorkspaceTab[], activeId: string, overId: string) {
   const probe: WorkspaceState = {
@@ -100,11 +105,8 @@ function WorkspaceTabItem({
   onRename: (id: string) => void;
 }) {
   const { t } = useTranslation();
-  // 不做默认 200ms ease：布局盒不动，缓动会和指针错开，看起来像往回弹。
-  const { listeners, setNodeRef, transform, transition, isDragging } = useSortable({
-    id: tab.id,
-    transition: null,
-  });
+  // 位移画在内层，避免外层测量跟着图层抖。被拖的那枚 sortable 不加过渡，其余标签用默认让位动画。
+  const { listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: tab.id });
   const setNodeRefLatest = useRef(setNodeRef);
   const registerTabLatest = useRef(registerTab);
   setNodeRefLatest.current = setNodeRef;
@@ -126,6 +128,10 @@ function WorkspaceTabItem({
         : tools.find((item) => item.id === tab.toolId)?.icon;
   const canRename = tab.kind === 'tool';
   const dragDescriptionId = `workspace-tab-drag-${tab.id}`;
+  const shift =
+    transform && (transform.x || transform.y)
+      ? `translate3d(${transform.x}px, ${transform.y}px, 0)`
+      : undefined;
   return (
     <ContextMenu>
       <ContextMenuTrigger
@@ -141,17 +147,11 @@ function WorkspaceTabItem({
             data-current={current ? '' : undefined}
             data-pinned={tab.pinned ? '' : undefined}
             data-workspace-tab=""
-            style={{
-              transform: CSS.Translate.toString(transform),
-              transition,
-              zIndex: isDragging ? 20 : undefined,
-            }}
+            style={{ zIndex: isDragging ? 20 : undefined }}
             className={cn(
-              // 焦点环画在标签内侧，避免被 ScrollArea 边缘裁切。
+              // 外层只占布局盒，给 dnd-kit 测量。焦点环画在内侧，避免被 ScrollArea 裁切。
               // 不展开 useSortable 的 attributes：其中的 role=button 会盖掉 role=tab。
-              'group/tab relative flex h-7 w-(--workspace-tab-width) shrink-0 cursor-grab touch-none items-center gap-1.5 rounded-md px-2 text-left text-xs outline-none select-none [--wails-draggable:no-drag] focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:ring-inset',
-              current ? 'bg-muted text-foreground' : 'text-muted-foreground hover:text-foreground',
-              isDragging && 'cursor-grabbing bg-accent text-foreground shadow-md',
+              'group/tab relative h-7 w-(--workspace-tab-width) shrink-0 touch-none outline-none select-none [--wails-draggable:no-drag] focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:ring-inset',
             )}
             {...listeners}
             onClick={() => {
@@ -175,6 +175,14 @@ function WorkspaceTabItem({
           />
         }
       >
+        <div
+          className={cn(
+            'absolute inset-0 flex cursor-default items-center gap-1.5 rounded-md px-2 text-left text-xs',
+            current ? 'bg-muted text-foreground' : 'text-muted-foreground hover:text-foreground',
+            isDragging && 'bg-accent text-foreground shadow-md',
+          )}
+          style={{ transform: shift, transition }}
+        >
         <span id={dragDescriptionId} className="sr-only">
           {t('workspaceTabs.dragTab', { name: label })}
         </span>
@@ -214,6 +222,7 @@ function WorkspaceTabItem({
             </Button>
           </div>
         )}
+        </div>
       </ContextMenuTrigger>
       <ContextMenuContent className="min-w-44" side={horizontal ? 'bottom' : 'right'} align="start">
         <ContextMenuGroup>
@@ -288,6 +297,10 @@ export function WorkspaceTabBar({
   const tabRefs = useRef(new Map<string, HTMLElement>());
   const tabsRef = useRef(tabs);
   const suppressClickRef = useRef(false);
+  const slotsRef = useRef<DragSlot[]>([]);
+  const overIdRef = useRef<string | null>(null);
+  const grabOffsetRef = useRef(0);
+  const pitchRef = useRef(0);
   const activeIdRef = useRef(activeId);
   const orientationRef = useRef(orientation);
   tabsRef.current = tabs;
@@ -295,7 +308,7 @@ export function WorkspaceTabBar({
   orientationRef.current = orientation;
   const [liveMessage, setLiveMessage] = useState('');
   const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { delay: 100, tolerance: 5 } }),
+    useSensor(PointerSensor, { activationConstraint: { delay: 50, tolerance: 5 } }),
   );
   // 默认公告会把内部 id 用英文念出来。结果改由下面的 polite 区域播报。
   const silentAnnouncements = useMemo(
@@ -307,21 +320,55 @@ export function WorkspaceTabBar({
     }),
     [],
   );
+  const clearDragGeometry = () => {
+    slotsRef.current = [];
+    overIdRef.current = null;
+    grabOffsetRef.current = 0;
+    pitchRef.current = 0;
+  };
+  // 落点只跟拖动开始时的中线比较。closestCenter 会读正在变换的矩形，越过相邻标签时来回翻转。
   const collisionDetection = useCallback<CollisionDetection>((args) => {
-    const hits = closestCenter(args);
-    const nearest = hits[0];
-    if (!nearest) return hits;
-    const current = tabsRef.current;
-    const activeTab = current.find((tab) => tab.id === String(args.active.id));
-    const overTab = current.find((tab) => tab.id === String(nearest.id));
-    if (!activeTab || !overTab) return hits;
-    if (Boolean(activeTab.pinned) !== Boolean(overTab.pinned)) return [];
-    const pinned = Boolean(activeTab.pinned);
-    return hits.filter((hit) => {
-      const tab = current.find((item) => item.id === String(hit.id));
-      return !!tab && Boolean(tab.pinned) === pinned;
-    });
+    const pointer = args.pointerCoordinates;
+    const slots = slotsRef.current;
+    if (!pointer || slots.length === 0) return closestCenter(args);
+    const along = orientationRef.current === 'horizontal' ? pointer.x : pointer.y;
+    const next = nextDragOverId(slots, overIdRef.current, along - grabOffsetRef.current);
+    if (!next) return [];
+    overIdRef.current = next;
+    return [{ id: next }];
   }, []);
+  const sortingStrategy = useCallback<SortingStrategy>(({ activeIndex, overIndex, index }) => {
+    const shift = tabDragShift(activeIndex, overIndex, index, pitchRef.current);
+    if (!shift) return null;
+    return orientationRef.current === 'horizontal'
+      ? { x: shift, y: 0, scaleX: 1, scaleY: 1 }
+      : { x: 0, y: shift, scaleX: 1, scaleY: 1 };
+  }, []);
+  const onDragStart = (event: DragStartEvent) => {
+    const dragId = String(event.active.id);
+    const horizontalNow = orientationRef.current === 'horizontal';
+    const activeTab = tabsRef.current.find((tab) => tab.id === dragId);
+    const slots: DragSlot[] = [];
+    if (activeTab) {
+      const pinned = Boolean(activeTab.pinned);
+      for (const tab of tabsRef.current) {
+        if (Boolean(tab.pinned) !== pinned) continue;
+        const node = tabRefs.current.get(tab.id);
+        if (!node) continue;
+        const rect = node.getBoundingClientRect();
+        const start = horizontalNow ? rect.left : rect.top;
+        const size = horizontalNow ? rect.width : rect.height;
+        slots.push({ id: tab.id, mid: start + size / 2 });
+      }
+    }
+    slotsRef.current = slots;
+    overIdRef.current = dragId;
+    pitchRef.current = slots.length >= 2 ? slots[1].mid - slots[0].mid : 0;
+    const activator = event.activatorEvent;
+    const origin = slots.find((slot) => slot.id === dragId);
+    const point = pointerPosition(activator);
+    grabOffsetRef.current = origin && point ? (horizontalNow ? point.x : point.y) - origin.mid : 0;
+  };
   const registerTab = useCallback((id: string, node: HTMLElement | null) => {
     if (node) tabRefs.current.set(id, node);
     else tabRefs.current.delete(id);
@@ -333,6 +380,7 @@ export function WorkspaceTabBar({
     });
   };
   const onDragEnd = (event: DragEndEvent) => {
+    clearDragGeometry();
     suppressClickAfterDrag();
     const { active, over } = event;
     if (!over || active.id === over.id) return;
@@ -389,8 +437,12 @@ export function WorkspaceTabBar({
           announcements: silentAnnouncements,
           screenReaderInstructions: { draggable: '' },
         }}
+        onDragStart={onDragStart}
         onDragEnd={onDragEnd}
-        onDragCancel={suppressClickAfterDrag}
+        onDragCancel={() => {
+          clearDragGeometry();
+          suppressClickAfterDrag();
+        }}
       >
         <ScrollArea
           data-workspace-tab-scroll=""
@@ -402,10 +454,7 @@ export function WorkspaceTabBar({
           }}
           onViewport={onViewport}
         >
-          <SortableContext
-            items={tabs.map((tab) => tab.id)}
-            strategy={horizontal ? horizontalListSortingStrategy : verticalListSortingStrategy}
-          >
+          <SortableContext items={tabs.map((tab) => tab.id)} strategy={sortingStrategy}>
             <div
               role="tablist"
               aria-label={t('workspaceTabs.list')}
