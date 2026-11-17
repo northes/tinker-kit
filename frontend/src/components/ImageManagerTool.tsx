@@ -1542,7 +1542,11 @@ export default function ImageManagerTool({
         <ToolLayoutFooter>
           <div className="flex items-center justify-between gap-3 pt-3">
             <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-[10px] text-muted-foreground">
-              <span>{t('imageManagerTool.filteredSummary', { count: filteredRows.length })}</span>
+              {search.trim() ? (
+                <span>{t('common.foundCount', { total: filteredRows.length })}</span>
+              ) : indexedRows.length > 0 ? (
+                <span>{t('common.itemCount', { total: filteredRows.length })}</span>
+              ) : null}
               <span>
                 {t('imageManagerTool.filteredSize', {
                   size:

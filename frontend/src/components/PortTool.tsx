@@ -71,7 +71,7 @@ import { SSHProfileFormField } from './SSHProfileFormField';
 import { ConfirmDialog } from './ConfirmDialog';
 import { TargetHostManagerDialog, upsertManagerItem } from './TargetHostManagerDialog';
 import {
-  ToolActionBar,
+  ToolActionButton,
   ToolCanceledState,
   ToolEmptyState,
   ToolHeaderField,
@@ -1001,6 +1001,15 @@ export default function PortTool({ active }: { active: boolean }) {
     if (target) void reorderForward(id, target.id);
   };
 
+  // 已提交搜索或任一筛选离开默认值时显示「找到 N 项」；否则只显示可见条数。
+  const portQueryActive =
+    portSearch.trim() !== '' || protocolFilter !== 'all' || userFilter !== 'all';
+  const forwardQueryActive =
+    forwardSearch.trim() !== '' ||
+    directionFilter !== 'all' ||
+    statusFilter !== 'all' ||
+    sourceFilter !== 'all';
+
   const openSourceManager = () => setManageOpen(true);
   const saveSources = async (next: PortSource[]) => {
     if (savingSources) return;
@@ -1268,6 +1277,14 @@ export default function PortTool({ active }: { active: boolean }) {
                   {t('portTool.defaultOrder')}
                 </Button>
               )}
+              <ToolActionButton
+                variant="primary"
+                icon={Plus}
+                label={t('portTool.add')}
+                className="ml-auto"
+                disabled={forwardSourceOptions.length === 0}
+                onPress={() => openForwardForm({ editingId: null, request: newForwardRequest() })}
+              />
             </div>
             <DndContext
               sensors={forwardSensors}
@@ -1369,30 +1386,22 @@ export default function PortTool({ active }: { active: boolean }) {
             {error}
           </p>
         )}
-        <div className="flex flex-wrap items-end justify-between gap-3">
-          <span className="pb-2 text-xs text-muted-foreground">
-            {tab === 'ports'
-              ? t('portTool.results', { matched: visiblePortData.length, total: ports.length })
-              : t('portTool.results', {
-                  matched: visibleForwardData.length,
-                  total: forwards.length,
-                })}
-          </span>
-          {tab === 'forwards' && (
-            <ToolActionBar
-              label={t('portTool.actions')}
-              actions={[
-                {
-                  key: 'add',
-                  label: t('portTool.add'),
-                  icon: Plus,
-                  variant: 'primary',
-                  disabled: forwardSourceOptions.length === 0,
-                  onPress: () => openForwardForm({ editingId: null, request: newForwardRequest() }),
-                },
-              ]}
-            />
-          )}
+        <div className="flex items-center justify-between gap-3 pt-3">
+          <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-[10px] text-muted-foreground">
+            <span>
+              {tab === 'ports'
+                ? portQueryActive
+                  ? t('common.foundCount', { total: visiblePortData.length })
+                  : ports.length
+                    ? t('common.itemCount', { total: visiblePortData.length })
+                    : ''
+                : forwardQueryActive
+                  ? t('common.foundCount', { total: visibleForwardData.length })
+                  : forwards.length
+                    ? t('common.itemCount', { total: visibleForwardData.length })
+                    : ''}
+            </span>
+          </div>
         </div>
       </ToolLayoutFooter>
       <Dialog

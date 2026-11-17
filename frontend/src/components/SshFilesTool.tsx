@@ -2179,9 +2179,9 @@ export default function SshFilesTool({ active, locate = null }: Props) {
           <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-[10px] text-muted-foreground">
             <span>
               {searchActive
-                ? t('sshFilesTool.searchResultCount', { count: entries.length })
+                ? t('common.foundCount', { total: entries.length })
                 : entries.length
-                  ? t('sshFilesTool.itemCount', { count: entries.length })
+                  ? t('common.itemCount', { total: entries.length })
                   : ''}
             </span>
             {activeTasks.length > 0 || tasks.length > 0 ? (
