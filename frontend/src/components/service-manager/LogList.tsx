@@ -250,7 +250,7 @@ function LogText({
           type="button"
           aria-expanded={expanded}
           aria-controls={contentId}
-          className="mt-0.5 text-[11px] text-primary hover:underline"
+          className="mt-0.5 text-[11px] text-primary outline-none hover:underline focus-visible:ring-3 focus-visible:ring-ring/50"
           onClick={() => setExpanded((current) => !current)}
         >
           {expanded

@@ -508,7 +508,7 @@ export default function RealTimePanel({
                     })}
                     role="button"
                     tabIndex={0}
-                    className="cursor-pointer"
+                    className="group/clock cursor-pointer"
                     onPointerDown={(event) => event.stopPropagation()}
                     onClick={() => locateClock(clock)}
                     onKeyDown={(event) => {
@@ -547,6 +547,14 @@ export default function RealTimePanel({
                       </circle>
                     )}
                     <circle cy="0" r="5" fill="currentColor" className="text-primary" />
+                    {/* SVG 不支持 box-shadow 焦点环，用独立圆环跟随键盘焦点。 */}
+                    <circle
+                      r="7"
+                      fill="none"
+                      stroke="currentColor"
+                      className="pointer-events-none text-ring opacity-0 transition-opacity group-focus-visible/clock:opacity-100"
+                      strokeWidth={2}
+                    />
                     <text
                       x="8"
                       y="-7"
