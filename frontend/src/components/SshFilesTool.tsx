@@ -1590,7 +1590,7 @@ export default function SshFilesTool({ active, locate = null }: Props) {
                     <span key={crumb.path} className="flex items-center whitespace-nowrap">
                       <button
                         type="button"
-                        className={`cursor-pointer rounded px-1.5 py-1 hover:bg-accent hover:text-foreground ${index === breadcrumbs.length - 1 ? 'font-medium text-foreground' : 'text-muted-foreground'}`}
+                        className={`cursor-pointer rounded px-1.5 py-1 hover:bg-accent hover:text-foreground ${index === breadcrumbs.length - 1 ? 'font-medium text-foreground' : 'text-muted-foreground'} outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50`}
                         disabled={!sourceUsable || isLoading}
                         aria-current={index === breadcrumbs.length - 1 ? 'page' : undefined}
                         onClick={() => navigate(crumb.path)}
@@ -1918,7 +1918,7 @@ export default function SshFilesTool({ active, locate = null }: Props) {
                               <div className="min-w-0 max-w-full">
                                 <button
                                   type="button"
-                                  className="flex w-full min-w-0 max-w-full items-center gap-2 text-left text-foreground hover:underline"
+                                  className="flex w-full min-w-0 max-w-full items-center gap-2 text-left text-foreground outline-none hover:underline focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
                                   title={entry.path}
                                   onClick={() =>
                                     entry.isDir
@@ -1953,7 +1953,7 @@ export default function SshFilesTool({ active, locate = null }: Props) {
                                 {parentPath ? (
                                   <button
                                     type="button"
-                                    className="block w-full min-w-0 max-w-full truncate text-left text-[10px] text-muted-foreground hover:text-foreground hover:underline"
+                                    className="block w-full min-w-0 max-w-full truncate text-left text-[10px] text-muted-foreground outline-none hover:text-foreground hover:underline focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
                                     title={parentPath}
                                     onClick={() => navigate(parentPath)}
                                   >
@@ -1972,14 +1972,16 @@ export default function SshFilesTool({ active, locate = null }: Props) {
                                 ) : sizeValues[entry.path] !== undefined ? (
                                   formatBytes(sizeValues[entry.path])
                                 ) : (
-                                  <button
+                                  <Button
                                     type="button"
-                                    className="text-primary underline underline-offset-2"
+                                    variant="link"
+                                    size="xs"
+                                    className="h-auto p-0 underline underline-offset-2"
                                     disabled={calculatingSizePaths.has(entry.path)}
                                     onClick={() => void calculateSize(entry)}
                                   >
                                     {t('sshFilesTool.calculate')}
-                                  </button>
+                                  </Button>
                                 )
                               ) : (
                                 formatBytes(entry.size)
@@ -2185,7 +2187,7 @@ export default function SshFilesTool({ active, locate = null }: Props) {
             {activeTasks.length > 0 || tasks.length > 0 ? (
               <button
                 type="button"
-                className="inline-flex items-center gap-2 text-left text-muted-foreground hover:text-foreground"
+                className="inline-flex items-center gap-2 text-left text-muted-foreground hover:text-foreground outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
                 onClick={() => openTaskCenter('ssh-files')}
                 aria-label={t('sshFilesTool.tasksTitle')}
               >
