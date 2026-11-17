@@ -45,6 +45,7 @@ import {
   ToolHeaderField,
   ToolLayoutToolbar,
   toolHeaderControlClassName,
+  useFocusOnActivate,
   type PendingAction,
 } from './shared';
 import {
@@ -95,6 +96,7 @@ export default function TextGeneratorTool({
   const [editing, setEditing] = useState<TextGeneratorSource | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<TextGeneratorSource | null>(null);
   const consumed = useRef<PendingAction | null>(null);
+  const outputRef = useRef<HTMLTextAreaElement>(null);
   const selectedCustom = source.startsWith('custom:')
     ? sources.find((item) => item.id === source.slice(7))
     : undefined;
@@ -131,6 +133,15 @@ export default function TextGeneratorTool({
     () => items.map((item) => quoteValue(item, quote)).join(parseSeparator(separator)),
     [items, quote, separator],
   );
+
+  // 本工具没有主输入：激活时聚焦只读结果，不可见则放弃。
+  useFocusOnActivate(active, () => {
+    const el = outputRef.current;
+    if (!el) return false;
+    if (typeof el.checkVisibility === 'function' && !el.checkVisibility()) return true;
+    el.focus();
+    return true;
+  });
 
   const generate = () => {
     if (source === 'charset' && sets.length === 0) {
@@ -360,6 +371,7 @@ export default function TextGeneratorTool({
         />
         <ToolLayoutContent className="py-1">
           <Textarea
+            ref={outputRef}
             readOnly
             value={output}
             placeholder={t('textGeneratorTool.outputPlaceholder')}
