@@ -189,7 +189,8 @@ func main() {
 		DisableResize:    false,
 		EnableFileDrop:   true,
 		DevToolsEnabled:  devToolsEnabled,
-		BackgroundColour: application.NewRGB(17, 17, 19),
+		// 默认深色主题的窗底，必须与 globals.css 深色 --chrome（oklch(0.22 0 0)）一致。
+		BackgroundColour: application.NewRGB(27, 27, 27),
 		URL:              "/",
 		Mac: application.MacWindow{
 			Appearance: application.NSAppearanceNameDarkAqua,

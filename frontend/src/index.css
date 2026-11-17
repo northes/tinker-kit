@@ -17,6 +17,7 @@
   --radius-3xl: calc(var(--radius) * 2.2);
   --radius-4xl: calc(var(--radius) * 2.6);
   --color-background: var(--background);
+  --color-chrome: var(--chrome);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
   --color-card-foreground: var(--card-foreground);
@@ -75,7 +76,7 @@
     @apply border-border outline-ring/50;
   }
   body {
-    background-color: var(--background);
+    background-color: var(--chrome);
     color: var(--foreground);
   }
   .app-shell ::selection {

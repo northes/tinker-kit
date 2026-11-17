@@ -218,8 +218,8 @@ function WorkspaceTabItem({
                 isDragging
                   ? 'via-accent to-accent'
                   : current
-                    ? 'via-muted to-muted'
-                    : 'via-background to-background',
+                    ? 'via-background to-background'
+                    : 'via-chrome to-chrome',
                 closeButton === 'always' || current
                   ? 'pointer-events-auto opacity-100'
                   : 'pointer-events-none opacity-0 group-hover/tab:pointer-events-auto group-hover/tab:opacity-100 group-focus-within/tab:pointer-events-auto group-focus-within/tab:opacity-100 [@media(pointer:coarse)]:pointer-events-auto [@media(pointer:coarse)]:opacity-100',
@@ -497,7 +497,7 @@ export function WorkspaceTabBar({
                   data-workspace-tab-highlight-reduced={
                     tabHighlightReduced ? '' : undefined
                   }
-                  className="pointer-events-none absolute top-0 left-0 -z-10 rounded-md bg-muted"
+                  className="pointer-events-none absolute top-0 left-0 -z-10 rounded-md bg-background"
                   style={{
                     width: activeHighlight.width,
                     height: activeHighlight.height,

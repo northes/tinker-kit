@@ -1,4 +1,4 @@
-import { Clipboard, Events } from '@wailsio/runtime';
+import { Clipboard, Events, Window } from '@wailsio/runtime';
 import type { SetStateAction } from 'react';
 import {
   lazy,
@@ -512,6 +512,11 @@ function AppShell() {
     root.style.colorScheme = dark ? 'dark' : 'light';
     root.style.setProperty('--code-editor-font-size', `${settings.codeEditorFontSize || 16}px`);
     root.dataset.showTabIcons = settings.showTabIcons ? 'true' : 'false';
+    // 27,27,27 与 235,235,235 必须和 globals.css 的 --chrome 一致：深色 oklch(0.22 0 0)，浅色 oklch(0.94 0 0)。
+    const [r, g, b] = dark ? [27, 27, 27] : [235, 235, 235];
+    void Window.SetBackgroundColour(r, g, b, 255).catch((error: unknown) => {
+      console.error(error);
+    });
   }, [theme, settings.codeEditorFontSize, settings.showTabIcons]);
   useEffect(() => {
     const media = window.matchMedia('(prefers-color-scheme: dark)');
@@ -1152,10 +1157,12 @@ function AppShell() {
         onSettingsChange={(patch) => setSettings((current) => ({ ...current, ...patch }))}
         onLocateFileTarget={locateSshUploadTarget}
       />
-      <div className="app-shell relative grid h-dvh grid-rows-[var(--app-titlebar-height)_minmax(0,1fr)] bg-background">
-        <div className="ambient pointer-events-none absolute inset-0 z-0" />
+      <div
+        className="app-shell relative grid h-dvh grid-rows-[var(--app-titlebar-height)_minmax(0,1fr)] bg-chrome [--wails-draggable:drag]"
+        data-wails-drag
+      >
         <header
-          className="relative z-[2] flex h-full min-w-0 cursor-default items-center border-b border-border bg-background pl-(--workspace-traffic-inset) [--wails-draggable:drag]"
+          className="relative z-[2] flex h-full min-w-0 cursor-default items-center bg-chrome pl-(--workspace-traffic-inset) [--wails-draggable:drag]"
           data-wails-drag
         >
           {tabBar}
@@ -1163,9 +1170,10 @@ function AppShell() {
             <UpdatePill />
           </div>
         </header>
-        <div className="relative z-[1] min-h-0 min-w-0">
+        {/* 左、右、底 8px 缝在 padding 上，不设 no-drag，才能拖窗口。 */}
+        <div className="relative z-[1] min-h-0 min-w-0 px-2 pb-2">
           <main
-            className="workspace relative h-full min-h-0 w-full overflow-hidden bg-background"
+            className="workspace relative h-full min-h-0 w-full overflow-hidden rounded-xl bg-background [--wails-draggable:no-drag]"
             ref={workspaceElRef}
           >
             {workspace.tabs.map((tab) => (
