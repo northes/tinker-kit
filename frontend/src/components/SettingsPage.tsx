@@ -1015,19 +1015,6 @@ export default function SettingsPage({
               <SettingsGroup title={t('settings.workspace')}>
                 <div className="flex flex-col gap-3">
                   <ChoiceGroup
-                    label={t('settings.tabOrientation')}
-                    value={
-                      settings.tabOrientation === 'vertical' ? 'vertical' : 'horizontal'
-                    }
-                    options={[
-                      { id: 'horizontal', label: t('settings.tabOrientationHorizontal') },
-                      { id: 'vertical', label: t('settings.tabOrientationVertical') },
-                    ]}
-                    onChange={(tabOrientation) =>
-                      setSettings((current) => ({ ...current, tabOrientation }))
-                    }
-                  />
-                  <ChoiceGroup
                     label={t('settings.tabCloseActivation')}
                     value={
                       settings.tabCloseActivation === 'previous' ||
@@ -1097,7 +1084,6 @@ export default function SettingsPage({
                         onChange={(value) => update('trayMatchEnabled', value)}
                       />
                     </Setting>
-
                   </div>
                   {settings.trayMatchEnabled ? (
                     <div className="flex flex-col gap-3 border-t border-border pt-3">

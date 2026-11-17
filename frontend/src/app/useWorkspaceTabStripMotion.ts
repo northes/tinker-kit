@@ -1,7 +1,6 @@
 import { useLayoutEffect, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
 import type { RefObject } from 'react';
-import type { TabOrientation } from './workspace-tabs';
 
 /** 与 foundation.css 的 --motion-slide-duration 对齐，多留一点再摘掉过渡。 */
 const SLIDE_CLEAR_MS = 280;
@@ -34,7 +33,7 @@ function tabSurface(node: HTMLElement | undefined) {
   return node?.querySelector<HTMLElement>('[data-workspace-tab-surface]') ?? null;
 }
 
-function axisOfTransform(transform: string, horizontal: boolean) {
+function axisOfTransform(transform: string) {
   if (!transform || transform === 'none') return 0;
   const matrix3d = transform.startsWith('matrix3d(');
   const matrix = transform.startsWith('matrix(');
@@ -43,7 +42,7 @@ function axisOfTransform(transform: string, horizontal: boolean) {
     .slice(transform.indexOf('(') + 1, -1)
     .split(',')
     .map((part) => Number(part.trim()));
-  const value = matrix3d ? parts[horizontal ? 12 : 13] : parts[horizontal ? 4 : 5];
+  const value = matrix3d ? parts[12] : parts[4];
   return Number.isFinite(value) ? value : 0;
 }
 
@@ -67,7 +66,6 @@ function slidingIds(shifts: ReadonlyMap<string, number>, entering: ReadonlySet<s
 
 export function useWorkspaceTabStripMotion({
   tabIds,
-  orientation,
   tabNodes,
   listRef,
   viewportRef,
@@ -75,7 +73,6 @@ export function useWorkspaceTabStripMotion({
   dragging,
 }: {
   tabIds: readonly string[];
-  orientation: TabOrientation;
   tabNodes: RefObject<Map<string, HTMLElement>>;
   listRef: RefObject<HTMLElement | null>;
   viewportRef: RefObject<HTMLElement | null>;
@@ -119,7 +116,7 @@ export function useWorkspaceTabStripMotion({
       } else if (sameIdSet(prevIds, ids)) {
         prevIdsRef.current = ids.slice();
         prevRectsRef.current = currentRects;
-        // 同一批标签的换序或改方向不补位。拖拽换序交给 dnd-kit，并清掉还在播的开合。
+        // 同一批标签换序不补位。拖拽换序交给 dnd-kit，并清掉还在播的开合。
         generationRef.current += 1;
         setMotion((current) => (current ? null : current));
       } else {
@@ -128,7 +125,6 @@ export function useWorkspaceTabStripMotion({
         const removed = prevIds.some((id) => !nextSet.has(id));
         const entering = new Set(ids.filter((id) => !prevSet.has(id)));
         const shifts = new Map<string, number>();
-        const horizontal = orientation === 'horizontal';
 
         if (removed) {
           for (const id of ids) {
@@ -137,10 +133,8 @@ export function useWorkspaceTabStripMotion({
             const next = currentRects.get(id);
             if (!prev || !next) continue;
             const surface = tabSurface(nodes.get(id));
-            const held = surface
-              ? axisOfTransform(getComputedStyle(surface).transform, horizontal)
-              : 0;
-            const delta = (horizontal ? prev.x - next.x : prev.y - next.y) + held;
+            const held = surface ? axisOfTransform(getComputedStyle(surface).transform) : 0;
+            const delta = prev.x - next.x + held;
             if (Math.abs(delta) >= SHIFT_EPSILON) shifts.set(id, delta);
           }
         }
@@ -193,7 +187,7 @@ export function useWorkspaceTabStripMotion({
       }
     }
     return cancelScheduled;
-  }, [draggingRef, idKey, listRef, orientation, tabNodes]);
+  }, [draggingRef, idKey, listRef, tabNodes]);
 
   useLayoutEffect(() => {
     if (!dragging) return;

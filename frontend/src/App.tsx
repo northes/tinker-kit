@@ -36,7 +36,6 @@ import {
 } from './app/definitions';
 import { isToolId, paletteToolId, resolveSidebarTools, routePath } from './app/navigation';
 import { buildIndex } from './app/palette-search';
-import { TabStripResizer } from './app/TabStripResizer';
 import { workspaceTabBaseName, WorkspaceTabBar } from './app/WorkspaceTabBar';
 import {
   activateTab,
@@ -51,12 +50,9 @@ import {
   openToolTab,
   parseTabCloseActivation,
   parseTabCloseButton,
-  parseTabOrientation,
-  parseTabStripWidth,
   reorderWorkspaceTabs,
   setTabCustomTitle,
   startupWorkspace,
-  TAB_STRIP_FOCUS_PADDING,
   tabOrdinalLabel,
   toggleTabPin,
   visiblePaletteCommands,
@@ -671,21 +667,6 @@ function AppShell() {
     [resolvedSidebarTools],
   );
   const enabledToolSet = useMemo(() => new Set(enabledToolIds), [enabledToolIds]);
-  const orientation = parseTabOrientation(settings.tabOrientation);
-  const horizontal = orientation === 'horizontal';
-  // 拖动过程中先用预览值，松手才写回设置，避免每帧都触发配置保存。
-  const [stripPreview, setStripPreview] = useState<number | null>(null);
-  const tabStripWidth = stripPreview ?? parseTabStripWidth(settings.tabStripWidth);
-  useLayoutEffect(() => {
-    const root = document.documentElement;
-    if (horizontal) {
-      root.style.removeProperty('--workspace-tab-strip');
-      root.style.removeProperty('--workspace-tab-width');
-      return;
-    }
-    root.style.setProperty('--workspace-tab-strip', `${tabStripWidth}px`);
-    root.style.setProperty('--workspace-tab-width', `${tabStripWidth - TAB_STRIP_FOCUS_PADDING}px`);
-  }, [horizontal, tabStripWidth]);
   const toolTabCounts = useMemo(() => {
     const counts: Record<string, number> = {};
     for (const tab of workspace.tabs) {
@@ -1146,7 +1127,6 @@ function AppShell() {
   };
   const tabBar = (
     <WorkspaceTabBar
-      orientation={orientation}
       tabs={workspace.tabs}
       activeId={workspace.activeId}
       showIcons={settings.showTabIcons === true}
@@ -1172,49 +1152,18 @@ function AppShell() {
         onSettingsChange={(patch) => setSettings((current) => ({ ...current, ...patch }))}
         onLocateFileTarget={locateSshUploadTarget}
       />
-      <div
-        className={`app-shell relative h-dvh bg-background ${horizontal ? 'grid grid-rows-[var(--app-titlebar-height)_minmax(0,1fr)]' : 'grid grid-cols-[var(--workspace-tab-strip)_minmax(0,1fr)]'}`}
-      >
+      <div className="app-shell relative grid h-dvh grid-rows-[var(--app-titlebar-height)_minmax(0,1fr)] bg-background">
         <div className="ambient pointer-events-none absolute inset-0 z-0" />
-        {horizontal ? (
-          <header
-            className="relative z-[2] flex h-full min-w-0 cursor-default items-center border-b border-border bg-background pl-(--workspace-traffic-inset) [--wails-draggable:drag]"
-            data-wails-drag
-          >
-            {tabBar}
-            <div className="flex min-w-0 items-center pr-3 [&>*]:max-w-full">
-              <UpdatePill />
-            </div>
-          </header>
-        ) : (
-          <aside
-            className="relative z-[2] flex h-full min-h-0 w-(--workspace-tab-strip) cursor-default flex-col border-r border-border bg-background [--wails-draggable:drag]"
-            data-wails-drag
-          >
-            <div className="h-(--workspace-traffic-block) shrink-0" />
-            {tabBar}
-            <TabStripResizer
-              width={tabStripWidth}
-              onPreview={setStripPreview}
-              onCommit={(width) => {
-                setStripPreview(null);
-                setSettings((current) => ({ ...current, tabStripWidth: width }));
-              }}
-            />
-          </aside>
-        )}
+        <header
+          className="relative z-[2] flex h-full min-w-0 cursor-default items-center border-b border-border bg-background pl-(--workspace-traffic-inset) [--wails-draggable:drag]"
+          data-wails-drag
+        >
+          {tabBar}
+          <div className="flex min-w-0 items-center pr-3 [&>*]:max-w-full">
+            <UpdatePill />
+          </div>
+        </header>
         <div className="relative z-[1] min-h-0 min-w-0">
-          {horizontal ? null : (
-            <>
-              <div
-                className="absolute inset-x-0 top-0 z-20 h-(--app-titlebar-height) cursor-default [--wails-draggable:drag]"
-                data-wails-drag
-              />
-              <div className="absolute top-1.5 right-3 z-30 max-w-[min(340px,40vw)]">
-                <UpdatePill />
-              </div>
-            </>
-          )}
           <main
             className="workspace relative h-full min-h-0 w-full overflow-hidden bg-background"
             ref={workspaceElRef}

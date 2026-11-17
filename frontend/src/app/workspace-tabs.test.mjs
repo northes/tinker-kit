@@ -7,24 +7,18 @@ import {
   closeTabs,
   convertBlankTabToTool,
   cycleTabs,
-  DEFAULT_TAB_STRIP_WIDTH,
   emptyWorkspace,
-  MAX_TAB_STRIP_WIDTH,
-  MIN_TAB_STRIP_WIDTH,
   openBlankTab,
   openOrFocusSettings,
   openToolTab,
   parseTabCloseActivation,
   parseTabCloseButton,
-  parseTabOrientation,
-  parseTabStripWidth,
   nextDragOverId,
   reorderWorkspaceTabs,
   setTabCustomTitle,
   tabDragShift,
   sortTabsForDisplay,
   startupWorkspace,
-  TAB_STRIP_FOCUS_PADDING,
   tabOrdinalLabel,
   toggleTabPin,
   visiblePaletteCommands,
@@ -45,25 +39,11 @@ const commands = [
 ];
 
 test('非法标签偏好回退默认值', () => {
-  assert.equal(parseTabOrientation('vertical'), 'vertical');
-  assert.equal(parseTabOrientation('nope'), 'horizontal');
-  assert.equal(parseTabOrientation(undefined), 'horizontal');
   assert.equal(parseTabCloseActivation('previous'), 'previous');
   assert.equal(parseTabCloseActivation(''), 'recent');
   assert.equal(parseTabCloseButton('hover'), 'hover');
   assert.equal(parseTabCloseButton('always'), 'always');
   assert.equal(parseTabCloseButton('bad'), 'always');
-});
-
-test('纵向标签条宽度夹在 140–360，缺失或越界回退默认值', () => {
-  assert.equal(DEFAULT_TAB_STRIP_WIDTH, 176);
-  assert.equal(parseTabStripWidth(undefined), 176);
-  assert.equal(parseTabStripWidth(0), 176);
-  assert.equal(parseTabStripWidth(Number.NaN), 176);
-  assert.equal(parseTabStripWidth(120), MIN_TAB_STRIP_WIDTH);
-  assert.equal(parseTabStripWidth(400), MAX_TAB_STRIP_WIDTH);
-  assert.equal(parseTabStripWidth(220.4), 220);
-  assert.equal(TAB_STRIP_FOCUS_PADDING, 8);
 });
 
 test('该工具标签全部关掉后再开，序号从 1 重新计', () => {

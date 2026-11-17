@@ -3,7 +3,6 @@
 
 export const BLANK_TAB_KEY = '__blank__';
 
-export type TabOrientation = 'horizontal' | 'vertical';
 export type TabCloseActivation = 'previous' | 'next' | 'recent';
 export type TabCloseButton = 'always' | 'hover' | 'never';
 
@@ -46,37 +45,12 @@ export function startupWorkspace(): WorkspaceState {
   return openBlankTab(emptyWorkspace()).state;
 }
 
-export function parseTabOrientation(value: string | null | undefined): TabOrientation {
-  return value === 'vertical' ? 'vertical' : 'horizontal';
-}
-
 export function parseTabCloseActivation(value: string | null | undefined): TabCloseActivation {
   return value === 'previous' || value === 'next' ? value : 'recent';
 }
 
 export function parseTabCloseButton(value: string | null | undefined): TabCloseButton {
   return value === 'hover' || value === 'never' ? value : 'always';
-}
-
-// 纵向标签条宽度：拖动范围与默认值，与 configservice.go 的同名常量保持一致。
-export const DEFAULT_TAB_STRIP_WIDTH = 176;
-export const MIN_TAB_STRIP_WIDTH = 140;
-export const MAX_TAB_STRIP_WIDTH = 360;
-// 标签条宽度本身就包含 ScrollArea 为焦点环留的 8px，标签宽度要扣掉。
-export const TAB_STRIP_FOCUS_PADDING = 8;
-
-export function clampTabStripWidth(width: number) {
-  if (!Number.isFinite(width)) return DEFAULT_TAB_STRIP_WIDTH;
-  const rounded = Math.round(width);
-  if (rounded < MIN_TAB_STRIP_WIDTH) return MIN_TAB_STRIP_WIDTH;
-  if (rounded > MAX_TAB_STRIP_WIDTH) return MAX_TAB_STRIP_WIDTH;
-  return rounded;
-}
-
-export function parseTabStripWidth(value: number | null | undefined) {
-  if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0)
-    return DEFAULT_TAB_STRIP_WIDTH;
-  return clampTabStripWidth(value);
 }
 
 export function tabOrdinalLabel(name: string, ordinal: number) {

@@ -69,28 +69,6 @@ func TestServiceLogCollapseLinesConfig(t *testing.T) {
 	}
 }
 
-func TestTabStripWidthConfig(t *testing.T) {
-	cases := []struct {
-		data string
-		want int
-	}{
-		{`{}`, defaultTabStripWidth},
-		{`{"tabStripWidth":220}`, 220},
-		{`{"tabStripWidth":0}`, defaultTabStripWidth},
-		{`{"tabStripWidth":-10}`, defaultTabStripWidth},
-		{`{"tabStripWidth":1000}`, defaultTabStripWidth},
-	}
-	for _, c := range cases {
-		cfg, err := decodeImportedConfig([]byte(c.data))
-		if err != nil {
-			t.Fatal(err)
-		}
-		if cfg.TabStripWidth != c.want {
-			t.Fatalf("标签条宽度为 %d，期望 %d：%s", cfg.TabStripWidth, c.want, c.data)
-		}
-	}
-}
-
 func TestDecodeImportedConfigFillsDefaultsAndKeepsCredentials(t *testing.T) {
 	cfg, err := decodeImportedConfig([]byte(`{"language":"en-US","sshProfiles":[{"id":"profile-1","name":"prod","origin":"manual","host":"example.com","port":22,"username":"deploy","password":"secret"}]}`))
 	if err != nil {
@@ -153,13 +131,13 @@ func TestReplaceConfigReplacesAllOwnedFieldsAndNotifiesSubscribers(t *testing.T)
 
 	cfg := defaultConfig()
 	cfg.Language = "en-US"
-	cfg.TabOrientation = "vertical"
+	cfg.TabCloseActivation = "previous"
 	cfg.SSHProfiles = []SSHProfile{{ID: "new", Name: "new", Origin: "manual", Host: "new-host", Username: "user", Password: "new-secret", Port: 22}}
 	if err := service.replaceConfig(cfg); err != nil {
 		t.Fatalf("replaceConfig() error = %v", err)
 	}
 	got := service.Get()
-	if len(got.SSHProfiles) != 1 || got.SSHProfiles[0].ID != "new" || got.SSHProfiles[0].Password != "new-secret" || got.TabOrientation != "vertical" {
+	if len(got.SSHProfiles) != 1 || got.SSHProfiles[0].ID != "new" || got.SSHProfiles[0].Password != "new-secret" || got.TabCloseActivation != "previous" {
 		t.Fatalf("configuration was not replaced: %#v", got)
 	}
 	if changes != 2 {

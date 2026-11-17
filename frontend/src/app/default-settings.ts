@@ -18,10 +18,8 @@ export const defaultSettings: Settings = {
   taskChunkConcurrency: 4,
   taskNotificationMode: 'unfocused',
   language: 'zh-CN',
-  tabOrientation: 'horizontal',
   tabCloseActivation: 'recent',
   tabCloseButton: 'always',
-  tabStripWidth: 176,
   showTabIcons: false,
   sidebarTools: [
     { id: 'json', enabled: true },

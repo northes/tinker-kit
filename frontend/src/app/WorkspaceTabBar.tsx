@@ -33,7 +33,6 @@ import {
   workspaceTabLabel,
   type DragSlot,
   type TabCloseButton,
-  type TabOrientation,
   type WorkspaceState,
   type WorkspaceTab,
 } from './workspace-tabs';
@@ -43,10 +42,7 @@ import {
 } from './useWorkspaceTabStripMotion';
 
 // 锁的是碰撞用的位移，不只是画出来的位置。否则垂直抖动会让相邻标签反复成为 over。
-const restrictToTabAxis = (horizontal: boolean): Modifier =>
-  horizontal
-    ? ({ transform }) => ({ ...transform, y: 0 })
-    : ({ transform }) => ({ ...transform, x: 0 });
+const restrictToTabAxis: Modifier = ({ transform }) => ({ ...transform, y: 0 });
 
 function pointerPosition(event: Event) {
   if (!('clientX' in event) || !('clientY' in event)) return null;
@@ -66,22 +62,16 @@ function tabDragPreview(tabs: WorkspaceTab[], activeId: string, overId: string) 
   return next === probe ? null : next.tabs;
 }
 
-function scrollTabIntoView(viewport: HTMLElement, tab: HTMLElement, orientation: TabOrientation) {
+function scrollTabIntoView(viewport: HTMLElement, tab: HTMLElement) {
   const view = viewport.getBoundingClientRect();
   const rect = tab.getBoundingClientRect();
-  if (orientation === 'horizontal') {
-    if (rect.left < view.left) viewport.scrollLeft -= view.left - rect.left;
-    else if (rect.right > view.right) viewport.scrollLeft += rect.right - view.right;
-    return;
-  }
-  if (rect.top < view.top) viewport.scrollTop -= view.top - rect.top;
-  else if (rect.bottom > view.bottom) viewport.scrollTop += rect.bottom - view.bottom;
+  if (rect.left < view.left) viewport.scrollLeft -= view.left - rect.left;
+  else if (rect.right > view.right) viewport.scrollLeft += rect.right - view.right;
 }
 
 function WorkspaceTabItem({
   tab,
   current,
-  horizontal,
   showIcons,
   closeButton,
   canCloseOthers,
@@ -96,7 +86,6 @@ function WorkspaceTabItem({
 }: {
   tab: WorkspaceTab;
   current: boolean;
-  horizontal: boolean;
   showIcons: boolean;
   closeButton: TabCloseButton;
   canCloseOthers: boolean;
@@ -140,12 +129,7 @@ function WorkspaceTabItem({
   const holding = motion?.phase === 'from' || motion?.phase === 'arm';
   const fillDelta =
     !isDragging && sortableShift == null && holding ? motion?.shifts.get(tab.id) : undefined;
-  const fillShift =
-    fillDelta != null
-      ? horizontal
-        ? `translate3d(${fillDelta}px, 0, 0)`
-        : `translate3d(0, ${fillDelta}px, 0)`
-      : undefined;
+  const fillShift = fillDelta != null ? `translate3d(${fillDelta}px, 0, 0)` : undefined;
   const entering = Boolean(!isDragging && holding && motion?.entering.has(tab.id));
   const sliding = Boolean(
     !isDragging &&
@@ -203,7 +187,6 @@ function WorkspaceTabItem({
       >
         <div
           data-workspace-tab-surface=""
-          data-workspace-tab-axis={horizontal ? 'x' : 'y'}
           data-workspace-tab-enter={entering ? '' : undefined}
           data-workspace-tab-motion={sliding ? '' : undefined}
           className={cn(
@@ -258,7 +241,7 @@ function WorkspaceTabItem({
           )}
         </div>
       </ContextMenuTrigger>
-      <ContextMenuContent className="min-w-44" side={horizontal ? 'bottom' : 'right'} align="start">
+      <ContextMenuContent className="min-w-44" side="bottom" align="start">
         <ContextMenuGroup>
           <ContextMenuItem onClick={() => onTogglePin(tab.id)}>
             {tab.pinned ? t('workspaceTabs.unpin') : t('workspaceTabs.pin')}
@@ -300,7 +283,6 @@ export function workspaceTabBaseName(tab: WorkspaceTab, translate: (key: string)
 }
 
 export function WorkspaceTabBar({
-  orientation,
   tabs,
   activeId,
   showIcons,
@@ -313,7 +295,6 @@ export function WorkspaceTabBar({
   onRename,
   onNewTab,
 }: {
-  orientation: TabOrientation;
   tabs: WorkspaceTab[];
   activeId: string | null;
   showIcons: boolean;
@@ -339,10 +320,8 @@ export function WorkspaceTabBar({
   const grabOffsetRef = useRef(0);
   const pitchRef = useRef(0);
   const activeIdRef = useRef(activeId);
-  const orientationRef = useRef(orientation);
   tabsRef.current = tabs;
   activeIdRef.current = activeId;
-  orientationRef.current = orientation;
   const [liveMessage, setLiveMessage] = useState('');
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }));
   // 默认公告会把内部 id 用英文念出来。结果改由下面的 polite 区域播报。
@@ -366,7 +345,7 @@ export function WorkspaceTabBar({
     const pointer = args.pointerCoordinates;
     const slots = slotsRef.current;
     if (!pointer || slots.length === 0) return closestCenter(args);
-    const along = orientationRef.current === 'horizontal' ? pointer.x : pointer.y;
+    const along = pointer.x;
     const next = nextDragOverId(slots, overIdRef.current, along - grabOffsetRef.current);
     if (!next) return [];
     overIdRef.current = next;
@@ -375,9 +354,7 @@ export function WorkspaceTabBar({
   const sortingStrategy = useCallback<SortingStrategy>(({ activeIndex, overIndex, index }) => {
     const shift = tabDragShift(activeIndex, overIndex, index, pitchRef.current);
     if (!shift) return null;
-    return orientationRef.current === 'horizontal'
-      ? { x: shift, y: 0, scaleX: 1, scaleY: 1 }
-      : { x: 0, y: shift, scaleX: 1, scaleY: 1 };
+    return { x: shift, y: 0, scaleX: 1, scaleY: 1 };
   }, []);
   const setDragActive = (active: boolean) => {
     draggingRef.current = active;
@@ -386,7 +363,6 @@ export function WorkspaceTabBar({
   const onDragStart = (event: DragStartEvent) => {
     setDragActive(true);
     const dragId = String(event.active.id);
-    const horizontalNow = orientationRef.current === 'horizontal';
     const activeTab = tabsRef.current.find((tab) => tab.id === dragId);
     const slots: DragSlot[] = [];
     if (activeTab) {
@@ -396,8 +372,8 @@ export function WorkspaceTabBar({
         const node = tabRefs.current.get(tab.id);
         if (!node) continue;
         const rect = node.getBoundingClientRect();
-        const start = horizontalNow ? rect.left : rect.top;
-        const size = horizontalNow ? rect.width : rect.height;
+        const start = rect.left;
+        const size = rect.width;
         slots.push({ id: tab.id, mid: start + size / 2 });
       }
     }
@@ -407,7 +383,7 @@ export function WorkspaceTabBar({
     const activator = event.activatorEvent;
     const origin = slots.find((slot) => slot.id === dragId);
     const point = pointerPosition(activator);
-    grabOffsetRef.current = origin && point ? (horizontalNow ? point.x : point.y) - origin.mid : 0;
+    grabOffsetRef.current = origin && point ? point.x - origin.mid : 0;
   };
   const registerTab = useCallback((id: string, node: HTMLElement | null) => {
     if (node) tabRefs.current.set(id, node);
@@ -447,21 +423,17 @@ export function WorkspaceTabBar({
     viewportRef.current = viewport;
     const id = activeIdRef.current;
     const tab = id ? tabRefs.current.get(id) : undefined;
-    if (viewport && tab) scrollTabIntoView(viewport, tab, orientationRef.current);
+    if (viewport && tab) scrollTabIntoView(viewport, tab);
   }, []);
-  const horizontal = orientation === 'horizontal';
-  const axisModifier = useMemo(() => restrictToTabAxis(horizontal), [horizontal]);
-
   useLayoutEffect(() => {
     const viewport = viewportRef.current;
     const tab = activeId ? tabRefs.current.get(activeId) : undefined;
     if (!viewport || !tab) return;
-    scrollTabIntoView(viewport, tab, orientation);
-  }, [activeId, orientation, tabs]);
+    scrollTabIntoView(viewport, tab);
+  }, [activeId, tabs]);
 
   const tabMotion = useWorkspaceTabStripMotion({
     tabIds: tabs.map((tab) => tab.id),
-    orientation,
     tabNodes: tabRefs,
     listRef,
     viewportRef,
@@ -470,16 +442,11 @@ export function WorkspaceTabBar({
   });
 
   return (
-    <div
-      className={cn(
-        'flex min-h-0 min-w-0',
-        horizontal ? 'h-full flex-1 items-center' : 'min-h-0 flex-1 flex-col',
-      )}
-    >
+    <div className="flex h-full min-h-0 min-w-0 flex-1 items-center">
       <DndContext
         sensors={sensors}
         collisionDetection={collisionDetection}
-        modifiers={[axisModifier]}
+        modifiers={[restrictToTabAxis]}
         // 拖动时只有 transform，布局盒不变。WhileDragging 会按帧重测并读 computed style，造成掉帧。
         measuring={{ droppable: { strategy: MeasuringStrategy.BeforeDragging } }}
         // OverlayScrollbars 的 viewport 和 dnd-kit 自动滚动会抢标签条，拖动时不自动滚。
@@ -498,11 +465,11 @@ export function WorkspaceTabBar({
       >
         <ScrollArea
           data-workspace-tab-scroll=""
-          className={cn('min-h-0 min-w-0', horizontal ? 'h-full flex-1' : 'w-full flex-1')}
-          scrollFade={horizontal ? 'x' : 'y'}
+          className="h-full min-h-0 min-w-0 flex-1"
+          scrollFade="x"
           options={{
-            overflow: horizontal ? { y: 'hidden' } : { x: 'hidden' },
-            scrollbars: horizontal ? { visibility: 'hidden' } : undefined,
+            overflow: { y: 'hidden' },
+            scrollbars: { visibility: 'hidden' },
           }}
           onViewport={onViewport}
         >
@@ -511,14 +478,13 @@ export function WorkspaceTabBar({
               ref={listRef}
               role="tablist"
               aria-label={t('workspaceTabs.list')}
-              className={cn('flex gap-1', horizontal ? 'h-full items-center' : 'flex-col')}
+              className="flex h-full items-center gap-1"
             >
               {tabs.map((tab) => (
                 <WorkspaceTabItem
                   key={tab.id}
                   tab={tab}
                   current={tab.id === activeId}
-                  horizontal={horizontal}
                   showIcons={showIcons}
                   closeButton={closeButton}
                   canCloseOthers={tabs.some((item) => item.id !== tab.id && !item.pinned)}
@@ -539,12 +505,7 @@ export function WorkspaceTabBar({
       <div aria-live="polite" className="sr-only">
         {liveMessage}
       </div>
-      <div
-        className={cn(
-          'flex flex-none [--wails-draggable:no-drag]',
-          horizontal ? 'px-1' : 'justify-center py-1',
-        )}
-      >
+      <div className="flex flex-none px-1 [--wails-draggable:no-drag]">
         <Button
           variant="ghost"
           size="icon-sm"

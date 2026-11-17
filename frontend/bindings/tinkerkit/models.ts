@@ -20,11 +20,6 @@ export interface Config {
     "language": string;
 
     /**
-     * TabOrientation 是标签条方向：horizontal（顶部）或 vertical（左侧）。
-     */
-    "tabOrientation": string;
-
-    /**
      * TabCloseActivation 是关掉当前标签后激活哪一个：previous、next 或 recent。
      */
     "tabCloseActivation": string;
@@ -33,11 +28,6 @@ export interface Config {
      * TabCloseButton 是关闭按钮可见方式：always、hover 或 never。
      */
     "tabCloseButton": string;
-
-    /**
-     * TabStripWidth 是纵向标签条的宽度（px，含焦点环留白），只影响纵向排列。
-     */
-    "tabStripWidth": number;
 
     /**
      * ShowTabIcons 为真时，标签在名称左侧显示图标，全部标签使用同一档更宽的宽度。

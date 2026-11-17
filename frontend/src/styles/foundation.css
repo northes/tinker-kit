@@ -3,14 +3,9 @@
   --app-titlebar-pad-left: 76px;
   --app-titlebar-item-offset: 1px;
   --app-titlebar-toggle-offset: 1px;
-  /* 标签宽度。横向用固定宽度：无图标一档；打开图标后全部标签加宽同一截。竖向由
-     设置里的 tabStripWidth 驱动（140–360，可拖动），标签宽度等于标签条宽度减去
-     ScrollArea 为焦点环预留的 8px，因此 --workspace-tab-strip 只是首帧回退值，
-     取设置默认值 tabStripWidth（176），与横向标签宽度无关。 */
+  /* 标签宽度。无图标一档；打开图标后全部标签加宽同一截。 */
   --workspace-tab-width: 128px;
-  --workspace-tab-strip: 176px;
   --workspace-traffic-inset: 0px;
-  --workspace-traffic-block: 0px;
   --code-editor-font-size: 16px;
   --native-scrollbar-size: 4px;
   /* OverlayScrollbars 命中区；滑块视觉宽度为 size 减去两侧 --os-padding-perpendicular。 */
@@ -39,7 +34,6 @@
 }
 :root[data-window-controls='traffic-lights'] {
   --workspace-traffic-inset: var(--app-titlebar-pad-left);
-  --workspace-traffic-block: var(--app-titlebar-height);
 }
 .cm-content,
 .cm-content * {
@@ -116,21 +110,8 @@ textarea,
   --os-handle-bg-hover: color-mix(in oklch, var(--muted-foreground) 68%, transparent);
   --os-handle-bg-active: color-mix(in oklch, var(--muted-foreground) 68%, transparent);
 }
-/* 工作区标签条：侧栏竖向仍用 Overlay 滑块，但收细、弱化，避免抢标签注意力。 */
-[data-workspace-tab-scroll] .os-scrollbar {
-  --os-size: 6px;
-  --os-padding-perpendicular: 2px;
-  --os-padding-axis: 2px;
-  --os-handle-min-size: 20px;
-  --os-handle-bg: color-mix(in oklch, var(--muted-foreground) 30%, transparent);
-  --os-handle-bg-hover: color-mix(in oklch, var(--muted-foreground) 50%, transparent);
-  --os-handle-bg-active: color-mix(in oklch, var(--muted-foreground) 50%, transparent);
-}
 [data-workspace-tab-scroll].scroll-fade-x {
   --scroll-fade-size: 20px;
-}
-[data-workspace-tab-scroll].scroll-fade-y {
-  --scroll-fade-size: 16px;
 }
 /* 标签切换改真实 DOM，不用 document view transition。
    主题转场的 ::view-transition-old(root) 会把整页旧快照盖住约 750ms，
@@ -170,12 +151,7 @@ textarea,
   }
   [data-workspace-tab-surface][data-workspace-tab-enter] {
     opacity: 0;
-  }
-  [data-workspace-tab-surface][data-workspace-tab-axis='x'][data-workspace-tab-enter] {
     transform: translate3d(6px, 0, 0) scale(0.96);
-  }
-  [data-workspace-tab-surface][data-workspace-tab-axis='y'][data-workspace-tab-enter] {
-    transform: translate3d(0, 6px, 0) scale(0.96);
   }
 }
 /* ScrollArea.scrollFade：按滚动偏移在可滚动方向边缘渐隐内容。 */
