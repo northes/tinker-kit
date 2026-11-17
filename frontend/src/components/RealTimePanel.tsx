@@ -508,7 +508,7 @@ export default function RealTimePanel({
                     })}
                     role="button"
                     tabIndex={0}
-                    className="group/clock cursor-pointer"
+                    className="group/clock cursor-pointer outline-none"
                     onPointerDown={(event) => event.stopPropagation()}
                     onClick={() => locateClock(clock)}
                     onKeyDown={(event) => {
