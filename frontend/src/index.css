@@ -74,6 +74,11 @@
   * {
     @apply border-border outline-ring/50;
   }
+  /* 焦点环统一走主题色：没写自己焦点样式的元素不要退回 WebKit 的蓝色系统环。 */
+  :focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+  }
   body {
     background-color: var(--background);
     color: var(--foreground);
