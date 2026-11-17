@@ -43,6 +43,7 @@ import {
   ToolLayoutFooter,
   ToolLayoutToolbar,
   toolHeaderControlClassName,
+  useFocusOnActivate,
 } from './shared';
 import { Input } from './ui/input';
 import { Switch } from './ui/switch';
@@ -280,6 +281,7 @@ export default function NetworkTestTool({
   const [testStartedAt, setTestStartedAt] = useState(0);
   const [now, setNow] = useState(Date.now());
   const activeRunID = useRef('');
+  const targetRef = useRef<HTMLInputElement>(null);
   const stageMap = useRef(new Map<string, NetworkTestStage>());
   const settingsRef = useRef(networkSettings);
   const persistedSettingsRef = useRef(defaultNetworkTestSettings);
@@ -493,6 +495,16 @@ export default function NetworkTestTool({
       .then((items) => setInterfaces(items ?? []))
       .catch(() => setInterfaces([]));
   }, [active]);
+
+  // 新开标签时聚焦目标地址输入框：返回 false 表示节点还没挂载、需要重试；
+  // 返回 true 表示已聚焦，或节点在但不可见（放弃聚焦）。
+  useFocusOnActivate(active, () => {
+    const el = targetRef.current;
+    if (!el) return false;
+    if (typeof el.checkVisibility === 'function' && !el.checkVisibility()) return true;
+    el.focus();
+    return true;
+  });
 
   useEffect(() => {
     const off = Events.On('network-test:update', (event) => {
@@ -779,6 +791,7 @@ export default function NetworkTestTool({
                   className="min-w-[280px] flex-1"
                 >
                   <Input
+                    ref={targetRef}
                     value={target}
                     onChange={(event) => setTarget(event.target.value)}
                     onKeyDown={submitOnEnter}
