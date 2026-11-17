@@ -1566,11 +1566,9 @@ export default function ImageManagerTool({
                 <span className="text-destructive">{contentError}</span>
               ) : null}
               {activeTasks.length > 0 || visibleTasks.length > 0 ? (
-                <Button
+                <button
                   type="button"
-                  variant="ghost"
-                  size="xs"
-                  className="h-auto justify-start gap-2 text-left"
+                  className="inline-flex items-center gap-2 text-left text-muted-foreground hover:text-foreground outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
                   onClick={() => openTaskCenter('image-manager')}
                   aria-label={t('imageManagerTool.backgroundTasks')}
                 >
@@ -1592,7 +1590,7 @@ export default function ImageManagerTool({
                   ) : (
                     <ListDashes size={14} weight="regular" aria-hidden="true" />
                   )}
-                </Button>
+                </button>
               ) : null}
             </div>
           </div>
