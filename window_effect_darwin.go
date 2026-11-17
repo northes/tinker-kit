@@ -27,8 +27,13 @@ static void tinkerkitApplyWindowEffect(void *nsWindow, int dark, int blur) {
 			NSVisualEffectView *effect = (NSVisualEffectView *)subview;
 			if (blur) {
 				[effect setHidden:NO];
+				// Wails 创建时未指定 material，默认 appearance-based 自带很实的底色，桌面基本透不出来。
+				// underWindowBackground 是为“透出窗口后面内容”设计的，再压一下它自带的不透明度。
+				[effect setMaterial:NSVisualEffectMaterialUnderWindowBackground];
+				[effect setAlphaValue:0.6];
 				[effect setState:NSVisualEffectStateActive];
 			} else {
+				[effect setAlphaValue:1.0];
 				[effect setState:NSVisualEffectStateInactive];
 				[effect setHidden:YES];
 			}
