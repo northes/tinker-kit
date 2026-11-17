@@ -71,6 +71,7 @@ import {
   ToolLayoutToolbar,
   ToolSearchField,
   toolHeaderControlClassName,
+  useFocusOnActivate,
 } from './shared';
 import { SSHProfileFormField } from './SSHProfileFormField';
 import { useSSHProfiles } from './SSHProfileManagerDialog';
@@ -142,6 +143,15 @@ export default function ServiceManagerTool({
   const [statusFilter, setStatusFilter] = useState<Set<string>>(new Set());
   const [searchDraft, setSearchDraft] = useState('');
   const [search, setSearch] = useState('');
+  const searchRef = useRef<HTMLInputElement>(null);
+  // 每个服务管理标签各有自己的搜索框，聚焦时只认本实例的 ref。
+  useFocusOnActivate(active, () => {
+    const el = searchRef.current;
+    if (!el) return false;
+    if (typeof el.checkVisibility === 'function' && !el.checkVisibility()) return true;
+    el.focus();
+    return true;
+  });
   const [selection, setSelection] = useState<Selection | null>(null);
   const [busy, setBusy] = useState('');
   const [monitors, setMonitors] = useState<LogMonitor[]>([]);
@@ -1031,6 +1041,7 @@ export default function ServiceManagerTool({
                 onSubmit={(value) => setSearch(value.toLowerCase())}
                 placeholder={t('serviceManagerTool.searchPlaceholder')}
                 className={toolHeaderControlClassName}
+                inputRef={searchRef}
               />
             </>
           }
