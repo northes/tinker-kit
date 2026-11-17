@@ -90,3 +90,4 @@
 
 - 2026-11-17：模糊开时改为原生毛玻璃的 `alphaValue` 承担透明度，CSS 叠色固定薄雾；删掉此前用来压白底的「叠色强度系数」。原因是滑块同时驱动原生与 CSS 两套透明度，表现为「只调白不白、开了模糊才透」。
 - 2026-11-17：修正 Wails `MacBackdropTranslucent` 不设 `setOpaque:NO` 的问题，否则毛玻璃只剩材质底色，表现为一层雾而非模糊。
+- 2026-11-17（最终）：撤销「滑块驱动原生 alpha」的做法。模糊开即满强度模糊桌面，滑块只表示界面透出多少，两个设置互不耦合，也不再有任何合成系数。依据 Apple 文档：`behindWindow` + `underWindowBackground` 才是「模糊窗口后面的桌面」；`windowBackground` / `contentBackground` 只做桌面取色渐变，不是模糊。

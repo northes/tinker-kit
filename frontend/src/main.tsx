@@ -68,9 +68,6 @@ async function boot() {
   paintBootTheme(cfg.themeMode, cfg.lightTheme, cfg.darkTheme);
   // 渲染前只写 CSS 变量。原生窗底仍盖着首帧，避免先透出桌面。
   applyWindowOpacity(cfg.windowOpacity);
-  if (os === 'darwin' && cfg.windowBlur !== false) {
-    document.documentElement.dataset.windowBlur = 'true';
-  }
   ReactDOM.createRoot(document.getElementById('root') as HTMLElement).render(
     <React.StrictMode>
       <HashRouter>

@@ -516,11 +516,6 @@ function AppShell() {
     root.dataset.showTabIcons = settings.showTabIcons ? 'true' : 'false';
     applyWindowOpacity(settings.windowOpacity);
     const blurOn = hostOS === 'darwin' && settings.windowBlur !== false;
-    if (blurOn) {
-      root.dataset.windowBlur = 'true';
-    } else {
-      delete root.dataset.windowBlur;
-    }
     if (hostOS === 'darwin') {
       void ApplyWindowEffect(dark, blurOn, settings.windowOpacity).catch((error: unknown) => {
         console.error(error);

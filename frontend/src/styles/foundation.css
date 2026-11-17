@@ -25,8 +25,6 @@
   --motion-slide-ease: cubic-bezier(0.32, 0.72, 0, 1);
   /* 整窗透明度只落在 --chrome-fill / --panel-fill 这一层，默认不透明。 */
   --window-opacity: 1;
-  /* 网页叠色的实际强度。模糊关：跟滑块；模糊开：固定薄雾，透视交给原生毛玻璃。 */
-  --window-surface-alpha: var(--window-opacity);
   font-synthesis: none;
   -webkit-font-smoothing: antialiased;
 }
@@ -36,11 +34,6 @@
   --app-titlebar-pad-left: 96px;
   --app-titlebar-item-offset: 3px;
   --app-titlebar-toggle-offset: 2px;
-}
-:root[data-window-blur='true'] {
-  /* 模糊开时不再让滑块去夹白底，只留一层薄雾保住标题栏/缝/面板的层次。 */
-  --window-surface-alpha: 0.16;
-  --window-active-tab-fill: color-mix(in oklab, var(--background) 45%, transparent);
 }
 :root[data-show-tab-icons='true'] {
   --workspace-tab-width: 148px;
@@ -185,7 +178,7 @@ body {
   background-image: linear-gradient(to right, transparent, var(--panel-fill));
 }
 .workspace-tab-highlight {
-  background: var(--window-active-tab-fill, var(--panel-fill));
+  background: var(--panel-fill);
 }
 /* Base UI Dialog 的内部 inert 遮罩也必须覆盖原生标题栏，避免在标题栏留下未模糊区域。 */
 [data-base-ui-inert][role='presentation'] {

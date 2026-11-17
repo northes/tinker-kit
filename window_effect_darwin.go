@@ -36,8 +36,8 @@ static void tinkerkitApplyWindowEffect(void *nsWindow, int dark, int blur, int o
 			if (blur) {
 				[effect setHidden:NO];
 				[effect setMaterial:NSVisualEffectMaterialUnderWindowBackground];
-				// 模糊开时透明度只调这一层，网页壳不再叠白底。
-				[effect setAlphaValue:(CGFloat)opacity / 100.0];
+				// 模糊开就满强度：模糊背景是一件事，透明度只由上层 CSS 叠色决定。
+				[effect setAlphaValue:1.0];
 				[effect setState:NSVisualEffectStateActive];
 			} else {
 				[effect setAlphaValue:1.0];
