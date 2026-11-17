@@ -229,14 +229,14 @@ export function ImageManagerDetailView({
     detail?.layers && detail.layers.length > 0 ? detail.layers : (detail?.manifest?.layers ?? []);
   const rawManifest = detail ? formatRawJSON(detail.rawManifest) : '';
   const renderDetailRows = (rows: Array<{ key: string; label: string; value?: string }>) =>
-    rows.map((row) => {
+    rows.map((row, index) => {
       const isMono = ['id', 'digest', 'configDigest', 'diffIDs', 'command', 'entrypoint'].includes(
         row.key,
       );
       return (
         <div
           key={row.key}
-          className="grid grid-cols-1 gap-1 py-2.5 sm:grid-cols-[7rem_minmax(0,1fr)] sm:gap-4"
+          className={`grid grid-cols-1 gap-1 px-1 py-2.5 sm:grid-cols-[7rem_minmax(0,1fr)] sm:gap-4 ${index % 2 === 1 ? 'rounded-md bg-muted/30' : ''}`}
         >
           <dt className="text-[10px] font-medium text-muted-foreground">{row.label}</dt>
           <dd
@@ -286,7 +286,7 @@ export function ImageManagerDetailView({
                 >
                   {t('imageManagerTool.detailMetadata')}
                 </h3>
-                <dl className="mt-2 divide-y divide-border">
+                <dl className="mt-2">
                   {renderDetailRows(detailMetadataRows)}
                 </dl>
                 <dl className="divide-y divide-border">
@@ -382,7 +382,7 @@ export function ImageManagerDetailView({
                 >
                   {t('imageManagerTool.detailRuntime')}
                 </h3>
-                <dl className="mt-2 divide-y divide-border">{renderDetailRows(runtimeRows)}</dl>
+                <dl className="mt-2">{renderDetailRows(runtimeRows)}</dl>
               </section>
 
               <section aria-labelledby="image-detail-raw-manifest" className="mt-6 pb-6">
