@@ -308,7 +308,7 @@ export function WorkspaceTabBar({
   orientationRef.current = orientation;
   const [liveMessage, setLiveMessage] = useState('');
   const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { delay: 50, tolerance: 5 } }),
+    useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
   );
   // 默认公告会把内部 id 用英文念出来。结果改由下面的 polite 区域播报。
   const silentAnnouncements = useMemo(
