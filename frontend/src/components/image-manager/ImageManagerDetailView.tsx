@@ -7,7 +7,6 @@ import {
   ToolCanceledState,
   ToolLayout,
   ToolLayoutContent,
-  ToolLayoutHeader,
   ToolLayoutToolbar,
   ToolLoadingState,
 } from '../shared';
@@ -252,7 +251,6 @@ export function ImageManagerDetailView({
   return (
     <Reveal index={0} fill active={active}>
       <ToolLayout>
-        <ToolLayoutHeader title={t('imageManagerTool.detailTitle')} />
         <ToolLayoutToolbar
           left={
             <ToolActionButton

@@ -1031,7 +1031,6 @@
     "emptyHint": "当前来源没有可显示的镜像",
     "unnamed": "<none>",
     "back": "返回列表",
-    "detailTitle": "镜像详情",
     "detailMetadata": "Metadata",
     "detailId": "ID",
     "detailNames": "镜像名",
