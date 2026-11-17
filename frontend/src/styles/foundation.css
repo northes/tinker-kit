@@ -14,8 +14,8 @@
      由 index.css 的 @theme 引用这两个变量，局部 CSS 也直接引用它们。 */
   --motion-duration: 120ms;
   --motion-ease: ease-out;
-  /* 位移过渡：只服务侧栏选中高亮。整块色块横向滑动时，120ms 的 ease-out 会在
-     新旧项之间"弹"过去且落点生硬，因此单独给一组更长时长与带长尾的减速曲线；
+  /* 位移过渡：工作区标签选中高亮与开合补位共用。整块色块横向滑动时，120ms 的 ease-out 会在
+     新旧项之间“弹”过去且落点生硬，因此单独给一组更长时长与带长尾的减速曲线；
      状态型过渡（淡入、遮罩、Toast）仍用上面的 120ms。 */
   --motion-slide-duration: 200ms;
   --motion-slide-ease: cubic-bezier(0.32, 0.72, 0, 1);
@@ -151,7 +151,12 @@ textarea,
   }
   [data-workspace-tab-surface][data-workspace-tab-enter] {
     opacity: 0;
-    transform: translate3d(6px, 0, 0) scale(0.96);
+    transform: translate3d(-6px, 0, 0) scale(0.96);
+  }
+  [data-workspace-tab-highlight]:not([data-workspace-tab-highlight-reduced]) {
+    transition:
+      transform var(--motion-slide-duration) var(--motion-slide-ease),
+      width var(--motion-slide-duration) var(--motion-slide-ease);
   }
 }
 /* ScrollArea.scrollFade：按滚动偏移在可滚动方向边缘渐隐内容。 */

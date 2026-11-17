@@ -36,6 +36,7 @@ import {
   type WorkspaceState,
   type WorkspaceTab,
 } from './workspace-tabs';
+import { useWorkspaceTabActiveHighlight } from './useWorkspaceTabActiveHighlight';
 import {
   useWorkspaceTabStripMotion,
   type WorkspaceTabStripMotion,
@@ -191,7 +192,7 @@ function WorkspaceTabItem({
           data-workspace-tab-motion={sliding ? '' : undefined}
           className={cn(
             'absolute inset-0 flex cursor-default items-center gap-1.5 rounded-md px-2 text-left text-xs',
-            current ? 'bg-muted text-foreground' : 'text-muted-foreground hover:text-foreground',
+            current ? 'text-foreground' : 'text-muted-foreground hover:text-foreground',
             isDragging && 'bg-accent text-foreground shadow-md',
           )}
           style={{
@@ -432,14 +433,23 @@ export function WorkspaceTabBar({
     scrollTabIntoView(viewport, tab);
   }, [activeId, tabs]);
 
+  const tabIds = tabs.map((tab) => tab.id);
   const tabMotion = useWorkspaceTabStripMotion({
-    tabIds: tabs.map((tab) => tab.id),
+    tabIds,
     tabNodes: tabRefs,
     listRef,
     viewportRef,
     draggingRef,
     dragging,
   });
+  const { highlight: activeHighlight, reducedMotion: tabHighlightReduced } =
+    useWorkspaceTabActiveHighlight({
+      activeId,
+      tabIds,
+      tabNodes: tabRefs,
+      listRef,
+      viewportRef,
+    });
 
   return (
     <div className="flex h-full min-h-0 min-w-0 flex-1 items-center">
@@ -478,8 +488,23 @@ export function WorkspaceTabBar({
               ref={listRef}
               role="tablist"
               aria-label={t('workspaceTabs.list')}
-              className="flex h-full items-center gap-1"
+              className="relative isolate flex h-full items-center gap-1"
             >
+              {activeHighlight ? (
+                <div
+                  aria-hidden
+                  data-workspace-tab-highlight=""
+                  data-workspace-tab-highlight-reduced={
+                    tabHighlightReduced ? '' : undefined
+                  }
+                  className="pointer-events-none absolute top-0 left-0 -z-10 rounded-md bg-muted"
+                  style={{
+                    width: activeHighlight.width,
+                    height: activeHighlight.height,
+                    transform: `translate3d(${activeHighlight.x}px, ${activeHighlight.y}px, 0)`,
+                  }}
+                />
+              ) : null}
               {tabs.map((tab) => (
                 <WorkspaceTabItem
                   key={tab.id}
