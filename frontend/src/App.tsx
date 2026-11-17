@@ -837,7 +837,13 @@ function AppShell() {
     const toolId = paletteToolId(item);
     if (toolId && !enabledToolSet.has(toolId)) return;
     if (!item.toggle) {
-      suppressPaletteFocusRestoreRef.current = true;
+      // 只有这次命令会打开新界面（新标签、设置、工具页）才抑制焦点恢复，
+      // 否则关闭面板的 rAF 会抢走新界面即将设置的焦点。
+      suppressPaletteFocusRestoreRef.current =
+        item.workspaceAction === 'new-tab' ||
+        item.settingsAction === 'quit' ||
+        item.page === 'settings' ||
+        (!!item.page && isToolId(item.page));
       setPaletteOpen(false);
     }
     if (item.workspaceAction === 'new-tab') {
