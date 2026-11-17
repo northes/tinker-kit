@@ -4,6 +4,6 @@ package main
 
 import "unsafe"
 
-func applyWindowEffect(unsafe.Pointer, bool, bool) {}
+func applyWindowEffect(unsafe.Pointer, bool, bool, int) {}
 
 func systemPrefersDark() bool { return true }

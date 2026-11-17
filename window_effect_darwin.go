@@ -7,7 +7,7 @@ package main
 #cgo LDFLAGS: -framework Cocoa
 #import <Cocoa/Cocoa.h>
 
-static void tinkerkitApplyWindowEffect(void *nsWindow, int dark, int blur) {
+static void tinkerkitApplyWindowEffect(void *nsWindow, int dark, int blur, int opacity) {
 	if (nsWindow == NULL) {
 		return;
 	}
@@ -15,6 +15,13 @@ static void tinkerkitApplyWindowEffect(void *nsWindow, int dark, int blur) {
 		NSWindow *window = (NSWindow *)nsWindow;
 		NSString *appearance = dark ? NSAppearanceNameDarkAqua : NSAppearanceNameAqua;
 		[window setAppearance:[NSAppearance appearanceNamed:appearance]];
+		// 需要透出桌面时（模糊或透明度未满）窗口必须非不透明。
+		if (blur || opacity < 100) {
+			[window setOpaque:NO];
+			[window setBackgroundColor:[NSColor clearColor]];
+		} else {
+			[window setOpaque:YES];
+		}
 		NSView *content = [window contentView];
 		if (content == nil) {
 			return;
@@ -25,12 +32,12 @@ static void tinkerkitApplyWindowEffect(void *nsWindow, int dark, int blur) {
 				continue;
 			}
 			NSVisualEffectView *effect = (NSVisualEffectView *)subview;
+			[effect setBlendingMode:NSVisualEffectBlendingModeBehindWindow];
 			if (blur) {
 				[effect setHidden:NO];
-				// Wails 创建时未指定 material，默认 appearance-based 自带很实的底色，桌面基本透不出来。
-				// underWindowBackground 是为“透出窗口后面内容”设计的，再压一下它自带的不透明度。
 				[effect setMaterial:NSVisualEffectMaterialUnderWindowBackground];
-				[effect setAlphaValue:0.6];
+				// 模糊开时透明度只调这一层，网页壳不再叠白底。
+				[effect setAlphaValue:(CGFloat)opacity / 100.0];
 				[effect setState:NSVisualEffectStateActive];
 			} else {
 				[effect setAlphaValue:1.0];
@@ -54,7 +61,7 @@ static int tinkerkitSystemPrefersDark(void) {
 import "C"
 import "unsafe"
 
-func applyWindowEffect(native unsafe.Pointer, dark bool, blur bool) {
+func applyWindowEffect(native unsafe.Pointer, dark bool, blur bool, opacity int) {
 	if native == nil {
 		return
 	}
@@ -66,7 +73,8 @@ func applyWindowEffect(native unsafe.Pointer, dark bool, blur bool) {
 	if blur {
 		blurFlag = 1
 	}
-	C.tinkerkitApplyWindowEffect(native, C.int(darkFlag), C.int(blurFlag))
+	opacity = normalizeWindowOpacity(opacity)
+	C.tinkerkitApplyWindowEffect(native, C.int(darkFlag), C.int(blurFlag), C.int(opacity))
 }
 
 func systemPrefersDark() bool {

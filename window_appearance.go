@@ -16,8 +16,9 @@ func NewWindowAppearanceService() *WindowAppearanceService {
 func (s *WindowAppearanceService) ServiceName() string { return "WindowAppearanceService" }
 
 // ApplyWindowEffect 按当前主题切换窗口外观，并显示或隐藏创建时插入的毛玻璃。
+// 模糊开时 opacity 只作用于原生毛玻璃层；模糊关时由前端 CSS 承担透明度。
 // 非 macOS 不改变窗口。
-func (s *WindowAppearanceService) ApplyWindowEffect(dark bool, blur bool) {
+func (s *WindowAppearanceService) ApplyWindowEffect(dark bool, blur bool, opacity int) {
 	if runtime.GOOS != "darwin" {
 		return
 	}
@@ -25,7 +26,7 @@ func (s *WindowAppearanceService) ApplyWindowEffect(dark bool, blur bool) {
 	if window == nil {
 		return
 	}
-	applyWindowEffect(window.NativeWindow(), dark, blur)
+	applyWindowEffect(window.NativeWindow(), dark, blur, opacity)
 }
 
 func mainWebviewWindow() *application.WebviewWindow {

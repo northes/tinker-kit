@@ -49,6 +49,11 @@
 这些是实现时必须遵守的技术边界，不是新的产品决定。
 
 - **透明度的承载层。** 透明度只能落在一层上。每个工具页的根 `.tool-slot` 现在各自铺了一层不透明的 `bg-background`，会盖掉面板的 alpha，必须去掉这层重复铺底，让 alpha 只来自圆角面板本身。全仓其余约 20 处 `bg-background` 大多是按钮、开关、表格这类控件自己的实底，逐处判断后保留，不要为透明度去改控件外观。
+- **透明度与模糊各管一段。** 两套机制不能同时按滑块叠加，否则滑块只是在调“界面白不白”。约定：
+  - 模糊关：窗口非不透明，原生毛玻璃隐藏，滑块只决定 CSS 叠色 alpha，看到的是锐利桌面。
+  - 模糊开：窗口非不透明，原生 `NSVisualEffectView` 的 `alphaValue` 取滑块值，CSS 叠色固定成一成多薄雾（`--window-surface-alpha`），只用来保住标题栏 / 缝 / 面板的层次，不再乘滑块。
+  - 不要再用“叠色强度系数”之类的魔法数去拼凑观感。
+- **Wails 毛玻璃的坑。** `MacBackdropTranslucent` 只插 `NSVisualEffectView`，不会把窗口设成非不透明；不别开 `setOpaque:NO`，`BehindWindow` 采样不到桌面，只剩材质自带底色（看起来像雾）。切换时必须自己设。
 - **CSS 变量。** 新增 `--window-opacity`（0.3–1 的数值），`--chrome` 和面板底色用 `color-mix(... , transparent)` 按它取值。不要直接把 `--background` 改成半透明色再层层叠加，同色叠多层会越来越不透明。
 - **原生透明。** 窗口背景色的 alpha 要跟着透明度走：现有的 `Window.SetBackgroundColour(r, g, b, a)` 已经支持 alpha，用它而不是另外新建一条通道。
 - **模糊开关。** Wails 没有公开的运行时切换 backdrop 的 API。模糊开关要用 `WebviewWindow.NativeWindow()` 拿到的原生窗口句柄，在 darwin 专用 CGO 文件里控制 `NSVisualEffectView` 的显隐（或用等价的公开 Cocoa 调用），并给非 darwin 平台留同样签名的 stub。不要用重建窗口的方式切换。
@@ -80,3 +85,8 @@
 ## 待定问题
 
 无。实现中若发现 `private_mac_apis` 影响签名或打包产物，先停下来说明，不自行改发布流程。
+
+## 变更记录
+
+- 2026-11-17：模糊开时改为原生毛玻璃的 `alphaValue` 承担透明度，CSS 叠色固定薄雾；删掉此前用来压白底的「叠色强度系数」。原因是滑块同时驱动原生与 CSS 两套透明度，表现为「只调白不白、开了模糊才透」。
+- 2026-11-17：修正 Wails `MacBackdropTranslucent` 不设 `setOpaque:NO` 的问题，否则毛玻璃只剩材质底色，表现为一层雾而非模糊。

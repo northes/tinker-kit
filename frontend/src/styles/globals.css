@@ -7,10 +7,14 @@
   --background: oklch(1 0 0);
   /* 窗底：只垫窗口和标题栏，不作为工具工作面。颜色本身保持不透明，透明度只在 fill 上取一次。 */
   --chrome: oklch(0.94 0 0);
-  --chrome-fill: color-mix(in oklab, var(--chrome) calc(var(--window-opacity) * 100%), transparent);
+  --chrome-fill: color-mix(
+    in oklab,
+    var(--chrome) calc(var(--window-surface-alpha) * 100%),
+    transparent
+  );
   --panel-fill: color-mix(
     in oklab,
-    var(--background) calc(var(--window-opacity) * 100%),
+    var(--background) calc(var(--window-surface-alpha) * 100%),
     transparent
   );
   --foreground: oklch(0.145 0 0);
@@ -62,10 +66,14 @@
   --background: oklch(0.145 0 0);
   /* 窗底：只垫窗口和标题栏，不作为工具工作面。颜色本身保持不透明，透明度只在 fill 上取一次。 */
   --chrome: oklch(0.22 0 0);
-  --chrome-fill: color-mix(in oklab, var(--chrome) calc(var(--window-opacity) * 100%), transparent);
+  --chrome-fill: color-mix(
+    in oklab,
+    var(--chrome) calc(var(--window-surface-alpha) * 100%),
+    transparent
+  );
   --panel-fill: color-mix(
     in oklab,
-    var(--background) calc(var(--window-opacity) * 100%),
+    var(--background) calc(var(--window-surface-alpha) * 100%),
     transparent
   );
   --foreground: oklch(0.985 0 0);

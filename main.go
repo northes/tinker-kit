@@ -231,7 +231,7 @@ func main() {
 			return
 		}
 		cfg := cfgService.Get()
-		applyWindowEffect(window.NativeWindow(), windowChromeDark(cfg), cfg.WindowBlur)
+		applyWindowEffect(window.NativeWindow(), windowChromeDark(cfg), cfg.WindowBlur, cfg.WindowOpacity)
 	})
 	window.Show()
 	updateService.setBeforeRestart(func() {
