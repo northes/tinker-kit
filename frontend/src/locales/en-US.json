@@ -2531,6 +2531,7 @@
     "parentPath": "Parent path",
     "emptyPorts": "No visible ports found",
     "loading": "Scanning ports…",
+    "lastScannedAt": "Scanned {{time}}",
     "emptyForwards": "No port forwards yet",
     "order": "Order",
     "dragForward": "Drag {{name}} to reorder",

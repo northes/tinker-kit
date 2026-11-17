@@ -2531,6 +2531,7 @@
     "parentPath": "父进程路径",
     "emptyPorts": "没有发现可见的端口",
     "loading": "正在扫描端口…",
+    "lastScannedAt": "上次扫描 {{time}}",
     "emptyForwards": "尚无端口转发",
     "order": "顺序",
     "dragForward": "拖动{{name}}以调整顺序",

@@ -227,6 +227,25 @@ function browserAddress(host: string, port: number) {
   return `http://${address}:${port}`;
 }
 
+// 当天只显示时刻；跨日为 MM-DD HH:mm；跨年再带年份。时刻按界面语言、24 小时制格式化。
+function formatPortScannedAt(timestamp: number, locale: string) {
+  const date = new Date(timestamp);
+  const now = new Date();
+  const time = new Intl.DateTimeFormat(locale, {
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+  }).format(date);
+  const sameYear = date.getFullYear() === now.getFullYear();
+  const sameDay =
+    sameYear && date.getMonth() === now.getMonth() && date.getDate() === now.getDate();
+  if (sameDay) return time;
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  const datePart = sameYear ? `${month}-${day}` : `${date.getFullYear()}-${month}-${day}`;
+  return `${datePart} ${time}`;
+}
+
 function ForwardAddressLink({ host, port }: { host: string; port: number }) {
   const { t } = useTranslation();
   const address = `${host}:${port}`;
@@ -588,8 +607,13 @@ export default function PortTool({ active }: { active: boolean }) {
   const [columnWidths, setColumnWidths] = useState<PortColumnWidths>({ ports: {}, forwards: [] });
   const [loading, setLoading] = useState(false);
   const [portsCanceled, setPortsCanceled] = useState(false);
+  const [lastScannedAt, setLastScannedAt] = useState<number | null>(null);
   const scanRevision = useRef(0);
   const portsRequest = useRef<ReturnType<typeof ListPorts> | null>(null);
+  // 空列表也是一次成功扫描，不能用条数判断有没有可用结果。
+  const portsHaveResult = useRef(false);
+  // null 表示还没有为当前这个主机启动过扫描。
+  const scannedSource = useRef<string | null>(null);
   const [error, setError] = useState('');
   const [dialog, setDialog] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -636,13 +660,16 @@ export default function PortTool({ active }: { active: boolean }) {
     portsRequest.current?.cancel();
     setPortsCanceled(false);
     setLoading(true);
-    setPorts([]);
+    // 保留上次结果，避免手动刷新时先清空再 loading 造成空表闪烁。换主机的清空在触发 effect 里做。
     setError('');
     const request = ListPorts(source);
     portsRequest.current = request;
     try {
       const result = await request;
-      if (revision === scanRevision.current) setPorts(result ?? []);
+      if (revision !== scanRevision.current) return;
+      setPorts(result ?? []);
+      portsHaveResult.current = true;
+      setLastScannedAt(Date.now());
     } catch (cause) {
       if (revision === scanRevision.current) setError(formatBackendError(cause));
     } finally {
@@ -657,7 +684,8 @@ export default function PortTool({ active }: { active: boolean }) {
     scanRevision.current++;
     void request.cancel();
     setLoading(false);
-    setPortsCanceled(true);
+    // 已有结果时取消只是停掉这次刷新，表格仍留着上次结果，不能切到「已取消」空态。
+    setPortsCanceled(!portsHaveResult.current);
     setError('');
   };
   const refreshForwards = useCallback(async () => {
@@ -667,16 +695,29 @@ export default function PortTool({ active }: { active: boolean }) {
       setError(formatBackendError(cause));
     }
   }, []);
+  // 切走不取消进行中的扫描。换主机清掉旧结果并重扫；同一主机只在还没有可用结果、且没有在途请求时补扫。
   useEffect(() => {
-    if (!active) {
-      scanRevision.current++;
-      const request = portsRequest.current;
-      portsRequest.current = null;
-      void request?.cancel();
+    if (scannedSource.current !== source) {
+      scannedSource.current = source;
+      portsHaveResult.current = false;
+      setPorts([]);
+      setLastScannedAt(null);
+      void refreshPorts();
       return;
     }
+    if (!active) return;
+    if (portsHaveResult.current || portsRequest.current) return;
     void refreshPorts();
-  }, [active, refreshPorts]);
+  }, [active, source, refreshPorts]);
+  // 关闭标签卸载时才取消。同步抬高代次，避免取消后的错误或结果写回。
+  useEffect(() => {
+    return () => {
+      const request = portsRequest.current;
+      portsRequest.current = null;
+      scanRevision.current++;
+      void request?.cancel();
+    };
+  }, []);
   useEffect(() => {
     if (!active) return;
     void refreshForwards();
@@ -1401,6 +1442,13 @@ export default function PortTool({ active }: { active: boolean }) {
                     ? t('common.itemCount', { total: visibleForwardData.length })
                     : ''}
             </span>
+            {tab === 'ports' && lastScannedAt != null ? (
+              <span>
+                {t('portTool.lastScannedAt', {
+                  time: formatPortScannedAt(lastScannedAt, i18n.language),
+                })}
+              </span>
+            ) : null}
           </div>
         </div>
       </ToolLayoutFooter>
