@@ -1395,16 +1395,18 @@ export default function ImageManagerTool({
                           </TableCell>
                           <TableCell className="min-w-40">
                             <div className="inline-flex items-center gap-2 whitespace-nowrap">
-                              <button
+                              <Button
                                 type="button"
-                                className="cursor-pointer text-left text-foreground hover:text-primary hover:underline hover:underline-offset-4 disabled:cursor-not-allowed disabled:opacity-50"
+                                variant="link"
+                                size="xs"
+                                className="h-auto justify-start p-0 text-left"
                                 disabled={interactionBlocked}
                                 title={t('imageManagerTool.viewName', { name: rowLabel })}
                                 aria-label={t('imageManagerTool.viewName', { name: rowLabel })}
                                 onClick={() => void viewRow(row)}
                               >
                                 {rowLabel}
-                              </button>
+                              </Button>
                               {architectures.length > 0 ? (
                                 <Badge
                                   variant="secondary"
@@ -1564,9 +1566,11 @@ export default function ImageManagerTool({
                 <span className="text-destructive">{contentError}</span>
               ) : null}
               {activeTasks.length > 0 || visibleTasks.length > 0 ? (
-                <button
+                <Button
                   type="button"
-                  className="inline-flex items-center gap-2 text-left text-muted-foreground hover:text-foreground"
+                  variant="ghost"
+                  size="xs"
+                  className="h-auto justify-start gap-2 text-left"
                   onClick={() => openTaskCenter('image-manager')}
                   aria-label={t('imageManagerTool.backgroundTasks')}
                 >
@@ -1588,7 +1592,7 @@ export default function ImageManagerTool({
                   ) : (
                     <ListDashes size={14} weight="regular" aria-hidden="true" />
                   )}
-                </button>
+                </Button>
               ) : null}
             </div>
           </div>
