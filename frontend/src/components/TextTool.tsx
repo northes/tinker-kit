@@ -570,7 +570,7 @@ export default function TextTool({
                       open: (
                         <button
                           type="button"
-                          className="pointer-events-auto cursor-pointer border-0 bg-transparent p-0 font-[inherit] text-primary underline underline-offset-2"
+                          className="pointer-events-auto cursor-pointer border-0 bg-transparent p-0 font-[inherit] text-primary underline underline-offset-2 outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
                           onClick={(event) => {
                             event.preventDefault();
                             void fileDrop.pick();

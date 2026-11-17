@@ -763,7 +763,7 @@ function SchemaMetaChip({
     return (
       <button
         type="button"
-        className="json-schema-chip is-ref"
+        className="json-schema-chip is-ref outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
         disabled={externalState?.status === 'loading'}
         aria-label={label}
         title={label}
