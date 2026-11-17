@@ -12,6 +12,7 @@ export type WorkspaceTab = {
   kind: 'blank' | 'tool' | 'settings';
   toolId?: string;
   // 工具与空白标签从 1 起计，展示时 1 不加序号。设置标签不使用序号。
+  // 新开取当前仍打开的同类最大序号加一；已分配的序号不因关闭、重排或固定而改变。
   ordinal: number;
   activatedAt: number;
   // 固定与自定义名称只活在本次运行，不写入配置。
@@ -24,7 +25,6 @@ export type WorkspaceState = {
   activeId: string | null;
   nextId: number;
   activationSeq: number;
-  nextOrdinal: Record<string, number>;
 };
 
 export type PaletteScope =
@@ -39,7 +39,7 @@ export type PaletteCommand = {
 };
 
 export function emptyWorkspace(): WorkspaceState {
-  return { tabs: [], activeId: null, nextId: 1, activationSeq: 0, nextOrdinal: {} };
+  return { tabs: [], activeId: null, nextId: 1, activationSeq: 0 };
 }
 
 export function startupWorkspace(): WorkspaceState {
@@ -230,8 +230,25 @@ function touch(state: WorkspaceState, id: string): WorkspaceState {
   };
 }
 
+// 序号按当前仍打开的同类标签计算：工具以 toolId 分组，空白标签共用 BLANK_TAB_KEY 这一组。
+function maxOrdinalForTool(tabs: readonly WorkspaceTab[], toolId: string): number {
+  let max = 0;
+  for (const tab of tabs) {
+    if (tab.kind === 'tool' && tab.toolId === toolId) max = Math.max(max, tab.ordinal);
+  }
+  return max;
+}
+
+function maxOrdinalForBlank(tabs: readonly WorkspaceTab[]): number {
+  let max = 0;
+  for (const tab of tabs) {
+    if (tab.kind === 'blank') max = Math.max(max, tab.ordinal);
+  }
+  return max;
+}
+
 export function openBlankTab(state: WorkspaceState): { state: WorkspaceState; tab: WorkspaceTab } {
-  const ordinal = state.nextOrdinal[BLANK_TAB_KEY] ?? 1;
+  const ordinal = maxOrdinalForBlank(state.tabs) + 1;
   const activatedAt = state.activationSeq + 1;
   const tab: WorkspaceTab = {
     id: `tab-${state.nextId}`,
@@ -247,7 +264,6 @@ export function openBlankTab(state: WorkspaceState): { state: WorkspaceState; ta
       activeId: tab.id,
       nextId: state.nextId + 1,
       activationSeq: activatedAt,
-      nextOrdinal: { ...state.nextOrdinal, [BLANK_TAB_KEY]: ordinal + 1 },
     },
   };
 }
@@ -259,10 +275,9 @@ export function convertBlankTabToTool(
 ): WorkspaceState {
   const target = state.tabs.find((tab) => tab.id === tabId);
   if (!target || target.kind !== 'blank') return state;
-  const ordinal = state.nextOrdinal[toolId] ?? 1;
+  const ordinal = maxOrdinalForTool(state.tabs, toolId) + 1;
   return {
     ...state,
-    nextOrdinal: { ...state.nextOrdinal, [toolId]: ordinal + 1 },
     tabs: state.tabs.map((tab) =>
       tab.id === tabId ? { ...tab, kind: 'tool', toolId, ordinal } : tab,
     ),
@@ -273,7 +288,7 @@ export function openToolTab(
   state: WorkspaceState,
   toolId: string,
 ): { state: WorkspaceState; tab: WorkspaceTab } {
-  const ordinal = state.nextOrdinal[toolId] ?? 1;
+  const ordinal = maxOrdinalForTool(state.tabs, toolId) + 1;
   const activatedAt = state.activationSeq + 1;
   const tab: WorkspaceTab = {
     id: `tab-${state.nextId}`,
@@ -290,7 +305,6 @@ export function openToolTab(
       activeId: tab.id,
       nextId: state.nextId + 1,
       activationSeq: activatedAt,
-      nextOrdinal: { ...state.nextOrdinal, [toolId]: ordinal + 1 },
     },
   };
 }
@@ -344,23 +358,6 @@ function recentId(tabs: WorkspaceTab[], remaining: ReadonlySet<string>): string 
   return best?.id ?? null;
 }
 
-/** 某工具或空白标签一条都不剩时，丢掉 nextOrdinal 记录，下次再开从 1 计。 */
-function pruneNextOrdinals(
-  tabs: WorkspaceTab[],
-  prev: Record<string, number>,
-): Record<string, number> {
-  const activeKeys = new Set<string>();
-  for (const tab of tabs) {
-    if (tab.kind === 'blank') activeKeys.add(BLANK_TAB_KEY);
-    else if (tab.kind === 'tool' && tab.toolId) activeKeys.add(tab.toolId);
-  }
-  const next = { ...prev };
-  for (const key of Object.keys(next)) {
-    if (!activeKeys.has(key)) delete next[key];
-  }
-  return next;
-}
-
 function withBlankWhenEmpty(state: WorkspaceState): WorkspaceState {
   if (state.tabs.length > 0) return state;
   return openBlankTab({ ...state, tabs: [], activeId: null }).state;
@@ -375,10 +372,9 @@ export function closeTabs(
   if (closing.size === 0) return state;
   const remainingTabs = state.tabs.filter((tab) => !closing.has(tab.id));
   const remaining = new Set(remainingTabs.map((tab) => tab.id));
-  const nextOrdinal = pruneNextOrdinals(remainingTabs, state.nextOrdinal);
   const activeClosed = state.activeId != null && closing.has(state.activeId);
   if (!activeClosed) {
-    return withBlankWhenEmpty({ ...state, tabs: remainingTabs, nextOrdinal });
+    return withBlankWhenEmpty({ ...state, tabs: remainingTabs });
   }
   const index = state.tabs.findIndex((tab) => tab.id === state.activeId);
   const nextId =
@@ -389,7 +385,7 @@ export function closeTabs(
         : neighborId(state.tabs, index, activation === 'previous' ? -1 : 1, remaining);
   let nextState: WorkspaceState;
   if (!nextId) {
-    nextState = { ...state, tabs: [], activeId: null, nextOrdinal };
+    nextState = { ...state, tabs: [], activeId: null };
   } else {
     const activatedAt = state.activationSeq + 1;
     nextState = {
@@ -397,7 +393,6 @@ export function closeTabs(
       tabs: remainingTabs.map((tab) => (tab.id === nextId ? { ...tab, activatedAt } : tab)),
       activeId: nextId,
       activationSeq: activatedAt,
-      nextOrdinal,
     };
   }
   return withBlankWhenEmpty(nextState);
@@ -420,14 +415,12 @@ export function closeOtherTabs(
   void activation;
   if (!state.tabs.some((tab) => tab.id === keepId)) return state;
   const remainingTabs = state.tabs.filter((tab) => tab.id === keepId || tab.pinned);
-  const nextOrdinal = pruneNextOrdinals(remainingTabs, state.nextOrdinal);
   const activatedAt = state.activationSeq + 1;
   return {
     ...state,
     tabs: remainingTabs.map((tab) => (tab.id === keepId ? { ...tab, activatedAt } : tab)),
     activeId: keepId,
     activationSeq: activatedAt,
-    nextOrdinal,
   };
 }
 

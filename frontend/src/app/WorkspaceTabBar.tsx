@@ -57,7 +57,6 @@ function tabDragPreview(tabs: WorkspaceTab[], activeId: string, overId: string) 
     activeId: null,
     nextId: 1,
     activationSeq: 0,
-    nextOrdinal: {},
   };
   const next = reorderWorkspaceTabs(probe, activeId, overId);
   return next === probe ? null : next.tabs;

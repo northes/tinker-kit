@@ -86,7 +86,7 @@ test('该工具标签全部关掉后再开，序号从 1 重新计', () => {
   assert.equal(tabOrdinalLabel('JSON', reopened.tab.ordinal), 'JSON');
 });
 
-test('工具序号只增不回收，设置不加序号', () => {
+test('新开序号取仍打开同类的最大序号加一，设置不加序号', () => {
   let state = emptyWorkspace();
   const first = openToolTab(state, 'json');
   const second = openToolTab(first.state, 'json');
@@ -96,8 +96,14 @@ test('工具序号只增不回收，设置不加序号', () => {
   assert.equal(tabOrdinalLabel('JSON', first.tab.ordinal), 'JSON');
   assert.equal(tabOrdinalLabel('JSON', second.tab.ordinal), 'JSON 2');
   assert.equal(tabOrdinalLabel('文本', third.tab.ordinal), '文本');
-  assert.equal(fourth.tab.ordinal, 3);
-  assert.equal(tabOrdinalLabel('JSON', fourth.tab.ordinal), 'JSON 3');
+  assert.equal(state.tabs.find((tab) => tab.id === first.tab.id)?.ordinal, 1);
+  assert.equal(fourth.tab.ordinal, 2);
+  assert.equal(tabOrdinalLabel('JSON', fourth.tab.ordinal), 'JSON 2');
+  const keptHigh = openToolTab(fourth.state, 'json');
+  const closedLow = closeTab(keptHigh.state, first.tab.id, 'recent');
+  assert.equal(closedLow.tabs.find((tab) => tab.id === fourth.tab.id)?.ordinal, 2);
+  assert.equal(closedLow.tabs.find((tab) => tab.id === keptHigh.tab.id)?.ordinal, 3);
+  assert.equal(openToolTab(closedLow, 'json').tab.ordinal, 4);
   state = openOrFocusSettings(fourth.state);
   const settings = state.tabs.find((tab) => tab.kind === 'settings');
   assert.equal(settings?.ordinal, 0);
@@ -224,6 +230,20 @@ test('启动带一个空白标签，空白标签就地变成工具', () => {
   assert.equal(empty.tabs[0].kind, 'blank');
 });
 
+test('空白标签转成工具时按该工具已开标签计序号，不沿用空白序号', () => {
+  let state = openToolTab(emptyWorkspace(), 'json').state;
+  state = openToolTab(state, 'json').state;
+  const firstBlank = openBlankTab(state);
+  const secondBlank = openBlankTab(firstBlank.state);
+  assert.equal(secondBlank.tab.ordinal, 2);
+  const converted = convertBlankTabToTool(secondBlank.state, secondBlank.tab.id, 'json');
+  assert.equal(converted.tabs.find((item) => item.id === secondBlank.tab.id)?.ordinal, 3);
+  assert.equal(converted.tabs.find((item) => item.id === firstBlank.tab.id)?.ordinal, 1);
+  const closedHigh = closeTab(secondBlank.state, secondBlank.tab.id, 'recent');
+  assert.equal(closedHigh.tabs.find((item) => item.id === firstBlank.tab.id)?.ordinal, 1);
+  assert.equal(openBlankTab(closedHigh).tab.ordinal, 2);
+});
+
 test('固定的标签排到最前，组内相对顺序不变', () => {
   let state = openToolTab(emptyWorkspace(), 'json').state;
   state = openToolTab(state, 'text').state;
@@ -286,7 +306,6 @@ test('只在同一固定组内调整顺序，跨组取消，新标签仍加在�
   assert.equal(swappedPinned.activeId, state.activeId);
   assert.equal(swappedPinned.nextId, state.nextId);
   assert.equal(swappedPinned.activationSeq, state.activationSeq);
-  assert.deepEqual(swappedPinned.nextOrdinal, state.nextOrdinal);
 
   const swappedUnpinned = reorderWorkspaceTabs(state, base64.id, time.id);
   assert.deepEqual(
@@ -377,9 +396,8 @@ test('关闭其他标签保留固定和被右键的标签，并激活后者', ()
   assert.ok(closed.activationSeq > state.activationSeq);
   assert.equal(closed.tabs.find((tab) => tab.id === time.id).activatedAt, closed.activationSeq);
   assert.equal(closed.tabs.find((tab) => tab.id === json.id).activatedAt, json.activatedAt);
-  assert.equal(closed.nextOrdinal.json, state.nextOrdinal.json);
-  assert.equal(closed.nextOrdinal.time, state.nextOrdinal.time);
-  assert.equal(closed.nextOrdinal.text, undefined);
+  assert.equal(closed.tabs.find((tab) => tab.id === json.id).ordinal, json.ordinal);
+  assert.equal(closed.tabs.find((tab) => tab.id === time.id).ordinal, time.ordinal);
   const again = closeOtherTabs(closed, time.id, 'next');
   assert.deepEqual(
     again.tabs.map((tab) => tab.id),
