@@ -116,7 +116,8 @@ export function WorkspaceTabBar({
                 data-current={current ? '' : undefined}
                 data-workspace-tab=""
                 className={cn(
-                  'group/tab relative flex h-7 w-(--workspace-tab-width) shrink-0 cursor-default items-center gap-1.5 rounded-md px-2 text-left text-xs [--wails-draggable:no-drag] select-none',
+                  // 焦点环画在标签内侧，避免被 ScrollArea 边缘裁切
+                  'group/tab relative flex h-7 w-(--workspace-tab-width) shrink-0 cursor-default items-center gap-1.5 rounded-md px-2 text-left text-xs outline-none select-none [--wails-draggable:no-drag] focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:ring-inset',
                   current
                     ? 'bg-muted text-foreground'
                     : 'text-muted-foreground hover:text-foreground',
