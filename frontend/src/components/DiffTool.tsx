@@ -24,6 +24,7 @@ import {
   ToolLayoutFooter,
   ToolLayoutToolbar,
   ToolLayoutToolbarGroup,
+  useFocusOnActivate,
   type PendingAction,
 } from './shared';
 import '../styles/tools/editor.css';
@@ -392,9 +393,17 @@ function DiffMerge({
     if (adoc !== before) m.a.dispatch({ changes: { from: 0, to: adoc.length, insert: before } });
     if (bdoc !== after) m.b.dispatch({ changes: { from: 0, to: bdoc.length, insert: after } });
   }, [before, after]);
-  useEffect(() => {
-    if (active) mergeRef.current?.a.focus();
-  }, [active]);
+  useFocusOnActivate(active, () => {
+    const merge = mergeRef.current;
+    if (!merge) return false;
+    const view = merge.a;
+    const checkVisibility = view.dom.checkVisibility;
+    if (typeof checkVisibility === 'function' && !checkVisibility.call(view.dom)) {
+      return true;
+    }
+    view.focus();
+    return true;
+  });
   return (
     <div className="diff-merge-wrap h-full min-h-0 min-w-0">
       <div
