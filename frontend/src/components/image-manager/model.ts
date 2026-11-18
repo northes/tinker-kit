@@ -178,6 +178,24 @@ export function sourceMissingSSHProfile(source: ImageSource, profiles: SSHProfil
   return !profileID || !profiles.some((profile) => profile.id === profileID);
 }
 
+// 工作区标签前缀用主机名：不含 i18n、失效文案；与 sourceDisplayName 的展示逻辑分离。
+export function sourceTabHostName(source: ImageSource, profiles: SSHProfile[]): string | null {
+  if (isLocalSource(source)) return null;
+  if (sourceMissingSSHProfile(source, profiles)) return null;
+  const name = source.name?.trim() ?? '';
+  if (name) return name;
+  if (source.kind === 'ssh') {
+    const profileID = (source as ManagedImageSource).sshProfileID?.trim() ?? '';
+    const profileName = profiles.find((profile) => profile.id === profileID)?.name?.trim() ?? '';
+    return profileName || null;
+  }
+  if (source.kind === 'registry') {
+    const registryURL = (source as ManagedImageSource).registryURL?.trim() ?? '';
+    return registryURL || null;
+  }
+  return null;
+}
+
 export function bindingSource(source: ManagedImageSource): ImageSource {
   const ssh = source.kind === 'ssh';
   const registry = source.kind === 'registry';

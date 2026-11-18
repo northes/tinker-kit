@@ -40,6 +40,7 @@ import type {
   ImageSource,
   Config as Settings,
 } from '../../bindings/tinkerkit/models';
+import { useWorkspaceTabTitle } from '../app/workspace-tab-title';
 import { formatBackendError } from '../lib/backend-error';
 import { imageTaskMeasure, taskMeasurePercent } from '../lib/task-format';
 import { sendSystemNotification } from '../lib/task-notification-feedback';
@@ -84,6 +85,7 @@ import {
   shortId,
   sourceDisplayName,
   sourceMissingSSHProfile,
+  sourceTabHostName,
   suggestedPullTarget,
   type ConfirmState,
   type ImageOperationDialogState,
@@ -183,6 +185,8 @@ export default function ImageManagerTool({
   // 默认加载来源列表的首项；仅当用户在本工具内手动选择过且该来源仍存在时才保留选择。
   const [pickedSourceId, setPickedSourceId] = useState<string | null>(null);
   const source = sources.find((item) => item.id === pickedSourceId) ?? sources[0] ?? LOCAL_SOURCE;
+  const tabHostName = useMemo(() => sourceTabHostName(source, profiles), [source, profiles]);
+  useWorkspaceTabTitle(tabHostName);
   const sourceProfileMissing = sourceMissingSSHProfile(source, profiles);
   const sourceConfigKey = JSON.stringify({
     source,
