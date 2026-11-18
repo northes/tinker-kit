@@ -106,9 +106,6 @@ type TabWidthMode = (typeof TAB_WIDTH_MODES)[number];
 const settingRowClass = 'flex min-h-8 items-center justify-between gap-5';
 const settingLabelClass = 'text-xs leading-[1.4] font-medium text-foreground';
 const settingHintClass = 'text-[10px] leading-[1.4] text-muted-foreground';
-const settingControlClass = 'flex justify-end max-[700px]:justify-start';
-const settingStackClass =
-  'divide-y divide-border [&>:not(:first-child)]:pt-3 [&>:not(:last-child)]:pb-3';
 
 export type ToolDefinition = {
   id: ToolId;
@@ -296,7 +293,10 @@ function ChoiceGroup<T extends string | number>({
         role="radiogroup"
         aria-labelledby={hideLabel ? undefined : labelId}
         aria-label={hideLabel ? label : undefined}
-        className="flex min-w-0 flex-none flex-wrap"
+        className={cn(
+          'flex min-w-0 flex-none flex-wrap items-center gap-0.5 rounded-lg bg-muted/60 p-0.5',
+          fill && 'w-full',
+        )}
       >
         {options.map((option, index) => {
           const checked = option.id === value;
@@ -305,10 +305,17 @@ function ChoiceGroup<T extends string | number>({
               key={String(option.id)}
               type="button"
               role="radio"
-              variant={checked ? 'default' : 'ghost'}
+              variant="ghost"
+              size="xs"
               aria-checked={checked}
               tabIndex={checked || (selectedIndex < 0 && index === 0) ? 0 : -1}
-              className="flex-none"
+              className={cn(
+                'min-w-[3.5rem] flex-none text-xs',
+                fill && 'flex-1',
+                checked
+                  ? 'bg-background text-foreground hover:bg-background hover:text-foreground'
+                  : 'text-muted-foreground hover:text-foreground',
+              )}
               disabled={isDisabled}
               onClick={() => onChange(option.id)}
               onKeyDown={(event) => onKeyDown(event, index)}
@@ -686,33 +693,31 @@ function WindowAppearanceSettings({
     setSettings((current) => ({ ...current, windowOpacity: clampWindowOpacity(next) }));
   };
   return (
-    <SettingsGroup title={t('settings.windowAppearance')}>
-      <div className="flex flex-col gap-3">
-        <Setting label={t('settings.windowOpacity')}>
-          <div className="flex w-52 max-w-full items-center gap-3">
-            <Slider
-              aria-label={t('settings.windowOpacity')}
-              className="w-36"
-              min={WINDOW_OPACITY_MIN}
-              max={WINDOW_OPACITY_MAX}
-              step={1}
-              value={[opacity]}
-              onValueChange={previewOpacity}
-              onValueCommitted={commitOpacity}
-            />
-            <span className="w-9 shrink-0 text-right text-xs tabular-nums text-muted-foreground">
-              {t('settings.windowOpacityValue', { value: opacity })}
-            </span>
-          </div>
-        </Setting>
-        <Setting label={t('settings.windowBlur')}>
-          <SettingSwitch
-            selected={settings.windowBlur !== false}
-            onChange={(windowBlur) => setSettings((current) => ({ ...current, windowBlur }))}
+    <>
+      <Setting label={t('settings.windowOpacity')}>
+        <div className="flex w-52 max-w-full items-center gap-3">
+          <Slider
+            aria-label={t('settings.windowOpacity')}
+            className="w-36"
+            min={WINDOW_OPACITY_MIN}
+            max={WINDOW_OPACITY_MAX}
+            step={1}
+            value={[opacity]}
+            onValueChange={previewOpacity}
+            onValueCommitted={commitOpacity}
           />
-        </Setting>
-      </div>
-    </SettingsGroup>
+          <span className="w-9 shrink-0 text-right text-xs tabular-nums text-muted-foreground">
+            {t('settings.windowOpacityValue', { value: opacity })}
+          </span>
+        </div>
+      </Setting>
+      <Setting label={t('settings.windowBlur')}>
+        <SettingSwitch
+          selected={settings.windowBlur !== false}
+          onChange={(windowBlur) => setSettings((current) => ({ ...current, windowBlur }))}
+        />
+      </Setting>
+    </>
   );
 }
 
@@ -976,7 +981,7 @@ export default function SettingsPage({
     : 128;
   const tabWidthOptions = TAB_WIDTH_PRESETS.map((size) => ({
     id: size,
-    label: `${size} px`,
+    label: `${size}px`,
   }));
   const diffTargetOptions = DIFF_CLIPBOARD_TARGET_MODES.map((value) => ({
     value,
@@ -1067,36 +1072,25 @@ export default function SettingsPage({
         case 'preferences':
           return (
             <>
-              <SettingsGroup divider={false} title={t('settings.themeMode')}>
-                <div className={settingControlClass}>
+              <SettingsGroup divider={false} title={t('settings.appearance')}>
+                <div className="flex flex-col gap-3">
                   <ChoiceGroup
                     label={t('settings.themeMode')}
-                    hideLabel
                     value={settings.themeMode as ThemeMode}
                     options={themeModeOptions}
                     onChange={setThemeMode}
                   />
-                </div>
-              </SettingsGroup>
-              {hostOS === 'darwin' ? (
-                <WindowAppearanceSettings settings={settings} setSettings={setSettings} />
-              ) : null}
-              <SettingsGroup title={t('settings.language')}>
-                <div className={settingControlClass}>
+                  {hostOS === 'darwin' ? (
+                    <WindowAppearanceSettings settings={settings} setSettings={setSettings} />
+                  ) : null}
                   <ChoiceGroup
                     label={t('settings.language')}
-                    hideLabel
                     value={settings.language}
                     options={languageOptions}
                     onChange={setLanguage}
                   />
-                </div>
-              </SettingsGroup>
-              <SettingsGroup title={t('settings.editorFontSize')}>
-                <div className={settingControlClass}>
                   <ChoiceGroup
                     label={t('settings.editorFontSize')}
-                    hideLabel
                     value={settings.codeEditorFontSize || 16}
                     options={fontSizeOptions}
                     onChange={(size) =>
@@ -1168,9 +1162,7 @@ export default function SettingsPage({
                       value={tabWidthPreset}
                       options={tabWidthOptions}
                       isDisabled={tabWidthMode === 'auto'}
-                      onChange={(tabWidth) =>
-                        setSettings((current) => ({ ...current, tabWidth }))
-                      }
+                      onChange={(tabWidth) => setSettings((current) => ({ ...current, tabWidth }))}
                     />
                     <p className={cn('m-0', settingHintClass)}>
                       {t('settings.tabWidthWithIconsHint')}
@@ -1193,16 +1185,23 @@ export default function SettingsPage({
         case 'automation':
           return (
             <>
-              <SettingsGroup divider={false} title={t('settings.trayRecognition')}>
+              <SettingsGroup divider={false} title={t('settings.automation')}>
                 <div className="flex flex-col gap-3">
-                  <div className={settingStackClass}>
+                  <div className="flex flex-col gap-3">
                     <Setting
-                      label={t('settings.trayRecognitionEnabled')}
+                      label={t('settings.trayRecognition')}
                       description={t('settings.trayRecognitionEnabledDesc')}
                     >
                       <SettingSwitch
                         selected={settings.trayMatchEnabled}
                         onChange={(value) => update('trayMatchEnabled', value)}
+                      />
+                    </Setting>
+                    <Setting label={t('settings.autostart')}>
+                      <SettingSwitch
+                        selected={autostartEnabled}
+                        onChange={(enabled) => void setAutostart(enabled)}
+                        isDisabled={autostartLoading || autostartSaving}
                       />
                     </Setting>
                   </div>
@@ -1221,49 +1220,40 @@ export default function SettingsPage({
                   ) : null}
                 </div>
               </SettingsGroup>
-              <SettingsGroup title={t('settings.autostart')}>
-                <div className={settingControlClass}>
-                  <SettingSwitch
-                    selected={autostartEnabled}
-                    onChange={(enabled) => void setAutostart(enabled)}
-                    isDisabled={autostartLoading || autostartSaving}
-                    ariaLabel={t('settings.autostart')}
-                  />
-                </div>
-              </SettingsGroup>
               <SettingsGroup title={t('settings.taskNotifications')}>
-                <ChoiceGroup
-                  fill
-                  label={t('settings.notificationTiming')}
-                  value={settings.taskNotificationMode ?? 'unfocused'}
-                  options={(['off', 'always', 'unfocused'] as const).map((id) => ({
-                    id,
-                    label: t(`settings.taskNotificationMode.${id}`),
-                  }))}
-                  onChange={(taskNotificationMode) =>
-                    setSettings((current) => ({ ...current, taskNotificationMode }))
-                  }
-                />
-              </SettingsGroup>
-              <SettingsGroup title={t('settings.testNotifications')}>
-                <div className={settingControlClass}>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    disabled={testingTaskNotification}
-                    onClick={() => void sendTestTaskNotification()}
-                  >
-                    {testingTaskNotification ? (
-                      <Spinner data-icon="inline-start" />
-                    ) : (
-                      <BellRinging data-icon="inline-start" weight="regular" />
-                    )}
-                    {t(
-                      testingTaskNotification
-                        ? 'settings.taskNotificationTesting'
-                        : 'settings.testTaskNotification',
-                    )}
-                  </Button>
+                <div className="flex flex-col gap-3">
+                  <ChoiceGroup
+                    fill
+                    label={t('settings.notificationTiming')}
+                    value={settings.taskNotificationMode ?? 'unfocused'}
+                    options={(['off', 'always', 'unfocused'] as const).map((id) => ({
+                      id,
+                      label: t(`settings.taskNotificationMode.${id}`),
+                    }))}
+                    onChange={(taskNotificationMode) =>
+                      setSettings((current) => ({ ...current, taskNotificationMode }))
+                    }
+                  />
+                  <div className="flex items-center justify-between gap-5 pt-3 max-[700px]:flex-col max-[700px]:items-start">
+                    <strong className={settingLabelClass}>{t('settings.testNotifications')}</strong>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={testingTaskNotification}
+                      onClick={() => void sendTestTaskNotification()}
+                    >
+                      {testingTaskNotification ? (
+                        <Spinner data-icon="inline-start" />
+                      ) : (
+                        <BellRinging data-icon="inline-start" weight="regular" />
+                      )}
+                      {t(
+                        testingTaskNotification
+                          ? 'settings.taskNotificationTesting'
+                          : 'settings.testTaskNotification',
+                      )}
+                    </Button>
+                  </div>
                 </div>
               </SettingsGroup>
             </>
@@ -1271,7 +1261,7 @@ export default function SettingsPage({
         case 'connections':
           return (
             <SettingsGroup divider={false} title={t('settings.ssh')}>
-              <div className={settingStackClass}>
+              <div className="flex flex-col gap-3">
                 <Setting label={t('settings.sshProfiles')}>
                   <Button variant="outline" onClick={() => openManager()}>
                     <Key data-icon="inline-start" weight="regular" />
@@ -1294,17 +1284,17 @@ export default function SettingsPage({
           return (
             <>
               <SettingsGroup divider={false} title={t('settings.configManagement')}>
-                <div className={settingStackClass}>
+                <div className="flex flex-col gap-3">
                   <Setting label={t('settings.exportConfig')}>
                     <Button variant="outline" onClick={() => setConfigAction('export')}>
                       <DownloadSimple data-icon="inline-start" weight="regular" />
-                      {t('settings.exportConfig')}
+                      {t('settings.exportConfigAction')}
                     </Button>
                   </Setting>
                   <Setting label={t('settings.importConfig')}>
                     <Button variant="outline" onClick={() => setConfigAction('import')}>
                       <UploadSimple data-icon="inline-start" weight="regular" />
-                      {t('settings.importConfig')}
+                      {t('settings.importConfigAction')}
                     </Button>
                   </Setting>
                   <Setting
@@ -1313,7 +1303,7 @@ export default function SettingsPage({
                   >
                     <Button variant="destructive" onClick={() => setConfigAction('reset')}>
                       <ArrowCounterClockwise data-icon="inline-start" weight="regular" />
-                      {t('settings.resetConfig')}
+                      {t('settings.resetConfigAction')}
                     </Button>
                   </Setting>
                 </div>
@@ -1324,7 +1314,7 @@ export default function SettingsPage({
           return (
             <>
               <SettingsGroup divider={false} title={t('settings.updates')}>
-                <div className={settingStackClass}>
+                <div className="flex flex-col gap-3">
                   <Setting
                     label={t('settings.autoCheckUpdates')}
                     description={t('settings.autoCheckUpdatesDesc')}
@@ -1349,19 +1339,15 @@ export default function SettingsPage({
                   </Setting>
                 </div>
               </SettingsGroup>
-              <SettingsGroup divider title={t('settings.projectLink')}>
-                <div className={settingControlClass}>
-                  <Setting>
+              <SettingsGroup title={t('settings.application')}>
+                <div className="flex flex-col gap-3">
+                  <Setting label={t('settings.projectLink')}>
                     <Button variant="outline" onClick={() => void Browser.OpenURL(GITHUB_REPO_URL)}>
                       <ArrowSquareOut data-icon="inline-start" weight="regular" />
                       {t('settings.openProject')}
                     </Button>
                   </Setting>
-                </div>
-              </SettingsGroup>
-              <SettingsGroup title={t('settings.quit')}>
-                <div className={settingControlClass}>
-                  <Setting>
+                  <Setting label={t('settings.quit')}>
                     <Button variant="outline" onClick={() => setConfirmQuit(true)}>
                       <Power data-icon="inline-start" weight="regular" />
                       {t('settings.quitAction')}
@@ -1380,7 +1366,7 @@ export default function SettingsPage({
           options={{ overflow: { x: 'hidden' } }}
         >
           <div className="min-w-0 max-w-[820px] px-1 pb-4">
-            <div className="border-b border-border pb-3">
+            <div className="border-b border-border pb-3 min-[701px]:sr-only">
               <h2 className="m-0 text-sm font-semibold text-foreground">
                 {t(`settings.categories.${activeCategory}.title`)}
               </h2>

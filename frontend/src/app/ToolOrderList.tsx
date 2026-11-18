@@ -54,7 +54,9 @@ function ToolOrderRow({
       role="listitem"
       aria-posinset={index + 1}
       aria-setsize={count}
-      className={`flex select-none items-center gap-0.5 rounded-lg ${enabled ? '' : 'opacity-40'} ${isDragging ? 'bg-accent shadow-md' : ''}`}
+      className={`flex select-none items-center gap-0.5 rounded-md ${enabled ? '' : 'opacity-40'} ${
+        isDragging ? 'bg-accent shadow-md' : `even:bg-muted/30 ${enabled ? 'hover:bg-muted/50' : ''}`
+      }`}
     >
       <Button
         ref={setActivatorNodeRef}
@@ -94,7 +96,7 @@ function ToolOrderRow({
         aria-label={t(enabled ? 'sidebar.hideTool' : 'sidebar.showTool', { name })}
         onClick={() => onToggle(tool.id)}
       >
-        {enabled ? <EyeClosed size={16} weight="regular" /> : <Eye size={16} weight="regular" />}
+        {enabled ? <Eye size={16} weight="regular" /> : <EyeClosed size={16} weight="regular" />}
       </Button>
     </div>
   );
