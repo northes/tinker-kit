@@ -36,6 +36,7 @@ import {
 import { cn } from '@/lib/utils';
 import { formatBackendError } from '../lib/backend-error';
 import { sendSystemNotification } from '../lib/task-notification-feedback';
+import { useWorkspaceTabTitle } from '../app/workspace-tab-title';
 import { isLocalSource, sourceLabel } from '../lib/local-source';
 import { ConfirmDialog } from './ConfirmDialog';
 import { LogFilterHistory } from '../../bindings/tinkerkit/configservice';
@@ -53,6 +54,7 @@ import {
   statusKey,
   statusVariant,
   targetLabel,
+  targetTabHostName,
   VISIBLE_LOG_LIMIT,
   type LogEvent,
   type PickedMember,
@@ -492,6 +494,8 @@ export default function ServiceManagerTool({
   }, [activeMonitorKey, logQuery, regex, caseSensitive, wholeWord]);
 
   const toolbarTarget = targets.find((target) => target.id === targetID);
+  // 只跟工具栏当前目标，不用多选监控里的 selection。
+  useWorkspaceTabTitle(targetTabHostName(toolbarTarget, profiles));
 
   const selectTarget = (next: string | null) => {
     if (!next || next === targetID) return;

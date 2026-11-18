@@ -42,6 +42,7 @@ import {
   useState,
 } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useWorkspaceTabTitle } from '../app/workspace-tab-title';
 import {
   CalculateRemoteSize,
   CancelFileTask,
@@ -81,6 +82,7 @@ import {
   DIRECTORY_CACHE_TTL_MS,
   directoryListingKey,
   emptyFileSource,
+  fileSourceTabHostName,
   errorMessage,
   formatBytes,
   formatRemoteTimestamp,
@@ -280,6 +282,8 @@ export default function SshFilesTool({ active, locate = null }: Props) {
     error,
     directoryCache,
   } = useRemoteFileBrowser({ active, profiles, manageOpen });
+  // 来源还没加载完（source 为空）或配置已失效时不上报。
+  useWorkspaceTabTitle(fileSourceTabHostName(source, profiles));
   const currentPathRef = useRef(currentPath);
   const pathEditInputWrapRef = useRef<HTMLDivElement>(null);
   const pathEditInputRef = useRef<HTMLInputElement>(null);

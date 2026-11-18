@@ -8,7 +8,7 @@ import type {
   ServiceTarget,
 } from '../../../bindings/tinkerkit/models';
 import { backendErrorKey } from '../../lib/backend-error';
-import { sourceLabel } from '../../lib/local-source';
+import { isLocalSource, sourceLabel } from '../../lib/local-source';
 
 export const MANAGE_TARGETS_VALUE = '__manage-targets__';
 
@@ -163,4 +163,25 @@ export function logDayKey(line: ServiceLogLine) {
 
 export function targetLabel(target: ServiceTarget, t: ReturnType<typeof useTranslation>['t']) {
   return sourceLabel(target, t('serviceManagerTool.localTarget'));
+}
+
+function trimmedHostLabel(value: string | null | undefined) {
+  const trimmed = value?.trim() ?? '';
+  return trimmed || null;
+}
+
+// 标签标题用的主机名，不改下拉文案。本机、SSH 配置已失效、名称为空都不上报。
+// 否则优先用目标名称，再回退到它引用的 SSH 配置名。
+export function targetTabHostName(
+  target: ServiceTarget | null | undefined,
+  profiles: readonly { id: string; name: string }[],
+): string | null {
+  if (!target || isLocalSource(target)) return null;
+  const profileMissing =
+    target.kind === 'ssh' && !profiles.some((profile) => profile.id === target.sshProfileID);
+  if (profileMissing) return null;
+  return (
+    trimmedHostLabel(target.name) ??
+    trimmedHostLabel(profiles.find((profile) => profile.id === target.sshProfileID)?.name)
+  );
 }

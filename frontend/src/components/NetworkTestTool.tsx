@@ -23,6 +23,7 @@ import {
 } from '../../bindings/tinkerkit/configservice';
 import { formatBackendError } from '../lib/backend-error';
 import { sendSystemNotification } from '../lib/task-notification-feedback';
+import { useWorkspaceTabTitle } from '../app/workspace-tab-title';
 import { isLocalSource, sourceLabel } from '../lib/local-source';
 import {
   automaticTarget,
@@ -103,6 +104,27 @@ const defaultNetworkTestSettings: NetworkTestSettings = {
 const defaultNetworkTestSources: NetworkTestSource[] = [
   { id: 'local', name: '本机', kind: 'local', sshProfileID: '' },
 ];
+function trimmedHostLabel(value: string | null | undefined) {
+  const trimmed = value?.trim() ?? '';
+  return trimmed || null;
+}
+
+// 标签标题用的主机名，不改下拉文案。本机、SSH 配置已失效、名称为空都不上报。
+// 否则优先用来源名称，再回退到它引用的 SSH 配置名。
+function networkTestTabHostName(
+  source: NetworkTestSource | null | undefined,
+  profiles: readonly { id: string; name: string }[],
+): string | null {
+  if (!source || isLocalSource(source)) return null;
+  const profileMissing =
+    source.kind === 'ssh' && !profiles.some((profile) => profile.id === source.sshProfileID);
+  if (profileMissing) return null;
+  return (
+    trimmedHostLabel(source.name) ??
+    trimmedHostLabel(profiles.find((profile) => profile.id === source.sshProfileID)?.name)
+  );
+}
+
 const defaultNetworkTestOptions: NetworkTestOptions = {
   ...defaultNetworkTestSettings,
   timeoutSeconds: String(defaultNetworkTestSettings.timeoutSeconds),
@@ -400,6 +422,7 @@ export default function NetworkTestTool({
   const remoteSourceSelected = selectedSource.kind === 'ssh';
   const selectedSourceProfileMissing =
     remoteSourceSelected && !profiles.some((profile) => profile.id === selectedSource.sshProfileID);
+  useWorkspaceTabTitle(networkTestTabHostName(selectedSource, profiles));
   const unsupportedRemoteProtocol =
     remoteSourceSelected && effectiveProtocol !== null && effectiveProtocol !== 'http';
   const sourceDisplayName = useCallback(

@@ -57,6 +57,23 @@ export function emptyFileSource(sshProfileID = ''): ManagedFileSource {
   };
 }
 
+function trimmedHostLabel(value: string | null | undefined) {
+  const trimmed = value?.trim() ?? '';
+  return trimmed || null;
+}
+
+// 标签标题用的主机名，不改来源下拉文案。文件来源没有本机项：
+// 来源未加载或 SSH 配置已删除时不上报；否则优先用来源名称，再回退到配置名。
+export function fileSourceTabHostName(
+  source: FileSource | null | undefined,
+  profiles: readonly Pick<SSHProfile, 'id' | 'name'>[],
+): string | null {
+  if (!source) return null;
+  const profile = profiles.find((item) => item.id === source.sshProfileID);
+  if (!profile) return null;
+  return trimmedHostLabel(source.name) ?? trimmedHostLabel(profile.name);
+}
+
 export function sshProfileListingKey(profile: SSHProfile | null | undefined) {
   if (!profile) return '';
   return [
