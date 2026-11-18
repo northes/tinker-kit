@@ -117,8 +117,12 @@
       "description": "Browse, upload, and download SSH files"
     },
     "ports": {
-      "name": "Ports",
-      "description": "Inspect local and remote ports and manage SSH forwarding"
+      "name": "Port usage",
+      "description": "Inspect ports on this machine and SSH hosts"
+    },
+    "port-forwards": {
+      "name": "Port forwarding",
+      "description": "Forward ports locally or remotely over SSH"
     },
     "network-test": {
       "name": "Network Test",
@@ -147,7 +151,8 @@
     "togglePipeline": "Toggle pipeline",
     "toggleAutoFormatOnFill": "Toggle auto-format on fill",
     "paste": "Paste",
-    "openPorts": "Ports",
+    "openPorts": "Port usage",
+    "openPortForwards": "Port forwarding",
     "openNetworkTest": "Network Test"
   },
   "jsonTool": {
@@ -2490,13 +2495,14 @@
     "resizeColumn": "Resize the {{column}} column",
     "sortNotActive": "Not sorted",
     "defaultOrder": "Default order",
-    "title": "Ports",
+    "title": "Port usage",
     "source": "Host",
     "local": "Local",
     "localMachine": "Local machine",
     "localForward": "Local to remote",
     "remoteForward": "Remote to local",
     "manageSources": "Manage",
+    "manageForwardSources": "Manage sources",
     "manageSourcesTitle": "Manage port sources",
     "manageSourcesDesc": "Port sources only store references to global SSH profiles; manage connection details in the global SSH settings.",
     "sources": "Sources",
@@ -2518,8 +2524,6 @@
     "discardSourcesConfirm": "Discard changes",
     "missingSource": "Host unavailable",
     "refresh": "Refresh",
-    "ports": "Port usage",
-    "forwards": "Port forwarding",
     "port": "Port",
     "address": "Address",
     "protocol": "Protocol",

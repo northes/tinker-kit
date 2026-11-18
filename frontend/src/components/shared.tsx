@@ -41,6 +41,7 @@ export type ToolId =
   | 'service-manager'
   | 'ssh-files'
   | 'ports'
+  | 'port-forwards'
   | 'network-test';
 export type PendingAction = {
   tool: ToolId;

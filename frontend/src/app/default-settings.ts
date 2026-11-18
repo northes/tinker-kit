@@ -38,6 +38,7 @@ export const defaultSettings: Settings = {
     { id: 'ssh-files', enabled: true },
     { id: 'service-manager', enabled: true },
     { id: 'ports', enabled: true },
+    { id: 'port-forwards', enabled: true },
     { id: 'network-test', enabled: true },
   ],
   themeMode: 'dark',
@@ -90,6 +91,8 @@ export const defaultSettings: Settings = {
   fileSources: [],
   serviceTargets: [{ id: 'local', name: '本机', kind: 'local', sshProfileID: '' }],
   portSources: [{ id: 'local', name: '本机', kind: 'local', sshProfileID: '' }],
+  // 转发来源与占用分开。缺省只有本机，不从 portSources 复制 SSH。
+  portForwardSources: [{ id: 'local', name: '本机', kind: 'local', sshProfileID: '' }],
   serviceLogHighlightLevels: true,
   serviceLogCollapseLines: 5,
   portForwards: [],

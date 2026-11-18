@@ -283,6 +283,31 @@ export function openToolTab(
   };
 }
 
+// 端口转发全局只有一份列表。已有标签时只激活它，不新开，也不动当时的空白标签。
+// created 为真才是首次打开（就地转换或新开），调用方据此决定要不要当成新标签聚焦。
+export function openPortForwardTab(state: WorkspaceState): {
+  state: WorkspaceState;
+  tab: WorkspaceTab;
+  created: boolean;
+} {
+  const existing = state.tabs.find((tab) => tab.kind === 'tool' && tab.toolId === 'port-forwards');
+  if (existing) {
+    if (existing.id === state.activeId) return { state, tab: existing, created: false };
+    const next = touch(state, existing.id);
+    const tab = next.tabs.find((item) => item.id === existing.id) ?? existing;
+    return { state: next, tab, created: false };
+  }
+  const current = activeTab(state);
+  if (current?.kind === 'blank') {
+    const next = convertBlankTabToTool(state, current.id, 'port-forwards');
+    const tab = next.tabs.find((item) => item.id === current.id);
+    if (!tab || tab.kind !== 'tool') return { state, tab: current, created: false };
+    return { state: next, tab, created: true };
+  }
+  const opened = openToolTab(state, 'port-forwards');
+  return { state: opened.state, tab: opened.tab, created: true };
+}
+
 export function openOrFocusSettings(state: WorkspaceState): WorkspaceState {
   const existing = state.tabs.find((tab) => tab.kind === 'settings');
   if (existing) return existing.id === state.activeId ? state : touch(state, existing.id);

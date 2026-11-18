@@ -1,5 +1,6 @@
 import {
   ArrowsClockwise,
+  ArrowsLeftRight,
   BracketsCurly,
   Clock,
   Copy,
@@ -171,7 +172,14 @@ export const tools: ToolDefinition[] = [
     nameKey: 'tools.ports.name',
     descriptionKey: 'tools.ports.description',
     icon: Plugs,
-    keywords: 'port process pid ssh tunnel forward 端口 进程 转发',
+    keywords: 'port process pid ssh tunnel 端口 进程',
+  },
+  {
+    id: 'port-forwards' as const,
+    nameKey: 'tools.port-forwards.name',
+    descriptionKey: 'tools.port-forwards.description',
+    icon: ArrowsLeftRight,
+    keywords: 'port forward ssh tunnel forwarding 端口 转发',
   },
   {
     id: 'network-test' as const,
@@ -337,8 +345,16 @@ export const paletteItems: PaletteItem[] = [
     labelKey: 'commands.openPorts',
     groupKey: 'groups.tools',
     icon: Plugs,
-    keywords: 'port process ssh forward 端口 进程 转发 打开工具',
+    keywords: 'port process ssh 端口 进程 打开工具',
     page: 'ports',
+  },
+  {
+    id: 'open:port-forwards',
+    labelKey: 'commands.openPortForwards',
+    groupKey: 'groups.tools',
+    icon: ArrowsLeftRight,
+    keywords: 'port forward ssh tunnel 端口 转发 打开工具',
+    page: 'port-forwards',
   },
   {
     id: 'open:network-test',

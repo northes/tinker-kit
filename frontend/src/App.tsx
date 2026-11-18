@@ -50,6 +50,7 @@ import {
   cycleTabs,
   openBlankTab,
   openOrFocusSettings,
+  openPortForwardTab,
   openToolTab,
   parseTabCloseActivation,
   parseTabCloseButton,
@@ -197,6 +198,8 @@ const ServiceManagerTool = lazy(() => import('./components/ServiceManagerTool'))
 const SshFilesTool = lazy(() => import('./components/SshFilesTool'));
 
 const PortTool = lazy(() => import('./components/PortTool'));
+
+const PortForwardTool = lazy(() => import('./components/PortForwardTool'));
 
 const NetworkTestTool = lazy(() => import('./components/NetworkTestTool'));
 
@@ -431,9 +434,15 @@ function AppShell() {
   const openBlankTabSession = () => {
     commitWorkspace(openBlankTab(workspaceStateRef.current).state);
   };
-  // 空白标签里选工具就地变成该工具，不另开标签。
+  // 空白标签里选工具就地变成该工具，不另开标签。端口转发已有标签时只激活那一个。
   const openTool = (toolId: ToolId) => {
     const state = workspaceStateRef.current;
+    if (toolId === 'port-forwards') {
+      const opened = openPortForwardTab(state);
+      if (opened.created) freshToolTabIdsRef.current.add(opened.tab.id);
+      if (opened.state !== state) commitWorkspace(opened.state);
+      return opened.tab;
+    }
     const current = activeTab(state);
     if (current?.kind === 'blank') {
       freshToolTabIdsRef.current.add(current.id);
@@ -1032,10 +1041,7 @@ function AppShell() {
           active={active}
           tools={enabledTools}
           romanize={romanize}
-          onSelectTool={(toolId) => {
-            freshToolTabIdsRef.current.add(tab.id);
-            commitWorkspace(convertBlankTabToTool(workspaceStateRef.current, tab.id, toolId));
-          }}
+          onSelectTool={openTool}
           onOpenSettings={openSettingsTab}
         />
       );
@@ -1151,6 +1157,8 @@ function AppShell() {
         );
       case 'ports':
         return <PortTool active={active} />;
+      case 'port-forwards':
+        return <PortForwardTool active={active} />;
       case 'network-test':
         return (
           <NetworkTestTool active={active} taskNotificationMode={settings.taskNotificationMode} />

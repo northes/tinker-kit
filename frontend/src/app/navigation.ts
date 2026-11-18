@@ -25,9 +25,18 @@ export function resolveSidebarTools(
     seen.add(item.id);
   }
   for (const tool of tools) {
-    if (!seen.has(tool.id)) resolved.push({ id: tool.id, enabled: true });
+    // 缺失工具仍追加到末尾。端口转发要跟在用户已经排好的端口占用后面，不能因为后加就掉到列表尾部。
+    if (tool.id === 'port-forwards' || seen.has(tool.id)) continue;
+    resolved.push({ id: tool.id, enabled: true });
+    seen.add(tool.id);
   }
-  return resolved;
+  if (seen.has('port-forwards')) return resolved;
+  const inserted: SidebarToolConfig[] = [];
+  for (const item of resolved) {
+    inserted.push(item);
+    if (item.id === 'ports') inserted.push({ id: 'port-forwards', enabled: true });
+  }
+  return inserted;
 }
 
 export function moveSidebarToolBy(

@@ -117,8 +117,12 @@
       "description": "浏览、上传和下载 SSH 文件"
     },
     "ports": {
-      "name": "端口工具",
-      "description": "检查本地与远程端口，管理 SSH 端口转发"
+      "name": "端口占用",
+      "description": "检查本机与 SSH 主机上的端口占用"
+    },
+    "port-forwards": {
+      "name": "端口转发",
+      "description": "经 SSH 做本地或远程端口转发"
     },
     "network-test": {
       "name": "网络测试",
@@ -147,7 +151,8 @@
     "togglePipeline": "切换流水线",
     "toggleAutoFormatOnFill": "切换填入后自动格式化",
     "paste": "粘贴",
-    "openPorts": "端口工具",
+    "openPorts": "端口占用",
+    "openPortForwards": "端口转发",
     "openNetworkTest": "网络测试"
   },
   "jsonTool": {
@@ -2490,13 +2495,14 @@
     "resizeColumn": "调整{{column}}列宽",
     "sortNotActive": "未排序",
     "defaultOrder": "默认顺序",
-    "title": "端口工具",
+    "title": "端口占用",
     "source": "主机",
     "local": "本地",
     "localMachine": "本机",
     "localForward": "本地转发到远程",
     "remoteForward": "远程转发到本地",
     "manageSources": "管理",
+    "manageForwardSources": "管理来源",
     "manageSourcesTitle": "管理端口来源",
     "manageSourcesDesc": "端口来源只保存全局 SSH 配置的引用；连接参数请在全局 SSH 配置中管理。",
     "sources": "来源列表",
@@ -2518,8 +2524,6 @@
     "discardSourcesConfirm": "放弃修改",
     "missingSource": "主机已失效",
     "refresh": "刷新",
-    "ports": "端口占用",
-    "forwards": "端口转发",
     "port": "端口",
     "address": "地址",
     "protocol": "协议",

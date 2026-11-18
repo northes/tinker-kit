@@ -10,6 +10,7 @@ import {
   emptyWorkspace,
   openBlankTab,
   openOrFocusSettings,
+  openPortForwardTab,
   openToolTab,
   parseTabCloseActivation,
   parseTabCloseButton,
@@ -178,6 +179,41 @@ test('关掉最后一个补一个空白标签，循环在不足两个时不做�
   assert.equal(cycleTabs(cycled, -1).activeId, two.tabs[1].id);
   const withSettings = openOrFocusSettings(two);
   assert.equal(cycleTabs(withSettings, 1).activeId, withSettings.tabs[0].id);
+});
+
+test('已有端口转发标签时再打开只聚焦，空白标签留着', () => {
+  const opened = openToolTab(emptyWorkspace(), 'port-forwards');
+  const blank = openBlankTab(opened.state);
+  const again = openPortForwardTab(blank.state);
+  assert.equal(again.created, false);
+  assert.equal(again.state.activeId, opened.tab.id);
+  assert.notEqual(again.state, blank.state);
+  assert.equal(again.state.tabs.length, 2);
+  assert.equal(again.state.tabs.find((tab) => tab.id === blank.tab.id)?.kind, 'blank');
+  assert.equal(again.state.tabs.filter((tab) => tab.toolId === 'port-forwards').length, 1);
+  const focused = openPortForwardTab(again.state);
+  assert.equal(focused.created, false);
+  assert.equal(focused.state, again.state);
+  assert.equal(focused.tab.id, opened.tab.id);
+});
+
+test('没有端口转发标签时，空白标签就地变成转发', () => {
+  const started = startupWorkspace();
+  const opened = openPortForwardTab(started);
+  assert.equal(opened.created, true);
+  assert.equal(opened.state.tabs.length, 1);
+  assert.equal(opened.tab.id, started.tabs[0].id);
+  assert.equal(opened.tab.kind, 'tool');
+  assert.equal(opened.tab.toolId, 'port-forwards');
+  assert.equal(opened.tab.ordinal, 1);
+});
+
+test('端口占用仍能开第二个标签', () => {
+  const first = openToolTab(emptyWorkspace(), 'ports');
+  const second = openToolTab(first.state, 'ports');
+  assert.equal(second.state.tabs.filter((tab) => tab.toolId === 'ports').length, 2);
+  assert.notEqual(second.tab.id, first.tab.id);
+  assert.equal(second.tab.ordinal, 2);
 });
 
 test('启动带一个空白标签，空白标签就地变成工具', () => {
