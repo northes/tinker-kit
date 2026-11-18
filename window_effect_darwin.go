@@ -35,8 +35,11 @@ static void tinkerkitApplyWindowEffect(void *nsWindow, int dark, int blur, int o
 			[effect setBlendingMode:NSVisualEffectBlendingModeBehindWindow];
 			if (blur) {
 				[effect setHidden:NO];
-				[effect setMaterial:NSVisualEffectMaterialUnderWindowBackground];
-				// 模糊开就满强度：模糊背景是一件事，透明度只由上层 CSS 叠色决定。
+				// underWindowBackground 是浅色「揭开」材质，不是中性模糊。
+				// 半透明界面盖在它上面会被洗白。按主题用真正采样窗口背后的材质，并钉死视图自己的外观。
+				[effect setAppearance:[NSAppearance appearanceNamed:appearance]];
+				[effect setMaterial:dark ? NSVisualEffectMaterialHUDWindow : NSVisualEffectMaterialPopover];
+				[effect setEmphasized:NO];
 				[effect setAlphaValue:1.0];
 				[effect setState:NSVisualEffectStateActive];
 			} else {
