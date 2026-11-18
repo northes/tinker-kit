@@ -1,18 +1,21 @@
-.update-pill__text {
-  color: transparent !important;
+/* 可用态（新版本）不扫，继承外壳的 foreground。
+   进行中的文字是 [role=status] 的子节点；可用态的 role 在文字自己身上。
+   检查、下载、准备、重启共用这一颗节点，样式分不开后三者，所以扫光只在这颗节点出现时走一遍。 */
+[role='status'] > .update-pill__text {
+  color: transparent;
   background-image: linear-gradient(
     105deg,
     var(--foreground) 0%,
-    var(--foreground) 38%,
-    color-mix(in srgb, var(--foreground) 38%, var(--card)) 50%,
-    var(--foreground) 62%,
+    var(--foreground) 36%,
+    color-mix(in oklab, var(--foreground) 62%, var(--card)) 50%,
+    var(--foreground) 64%,
     var(--foreground) 100%
   );
-  background-position: 100% 0;
-  background-size: 250% 100%;
-  background-clip: text;
+  background-position: 0% 0;
+  background-size: 300% 100%;
   -webkit-background-clip: text;
-  animation: update-pill-shimmer 2.8s ease-in-out infinite;
+  background-clip: text;
+  animation: update-pill-shimmer var(--motion-slide-duration) var(--motion-slide-ease) 1 forwards;
 }
 
 @keyframes update-pill-shimmer {
@@ -26,11 +29,11 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .update-pill__text {
-    color: var(--foreground) !important;
-    background: none;
-    -webkit-background-clip: initial;
-    background-clip: initial;
+  [role='status'] > .update-pill__text {
+    color: inherit;
+    background-image: none;
+    -webkit-background-clip: border-box;
+    background-clip: border-box;
     animation: none;
   }
 }
