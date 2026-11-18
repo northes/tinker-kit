@@ -235,6 +235,7 @@ async function mountEditor({ dirty = false } = {}) {
   };
 }
 const openDialogs = () => [...document.querySelectorAll('[role="dialog"][data-open]')];
+const editorPanel = () => document.querySelector('[data-slot="remote-text-editor"]');
 const discardDialog = () =>
   openDialogs().find((node) => node.textContent.includes('sshFilesTool.discardTextTitle'));
 
@@ -246,7 +247,8 @@ test('真实 DOM：补全打开时 Esc 仅关闭补全，干净和未保存文�
       await editor.escape();
       assert.equal(document.querySelector('.cm-tooltip-autocomplete'), null);
       assert.equal(discardDialog(), undefined);
-      assert.equal(openDialogs().length, 1);
+      assert.ok(editorPanel());
+      assert.equal(openDialogs().length, 0);
       assert.equal(editor.closed, 0);
     } finally {
       await editor.unmount();
@@ -290,7 +292,8 @@ test('真实 DOM：关闭补全的 Esc 泄漏到 document 监听时也不能打�
     const event = await editor.escape({ propagateToDocument: true, release: false });
     assert.equal(document.querySelector('.cm-tooltip-autocomplete'), null);
     assert.equal(discardDialog(), undefined, '补全关闭时不能同时弹出未保存确认');
-    assert.equal(openDialogs().length, 1);
+    assert.ok(editorPanel());
+    assert.equal(openDialogs().length, 0);
     assert.equal(editor.closed, 0);
     await act(async () => {
       document.dispatchEvent(event);
@@ -307,11 +310,13 @@ test('真实 DOM：脏文件按 Esc 后确认框稳定打开，下一次 Esc 只
   try {
     await editor.escape();
     assert.ok(discardDialog(), '第一次 Esc 后确认框不能闪退');
-    assert.equal(openDialogs().length, 2);
+    assert.ok(editorPanel());
+    assert.equal(openDialogs().length, 1);
     assert.equal(editor.closed, 0);
     await editor.escape();
     assert.equal(discardDialog(), undefined);
-    assert.equal(openDialogs().length, 1);
+    assert.ok(editorPanel());
+    assert.equal(openDialogs().length, 0);
     assert.equal(editor.closed, 0);
   } finally {
     await editor.unmount();

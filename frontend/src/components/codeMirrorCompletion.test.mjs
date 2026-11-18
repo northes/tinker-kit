@@ -12,8 +12,6 @@ import {
 import { EditorState, Prec } from '@codemirror/state';
 import { keymap, runScopeHandlers, tooltips } from '@codemirror/view';
 import ts from 'typescript';
-import { DialogStore } from '../../node_modules/@base-ui/react/dialog/store/DialogStore.js';
-import { createChangeEventDetails } from '../../node_modules/@base-ui/react/internals/createBaseUIEventDetails.js';
 
 function loadExpression(path, predicate, context) {
   const source = ts.createSourceFile(
@@ -40,7 +38,7 @@ function loadExpression(path, predicate, context) {
   return context.action;
 }
 
-// 使用实际 CodeMirror 状态与键位调度，并重放 Base UI 的 Esc 关闭处理；无需 DOM。
+// 使用实际 CodeMirror 状态与键位调度，并重放编辑器自己的 Esc 处理；无需 DOM。
 function editorDialog(dirty = true, overrides = {}) {
   let discardOpen = false;
   let closed = false;
@@ -81,37 +79,13 @@ function editorDialog(dirty = true, overrides = {}) {
       node.parent.name.getText(source) === 'requestClose',
     context,
   );
-  const onOpenChange = loadExpression(
+  const onEditorKeyDown = loadExpression(
     './RemoteTextEditorDialog.tsx',
     (node, source) =>
       ts.isArrowFunction(node) &&
-      ts.isJsxExpression(node.parent) &&
-      ts.isJsxAttribute(node.parent.parent) &&
-      node.parent.parent.name.text === 'onOpenChange' &&
-      node.parent.parent.parent.parent.tagName.getText(source) === 'Dialog',
+      ts.isVariableDeclaration(node.parent) &&
+      node.parent.name.getText(source) === 'onEditorKeyDown',
     context,
-  );
-  const store = new DialogStore({ open: true }, 'remote-editor', false);
-  store.context.onOpenChange = onOpenChange;
-  const dismiss = loadExpression(
-    '../../node_modules/@base-ui/react/floating-ui-react/hooks/useDismiss.js',
-    (node) =>
-      ts.isArrowFunction(node) &&
-      ts.isCallExpression(node.parent) &&
-      ts.isVariableDeclaration(node.parent.parent) &&
-      node.parent.parent.name.text === 'closeOnEscapeKeyDown',
-    {
-      open: true,
-      enabled: true,
-      escapeKey: true,
-      escapeKeyBubbles: false,
-      isComposingRef: { current: false },
-      hasBlockingChild: () => false,
-      _event: { isReactEvent: () => false },
-      _reasons: { REASONS: { escapeKey: 'escape-key' } },
-      _createBaseUIEventDetails: { createChangeEventDetails },
-      store,
-    },
   );
   const view = {
     state: EditorState.create({
@@ -126,19 +100,7 @@ function editorDialog(dirty = true, overrides = {}) {
   context.viewRef.current = view;
   return {
     view,
-    store,
-    dismiss,
-    requestDismiss(reason, event = {}) {
-      const details = createChangeEventDetails(reason, {
-        defaultPrevented: false,
-        preventDefault() {
-          this.defaultPrevented = true;
-        },
-        ...event,
-      });
-      store.setOpen(false, details);
-      return details;
-    },
+    onKeyDown: onEditorKeyDown,
     press(key = 'Escape') {
       const event = {
         key,
@@ -154,7 +116,7 @@ function editorDialog(dirty = true, overrides = {}) {
       };
       const handled = runScopeHandlers(view, event, 'editor');
       if (handled) event.preventDefault();
-      if (!event.propagationStopped) dismiss(event);
+      if (!event.propagationStopped) onEditorKeyDown(event);
       return { handled, event };
     },
     get discardOpen() {
@@ -183,22 +145,26 @@ test('未开启补全时 Esc 保留有修改确认、无修改直接关闭的行
   const dirty = editorDialog();
   dirty.press();
   assert.equal(dirty.discardOpen, true);
-  assert.equal(dirty.closed, false);
-  assert.equal(dirty.store.state.open, true, '等待放弃修改确认时，编辑器本身必须保持打开');
+  assert.equal(dirty.closed, false, '等待放弃修改确认时，编辑器本身必须保持打开');
   const clean = editorDialog(false);
   clean.press();
   assert.equal(clean.discardOpen, false);
   assert.equal(clean.closed, true);
 });
 
-test('Dialog 直接收到 Esc 时也必须先关闭补全，干净文件不能被直接关闭', () => {
+test('编辑器直接收到 Esc 时也必须先关闭补全，干净文件不能被直接关闭', () => {
   for (const dirty of [false, true]) {
     const dialog = editorDialog(dirty);
     startCompletion(dialog.view);
-    const details = dialog.requestDismiss('escape-key');
+    dialog.onKeyDown({
+      key: 'Escape',
+      defaultPrevented: false,
+      preventDefault() {
+        this.defaultPrevented = true;
+      },
+      stopPropagation() {},
+    });
     assert.equal(completionStatus(dialog.view.state), null);
-    assert.equal(details.isCanceled, true);
-    assert.equal(dialog.store.state.open, true);
     assert.equal(dialog.closed, false);
     assert.equal(dialog.discardOpen, false);
   }
@@ -207,20 +173,16 @@ test('Dialog 直接收到 Esc 时也必须先关闭补全，干净文件不能�
 test('已被编辑器消费或长按重复的 Esc 不关闭编辑器', () => {
   for (const event of [{ defaultPrevented: true }, { repeat: true }]) {
     const dialog = editorDialog(false);
-    dialog.requestDismiss('escape-key', event);
-    assert.equal(dialog.store.state.open, true);
+    dialog.onKeyDown({
+      key: 'Escape',
+      defaultPrevented: false,
+      preventDefault() {},
+      stopPropagation() {},
+      ...event,
+    });
     assert.equal(dialog.closed, false);
+    assert.equal(dialog.discardOpen, false);
   }
-});
-
-test('点击背景时先显示确认，确认存在期间编辑器保持打开', () => {
-  const dialog = editorDialog();
-  dialog.requestDismiss('outside-press');
-  assert.equal(dialog.discardOpen, true);
-  assert.equal(dialog.store.state.open, true);
-  dialog.press();
-  assert.equal(dialog.store.state.open, true);
-  assert.equal(dialog.closed, false);
 });
 
 test('保存或格式化期间 Esc 不能改变编辑器的真实打开状态', () => {
@@ -229,7 +191,6 @@ test('保存或格式化期间 Esc 不能改变编辑器的真实打开状态', 
     dialog.press();
     assert.equal(dialog.discardOpen, false);
     assert.equal(dialog.closed, false);
-    assert.equal(dialog.store.state.open, true);
   }
 });
 

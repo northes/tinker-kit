@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import CodeMirror from '@uiw/react-codemirror';
 import { closeCompletion, completeAnyWord, completionStatus } from '@codemirror/autocomplete';
@@ -32,16 +32,9 @@ import { properties } from '@codemirror/legacy-modes/mode/properties';
 import { ReadRemoteTextFile, SaveRemoteTextFile } from '../../bindings/tinkerkit/fileservice';
 import { quietEditorTheme } from './codeMirrorTheme';
 import { editorCompletions } from './codeMirrorCompletion';
+import { XIcon } from '@phosphor-icons/react';
 import { ConfirmDialog } from './ConfirmDialog';
 import { Button } from './ui/button';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from './ui/dialog';
 import { Spinner } from './ui/spinner';
 import { toast } from './ui/toast';
 import { backendErrorKey, formatBackendError } from '../lib/backend-error';
@@ -227,6 +220,7 @@ type Props = {
 
 export function RemoteTextEditorDialog({ sourceID, path, name, onClose, onSaved }: Props) {
   const { t } = useTranslation();
+  const titleId = useId();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [formatting, setFormatting] = useState(false);
@@ -407,6 +401,34 @@ export function RemoteTextEditorDialog({ sourceID, path, name, onClose, onSaved 
     else onClose();
   };
 
+  // 编辑器只占住标签内容区，不再用模态 Dialog。Esc 只在这层处理，不能挂到 document 上把标签栏一并挡住。
+  const onEditorKeyDown = (event: {
+    key: string;
+    repeat?: boolean;
+    defaultPrevented: boolean;
+    isComposing?: boolean;
+    nativeEvent?: Event & { isComposing?: boolean; repeat?: boolean };
+    preventDefault: () => void;
+    stopPropagation: () => void;
+  }) => {
+    if (event.key !== 'Escape' || event.isComposing || event.nativeEvent?.isComposing) return;
+    if (discardOpen) return;
+    const native = event.nativeEvent ?? (event as unknown as Event);
+    if (consumedEscapes.current.has(native)) return;
+    if (event.defaultPrevented || event.repeat || event.nativeEvent?.repeat) return;
+    const view = viewRef.current;
+    if (view && completionStatus(view.state) !== null) {
+      consumedEscapes.current.add(native);
+      closeCompletion(view);
+      event.preventDefault();
+      event.stopPropagation();
+      return;
+    }
+    consumedEscapes.current.add(native);
+    event.preventDefault();
+    requestClose();
+  };
+
   const format = async () => {
     if (!canFormat || truncated || formatting || saving || loading || liveRefresh) return;
     setFormatting(true);
@@ -426,181 +448,157 @@ export function RemoteTextEditorDialog({ sourceID, path, name, onClose, onSaved 
 
   return (
     <>
-      <Dialog
-        open
-        onOpenChange={(open, details) => {
-          if (open) return;
-          // 关闭由 onClose 卸载编辑器；不能让 Dialog 在确认或 busy 守卫前改变内部状态。
-          details.cancel();
-          if (discardOpen) return;
-          if (details.reason === 'escape-key') {
-            const event = details.event;
-            if (consumedEscapes.current.has(event)) return;
-            if (event.defaultPrevented || ('repeat' in event && event.repeat)) return;
-            const view = viewRef.current;
-            if (view && completionStatus(view.state) !== null) {
-              // 补全已由捕获阶段关闭时，同一次 Esc 仍可能走到这里。
-              consumedEscapes.current.add(event);
-              closeCompletion(view);
-              event.preventDefault();
-              return;
-            }
-            // 即将打开放弃确认框：同一原生事件不能再次进入确认框的关闭处理。
-            consumedEscapes.current.add(event);
-            event.preventDefault();
-          }
-          requestClose();
-        }}
+      <section
+        data-slot="remote-text-editor"
+        aria-labelledby={titleId}
+        className="absolute inset-0 z-20 grid min-h-0 grid-rows-[auto_minmax(0,1fr)_auto] gap-3 overflow-hidden bg-background px-7 pt-5 pb-4 max-[700px]:px-[18px] max-[700px]:pt-3.5"
+        onKeyDownCapture={onEditorKeyDown}
       >
-        <DialogContent
-          className="grid h-[min(72vh,720px)] w-[min(960px,calc(100vw-32px))] max-w-none grid-rows-[auto_minmax(0,1fr)_auto] gap-3 sm:max-w-none"
-          onKeyDownCapture={(event) => {
-            if (event.key !== 'Escape' || event.nativeEvent.isComposing) return;
-            const view = viewRef.current;
-            if (!view || completionStatus(view.state) === null) return;
-            // 补全属于编辑器内层：先标记并关闭，再尽量阻止外层 Dialog 处理同一次按键。
-            consumedEscapes.current.add(event.nativeEvent);
-            closeCompletion(view);
-            event.preventDefault();
-            event.stopPropagation();
-          }}
-        >
-          <DialogHeader className="min-w-0">
-            <DialogTitle className="truncate">
+        <div className="flex min-w-0 items-start gap-2">
+          <div className="min-w-0 flex-1">
+            <h2 id={titleId} className="truncate text-base leading-none font-medium">
               {t('sshFilesTool.editTextTitle', { name })}
-            </DialogTitle>
-            <DialogDescription className="truncate font-mono text-xs" title={path}>
+            </h2>
+            <p className="mt-2 truncate font-mono text-xs text-muted-foreground" title={path}>
               {path}
-            </DialogDescription>
+            </p>
             {truncated ? (
               <p className="text-xs text-muted-foreground">{t('sshFilesTool.tailTruncated')}</p>
             ) : null}
-          </DialogHeader>
-          <div className="min-h-0 min-w-0 rounded-md border border-border bg-card">
-            {loading ? (
-              <div className="flex h-full items-center justify-center">
-                <Spinner />
-              </div>
-            ) : error && !revision ? (
-              <div
-                className="flex h-full items-center justify-center text-sm text-destructive"
-                role="alert"
-              >
-                {error}
-              </div>
-            ) : (
-              <CodeMirror
-                className="h-full rounded-[inherit] [&_.cm-editor]:h-full [&_.cm-editor]:rounded-[inherit] [&_.cm-editor.cm-focused]:outline-none [&_.cm-scroller]:rounded-[inherit] [&_.cm-scroller]:overflow-auto"
-                height="100%"
-                value={content}
-                onChange={setContent}
-                editable={!truncated && !liveRefresh && !saving && !formatting}
-                onCreateEditor={(view) => {
-                  viewRef.current = view;
-                  view.contentDOM.setAttribute('aria-label', t('sshFilesTool.editorContent'));
-                }}
-                theme={quietEditorTheme}
-                extensions={extensions}
-                basicSetup={{ autocompletion: false }}
-              />
-            )}
           </div>
-          <DialogFooter>
-            <div className="mr-auto flex min-w-0 flex-wrap items-center gap-2">
-              <Select
-                items={tailItems}
-                value={String(tailLines)}
-                disabled={loading || saving || formatting || dirty}
-                onValueChange={(value) => {
-                  if (value == null) return;
-                  const next = Number(value);
-                  if (!Number.isInteger(next) || next === tailLines) return;
-                  autoTailRef.current = false;
-                  followTailRef.current = true;
-                  setTailLines(next);
-                }}
-              >
-                <SelectTrigger aria-label={t('sshFilesTool.tailLinesLabel')}>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectGroup>
-                    {tailItems.map((item) => (
-                      <SelectItem key={item.value} value={item.value}>
-                        {item.label}
-                      </SelectItem>
-                    ))}
-                  </SelectGroup>
-                </SelectContent>
-              </Select>
-              <Button
-                variant={liveRefresh ? 'secondary' : 'outline'}
-                onClick={() => setLiveRefresh((enabled) => !enabled)}
-                disabled={loading || saving || formatting || (!liveRefresh && dirty)}
-                aria-pressed={liveRefresh}
-              >
-                {liveRefresh
-                  ? t('sshFilesTool.stopLiveRefresh')
-                  : t('sshFilesTool.startLiveRefresh')}
-              </Button>
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            onClick={requestClose}
+            disabled={saving || formatting}
+          >
+            <XIcon aria-hidden="true" />
+            <span className="sr-only">{t('common.close')}</span>
+          </Button>
+        </div>
+        <div className="min-h-0 min-w-0 rounded-md border border-border bg-card">
+          {loading ? (
+            <div className="flex h-full items-center justify-center">
+              <Spinner />
             </div>
-            {error && revision ? (
-              <p className="mr-auto self-center text-xs text-destructive" role="alert">
-                {error}
-              </p>
-            ) : null}
-            <Button variant="outline" onClick={requestClose} disabled={saving || formatting}>
-              {t('common.cancel')}
-            </Button>
-            <Button
-              variant="outline"
-              onClick={() => void format()}
-              disabled={!canFormat || loading || saving || formatting || liveRefresh || truncated}
-              title={
-                formatTooLarge
-                  ? t('sshFilesTool.formatTooLarge')
-                  : !formatSupported
-                    ? t('sshFilesTool.formatUnavailable')
-                    : undefined
-              }
+          ) : error && !revision ? (
+            <div
+              className="flex h-full items-center justify-center text-sm text-destructive"
+              role="alert"
             >
-              {formatting ? <Spinner data-icon="inline-start" /> : null}
-              {t('sshFilesTool.formatText')}
-            </Button>
-            <Button
-              onClick={() => void save()}
-              disabled={
-                loading || saving || formatting || liveRefresh || truncated || !dirty || !revision
-              }
+              {error}
+            </div>
+          ) : (
+            <CodeMirror
+              className="h-full rounded-[inherit] [&_.cm-editor]:h-full [&_.cm-editor]:rounded-[inherit] [&_.cm-editor.cm-focused]:outline-none [&_.cm-scroller]:rounded-[inherit] [&_.cm-scroller]:overflow-auto"
+              height="100%"
+              value={content}
+              onChange={setContent}
+              editable={!truncated && !liveRefresh && !saving && !formatting}
+              onCreateEditor={(view) => {
+                viewRef.current = view;
+                view.contentDOM.setAttribute('aria-label', t('sshFilesTool.editorContent'));
+                view.focus();
+              }}
+              theme={quietEditorTheme}
+              extensions={extensions}
+              basicSetup={{ autocompletion: false }}
+            />
+          )}
+        </div>
+        <div className="flex flex-col-reverse gap-2 border-t pt-3 sm:flex-row sm:justify-end">
+          <div className="mr-auto flex min-w-0 flex-wrap items-center gap-2">
+            <Select
+              items={tailItems}
+              value={String(tailLines)}
+              disabled={loading || saving || formatting || dirty}
+              onValueChange={(value) => {
+                if (value == null) return;
+                const next = Number(value);
+                if (!Number.isInteger(next) || next === tailLines) return;
+                autoTailRef.current = false;
+                followTailRef.current = true;
+                setTailLines(next);
+              }}
             >
-              {saving ? <Spinner data-icon="inline-start" /> : null}
-              {t('common.save')}
+              <SelectTrigger aria-label={t('sshFilesTool.tailLinesLabel')}>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectGroup>
+                  {tailItems.map((item) => (
+                    <SelectItem key={item.value} value={item.value}>
+                      {item.label}
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
+              </SelectContent>
+            </Select>
+            <Button
+              variant={liveRefresh ? 'secondary' : 'outline'}
+              onClick={() => setLiveRefresh((enabled) => !enabled)}
+              disabled={loading || saving || formatting || (!liveRefresh && dirty)}
+              aria-pressed={liveRefresh}
+            >
+              {liveRefresh ? t('sshFilesTool.stopLiveRefresh') : t('sshFilesTool.startLiveRefresh')}
             </Button>
-          </DialogFooter>
-        </DialogContent>
-        <ConfirmDialog
-          open={discardOpen}
-          onOpenChange={(open, details) => {
-            if (details.reason === 'escape-key') {
-              const event = details.event;
-              if (
-                consumedEscapes.current.has(event) ||
-                event.defaultPrevented ||
-                ('repeat' in event && event.repeat)
-              ) {
-                details.cancel();
-                return;
-              }
+          </div>
+          {error && revision ? (
+            <p className="mr-auto self-center text-xs text-destructive" role="alert">
+              {error}
+            </p>
+          ) : null}
+          <Button variant="outline" onClick={requestClose} disabled={saving || formatting}>
+            {t('common.cancel')}
+          </Button>
+          <Button
+            variant="outline"
+            onClick={() => void format()}
+            disabled={!canFormat || loading || saving || formatting || liveRefresh || truncated}
+            title={
+              formatTooLarge
+                ? t('sshFilesTool.formatTooLarge')
+                : !formatSupported
+                  ? t('sshFilesTool.formatUnavailable')
+                  : undefined
             }
-            setDiscardOpen(open);
-          }}
-          title={t('sshFilesTool.discardTextTitle')}
-          description={t('sshFilesTool.discardTextDescription')}
-          confirmLabel={t('sshFilesTool.discardTextAction')}
-          destructive
-          onConfirm={onClose}
-        />
-      </Dialog>
+          >
+            {formatting ? <Spinner data-icon="inline-start" /> : null}
+            {t('sshFilesTool.formatText')}
+          </Button>
+          <Button
+            onClick={() => void save()}
+            disabled={
+              loading || saving || formatting || liveRefresh || truncated || !dirty || !revision
+            }
+          >
+            {saving ? <Spinner data-icon="inline-start" /> : null}
+            {t('common.save')}
+          </Button>
+        </div>
+      </section>
+      <ConfirmDialog
+        open={discardOpen}
+        onOpenChange={(open, details) => {
+          if (details.reason === 'escape-key') {
+            const event = details.event;
+            if (
+              consumedEscapes.current.has(event) ||
+              event.defaultPrevented ||
+              ('repeat' in event && event.repeat)
+            ) {
+              details.cancel();
+              return;
+            }
+          }
+          setDiscardOpen(open);
+        }}
+        title={t('sshFilesTool.discardTextTitle')}
+        description={t('sshFilesTool.discardTextDescription')}
+        confirmLabel={t('sshFilesTool.discardTextAction')}
+        destructive
+        onConfirm={onClose}
+      />
     </>
   );
 }
