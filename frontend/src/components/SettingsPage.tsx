@@ -528,11 +528,13 @@ function SSHKnownHostsDialog({
           <ScrollArea
             edgeOverlay
             className={cn(
-              'min-h-0 flex-1 px-6 py-5 [padding-inline-end:var(--overlay-scrollbar-size)]',
-              showKnownHostsList && '[--scroll-edge-top-inset:2rem]',
+              // 纵向内边距会制造一条 sticky 上方的缝，内容从那里穿出来。只保留横向内边距。
+              'min-h-0 flex-1 px-6 [padding-inline-end:var(--overlay-scrollbar-size)]',
+              showKnownHostsList && '[--scroll-edge-top-inset:2.75rem]',
             )}
           >
             {editing ? (
+              <div className="py-5">
               <form
                 className="grid gap-4"
                 id="ssh-known-hosts-form"
@@ -617,13 +619,14 @@ function SSHKnownHostsDialog({
                   />
                 </div>
               </form>
+              </div>
             ) : loading ? (
-              <div className="flex min-h-32 flex-col items-center justify-center gap-2 text-center text-sm text-muted-foreground">
+              <div className="flex min-h-32 flex-col items-center justify-center gap-2 py-5 text-center text-sm text-muted-foreground">
                 <Spinner className="size-6 text-primary motion-reduce:animate-none" />
                 <span>{t('settings.sshKnownHostsLoading')}</span>
               </div>
             ) : error ? (
-              <div className="flex min-h-32 flex-col items-center justify-center gap-3 text-center">
+              <div className="flex min-h-32 flex-col items-center justify-center gap-3 py-5 text-center">
                 <p className="m-0 text-xs text-destructive" role="alert">
                   {error}
                 </p>
@@ -635,7 +638,7 @@ function SSHKnownHostsDialog({
                 />
               </div>
             ) : entries.length === 0 ? (
-              <div className="flex min-h-32 flex-col items-center justify-center gap-1.5 text-center">
+              <div className="flex min-h-32 flex-col items-center justify-center gap-1.5 py-5 text-center">
                 <p className="m-0 text-sm font-medium text-foreground">
                   {t('settings.sshKnownHostsEmpty')}
                 </p>
@@ -644,8 +647,8 @@ function SSHKnownHostsDialog({
                 </p>
               </div>
             ) : (
-              <div className="grid gap-3">
-                <div className="sticky top-0 z-20 bg-popover">
+              <div className="flex flex-col pt-5 pb-5">
+                <div className="sticky top-0 z-20 bg-popover pb-3">
                   <ToolSearchField
                     value={searchQuery}
                     onValueChange={setSearchQuery}

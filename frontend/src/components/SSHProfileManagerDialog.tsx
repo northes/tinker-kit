@@ -518,17 +518,19 @@ function SSHProfileManagerDialog({
           ) : null}
           <ScrollArea
             className={cn(
-              'min-h-0 flex-1 px-6 py-5 [padding-inline-end:var(--overlay-scrollbar-size)]',
-              // 列表的吸顶块是搜索框（h-8）加分段标题（h-7），顶部渐变让到整块下方。
-              view === 'list' && '[--scroll-edge-top-inset:3.75rem]',
+              // 纵向内边距必须留在滚动容器之外：滚动容器自己的 padding 会让 sticky 停在内容盒下，
+              // 内容从顶部那一段里穿出来，分段标题也会压到搜索框上。
+              'min-h-0 flex-1 px-6 [padding-inline-end:var(--overlay-scrollbar-size)]',
+              // 吸顶块是搜索框（h-8）加它的下边距（pb-3），再加分段标题行（h-7 加 pb-3）。
+              view === 'list' && '[--scroll-edge-top-inset:5.25rem]',
             )}
             edgeOverlay
             onViewport={setViewport}
           >
             {view === 'list' ? (
-              <div className="grid gap-6">
-                {/* 吸顶块用弹窗实底盖住滚过的行；两个分段标题吸在搜索框正下方（top-8）。 */}
-                <div className="sticky top-0 z-20 bg-popover">
+              <div className="flex flex-col pt-5 pb-5">
+                {/* 吸顶块用弹窗实底盖住滚过的行；两个分段标题吸在搜索框正下方。 */}
+                <div className="sticky top-0 z-30 bg-popover pb-3">
                   <ToolSearchField
                     value={searchQuery}
                     onValueChange={setSearchQuery}
@@ -544,8 +546,8 @@ function SSHProfileManagerDialog({
                   </div>
                 ) : null}
                 {!normalizedQuery || filteredProfiles.length > 0 ? (
-                  <section className="grid gap-3">
-                    <div className="sticky top-8 z-10 flex items-center justify-between gap-3 bg-popover">
+                  <section className="flex flex-col">
+                    <div className="sticky top-11 z-20 flex items-center justify-between gap-3 bg-popover pb-3">
                       <h3 className="text-sm font-medium text-foreground">
                         {t('sshProfiles.savedTitle')}
                       </h3>
@@ -681,8 +683,8 @@ function SSHProfileManagerDialog({
                   </section>
                 ) : null}
                 {!normalizedQuery || filteredLocalProfiles.length > 0 ? (
-                  <section className="grid gap-3">
-                    <div className="sticky top-8 z-10 flex items-center justify-between gap-3 bg-popover">
+                  <section className={cn('flex flex-col', filteredProfiles.length ? 'mt-3' : '')}>
+                    <div className="sticky top-11 z-20 flex items-center justify-between gap-3 bg-popover pb-3">
                       <h3 className="text-sm font-medium text-foreground">
                         {t('sshProfiles.localTitle')}
                       </h3>
@@ -749,7 +751,7 @@ function SSHProfileManagerDialog({
                 ) : null}
               </div>
             ) : (
-              <div className="mx-auto grid w-full max-w-[560px] gap-5">
+              <div className="mx-auto grid w-full max-w-[560px] gap-5 py-5">
                 {imported ? (
                   <div className="flex items-start gap-2 rounded-md border border-border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
                     <CheckCircle weight="regular" className="mt-0.5 size-4 shrink-0" />
