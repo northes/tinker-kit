@@ -22,8 +22,6 @@ import {
   ToolLayout,
   ToolLayoutContent,
   ToolLayoutFooter,
-  ToolLayoutToolbar,
-  ToolLayoutToolbarGroup,
   useFocusOnActivate,
   type PendingAction,
 } from './shared';
@@ -504,20 +502,6 @@ export default function DiffTool({
   return (
     <Reveal index={0} fill active={active}>
       <ToolLayout className="diff-tool-layout [container-type:inline-size]">
-        <ToolLayoutToolbar
-          right={
-            <ToolLayoutToolbarGroup>
-              <Label className="flex h-8 flex-none items-center gap-2 border border-transparent bg-transparent py-0 pr-1.5 text-[11px] text-muted-foreground">
-                <span>{t('diffTool.collapseUnchanged')}</span>
-                <Switch
-                  checked={collapseUnchanged}
-                  onCheckedChange={() => setCollapseUnchanged((value) => !value)}
-                  size="sm"
-                />
-              </Label>
-            </ToolLayoutToolbarGroup>
-          }
-        />
         <ToolLayoutContent>
           <div className="diff-tool-content grid h-full min-h-0 min-w-0 grid-rows-[minmax(0,1fr)] overflow-hidden rounded-lg border border-border bg-card shadow-none">
             <DiffMerge
@@ -538,27 +522,38 @@ export default function DiffTool({
           </div>
         </ToolLayoutContent>
         <ToolLayoutFooter>
-          <ToolActionBar
-            label={t('diffTool.actions')}
-            actions={[
-              {
-                key: 'clear',
-                label: t('diffTool.clear'),
-                icon: Trash,
-                variant: 'tertiary',
-                disabled: !before && !after,
-                onPress: clear,
-              },
-              {
-                key: 'swap',
-                label: t('diffTool.swap'),
-                icon: ArrowsLeftRight,
-                variant: 'secondary',
-                disabled: !before && !after,
-                onPress: swap,
-              },
-            ]}
-          />
+          <div className="flex items-center justify-between gap-3 pt-3">
+            <Label className="flex h-8 flex-none items-center gap-2 border border-transparent bg-transparent py-0 pl-1.5 text-[11px] text-muted-foreground">
+              <span>{t('diffTool.collapseUnchanged')}</span>
+              <Switch
+                checked={collapseUnchanged}
+                onCheckedChange={() => setCollapseUnchanged((value) => !value)}
+                size="sm"
+              />
+            </Label>
+            <ToolActionBar
+              className="mt-0 ml-auto shrink-0"
+              label={t('diffTool.actions')}
+              actions={[
+                {
+                  key: 'clear',
+                  label: t('diffTool.clear'),
+                  icon: Trash,
+                  variant: 'tertiary',
+                  disabled: !before && !after,
+                  onPress: clear,
+                },
+                {
+                  key: 'swap',
+                  label: t('diffTool.swap'),
+                  icon: ArrowsLeftRight,
+                  variant: 'secondary',
+                  disabled: !before && !after,
+                  onPress: swap,
+                },
+              ]}
+            />
+          </div>
         </ToolLayoutFooter>
       </ToolLayout>
     </Reveal>
