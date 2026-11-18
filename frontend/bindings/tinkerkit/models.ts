@@ -33,6 +33,16 @@ export interface Config {
      * ShowTabIcons 为真时，标签在名称左侧显示图标，全部标签使用同一档更宽的宽度。
      */
     "showTabIcons": boolean;
+
+    /**
+     * TabWidthMode 是标签宽度方式：fixed 为固定宽度，auto 为随最长标题自适应。
+     */
+    "tabWidthMode": string;
+
+    /**
+     * TabWidth 是标签的基础宽度像素；打开标签图标时实际宽度再 +20px。
+     */
+    "tabWidth": number;
     "sidebarTools": SidebarToolConfig[] | null;
     "themeMode": string;
     "lightTheme": string;

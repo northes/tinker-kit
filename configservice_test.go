@@ -308,6 +308,56 @@ func TestNormalizeConfigEditorFontSize(t *testing.T) {
 	}
 }
 
+func TestNormalizeConfigTabWidth(t *testing.T) {
+	modeTests := []struct {
+		in   string
+		want string
+	}{
+		{in: "fixed", want: "fixed"},
+		{in: "auto", want: "auto"},
+		{in: "", want: "fixed"},
+		{in: "wide", want: "fixed"},
+	}
+	for _, test := range modeTests {
+		cfg := defaultConfig()
+		cfg.TabWidthMode = test.in
+		if got := normalizeConfig(cfg).TabWidthMode; got != test.want {
+			t.Fatalf("宽度方式 %q 规范化为 %q，期望 %q", test.in, got, test.want)
+		}
+	}
+	widthTests := []struct {
+		in   int
+		want int
+	}{
+		{in: 112, want: 112},
+		{in: 128, want: 128},
+		{in: 148, want: 148},
+		{in: 168, want: 168},
+		{in: 196, want: 196},
+		{in: 137, want: 128},
+		{in: 200, want: 196},
+		{in: 120, want: 112},
+		{in: 100, want: 112},
+		{in: 0, want: 112},
+		{in: -20, want: 112},
+	}
+	for _, test := range widthTests {
+		cfg := defaultConfig()
+		cfg.TabWidth = test.in
+		if got := normalizeConfig(cfg).TabWidth; got != test.want {
+			t.Fatalf("标签宽度 %d 规范化为 %d，期望 %d", test.in, got, test.want)
+		}
+	}
+	// 自适应模式只影响渲染，存储的基础宽度不能被改写，切回固定时继续用它。
+	cfg := defaultConfig()
+	cfg.TabWidthMode = "auto"
+	cfg.TabWidth = 168
+	got := normalizeConfig(cfg)
+	if got.TabWidthMode != "auto" || got.TabWidth != 168 {
+		t.Fatalf("自适应模式应保持 %q + %d，得到 %q + %d", "auto", 168, got.TabWidthMode, got.TabWidth)
+	}
+}
+
 func TestNormalizeConfigTimeWeekStart(t *testing.T) {
 	tests := []struct {
 		in   string

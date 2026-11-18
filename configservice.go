@@ -29,7 +29,11 @@ type Config struct {
 	// TabCloseButton 是关闭按钮可见方式：always、hover 或 never。
 	TabCloseButton string `json:"tabCloseButton"`
 	// ShowTabIcons 为真时，标签在名称左侧显示图标，全部标签使用同一档更宽的宽度。
-	ShowTabIcons bool                `json:"showTabIcons"`
+	ShowTabIcons bool `json:"showTabIcons"`
+	// TabWidthMode 是标签宽度方式：fixed 为固定宽度，auto 为随最长标题自适应。
+	TabWidthMode string `json:"tabWidthMode"`
+	// TabWidth 是标签的基础宽度像素；打开标签图标时实际宽度再 +20px。
+	TabWidth     int                 `json:"tabWidth"`
 	SidebarTools []SidebarToolConfig `json:"sidebarTools"`
 	ThemeMode    string              `json:"themeMode"`
 	LightTheme   string              `json:"lightTheme"`
@@ -228,7 +232,7 @@ func insertPortForwardsToolAfterPorts(tools []SidebarToolConfig) []SidebarToolCo
 }
 
 func defaultConfig() Config {
-	return Config{TrayMatchEnabled: true, TrayMatchTools: []string{"json", "time", "text", "base64", "diff", "jwt", "url"}, AutoCheckUpdates: true, TaskConcurrency: 4, TaskChunkConcurrency: 4, TaskNotificationMode: "unfocused", Language: "zh-CN", TabCloseActivation: "recent", TabCloseButton: "always", ShowTabIcons: false, SidebarTools: defaultSidebarTools(), ThemeMode: "dark", LightTheme: "default-light", DarkTheme: "default-dark", WindowOpacity: defaultWindowOpacity, WindowBlur: true, DiffClipboardTargetMode: "alternate", CodeEditorFontSize: 16, TimeResultOrder: []string{"local", "dateTime", "dateOnly", "timeOnly", "zonedIso8601", "rfc3339", "utc", "compact", "underscore", "unixSeconds", "unixMilliseconds", "unixNanoseconds"}, TimeWeekStart: "monday", NtpServers: defaultNtpServers(), NetworkTestSettings: defaultNetworkTestSettings(), NetworkTestSources: defaultNetworkTestSources(), JsonAutoFormatOnFill: true, ImageSources: defaultImageSources(), SSHProfiles: []SSHProfile{}, FileSources: []FileSource{}, ServiceTargets: defaultServiceTargets(), ServiceLogHighlight: true, ServiceLogCollapseLines: defaultServiceLogCollapseLines, PortSources: defaultPortSources(), PortForwardSources: defaultPortSources(), PortForwards: []PortForwardConfig{}, PortColumnWidths: PortColumnWidths{Ports: map[string][]int{}}}
+	return Config{TrayMatchEnabled: true, TrayMatchTools: []string{"json", "time", "text", "base64", "diff", "jwt", "url"}, AutoCheckUpdates: true, TaskConcurrency: 4, TaskChunkConcurrency: 4, TaskNotificationMode: "unfocused", Language: "zh-CN", TabCloseActivation: "recent", TabCloseButton: "always", ShowTabIcons: false, TabWidthMode: "fixed", TabWidth: 128, SidebarTools: defaultSidebarTools(), ThemeMode: "dark", LightTheme: "default-light", DarkTheme: "default-dark", WindowOpacity: defaultWindowOpacity, WindowBlur: true, DiffClipboardTargetMode: "alternate", CodeEditorFontSize: 16, TimeResultOrder: []string{"local", "dateTime", "dateOnly", "timeOnly", "zonedIso8601", "rfc3339", "utc", "compact", "underscore", "unixSeconds", "unixMilliseconds", "unixNanoseconds"}, TimeWeekStart: "monday", NtpServers: defaultNtpServers(), NetworkTestSettings: defaultNetworkTestSettings(), NetworkTestSources: defaultNetworkTestSources(), JsonAutoFormatOnFill: true, ImageSources: defaultImageSources(), SSHProfiles: []SSHProfile{}, FileSources: []FileSource{}, ServiceTargets: defaultServiceTargets(), ServiceLogHighlight: true, ServiceLogCollapseLines: defaultServiceLogCollapseLines, PortSources: defaultPortSources(), PortForwardSources: defaultPortSources(), PortForwards: []PortForwardConfig{}, PortColumnWidths: PortColumnWidths{Ports: map[string][]int{}}}
 }
 
 func normalizeThemeID(theme string, defaultID string) string {
@@ -243,6 +247,27 @@ const (
 	minWindowOpacity     = 30
 	maxWindowOpacity     = 100
 )
+
+// tabWidthOptions 是标签固定宽度的合法档位（基础像素，不含图标额外增加的 20px）。
+var tabWidthOptions = []int{112, 128, 148, 168, 196}
+
+// normalizeTabWidth 把标签宽度归到最近的合法档位。非正数按最小档位处理。
+func normalizeTabWidth(value int) int {
+	nearest := tabWidthOptions[0]
+	for _, option := range tabWidthOptions[1:] {
+		if absInt(value-option) < absInt(value-nearest) {
+			nearest = option
+		}
+	}
+	return nearest
+}
+
+func absInt(value int) int {
+	if value < 0 {
+		return -value
+	}
+	return value
+}
 
 // normalizeWindowOpacity 把透明度收到 30–100。缺字段不会走到这里：读取时先填入 defaultConfig 的 100。
 func normalizeWindowOpacity(value int) int {
@@ -705,6 +730,13 @@ func normalizeConfig(cfg Config) Config {
 	default:
 		cfg.TabCloseButton = "always"
 	}
+	switch cfg.TabWidthMode {
+	case "fixed", "auto":
+	default:
+		cfg.TabWidthMode = "fixed"
+	}
+	// 自适应模式只影响渲染，仍保留存储的档位，切回固定时继续用它。
+	cfg.TabWidth = normalizeTabWidth(cfg.TabWidth)
 	cfg.TextGeneratorSources = normalizeTextGeneratorSources(cfg.TextGeneratorSources)
 	cfg.DockerCLIPath = normalizeDockerCLIPath(cfg.DockerCLIPath)
 	cfg.SSHProfiles = normalizeSSHProfiles(cfg.SSHProfiles)

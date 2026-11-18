@@ -21,6 +21,8 @@ export const defaultSettings: Settings = {
   tabCloseActivation: 'recent',
   tabCloseButton: 'always',
   showTabIcons: false,
+  tabWidthMode: 'fixed',
+  tabWidth: 128,
   sidebarTools: [
     { id: 'json', enabled: true },
     { id: 'time', enabled: true },
