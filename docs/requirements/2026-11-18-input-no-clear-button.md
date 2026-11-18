@@ -1,6 +1,6 @@
 # 输入框不展示清空按钮
 
-状态：已对齐（需求记录）。实现时以本文「已定决策」与「需求条目」为准。
+状态：已对齐。实现时以本文「已定决策」与「需求条目」为准。
 
 ## 背景与目标
 
@@ -15,10 +15,10 @@
    - 共享组件 `ToolSearchField`（工具页搜索框）
    - `ComboboxInput` 通过 `showClear` 挂载的 `ComboboxClear`
    - 各工具内自行实现的、与输入框同行的清空图标按钮（例如 JSON Schema 预览内搜索条）
-2. **共享实现**：从 `ToolSearchField` 移除清空按钮相关 UI 与仅为该按钮服务的右侧 `padding` / `trailingAddon` 位移逻辑；`onClear`、`clearLabel` 等 API 在实现阶段删除或收窄为仅键盘行为（见「已定决策」）。
-3. **调用点**：移除仍向 `ToolSearchField` 传入 `onClear` / `clearLabel` 的用法（当前已知：端口工具、SSH 文件管理、SSH 配置管理弹窗）。
-4. **i18n**：删除因清空按钮而存在的、且不再被引用的文案 key（中英 locale 同步）。
-5. **组件库**：`ComboboxInput` 不再对外提供或默认展示输入内清空；若保留 `showClear` 仅允许恒为 `false` 或移除该能力，避免后续误用。
+2. **共享实现**：从 `ToolSearchField` 移除清空按钮、`onClear`、`clearLabel`，以及仅为清空按钮服务的右侧 `padding` / `trailingAddon` 位移。Esc 不清空输入内容。
+3. **调用点**：端口工具、SSH 文件管理、SSH 配置管理弹窗不再传 `onClear` / `clearLabel`。SSH 文件管理里只服务于该按钮的 `clearSearch` 一并删除。JSON Schema 预览搜索条去掉清空按钮，Esc 也不再清空。
+4. **i18n**：删除只服务于输入内清空按钮的文案 key（中英 locale 同步）：`portTool.clearSearch`、`sshFilesTool.clearSearch`、`sshProfiles.clearSearch`、`jsonTool.schemaPreviewSearchClear`。
+5. **组件库**：删除 `ComboboxInput` 的 `showClear` 与 `ComboboxClear`，不留死代码。触发器上为「有清空时隐藏箭头」准备的 class 一并去掉。
 6. **布局**：去掉清空按钮后，搜索框右侧内嵌控件（如 SSH 文件搜索方式菜单）恢复为不预留「清空列」的间距规则。
 
 ## 已定决策
@@ -26,7 +26,8 @@
 - **产品原则**：用户通过退格、全选删除、剪切等方式清空内容；不依赖输入框上的清空按钮。
 - **与「清空」无关的尾缀控件保留**：密码显示/隐藏、Combobox 下拉触发、单位标签等不属于「清空按钮」，本需求不删。
 - **非输入框上的清空操作不波及**：例如筛选历史弹窗里的「清空历史」、日志面板的「清空日志」、下拉菜单中的「清除筛选」、任务中心的「清除已完成」等，仍可为独立按钮或菜单项。
-- **键盘 Esc（暂定随实现一并约定）**：`ToolSearchField` 今天在传入 `onClear` 时支持 Esc 清空；去掉按钮后是否同时去掉 Esc 清空，见「待定问题」。若保留 Esc，则不得再为 Esc 单独增加可见按钮。
+- **Esc 不清空输入**：搜索框和其它文本输入按 Esc 不把内容清掉。关掉浮层、补全、命令面板这类既有 Esc 行为保留，它们不清输入内容。
+- **Combobox 清空能力删除**：不保留 `showClear` / `ComboboxClear` 死代码。下拉箭头仍在。
 
 ## 非目标
 
@@ -39,15 +40,16 @@
 
 - 端口工具、SSH 文件管理、SSH 配置管理、JSON Schema 预览搜索、空白页工具搜索等场景：输入有内容时，输入框右侧**不出现**清空图标按钮。
 - `ToolSearchField` 源码中无清空 `Button` 渲染分支；`trailingAddon` 在无清空列时的对齐与改前「从未传 onClear」的页面一致。
-- 全仓 `rg` 无对已删除 i18n key 的引用；`zh-CN` / `en-US` 无孤立「clearSearch」类仅服务于输入内清空的条目（若 Esc 仍保留则键盘无障碍文案可单独保留）。
-- `ComboboxInput` 无法在生产路径上展示输入内清空（移除或 `showClear` 恒 false 且无调用传 true）。
+- 全仓检索无对已删除 i18n key 的引用；`zh-CN` / `en-US` 无 `portTool.clearSearch`、`sshFilesTool.clearSearch`、`sshProfiles.clearSearch`、`jsonTool.schemaPreviewSearchClear`。
+- 搜索框有内容时按 Esc 不会清空；输入框内没有清空按钮。
+- `ComboboxInput` 源码中没有 `showClear` 与 `ComboboxClear`。
 - 密码框「显示/隐藏」、Combobox 展开箭头等行为与改前一致。
 
 ## 待定问题
 
-1. **Esc 清空**：去掉内嵌清空按钮后，`ToolSearchField`（及 JSON Schema 预览搜索条）是否仍保留 Esc 一键清空？若保留，是否需在需求中写明为「唯一快捷清空方式」？
-2. **ComboboxClear 组件**：是删除 `showClear`/`ComboboxClear` 导出，还是保留死代码供 Base UI 对齐但不接线？
+无。
 
 ## 变更记录
 
 - 2026-11-18：初稿，记录「所有输入框不加清空按钮」全应用规则及已知影响面（`ToolSearchField`、JsonSchema 预览、`ComboboxInput`）。
+- 2026-11-18：待定落定。Esc 不清空输入内容；删除 `ComboboxClear` / `showClear`，不留死代码。
