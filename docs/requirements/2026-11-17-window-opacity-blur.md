@@ -49,13 +49,10 @@
 这些是实现时必须遵守的技术边界，不是新的产品决定。
 
 - **透明度的承载层。** 透明度只能落在一层上。每个工具页的根 `.tool-slot` 现在各自铺了一层不透明的 `bg-background`，会盖掉面板的 alpha，必须去掉这层重复铺底，让 alpha 只来自圆角面板本身。全仓其余约 20 处 `bg-background` 大多是按钮、开关、表格这类控件自己的实底，逐处判断后保留，不要为透明度去改控件外观。
-- **透明度与模糊各管一段。** 两套机制不能同时按滑块叠加，否则滑块只是在调“界面白不白”。约定：
-  - 模糊关：窗口非不透明，原生毛玻璃隐藏，滑块只决定 CSS 叠色 alpha，看到的是锐利桌面。
-  - 模糊开：窗口非不透明，原生 `NSVisualEffectView` 的 `alphaValue` 取滑块值，CSS 叠色固定成一成多薄雾（`--window-surface-alpha`），只用来保住标题栏 / 缝 / 面板的层次，不再乘滑块。
-  - 不要再用“叠色强度系数”之类的魔法数去拼凑观感。
-- **Wails 毛玻璃的坑。** `MacBackdropTranslucent` 只插 `NSVisualEffectView`，不会把窗口设成非不透明；不别开 `setOpaque:NO`，`BehindWindow` 采样不到桌面，只剩材质自带底色（看起来像雾）。切换时必须自己设。
+- **透明度与模糊各管一件事。** 滑块只决定 CSS 叠色 alpha（`--chrome-fill` / `--panel-fill`）。模糊开关只决定背后那层毛玻璃在不在，开就是满强度，不读滑块，也不要再加「叠色强度系数」。
+- **Wails 毛玻璃的坑。** `MacBackdropTranslucent` 只插 `NSVisualEffectView`，不会把窗口设成非不透明；不另开 `setOpaque:NO`，`BehindWindow` 采样不到桌面，只剩材质自带底色（看起来像雾）。切换时必须自己设。
 - **CSS 变量。** 新增 `--window-opacity`（0.3–1 的数值），`--chrome` 和面板底色用 `color-mix(... , transparent)` 按它取值。不要直接把 `--background` 改成半透明色再层层叠加，同色叠多层会越来越不透明。
-- **原生透明。** 窗口背景色的 alpha 要跟着透明度走：现有的 `Window.SetBackgroundColour(r, g, b, a)` 已经支持 alpha，用它而不是另外新建一条通道。
+- **原生窗底不要再乘一遍透明度。** 首帧之后 macOS 原生窗底 alpha 恒为 0，透明度只在 CSS 取一次。创建窗口时仍用不透明窗底盖住空窗，首帧画出后再归零。
 - **模糊开关。** Wails 没有公开的运行时切换 backdrop 的 API。模糊开关要用 `WebviewWindow.NativeWindow()` 拿到的原生窗口句柄，在 darwin 专用 CGO 文件里控制 `NSVisualEffectView` 的显隐（或用等价的公开 Cocoa 调用），并给非 darwin 平台留同样签名的 stub。不要用重建窗口的方式切换。
 - **配置读写路径。** Config 新增字段后必须重新生成 bindings（`wails3 task common:generate:bindings`），前端只用生成的类型，不手写兼容类型。
 - **应用时机。** 窗口创建时按初始配置应用一次；之后前端改动时立即应用。不能让重启后才生效。
@@ -85,6 +82,16 @@
 ## 待定问题
 
 无。实现中若发现 `private_mac_apis` 影响签名或打包产物，先停下来说明，不自行改发布流程。
+
+## 经验
+
+这些是这次踩出来、下次不要再试的结论。
+
+1. **滑块只管界面透出多少。** 模糊开或关，滑块都只写 `--window-opacity`。把它接到 `NSVisualEffectView.alphaValue`、或再乘一个「叠色强度系数」，都会变成在调「白不白」：关着模糊只看见盖白，开着模糊才突然透。
+2. **`MacBackdropTranslucent` 不会让你看到桌面。** 它只往 content view 下面插一层 `NSVisualEffectView`，窗口仍然 `opaque`。`BehindWindow` 在不透明窗口里采样不到桌面，于是只剩材质自带的一层底色，看起来像雾。要看到模糊后的桌面，必须自己 `setOpaque:NO`，并且构建带 `-tags private_mac_apis`，否则 WKWebView 本身不透明，毛玻璃永远在网页后面。
+3. **`underWindowBackground` 会把界面洗白。** 名字像「看穿窗口」，实际是浅色揭开材质，不是中性高斯模糊。半透明的深色界面盖上去会被洗成白。`windowBackground` / `contentBackground` 只是把壁纸颜色取来染色，也不是模糊。真正采样窗口背后的是 `blendingMode = behindWindow`，再按主题选材质：深色 `HUDWindow`，浅色 `Popover`。外观要设在效果视图自己身上，并关掉 `emphasized`（它会再加一层浅色）。
+4. **透明度只能落在一层上。** CSS 叠色和原生窗底 alpha 各乘一次，滑块 30% 实际大约是 51%。原生窗底在首帧之后保持全透明。工具页根上再铺一层不透明 `bg-background` 也会把这层 alpha 盖死。
+5. **macOS 没有公开的模糊半径。** 强度只有材质档和开/关。不要用效果视图的 `alphaValue` 冒充模糊半径。
 
 ## 变更记录
 
