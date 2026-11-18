@@ -1455,7 +1455,8 @@
   },
   "sshProfiles": {
     "title": "SSH profiles",
-    "description": "Connection parameters shared by every tool; passwords and private keys are stored in plain text on this device.",
+    "description": "Connection parameters shared by every tool.",
+    "plaintextWarning": "Passwords and private keys are stored in plain text on this device.",
     "formDescription": "Fill in the connection parameters; imported profiles only allow renaming.",
     "savedTitle": "Added profiles",
     "localTitle": "Local SSH config",

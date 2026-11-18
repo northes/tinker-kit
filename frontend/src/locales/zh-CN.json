@@ -1455,7 +1455,8 @@
   },
   "sshProfiles": {
     "title": "SSH 配置",
-    "description": "所有工具共用的连接参数；密码与私钥以明文保存在本机配置中。",
+    "description": "所有工具共用的连接参数。",
+    "plaintextWarning": "密码与私钥以明文保存在本机配置中。",
     "formDescription": "填写连接参数；本机导入的配置仅可修改名称。",
     "savedTitle": "已添加的配置",
     "localTitle": "本机 SSH config",

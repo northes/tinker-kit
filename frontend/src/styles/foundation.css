@@ -339,8 +339,12 @@ textarea,
   pointer-events: none;
 }
 .scroll-edge-overlay-top {
-  /* top 由调用方的 top-0 / top-10 决定；margin 补上 viewport 相对宿主的内边距。 */
-  margin-top: var(--scroll-edge-viewport-top, 0px);
+  /* top 由调用方的 top-0 / top-10 决定；margin 补上 viewport 相对宿主的内边距。
+     吸顶块比单个表头高时（搜索框加分段标题），调用方用 --scroll-edge-top-inset
+     传整块高度，让渐变从块下方开始，不淡掉块本身。 */
+  margin-top: calc(
+    var(--scroll-edge-viewport-top, 0px) + var(--scroll-edge-top-inset, 0px)
+  );
   height: min(var(--scroll-fade-size), var(--scroll-area-overflow-y-start, 0px));
   background: linear-gradient(
     to bottom,

@@ -237,6 +237,8 @@ function SSHProfileManagerDialog({
   const [listReady, setListReady] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [discardAction, setDiscardAction] = useState<'close' | 'back' | null>(null);
+  // 本次打开期间成功导入过至少一条，列表页脚才用「关闭」。
+  const [importedThisOpen, setImportedThisOpen] = useState(false);
   const formBaselineRef = useRef<SSHProfile>({ ...emptyProfile });
   const [viewport, setViewport] = useState<HTMLElement | null>(null);
   const selectedProfileRef = useRef<HTMLDivElement | null>(null);
@@ -275,6 +277,7 @@ function SSHProfileManagerDialog({
   useEffect(() => {
     if (!open) {
       setListReady(false);
+      setImportedThisOpen(false);
       return;
     }
     centeredSelectionRef.current = false;
@@ -440,6 +443,7 @@ function SSHProfileManagerDialog({
     try {
       const saved = await ImportSSHConfigProfile(candidate.originAlias);
       onProfilesChange([...profiles, saved]);
+      setImportedThisOpen(true);
       toast.add({ title: t('sshProfiles.importSucceeded'), type: 'success' });
     } catch (reason) {
       setListError(errorMessage(reason));
@@ -513,18 +517,25 @@ function SSHProfileManagerDialog({
             </div>
           ) : null}
           <ScrollArea
-            className="min-h-0 flex-1 px-6 py-5 [padding-inline-end:var(--overlay-scrollbar-size)]"
+            className={cn(
+              'min-h-0 flex-1 px-6 py-5 [padding-inline-end:var(--overlay-scrollbar-size)]',
+              // 列表的吸顶块是搜索框（h-8）加分段标题（h-7），顶部渐变让到整块下方。
+              view === 'list' && '[--scroll-edge-top-inset:3.75rem]',
+            )}
             edgeOverlay
             onViewport={setViewport}
           >
             {view === 'list' ? (
               <div className="grid gap-6">
-                <ToolSearchField
-                  value={searchQuery}
-                  onValueChange={setSearchQuery}
-                  placeholder={t('sshProfiles.searchPlaceholder')}
-                  ariaLabel={t('sshProfiles.searchLabel')}
-                />
+                {/* 吸顶块用弹窗实底盖住滚过的行；两个分段标题吸在搜索框正下方（top-8）。 */}
+                <div className="sticky top-0 z-20 bg-popover">
+                  <ToolSearchField
+                    value={searchQuery}
+                    onValueChange={setSearchQuery}
+                    placeholder={t('sshProfiles.searchPlaceholder')}
+                    ariaLabel={t('sshProfiles.searchLabel')}
+                  />
+                </div>
                 {normalizedQuery &&
                 filteredProfiles.length === 0 &&
                 filteredLocalProfiles.length === 0 ? (
@@ -534,7 +545,7 @@ function SSHProfileManagerDialog({
                 ) : null}
                 {!normalizedQuery || filteredProfiles.length > 0 ? (
                   <section className="grid gap-3">
-                    <div className="flex items-center justify-between gap-3">
+                    <div className="sticky top-8 z-10 flex items-center justify-between gap-3 bg-popover">
                       <h3 className="text-sm font-medium text-foreground">
                         {t('sshProfiles.savedTitle')}
                       </h3>
@@ -665,7 +676,7 @@ function SSHProfileManagerDialog({
                 ) : null}
                 {!normalizedQuery || filteredLocalProfiles.length > 0 ? (
                   <section className="grid gap-3">
-                    <div className="flex items-center justify-between gap-3">
+                    <div className="sticky top-8 z-10 flex items-center justify-between gap-3 bg-popover">
                       <h3 className="text-sm font-medium text-foreground">
                         {t('sshProfiles.localTitle')}
                       </h3>
@@ -694,7 +705,7 @@ function SSHProfileManagerDialog({
                             <div
                               key={candidate.originAlias}
                               className={cn(
-                                'flex min-w-0 items-center gap-2 rounded-md py-2.5 hover:bg-accent',
+                                'flex min-w-0 items-center gap-2 rounded-md px-2 py-2.5 hover:bg-accent',
                                 index % 2 === 1 && 'bg-muted/30',
                               )}
                             >
@@ -706,21 +717,19 @@ function SSHProfileManagerDialog({
                                   {profileAddress(candidate)}
                                 </span>
                               </div>
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => void importProfile(candidate)}
-                                disabled={exists || busy}
-                              >
-                                {exists ? (
-                                  t('sshProfiles.imported')
-                                ) : (
-                                  <>
-                                    <DownloadSimple data-icon="inline-start" weight="regular" />
-                                    {t('sshProfiles.import')}
-                                  </>
-                                )}
-                              </Button>
+                              {exists ? (
+                                <Badge variant="secondary">{t('sshProfiles.imported')}</Badge>
+                              ) : (
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => void importProfile(candidate)}
+                                  disabled={busy}
+                                >
+                                  <DownloadSimple data-icon="inline-start" weight="regular" />
+                                  {t('sshProfiles.import')}
+                                </Button>
+                              )}
                             </div>
                           );
                         })}
@@ -844,6 +853,9 @@ function SSHProfileManagerDialog({
                         {t('sshProfiles.authKey')}
                       </Button>
                     </div>
+                    <p className="text-xs leading-5 text-muted-foreground">
+                      {t('sshProfiles.plaintextWarning')}
+                    </p>
                   </div>
                   {authMode === 'password' ? (
                     <div className="grid gap-1.5">
@@ -927,7 +939,11 @@ function SSHProfileManagerDialog({
               onClick={() => (view === 'list' ? requestClose(false) : requestBack())}
               disabled={busy}
             >
-              {view === 'list' ? t('common.cancel') : t('sshProfiles.back')}
+              {view === 'list'
+                ? importedThisOpen
+                  ? t('common.close')
+                  : t('common.cancel')
+                : t('sshProfiles.back')}
             </Button>
             {view === 'form' ? (
               <Button type="submit" form="ssh-profile-form" disabled={busy}>

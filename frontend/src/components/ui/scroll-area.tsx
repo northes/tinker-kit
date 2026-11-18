@@ -33,7 +33,11 @@ export type ScrollAreaProps<T extends ElementType = 'div'> = Omit<
    * 用独立图层而不是 mask，避免把吸顶表头和斑马纹一起淡掉。
    */
   edgeOverlay?: boolean;
-  /** 顶部渐变的 top。吸顶表头（h-10）在滚动区内时传 top-10，否则贴顶。 */
+  /**
+   * 顶部渐变的 top。吸顶表头（h-10）在滚动区内时传 top-10，否则贴顶。
+   * 吸顶块比一行表头更高时（例如搜索框加分段标题），改用调用方自己的
+   * `--scroll-edge-top-inset` 传整块高度，渐变从块下方开始，不淡掉块本身。
+   */
   edgeOverlayTopClass?: string;
   /** 真实的滚动元素（OverlayScrollbars viewport）。虚拟化列表等需要依赖它获取滚动状态。 */
   onViewport?: (viewport: HTMLElement | null) => void;
