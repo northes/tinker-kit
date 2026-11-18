@@ -237,23 +237,28 @@ textarea,
 }
 /* 标签切换改真实 DOM，不用 document view transition。
    主题转场的 ::view-transition-old(root) 会把整页旧快照盖住约 750ms，
-   标签高亮和后续点击都落在快照上，所以切不过去。 */
+   标签高亮和后续点击都落在快照上，所以切不过去。
+   opacity 只能加在 .tool-slot-fade 上。加在 .tool-slot 上会让子孙 backdrop-filter
+   在整段过渡里失效（模糊先没，透明度回到 1 才又出现）。 */
 .workspace > .tool-slot.is-hidden {
   visibility: hidden;
+}
+.workspace > .tool-slot.is-hidden > .tool-slot-fade {
   opacity: 0;
 }
+.workspace > .tool-slot.is-hidden > .tool-slot-overlay {
+  visibility: hidden;
+}
 @media (prefers-reduced-motion: no-preference) {
-  .workspace > .tool-slot {
-    transition:
-      opacity var(--motion-duration) var(--motion-ease),
-      visibility 0s linear var(--motion-duration);
+  .workspace > .tool-slot > .tool-slot-fade {
+    transition: opacity var(--motion-duration) var(--motion-ease);
+  }
+  .workspace > .tool-slot.is-hidden {
+    transition: visibility 0s linear var(--motion-duration);
   }
   .workspace > .tool-slot.workspace-tool-slot-active {
     visibility: visible;
-    opacity: 1;
-    transition:
-      opacity var(--motion-duration) var(--motion-ease),
-      visibility 0s;
+    transition: visibility 0s;
   }
   /* 颜色过渡画在可视表面上。transform 不能常驻：内层也承担拖拽位移，
      常驻过渡会让拖动跟手变慢。开合补位只在 data-workspace-tab-motion 期间过渡位移。

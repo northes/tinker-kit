@@ -26,5 +26,5 @@
 ## 会话切换
 
 - 工作区标签切换、页面切换不要用 `document.startViewTransition`。它先把整页截成快照再播动画，而主题切换留在 `globals.css` 的 `::view-transition-old(root)` 遮罩会顺带盖住这张快照约 750ms：标签高亮比点击晚一大截才动，后续点击也落在快照上，连续点标签会像卡住。
-- 切换直接改状态，用真实 DOM 的短过渡表达变化：`.tool-slot` 过渡 `opacity` 并在过渡结束后才切 `visibility`，标签过渡 `background-color`、`color` 和 `opacity`，新建标签用 `@starting-style` 入场。过渡时长与曲线走 `--motion-duration` / `--motion-ease`，`prefers-reduced-motion` 下不播。
+- 切换直接改状态，用真实 DOM 的短过渡表达变化：`.tool-slot-fade` 过渡 `opacity`，`.tool-slot` 在过渡结束后才切 `visibility`。不要把 `opacity` 加在 `.tool-slot` 上：祖先 `opacity` 不是 1 时 WebKit 会整段丢掉子孙 `backdrop-filter`，模糊会先消失再在过渡结束时出现。带 `backdrop-filter` 的浮层（远程文本编辑器）要 portal 到 `.tool-slot-overlay`，切走时这一层立即 `visibility: hidden`，不要跟着淡出，模糊层自身也不要做 `opacity` 动画。标签过渡 `background-color`、`color` 和 `opacity`，新建标签用 `@starting-style` 入场。过渡时长与曲线走 `--motion-duration` / `--motion-ease`，`prefers-reduced-motion` 下不播。
 - 关闭标签不要为了播完离场动画而延迟卸载或排队下一次点击。先保证当次点击立即生效，再谈动画。

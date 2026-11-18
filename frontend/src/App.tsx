@@ -44,6 +44,7 @@ import {
   noteWorkspaceTabWidthInputs,
 } from './app/useWorkspaceTabFitWidth';
 import { workspaceTabBaseName, WorkspaceTabBar } from './app/WorkspaceTabBar';
+import { ToolSlot } from './app/tool-slot';
 import { WorkspaceTabTitleContext } from './app/workspace-tab-title';
 import {
   activateTab,
@@ -1260,13 +1261,13 @@ function AppShell() {
             ref={workspaceElRef}
           >
             {workspace.tabs.map((tab) => (
-              <div key={tab.id} className={toolSlotClass(tab.id === workspace.activeId)}>
+              <ToolSlot key={tab.id} className={toolSlotClass(tab.id === workspace.activeId)}>
                 <WorkspaceTabTitleContext.Provider value={reporterForTab(tab.id)}>
                   <ToolFreshFocusContext.Provider value={freshToolTabIdsRef.current.has(tab.id)}>
                     <Suspense fallback={null}>{renderWorkspaceTab(tab)}</Suspense>
                   </ToolFreshFocusContext.Provider>
                 </WorkspaceTabTitleContext.Provider>
-              </div>
+              </ToolSlot>
             ))}
           </main>
         </div>

@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import CodeMirror from '@uiw/react-codemirror';
 import { closeCompletion, completeAnyWord, completionStatus } from '@codemirror/autocomplete';
@@ -30,6 +31,7 @@ import { toml } from '@codemirror/legacy-modes/mode/toml';
 import { protobuf } from '@codemirror/legacy-modes/mode/protobuf';
 import { properties } from '@codemirror/legacy-modes/mode/properties';
 import { ReadRemoteTextFile, SaveRemoteTextFile } from '../../bindings/tinkerkit/fileservice';
+import { ToolSlotOverlayContext } from '../app/tool-slot';
 import { quietEditorTheme } from './codeMirrorTheme';
 import { editorCompletions } from './codeMirrorCompletion';
 import { ConfirmDialog } from './ConfirmDialog';
@@ -219,6 +221,7 @@ type Props = {
 
 export function RemoteTextEditorDialog({ sourceID, path, name, onClose, onSaved }: Props) {
   const { t } = useTranslation();
+  const overlayRoot = useContext(ToolSlotOverlayContext);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [formatting, setFormatting] = useState(false);
@@ -444,141 +447,144 @@ export function RemoteTextEditorDialog({ sourceID, path, name, onClose, onSaved 
     }
   };
 
-  return (
-    <>
-      <section
-        className="absolute inset-0 z-20 flex min-h-0 items-center justify-center overflow-hidden p-4"
-        onKeyDownCapture={onEditorKeyDown}
+  const editor = (
+    <section
+      className="pointer-events-auto absolute inset-0 z-20 flex min-h-0 items-center justify-center overflow-hidden p-4"
+      onKeyDownCapture={onEditorKeyDown}
+    >
+      {/* 模糊层只盖当前工具页，标签栏仍可点击；点击它与全局对话框一样按关闭处理。
+            这一层不能做 opacity 动画：自身或祖先 opacity 不是 1 时 backdrop-filter 会消失。 */}
+      <div
+        aria-hidden="true"
+        className="absolute inset-0 cursor-default bg-black/10 supports-backdrop-filter:backdrop-blur-xs"
+        onClick={requestClose}
+      />
+      <div
+        data-slot="remote-text-editor"
+        role="dialog"
+        aria-label={t('sshFilesTool.editTextTitle', { name })}
+        className="relative grid h-[min(72vh,720px)] min-h-0 max-h-full w-[min(960px,calc(100%-2rem))] grid-rows-[minmax(0,1fr)_auto_auto] gap-y-2 overflow-hidden rounded-xl border border-border bg-popover pb-4 shadow-md ring-1 ring-foreground/10 animate-in fade-in-0 zoom-in-95 duration-100"
       >
-        {/* 模糊层只盖当前工具页，标签栏仍可点击；点击它与全局对话框一样按关闭处理。 */}
-        <div
-          aria-hidden="true"
-          className="absolute inset-0 cursor-default bg-black/10 animate-in fade-in-0 duration-100 supports-backdrop-filter:backdrop-blur-xs"
-          onClick={requestClose}
-        />
-        <div
-          data-slot="remote-text-editor"
-          role="dialog"
-          aria-label={t('sshFilesTool.editTextTitle', { name })}
-          className="relative grid h-[min(72vh,720px)] min-h-0 max-h-full w-[min(960px,calc(100%-2rem))] grid-rows-[minmax(0,1fr)_auto_auto] gap-y-2 overflow-hidden rounded-xl border border-border bg-popover pb-4 shadow-md ring-1 ring-foreground/10 animate-in fade-in-0 zoom-in-95 duration-100"
-        >
-          <div className="min-h-0 min-w-0 p-0.5">
-            <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-[calc(var(--radius-xl)-2px)] border border-border bg-card">
-              {loading ? (
-                <div className="flex h-full items-center justify-center">
-                  <Spinner />
-                </div>
-              ) : error && !revision ? (
-                <div
-                  className="flex h-full items-center justify-center text-sm text-destructive"
-                  role="alert"
-                >
-                  {error}
-                </div>
-              ) : (
-                <CodeMirror
-                  className="h-full [&_.cm-editor]:h-full [&_.cm-editor]:rounded-[inherit] [&_.cm-editor.cm-focused]:outline-none [&_.cm-scroller]:rounded-[inherit] [&_.cm-scroller]:overflow-auto"
-                  height="100%"
-                  value={content}
-                  onChange={setContent}
-                  editable={!truncated && !liveRefresh && !saving && !formatting}
-                  onCreateEditor={(view) => {
-                    viewRef.current = view;
-                    view.contentDOM.setAttribute('aria-label', t('sshFilesTool.editorContent'));
-                    view.focus();
-                  }}
-                  theme={quietEditorTheme}
-                  extensions={extensions}
-                  basicSetup={{ autocompletion: false }}
-                />
-              )}
-            </div>
-          </div>
-          <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 px-4">
-            <p
-              className="min-w-0 flex-1 truncate font-mono text-xs text-muted-foreground"
-              title={path}
-            >
-              {path}
-            </p>
-            {truncated ? (
-              <p className="text-xs text-muted-foreground">{t('sshFilesTool.tailTruncated')}</p>
-            ) : null}
-          </div>
-          <div className="flex flex-col-reverse gap-2 px-4 sm:flex-row sm:justify-end">
-            <div className="mr-auto flex min-w-0 flex-wrap items-center gap-2">
-              <Select
-                items={tailItems}
-                value={String(tailLines)}
-                disabled={loading || saving || formatting || dirty}
-                onValueChange={(value) => {
-                  if (value == null) return;
-                  const next = Number(value);
-                  if (!Number.isInteger(next) || next === tailLines) return;
-                  autoTailRef.current = false;
-                  followTailRef.current = true;
-                  setTailLines(next);
-                }}
+        <div className="min-h-0 min-w-0 p-0.5">
+          <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-[calc(var(--radius-xl)-2px)] border border-border bg-card">
+            {loading ? (
+              <div className="flex h-full items-center justify-center">
+                <Spinner />
+              </div>
+            ) : error && !revision ? (
+              <div
+                className="flex h-full items-center justify-center text-sm text-destructive"
+                role="alert"
               >
-                <SelectTrigger aria-label={t('sshFilesTool.tailLinesLabel')}>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectGroup>
-                    {tailItems.map((item) => (
-                      <SelectItem key={item.value} value={item.value}>
-                        {item.label}
-                      </SelectItem>
-                    ))}
-                  </SelectGroup>
-                </SelectContent>
-              </Select>
-              <Button
-                variant={liveRefresh ? 'secondary' : 'outline'}
-                onClick={() => setLiveRefresh((enabled) => !enabled)}
-                disabled={loading || saving || formatting || (!liveRefresh && dirty)}
-                aria-pressed={liveRefresh}
-              >
-                {liveRefresh
-                  ? t('sshFilesTool.stopLiveRefresh')
-                  : t('sshFilesTool.startLiveRefresh')}
-              </Button>
-            </div>
-            {error && revision ? (
-              <p className="mr-auto self-center text-xs text-destructive" role="alert">
                 {error}
-              </p>
-            ) : null}
-            <Button variant="outline" onClick={requestClose} disabled={saving || formatting}>
-              {t('common.close')}
-            </Button>
-            <Button
-              variant="outline"
-              onClick={() => void format()}
-              disabled={!canFormat || loading || saving || formatting || liveRefresh || truncated}
-              title={
-                formatTooLarge
-                  ? t('sshFilesTool.formatTooLarge')
-                  : !formatSupported
-                    ? t('sshFilesTool.formatUnavailable')
-                    : undefined
-              }
-            >
-              {formatting ? <Spinner data-icon="inline-start" /> : null}
-              {t('sshFilesTool.formatText')}
-            </Button>
-            <Button
-              onClick={() => void save()}
-              disabled={
-                loading || saving || formatting || liveRefresh || truncated || !dirty || !revision
-              }
-            >
-              {saving ? <Spinner data-icon="inline-start" /> : null}
-              {t('common.save')}
-            </Button>
+              </div>
+            ) : (
+              <CodeMirror
+                className="h-full [&_.cm-editor]:h-full [&_.cm-editor]:rounded-[inherit] [&_.cm-editor.cm-focused]:outline-none [&_.cm-scroller]:rounded-[inherit] [&_.cm-scroller]:overflow-auto"
+                height="100%"
+                value={content}
+                onChange={setContent}
+                editable={!truncated && !liveRefresh && !saving && !formatting}
+                onCreateEditor={(view) => {
+                  viewRef.current = view;
+                  view.contentDOM.setAttribute('aria-label', t('sshFilesTool.editorContent'));
+                  view.focus();
+                }}
+                theme={quietEditorTheme}
+                extensions={extensions}
+                basicSetup={{ autocompletion: false }}
+              />
+            )}
           </div>
         </div>
-      </section>
+        <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 px-4">
+          <p
+            className="min-w-0 flex-1 truncate font-mono text-xs text-muted-foreground"
+            title={path}
+          >
+            {path}
+          </p>
+          {truncated ? (
+            <p className="text-xs text-muted-foreground">{t('sshFilesTool.tailTruncated')}</p>
+          ) : null}
+        </div>
+        <div className="flex flex-col-reverse gap-2 px-4 sm:flex-row sm:justify-end">
+          <div className="mr-auto flex min-w-0 flex-wrap items-center gap-2">
+            <Select
+              items={tailItems}
+              value={String(tailLines)}
+              disabled={loading || saving || formatting || dirty}
+              onValueChange={(value) => {
+                if (value == null) return;
+                const next = Number(value);
+                if (!Number.isInteger(next) || next === tailLines) return;
+                autoTailRef.current = false;
+                followTailRef.current = true;
+                setTailLines(next);
+              }}
+            >
+              <SelectTrigger aria-label={t('sshFilesTool.tailLinesLabel')}>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectGroup>
+                  {tailItems.map((item) => (
+                    <SelectItem key={item.value} value={item.value}>
+                      {item.label}
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
+              </SelectContent>
+            </Select>
+            <Button
+              variant={liveRefresh ? 'secondary' : 'outline'}
+              onClick={() => setLiveRefresh((enabled) => !enabled)}
+              disabled={loading || saving || formatting || (!liveRefresh && dirty)}
+              aria-pressed={liveRefresh}
+            >
+              {liveRefresh ? t('sshFilesTool.stopLiveRefresh') : t('sshFilesTool.startLiveRefresh')}
+            </Button>
+          </div>
+          {error && revision ? (
+            <p className="mr-auto self-center text-xs text-destructive" role="alert">
+              {error}
+            </p>
+          ) : null}
+          <Button variant="outline" onClick={requestClose} disabled={saving || formatting}>
+            {t('common.close')}
+          </Button>
+          <Button
+            variant="outline"
+            onClick={() => void format()}
+            disabled={!canFormat || loading || saving || formatting || liveRefresh || truncated}
+            title={
+              formatTooLarge
+                ? t('sshFilesTool.formatTooLarge')
+                : !formatSupported
+                  ? t('sshFilesTool.formatUnavailable')
+                  : undefined
+            }
+          >
+            {formatting ? <Spinner data-icon="inline-start" /> : null}
+            {t('sshFilesTool.formatText')}
+          </Button>
+          <Button
+            onClick={() => void save()}
+            disabled={
+              loading || saving || formatting || liveRefresh || truncated || !dirty || !revision
+            }
+          >
+            {saving ? <Spinner data-icon="inline-start" /> : null}
+            {t('common.save')}
+          </Button>
+        </div>
+      </div>
+    </section>
+  );
+
+  return (
+    <>
+      {overlayRoot ? createPortal(editor, overlayRoot) : editor}
       <ConfirmDialog
         open={discardOpen}
         onOpenChange={(open, details) => {
