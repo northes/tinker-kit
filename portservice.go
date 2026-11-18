@@ -96,10 +96,19 @@ type PortService struct {
 	counter atomic.Uint64
 }
 
+// portConfigSnapshot 复制下一轮要比较的切片。配置更新可以就地改元素；
+// 快照若和内存配置共用底层数组，改写会先落到快照上，比较就看不出变化。
+func portConfigSnapshot(cfg Config) Config {
+	cfg.SSHProfiles = copySSHProfiles(cfg.SSHProfiles)
+	cfg.PortForwardSources = append([]PortSource(nil), cfg.PortForwardSources...)
+	cfg.PortForwards = append([]PortForwardConfig(nil), cfg.PortForwards...)
+	return cfg
+}
+
 func NewPortService(config *ConfigService) *PortService {
 	service := &PortService{config: config, tunnels: make(map[string]*portTunnel)}
 	if config != nil {
-		previous := config.Get()
+		previous := portConfigSnapshot(config.Get())
 		var snapshotMu sync.Mutex
 		config.setOnChange(func(current Config) {
 			snapshotMu.Lock()
@@ -107,7 +116,7 @@ func NewPortService(config *ConfigService) *PortService {
 			stopAll := !reflect.DeepEqual(previous.SSHProfiles, current.SSHProfiles) ||
 				!reflect.DeepEqual(previous.PortForwardSources, current.PortForwardSources)
 			forwardsChanged := !reflect.DeepEqual(previous.PortForwards, current.PortForwards)
-			previous = current
+			previous = portConfigSnapshot(current)
 			snapshotMu.Unlock()
 			if stopAll {
 				service.shutdown()
