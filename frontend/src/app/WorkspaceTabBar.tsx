@@ -169,7 +169,7 @@ function WorkspaceTabItem({
             className={cn(
               // 外层只占布局盒，给 dnd-kit 测量。焦点环画在内侧，避免被 ScrollArea 裁切。
               // 不展开 useSortable 的 attributes：其中的 role=button 会盖掉 role=tab。
-              'group/tab relative h-7 w-(--workspace-tab-width) shrink-0 touch-none outline-none select-none [--wails-draggable:no-drag] focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:ring-inset',
+              'group/tab relative h-8 w-(--workspace-tab-width) shrink-0 touch-none outline-none select-none [--wails-draggable:no-drag] focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:ring-inset',
             )}
             {...listeners}
             onClick={() => {
