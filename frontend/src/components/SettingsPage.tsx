@@ -99,6 +99,10 @@ const TRAY_MATCHABLE_TOOLS: readonly ToolId[] = [
 ];
 const DIFF_CLIPBOARD_TARGET_MODES = ['off', 'alternate', 'before', 'after'] as const;
 type DiffClipboardTargetMode = (typeof DIFF_CLIPBOARD_TARGET_MODES)[number];
+const TAB_WIDTH_PRESETS = [112, 128, 148, 168, 196] as const;
+type TabWidthPreset = (typeof TAB_WIDTH_PRESETS)[number];
+const TAB_WIDTH_MODES = ['fixed', 'auto'] as const;
+type TabWidthMode = (typeof TAB_WIDTH_MODES)[number];
 const settingRowClass = 'flex min-h-8 items-center justify-between gap-5';
 const settingLabelClass = 'text-xs leading-[1.4] font-medium text-foreground';
 const settingHintClass = 'text-[10px] leading-[1.4] text-muted-foreground';
@@ -233,6 +237,7 @@ function ChoiceGroup<T extends string | number>({
   onChange,
   hideLabel = false,
   fill = false,
+  isDisabled = false,
 }: {
   label: string;
   value: T;
@@ -240,6 +245,7 @@ function ChoiceGroup<T extends string | number>({
   onChange: (value: T) => void;
   hideLabel?: boolean;
   fill?: boolean;
+  isDisabled?: boolean;
 }) {
   const labelId = useId();
   const radiosRef = useRef<Array<HTMLElement | null>>([]);
@@ -303,6 +309,7 @@ function ChoiceGroup<T extends string | number>({
               aria-checked={checked}
               tabIndex={checked || (selectedIndex < 0 && index === 0) ? 0 : -1}
               className="flex-none"
+              disabled={isDisabled}
               onClick={() => onChange(option.id)}
               onKeyDown={(event) => onKeyDown(event, index)}
               ref={(node) => {
@@ -963,6 +970,14 @@ export default function SettingsPage({
   )
     ? (settings.diffClipboardTargetMode as DiffClipboardTargetMode)
     : 'alternate';
+  const tabWidthMode: TabWidthMode = settings.tabWidthMode === 'auto' ? 'auto' : 'fixed';
+  const tabWidthPreset = (TAB_WIDTH_PRESETS as readonly number[]).includes(settings.tabWidth)
+    ? (settings.tabWidth as TabWidthPreset)
+    : 128;
+  const tabWidthOptions = TAB_WIDTH_PRESETS.map((size) => ({
+    id: size,
+    label: `${size} px`,
+  }));
   const diffTargetOptions = DIFF_CLIPBOARD_TARGET_MODES.map((value) => ({
     value,
     label: t(`diffTool.targets.${value}`),
@@ -1136,6 +1151,31 @@ export default function SettingsPage({
                       }
                     />
                   </Setting>
+                  <ChoiceGroup
+                    label={t('settings.tabWidthMode')}
+                    value={tabWidthMode}
+                    options={[
+                      { id: 'fixed', label: t('settings.tabWidthModeFixed') },
+                      { id: 'auto', label: t('settings.tabWidthModeAuto') },
+                    ]}
+                    onChange={(mode) =>
+                      setSettings((current) => ({ ...current, tabWidthMode: mode }))
+                    }
+                  />
+                  <div className="flex flex-col gap-0.5">
+                    <ChoiceGroup
+                      label={t('settings.tabWidth')}
+                      value={tabWidthPreset}
+                      options={tabWidthOptions}
+                      isDisabled={tabWidthMode === 'auto'}
+                      onChange={(tabWidth) =>
+                        setSettings((current) => ({ ...current, tabWidth }))
+                      }
+                    />
+                    <p className={cn('m-0', settingHintClass)}>
+                      {t('settings.tabWidthWithIconsHint')}
+                    </p>
+                  </div>
                 </div>
               </SettingsGroup>
               <SettingsGroup title={t('settings.tools')}>
