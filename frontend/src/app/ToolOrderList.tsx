@@ -55,7 +55,7 @@ function ToolOrderRow({
       aria-posinset={index + 1}
       aria-setsize={count}
       className={`flex select-none items-center gap-0.5 rounded-md ${enabled ? '' : 'opacity-40'} ${
-        isDragging ? 'bg-accent shadow-md' : `even:bg-muted/30 ${enabled ? 'hover:bg-muted/50' : ''}`
+        isDragging ? 'bg-accent shadow-md' : `${index % 2 === 1 ? 'bg-muted/30' : ''} ${enabled ? 'hover:bg-muted/50' : ''}`
       }`}
     >
       <Button
