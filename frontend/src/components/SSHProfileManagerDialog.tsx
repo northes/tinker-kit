@@ -522,10 +522,8 @@ function SSHProfileManagerDialog({
                 <ToolSearchField
                   value={searchQuery}
                   onValueChange={setSearchQuery}
-                  onClear={() => setSearchQuery('')}
                   placeholder={t('sshProfiles.searchPlaceholder')}
                   ariaLabel={t('sshProfiles.searchLabel')}
-                  clearLabel={t('sshProfiles.clearSearch')}
                 />
                 {normalizedQuery &&
                 filteredProfiles.length === 0 &&

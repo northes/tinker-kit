@@ -405,19 +405,6 @@ export function useRemoteFileBrowser({
       void loadDirectory(sourceID, currentPath, showHidden, true);
     }
   };
-  const clearSearch = () => {
-    const shouldReload = searchActive || Boolean(searchQuery);
-    resetSearchState();
-    if (shouldReload && sourceID) {
-      void loadDirectory(sourceID, currentPath, showHidden);
-    } else if (shouldReload) {
-      setEntries([]);
-      setSelected([]);
-      setError('');
-      setLoading(false);
-    }
-  };
-
   useEffect(() => {
     if (!active) {
       cancelLoading();
@@ -591,7 +578,6 @@ export function useRemoteFileBrowser({
     executeSearch,
     searchInput,
     setSearchInput,
-    clearSearch,
     setSearchMode,
     setSearchScope,
     pathEditing,

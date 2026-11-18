@@ -557,7 +557,6 @@ function SearchField({
   onDraftChange: (value: string) => void;
   onSearch: (value: string) => void;
 }) {
-  const { t } = useTranslation();
   return (
     <ToolSearchField
       id={id}
@@ -566,11 +565,6 @@ function SearchField({
       value={draft}
       onValueChange={onDraftChange}
       onSubmit={onSearch}
-      onClear={() => {
-        onDraftChange('');
-        onSearch('');
-      }}
-      clearLabel={t('portTool.clearSearch')}
       className={toolHeaderControlClassName}
     />
   );
@@ -1191,7 +1185,7 @@ export default function PortTool({ active }: { active: boolean }) {
                   containerClassName="overflow-x-visible"
                 >
                   <TableHeader className="sticky top-0 z-10 bg-background [&_tr]:border-b-0">
-                    <TableRow>
+                    <TableRow className="hover:bg-transparent [&>th]:bg-[color-mix(in_oklch,var(--muted)_45%,var(--background))] [&>th]:text-muted-foreground [&>th:first-child]:rounded-l-md [&>th:last-child]:rounded-r-md">
                       {PORT_COLUMNS.map((key, index) => (
                         <SortableHead
                           key={key}
@@ -1352,7 +1346,7 @@ export default function PortTool({ active }: { active: boolean }) {
                     containerClassName="overflow-x-visible"
                   >
                     <TableHeader className="sticky top-0 z-10 bg-background [&_tr]:border-b-0">
-                      <TableRow>
+                      <TableRow className="hover:bg-transparent [&>th]:bg-[color-mix(in_oklch,var(--muted)_45%,var(--background))] [&>th]:text-muted-foreground [&>th:first-child]:rounded-l-md [&>th:last-child]:rounded-r-md">
                         <TableHead style={{ width: FORWARD_HANDLE_COLUMN_WIDTH }}>
                           <span className="sr-only">{t('portTool.order')}</span>
                         </TableHead>

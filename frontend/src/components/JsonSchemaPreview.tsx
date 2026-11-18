@@ -16,7 +16,6 @@ import {
   CaretRight,
   CaretUp,
   MagnifyingGlass,
-  X,
 } from '@phosphor-icons/react';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
@@ -993,11 +992,6 @@ function SchemaSearchBar({
 }) {
   const [draft, setDraft] = useState('');
 
-  const clear = () => {
-    setDraft('');
-    onApply('');
-  };
-
   return (
     <>
       <div className="relative flex w-full min-w-0 flex-1 items-center">
@@ -1013,28 +1007,11 @@ function SchemaSearchBar({
           aria-label={t('jsonTool.schemaPreviewSearch')}
           onChange={(event) => setDraft(event.target.value)}
           onKeyDown={(event) => {
-            if (event.key === 'Enter') {
-              event.preventDefault();
-              onApply(draft.trim());
-            } else if (event.key === 'Escape') {
-              event.preventDefault();
-              clear();
-            }
+            if (event.key !== 'Enter') return;
+            event.preventDefault();
+            onApply(draft.trim());
           }}
         />
-        {draft ? (
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon-xs"
-            className="absolute right-0.5"
-            aria-label={t('jsonTool.schemaPreviewSearchClear')}
-            title={t('jsonTool.schemaPreviewSearchClear')}
-            onClick={clear}
-          >
-            <X weight="regular" />
-          </Button>
-        ) : null}
       </div>
       {count > 0 || current > 0 ? (
         <span className="flex-none font-mono text-[10px] leading-none text-muted-foreground tabular-nums">

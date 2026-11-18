@@ -178,17 +178,15 @@ export function ToolHeaderField({
 export const toolHeaderControlClassName = 'w-[220px] max-w-full max-[700px]:w-full';
 
 // 工具页列表/工具栏搜索框：与 header 里的 Select 同高同字号（32px、text-sm）。
-// 回车提交（onSubmit）、Esc 清空（onClear）；不传 onSubmit 即为即时过滤。
+// 回车提交（onSubmit）；不传 onSubmit 即为即时过滤。不放清空按钮，Esc 也不清空。
 export function ToolSearchField({
   id,
   label,
   value,
   onValueChange,
   onSubmit,
-  onClear,
   placeholder,
   ariaLabel,
-  clearLabel,
   disabled,
   className = '',
   inputRef,
@@ -199,20 +197,16 @@ export function ToolSearchField({
   value: string;
   onValueChange: (value: string) => void;
   onSubmit?: (value: string) => void;
-  onClear?: () => void;
   placeholder?: string;
   /** 没有可见 label 时输入框的无障碍名称。 */
   ariaLabel?: string;
-  /** 清空按钮的无障碍名称，省略时沿用 ariaLabel 或可见 label。 */
-  clearLabel?: string;
   disabled?: boolean;
   className?: string;
   /** 输入框本身的 ref。同一页面有多份搜索框时用它聚焦自己那一份。 */
   inputRef?: Ref<HTMLInputElement>;
-  /** 搜索框右侧内嵌控件（例如搜索方式菜单），显示在清空按钮左侧。 */
+  /** 搜索框右侧内嵌控件（例如搜索方式菜单）。 */
   trailingAddon?: ReactNode;
 }) {
-  const showClear = Boolean(onClear && value);
   // WebKit 用回车确认候选时，compositionend 之后还会同步再派发一次
   // isComposing 为 false 的 Enter。标记保留到当前事件轮结束，避免上屏被当成提交。
   const imeConfirmToken = useRef(0);
@@ -237,11 +231,6 @@ export function ToolSearchField({
           }, 0);
         }}
         onKeyDown={(event) => {
-          if (event.key === 'Escape' && onClear && value) {
-            event.preventDefault();
-            onClear();
-            return;
-          }
           const native = event.nativeEvent;
           // 组合中的回车（含 keyCode 229，此时 isComposing 可能已经是 false）只上屏。
           if (
@@ -258,35 +247,10 @@ export function ToolSearchField({
         }}
         placeholder={placeholder}
         aria-label={label ? undefined : ariaLabel}
-        className={cn(
-          'h-8 pl-8 text-sm',
-          showClear && trailingAddon && 'pr-14',
-          showClear && !trailingAddon && 'pr-8',
-          !showClear && trailingAddon && 'pr-8',
-        )}
+        className={cn('h-8 pl-8 text-sm', trailingAddon && 'pr-8')}
       />
       {trailingAddon ? (
-        <div
-          className={cn(
-            'absolute top-1/2 -translate-y-1/2',
-            showClear ? 'right-8' : 'right-1.5',
-          )}
-        >
-          {trailingAddon}
-        </div>
-      ) : null}
-      {showClear ? (
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon-xs"
-          disabled={disabled}
-          className="absolute top-1/2 right-1.5 -translate-y-1/2"
-          aria-label={clearLabel ?? ariaLabel ?? label}
-          onClick={onClear}
-        >
-          <XCircle weight="regular" aria-hidden="true" />
-        </Button>
+        <div className="absolute top-1/2 right-1.5 -translate-y-1/2">{trailingAddon}</div>
       ) : null}
     </div>
   );

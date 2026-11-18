@@ -127,6 +127,41 @@ after(() => {
   dom.window.close();
 });
 
+test('有内容时不渲染清空按钮，Esc 也不改内容', async () => {
+  const changes = [];
+  const host = document.createElement('div');
+  document.body.append(host);
+  const root = createRoot(host);
+  await act(async () => {
+    root.render(
+      createElement(ToolSearchField, {
+        value: 'json',
+        onValueChange(next) {
+          changes.push(next);
+        },
+      }),
+    );
+  });
+  const input = host.querySelector('input');
+  assert.ok(input);
+  assert.equal(host.querySelector('button'), null);
+  await act(async () => {
+    input.dispatchEvent(
+      new dom.window.KeyboardEvent('keydown', {
+        key: 'Escape',
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
+  });
+  assert.deepEqual(changes, []);
+  assert.equal(input.value, 'json');
+  await act(async () => {
+    root.unmount();
+  });
+  host.remove();
+});
+
 test('普通回车提交当前搜索词', async () => {
   const view = await mount('json');
   await act(async () => {
