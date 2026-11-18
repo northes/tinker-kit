@@ -18,10 +18,12 @@ const formatVersion = (value: unknown) => {
   return v ? `v${v}` : '';
 };
 
-// 顶栏胶囊与标签同高、同基线；两侧光学内边距统一为 10px。
-// 不加额外的垂直偏移：标签按标题栏居中，胶囊跟着居中，两者文字才在同一水平线。
+// 顶栏胶囊比标签矮一档（28px vs 32px）但同轴：两者都在标题栏里居中，基线落在同一条水平线上。
+// 两侧光学内边距 8px；内部图标固定 14px，避开 Button 基础样式对 svg 的 16px 护展。
 const pillShell =
-  'relative z-[3] ml-auto flex h-8 max-w-[min(340px,calc(100vw-220px))] flex-none select-none items-stretch gap-0 self-center overflow-hidden rounded-full border border-border bg-card text-foreground transition-colors [--wails-draggable:no-drag]';
+  'relative z-[3] ml-auto flex h-7 max-w-[min(340px,calc(100vw-220px))] flex-none select-none items-center self-center overflow-hidden rounded-full border border-border bg-card text-foreground transition-colors [--wails-draggable:no-drag]';
+// 两个可点分段共用：高度取胶囊内高（h-7 减上下 1px 边框），hover 底由外壳的 rounded-full 裁成胶囊形。
+const pillSegment = 'h-full rounded-none border-0 bg-transparent';
 
 export default function UpdatePill() {
   const { t } = useTranslation();
@@ -128,7 +130,7 @@ export default function UpdatePill() {
   const downloading = state === 'downloading' && percent > 0;
   if (working)
     return (
-      <div className={`${pillShell} gap-1.5 px-2.5`} role="status">
+      <div className={`${pillShell} gap-1.5 px-2`} role="status">
         {downloading ? (
           <span
             aria-hidden="true"
@@ -140,40 +142,44 @@ export default function UpdatePill() {
           aria-hidden="true"
           className="relative size-3.5 flex-none text-primary"
         />
-        <span className="update-pill__text relative min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap text-[10px] leading-none">
+        <span className="update-pill__text relative min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap text-xs">
           {label}
         </span>
         {downloading ? (
-          <span className="relative flex-none font-mono text-[10px] leading-none tabular-nums text-muted-foreground">
+          <span className="relative flex-none font-mono text-xs tabular-nums text-muted-foreground">
             {percent}%
           </span>
         ) : null}
       </div>
     );
   return (
-    <div
-      className={`${pillShell} overflow-hidden pr-1 hover:border-muted-foreground/40`}
-      role="status"
-    >
+    <div className={pillShell}>
       <Button
         variant="ghost"
-        className="flex min-h-0 min-w-0 flex-1 items-center gap-1.5 self-stretch rounded-none border-0 bg-transparent px-2.5 py-0 text-inherit hover:bg-accent hover:text-inherit dark:hover:bg-accent/50 hover:[&_svg]:text-primary"
+        className={`${pillSegment} flex min-w-0 flex-1 items-center gap-1.5 px-2 py-0 text-inherit hover:bg-accent hover:text-inherit dark:hover:bg-accent/50 hover:[&_svg]:text-primary`}
         onClick={start}
       >
-        <ArrowCircleUp size={14} weight="regular" className="flex-none text-primary/70" />
-        <span className="update-pill__text min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-[10px] leading-none">
+        <ArrowCircleUp
+          size={14}
+          weight="regular"
+          className="size-3.5 flex-none text-primary/70"
+        />
+        <span
+          role="status"
+          className="update-pill__text min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-xs"
+        >
           {label}
         </span>
       </Button>
-      <span aria-hidden="true" className="w-px shrink-0 self-stretch bg-border" />
+      <span aria-hidden="true" className="h-3.5 w-px shrink-0 bg-border" />
       <Button
         variant="ghost"
-        className="size-auto min-h-0 w-8 shrink-0 self-stretch rounded-none border-0 bg-transparent px-0 text-muted-foreground hover:bg-accent hover:text-foreground dark:hover:bg-accent/50"
+        className={`${pillSegment} flex w-6 shrink-0 items-center justify-center px-0 text-muted-foreground hover:bg-accent hover:text-foreground dark:hover:bg-accent/50`}
         aria-label={t('updatePill.dismiss')}
         title={t('updatePill.dismiss')}
         onClick={dismiss}
       >
-        <X size={12} weight="regular" />
+        <X size={14} weight="regular" className="size-3.5" />
       </Button>
     </div>
   );
