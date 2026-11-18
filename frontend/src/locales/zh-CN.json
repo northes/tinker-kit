@@ -1636,6 +1636,8 @@
     "manageSSHKnownHosts": "管理指纹",
     "sshKnownHostsTitle": "应用内 SSH 主机指纹",
     "sshKnownHostsDialogDesc": "仅管理应用保存的记录。首次连接确认指纹后会自动添加。",
+    "sshKnownHostsSearchLabel": "搜索主机指纹",
+    "sshKnownHostsSearchEmpty": "没有匹配的主机指纹",
     "sshKnownHostsEditTitle": "编辑 SSH 主机指纹",
     "sshKnownHostsEditDesc": "修改主机匹配项、公钥或备注；保存后将立即用于后续手动 SSH 连接。",
     "sshKnownHostsLoading": "正在读取应用内指纹…",

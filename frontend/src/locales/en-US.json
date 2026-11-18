@@ -1636,6 +1636,8 @@
     "manageSSHKnownHosts": "Manage fingerprints",
     "sshKnownHostsTitle": "App SSH host keys",
     "sshKnownHostsDialogDesc": "Only records saved by this app are shown. New records are added after first-connection confirmation.",
+    "sshKnownHostsSearchLabel": "Search host fingerprints",
+    "sshKnownHostsSearchEmpty": "No matching host fingerprints",
     "sshKnownHostsEditTitle": "Edit SSH host key",
     "sshKnownHostsEditDesc": "Change the host patterns, public key, or comment. Changes apply to later manual SSH connections.",
     "sshKnownHostsLoading": "Reading app host keys…",

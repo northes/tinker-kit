@@ -9,6 +9,7 @@ import {
   type KeyboardEvent,
   type ReactElement,
 } from 'react';
+import { Badge } from './ui/badge';
 import { Button } from './ui/button';
 import { ScrollArea } from './ui/scroll-area';
 import {
@@ -36,6 +37,7 @@ import {
   ArrowsClockwise,
   BellRinging,
   Copy,
+  DotsThreeOutlineVertical,
   DownloadSimple,
   Key,
   PencilSimple,
@@ -58,7 +60,14 @@ import {
   UpdateSSHKnownHost,
 } from '../../bindings/tinkerkit/configservice';
 import { CheckForUpdates, GetCurrentVersion } from '../../bindings/tinkerkit/updateservice';
-import { ToolActionButton, ToolLayout, ToolLayoutContent, type Icon, type ToolId } from './shared';
+import {
+  ToolActionButton,
+  ToolLayout,
+  ToolLayoutContent,
+  ToolSearchField,
+  type Icon,
+  type ToolId,
+} from './shared';
 import { toast } from './ui/toast';
 import { GITHUB_REPO_URL } from '../repositoryUrl';
 import { THEME_MODE_OPTIONS, type ThemeMode } from '../theme';
@@ -78,6 +87,14 @@ import { Spinner } from './ui/spinner';
 import { Textarea } from './ui/textarea';
 import { useSSHProfiles } from './SSHProfileManagerDialog';
 import { ConfirmDialog } from './ConfirmDialog';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from './ui/dropdown-menu';
 import { ToolOrderList } from '../app/ToolOrderList';
 import { resolveSidebarTools } from '../app/navigation';
 import { formatBackendError } from '../lib/backend-error';
@@ -387,6 +404,7 @@ function SSHKnownHostsDialog({
   const [deleteTarget, setDeleteTarget] = useState<SSHKnownHost | null>(null);
   const [deleteError, setDeleteError] = useState('');
   const [deleting, setDeleting] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
   const hostsID = useId();
   const publicKeyID = useId();
   const commentID = useId();
@@ -418,6 +436,7 @@ function SSHKnownHostsDialog({
       setDeleteTarget(null);
       setDeleteError('');
       setError('');
+      setSearchQuery('');
       return;
     }
     reload();
@@ -430,6 +449,7 @@ function SSHKnownHostsDialog({
       setDeleteTarget(null);
       setDeleteError('');
       setError('');
+      setSearchQuery('');
     }
     onOpenChange(next);
   };
@@ -476,6 +496,22 @@ function SSHKnownHostsDialog({
     }
     toast.add({ title: t('toast.copied', { value: short }) });
   };
+  const normalizedQuery = searchQuery.trim().toLowerCase();
+  const filteredEntries = normalizedQuery
+    ? entries.filter((entry) => {
+        const needles = [
+          entry.hosts,
+          sshKnownHostAddress(entry.hosts),
+          entry.keyType,
+          entry.comment,
+          entry.fingerprint,
+        ];
+        return needles.some(
+          (value) => value && value.toLowerCase().includes(normalizedQuery),
+        );
+      })
+    : entries;
+  const showKnownHostsList = !loading && !error && entries.length > 0;
 
   return (
     <>
@@ -491,7 +527,10 @@ function SSHKnownHostsDialog({
           </DialogHeader>
           <ScrollArea
             edgeOverlay
-            className="min-h-0 flex-1 px-6 py-5 [padding-inline-end:var(--overlay-scrollbar-size)]"
+            className={cn(
+              'min-h-0 flex-1 px-6 py-5 [padding-inline-end:var(--overlay-scrollbar-size)]',
+              showKnownHostsList && '[--scroll-edge-top-inset:2rem]',
+            )}
           >
             {editing ? (
               <form
@@ -605,81 +644,107 @@ function SSHKnownHostsDialog({
                 </p>
               </div>
             ) : (
-              <ul className="m-0 list-none p-0">
-                {entries.map((entry, index) => {
-                  const address = sshKnownHostAddress(entry.hosts);
-                  return (
-                    <li
-                      key={entry.id}
-                      className={cn(
-                        'flex min-w-0 items-start gap-3 rounded-md px-2 py-2.5 hover:bg-accent max-[560px]:flex-col',
-                        index % 2 === 1 && 'bg-muted/30',
-                      )}
-                    >
-                      <div className="min-w-0 flex-1">
-                        <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
-                          <code className="min-w-0 break-all text-xs font-medium text-foreground">
-                            {address}
-                          </code>
-                          <span className="rounded border border-border px-1.5 py-0.5 text-[10px] text-muted-foreground">
-                            {entry.keyType}
-                          </span>
-                          {entry.marker ? (
-                            <span className="rounded border border-border px-1.5 py-0.5 text-[10px] text-muted-foreground">
-                              {entry.marker}
-                            </span>
-                          ) : null}
-                        </div>
-                        <code className="mt-1 block break-all select-text font-mono text-[10px] text-muted-foreground">
-                          {entry.fingerprint}
-                        </code>
-                        {entry.comment ? (
-                          <p className="m-0 mt-1 break-words text-[10px] leading-4 text-muted-foreground">
-                            {entry.comment}
-                          </p>
-                        ) : null}
-                      </div>
-                      <div className="flex shrink-0 flex-wrap justify-end gap-1 max-[560px]:w-full">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="text-[11px]"
-                          aria-label={t('common.copy')}
-                          title={t('common.copy')}
-                          onClick={() => void copyFingerprint(entry.fingerprint)}
+              <div className="grid gap-3">
+                <div className="sticky top-0 z-20 bg-popover">
+                  <ToolSearchField
+                    value={searchQuery}
+                    onValueChange={setSearchQuery}
+                    placeholder={t('sshProfiles.searchPlaceholder')}
+                    ariaLabel={t('settings.sshKnownHostsSearchLabel')}
+                  />
+                </div>
+                {normalizedQuery && filteredEntries.length === 0 ? (
+                  <div className="border-y border-dashed border-border py-8 text-center text-xs text-muted-foreground">
+                    {t('settings.sshKnownHostsSearchEmpty')}
+                  </div>
+                ) : (
+                  <ul className="m-0 list-none p-0">
+                    {filteredEntries.map((entry, index) => {
+                      const address = sshKnownHostAddress(entry.hosts);
+                      return (
+                        <li
+                          key={entry.id}
+                          className={cn(
+                            'flex min-w-0 items-start gap-3 rounded-md px-2 py-2.5 hover:bg-accent max-[560px]:flex-col',
+                            index % 2 === 1 && 'bg-muted/30',
+                          )}
                         >
-                          <Copy data-icon="inline-start" weight="regular" />
-                          {t('common.copy')}
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="text-[11px]"
-                          onClick={() => {
-                            setError('');
-                            setEditing({ ...entry });
-                          }}
-                        >
-                          <PencilSimple data-icon="inline-start" weight="regular" />
-                          {t('settings.sshKnownHostsEdit')}
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="text-[11px] text-muted-foreground"
-                          onClick={() => {
-                            setDeleteError('');
-                            setDeleteTarget(entry);
-                          }}
-                        >
-                          <Trash data-icon="inline-start" weight="regular" />
-                          {t('settings.sshKnownHostsDelete')}
-                        </Button>
-                      </div>
-                    </li>
-                  );
-                })}
-              </ul>
+                          <div className="min-w-0 flex-1">
+                            <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+                              <code className="min-w-0 break-all text-xs font-medium text-foreground">
+                                {address}
+                              </code>
+                              <Badge variant="outline">{entry.keyType}</Badge>
+                              {entry.marker ? (
+                                <Badge variant="outline">{entry.marker}</Badge>
+                              ) : null}
+                            </div>
+                            <code className="mt-1 block select-text break-all font-mono text-xs text-foreground">
+                              {entry.fingerprint}
+                            </code>
+                            {entry.comment ? (
+                              <p className="m-0 mt-1 break-words text-[10px] leading-4 text-muted-foreground">
+                                {entry.comment}
+                              </p>
+                            ) : null}
+                          </div>
+                          <div className="flex shrink-0 items-center gap-1 max-[560px]:w-full max-[560px]:justify-end">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="text-[11px]"
+                              aria-label={t('common.copy')}
+                              title={t('common.copy')}
+                              onClick={() => void copyFingerprint(entry.fingerprint)}
+                            >
+                              <Copy data-icon="inline-start" weight="regular" />
+                              {t('common.copy')}
+                            </Button>
+                            <DropdownMenu>
+                              <DropdownMenuTrigger
+                                render={
+                                  <Button
+                                    variant="ghost"
+                                    size="icon-sm"
+                                    className="text-muted-foreground"
+                                    aria-label={t('sshProfiles.moreActions')}
+                                  />
+                                }
+                              >
+                                <DotsThreeOutlineVertical weight="regular" />
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end" className="min-w-48">
+                                <DropdownMenuGroup>
+                                  <DropdownMenuItem
+                                    onClick={() => {
+                                      setError('');
+                                      setEditing({ ...entry });
+                                    }}
+                                  >
+                                    <PencilSimple data-icon="inline-start" weight="regular" />
+                                    {t('settings.sshKnownHostsEdit')}
+                                  </DropdownMenuItem>
+                                </DropdownMenuGroup>
+                                <DropdownMenuSeparator />
+                                <DropdownMenuItem
+                                  variant="destructive"
+                                  onClick={() => {
+                                    setDeleteError('');
+                                    setDeleteTarget(entry);
+                                  }}
+                                >
+                                  <Trash data-icon="inline-start" weight="regular" />
+                                  {t('settings.sshKnownHostsDelete')}
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          </div>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
+              </div>
             )}
           </ScrollArea>
           <DialogFooter className="mx-0 mb-0 flex-none rounded-b-xl px-6 py-4">
