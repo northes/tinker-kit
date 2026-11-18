@@ -11,7 +11,7 @@ import {
   type Modifier,
 } from '@dnd-kit/core';
 import { SortableContext, useSortable, type SortingStrategy } from '@dnd-kit/sortable';
-import { GearSix, Plus, PushPin, X } from '@phosphor-icons/react';
+import { DotsNine, GearSix, Plus, PushPin, X } from '@phosphor-icons/react';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button } from '../components/ui/button';
@@ -170,7 +170,7 @@ function WorkspaceTabItem({
     tab.kind === 'settings'
       ? GearSix
       : tab.kind === 'blank'
-        ? Plus
+        ? DotsNine
         : tools.find((item) => item.id === tab.toolId)?.icon;
   const canRename = tab.kind === 'tool';
   const dragDescriptionId = `workspace-tab-drag-${tab.id}`;
