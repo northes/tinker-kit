@@ -360,7 +360,7 @@ function sshKnownHostAddress(hosts: string) {
   return /^\d+$/.test(port) ? `${plain[1]}:${port}` : hosts;
 }
 
-/** 行内主指纹只显示可快速比对的短形式，完整值放到次行。 */
+/** 复制成功的 toast 只引用短形式，不把整串 base64 塞进提示。 */
 function sshKnownHostFingerprintShort(fingerprint: string) {
   const value = fingerprint.trim();
   const prefix = 'SHA256:';
@@ -608,7 +608,6 @@ function SSHKnownHostsDialog({
               <ul className="m-0 list-none p-0">
                 {entries.map((entry, index) => {
                   const address = sshKnownHostAddress(entry.hosts);
-                  const shortFingerprint = sshKnownHostFingerprintShort(entry.fingerprint);
                   return (
                     <li
                       key={entry.id}
@@ -631,15 +630,7 @@ function SSHKnownHostsDialog({
                             </span>
                           ) : null}
                         </div>
-                        {address !== entry.hosts ? (
-                          <code className="mt-1 block break-all text-[10px] text-muted-foreground">
-                            {entry.hosts}
-                          </code>
-                        ) : null}
-                        <code className="mt-1 block break-all font-mono text-xs text-foreground">
-                          {shortFingerprint}
-                        </code>
-                        <code className="mt-0.5 block break-all select-text font-mono text-[10px] text-muted-foreground">
+                        <code className="mt-1 block break-all select-text font-mono text-[10px] text-muted-foreground">
                           {entry.fingerprint}
                         </code>
                         {entry.comment ? (
