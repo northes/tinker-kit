@@ -1568,7 +1568,6 @@
     },
     "automation": "自动化",
     "trayRecognition": "托盘识别",
-    "trayRecognitionEnabled": "开启",
     "trayRecognitionEnabledDesc": "开启后右键点击托盘根据剪切板内容匹配并打开对应工具，关闭后回归右键菜单。",
     "matchableTools": "可匹配的工具",
     "matchableToolsMin": "至少保留一个匹配工具。",

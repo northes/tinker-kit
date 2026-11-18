@@ -1366,7 +1366,7 @@ export default function SettingsPage({
           options={{ overflow: { x: 'hidden' } }}
         >
           <div className="min-w-0 max-w-[820px] px-1 pb-4">
-            <div className="border-b border-border pb-3 min-[701px]:sr-only">
+            <div className="max-[700px]:border-b max-[700px]:border-border max-[700px]:pb-3 min-[701px]:sr-only">
               <h2 className="m-0 text-sm font-semibold text-foreground">
                 {t(`settings.categories.${activeCategory}.title`)}
               </h2>

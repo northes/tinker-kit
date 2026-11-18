@@ -1568,7 +1568,6 @@
     },
     "automation": "Automation",
     "trayRecognition": "Tray recognition",
-    "trayRecognitionEnabled": "Enabled",
     "trayRecognitionEnabledDesc": "When enabled, right-clicking the tray icon matches clipboard content and opens the corresponding tool. When disabled, the tray menu opens instead.",
     "matchableTools": "Matchable tools",
     "matchableToolsMin": "Keep at least one matching tool.",
