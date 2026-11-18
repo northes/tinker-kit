@@ -400,6 +400,7 @@ function SSHKnownHostsDialog({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [editing, setEditing] = useState<SSHKnownHost | null>(null);
+  const [discardOpen, setDiscardOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<SSHKnownHost | null>(null);
   const [deleteError, setDeleteError] = useState('');
@@ -409,6 +410,8 @@ function SSHKnownHostsDialog({
   const publicKeyID = useId();
   const commentID = useId();
   const loadRequestRef = useRef(0);
+  // 刚打开详情时的可编辑字段。脏检查不比较指纹、类型和标记。
+  const editBaselineRef = useRef({ hosts: '', publicKey: '', comment: '' });
   const reload = useCallback(() => {
     const requestID = loadRequestRef.current + 1;
     loadRequestRef.current = requestID;
@@ -433,6 +436,7 @@ function SSHKnownHostsDialog({
       loadRequestRef.current += 1;
       setLoading(false);
       setEditing(null);
+      setDiscardOpen(false);
       setDeleteTarget(null);
       setDeleteError('');
       setError('');
@@ -446,6 +450,7 @@ function SSHKnownHostsDialog({
     if (!next && (saving || deleting)) return;
     if (!next) {
       setEditing(null);
+      setDiscardOpen(false);
       setDeleteTarget(null);
       setDeleteError('');
       setError('');
@@ -495,6 +500,32 @@ function SSHKnownHostsDialog({
       return;
     }
     toast.add({ title: t('toast.copied', { value: short }) });
+  };
+  const startKnownHostEdit = (entry: SSHKnownHost) => {
+    editBaselineRef.current = {
+      hosts: entry.hosts,
+      publicKey: entry.publicKey,
+      comment: entry.comment ?? '',
+    };
+    setError('');
+    setEditing({ ...entry });
+  };
+  const knownHostDirty = (entry: SSHKnownHost) => {
+    const baseline = editBaselineRef.current;
+    return (
+      entry.hosts !== baseline.hosts ||
+      entry.publicKey !== baseline.publicKey ||
+      (entry.comment ?? '') !== baseline.comment
+    );
+  };
+  const requestKnownHostBack = () => {
+    if (!editing || saving) return;
+    if (knownHostDirty(editing)) {
+      setDiscardOpen(true);
+      return;
+    }
+    setError('');
+    setEditing(null);
   };
   const normalizedQuery = searchQuery.trim().toLowerCase();
   const filteredEntries = normalizedQuery
@@ -693,14 +724,12 @@ function SSHKnownHostsDialog({
                           <div className="flex shrink-0 items-center gap-1 max-[560px]:w-full max-[560px]:justify-end">
                             <Button
                               variant="ghost"
-                              size="sm"
-                              className="text-[11px]"
-                              aria-label={t('common.copy')}
-                              title={t('common.copy')}
-                              onClick={() => void copyFingerprint(entry.fingerprint)}
+                              size="icon-sm"
+                              aria-label={t('settings.sshKnownHostsEditTitle')}
+                              title={t('settings.sshKnownHostsEditTitle')}
+                              onClick={() => startKnownHostEdit(entry)}
                             >
-                              <Copy data-icon="inline-start" weight="regular" />
-                              {t('common.copy')}
+                              <PencilSimple weight="regular" />
                             </Button>
                             <DropdownMenu>
                               <DropdownMenuTrigger
@@ -718,13 +747,10 @@ function SSHKnownHostsDialog({
                               <DropdownMenuContent align="end" className="min-w-48">
                                 <DropdownMenuGroup>
                                   <DropdownMenuItem
-                                    onClick={() => {
-                                      setError('');
-                                      setEditing({ ...entry });
-                                    }}
+                                    onClick={() => void copyFingerprint(entry.fingerprint)}
                                   >
-                                    <PencilSimple data-icon="inline-start" weight="regular" />
-                                    {t('settings.sshKnownHostsEdit')}
+                                    <Copy data-icon="inline-start" weight="regular" />
+                                    {t('common.copy')}
                                   </DropdownMenuItem>
                                 </DropdownMenuGroup>
                                 <DropdownMenuSeparator />
@@ -752,15 +778,8 @@ function SSHKnownHostsDialog({
           <DialogFooter className="mx-0 mb-0 flex-none rounded-b-xl px-6 py-4">
             {editing ? (
               <>
-                <Button
-                  variant="outline"
-                  disabled={saving}
-                  onClick={() => {
-                    setError('');
-                    setEditing(null);
-                  }}
-                >
-                  {t('common.cancel')}
+                <Button variant="outline" disabled={saving} onClick={requestKnownHostBack}>
+                  {t('sshProfiles.back')}
                 </Button>
                 <Button type="submit" form="ssh-known-hosts-form" disabled={saving || !canSave}>
                   {saving ? <Spinner data-icon="inline-start" /> : null}
@@ -792,6 +811,22 @@ function SSHKnownHostsDialog({
         destructive
         busy={deleting}
         onConfirm={() => void confirmDelete()}
+      />
+      <ConfirmDialog
+        open={discardOpen}
+        onOpenChange={(next) => {
+          if (!next && !saving) setDiscardOpen(false);
+        }}
+        title={t('settings.sshKnownHostsDiscardTitle')}
+        description={t('settings.sshKnownHostsDiscardDescription')}
+        confirmLabel={t('settings.sshKnownHostsDiscardConfirm')}
+        destructive
+        busy={saving}
+        onConfirm={() => {
+          setDiscardOpen(false);
+          setError('');
+          setEditing(null);
+        }}
       />
     </>
   );

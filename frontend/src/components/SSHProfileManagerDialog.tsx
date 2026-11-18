@@ -237,8 +237,6 @@ function SSHProfileManagerDialog({
   const [listReady, setListReady] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [discardAction, setDiscardAction] = useState<'close' | 'back' | null>(null);
-  // 本次打开期间成功导入过至少一条，列表页脚才用「关闭」。
-  const [importedThisOpen, setImportedThisOpen] = useState(false);
   const formBaselineRef = useRef<SSHProfile>({ ...emptyProfile });
   const [viewport, setViewport] = useState<HTMLElement | null>(null);
   const selectedProfileRef = useRef<HTMLDivElement | null>(null);
@@ -277,7 +275,6 @@ function SSHProfileManagerDialog({
   useEffect(() => {
     if (!open) {
       setListReady(false);
-      setImportedThisOpen(false);
       return;
     }
     centeredSelectionRef.current = false;
@@ -443,7 +440,6 @@ function SSHProfileManagerDialog({
     try {
       const saved = await ImportSSHConfigProfile(candidate.originAlias);
       onProfilesChange([...profiles, saved]);
-      setImportedThisOpen(true);
       toast.add({ title: t('sshProfiles.importSucceeded'), type: 'success' });
     } catch (reason) {
       setListError(errorMessage(reason));
@@ -617,6 +613,7 @@ function SSHProfileManagerDialog({
                               onClick={() => startEdit(profile)}
                               disabled={busy || testingID === profile.id}
                               aria-label={t('sshProfiles.edit')}
+                              title={t('sshProfiles.edit')}
                             >
                               <PencilSimple weight="regular" />
                             </Button>
@@ -946,11 +943,7 @@ function SSHProfileManagerDialog({
               onClick={() => (view === 'list' ? requestClose(false) : requestBack())}
               disabled={busy}
             >
-              {view === 'list'
-                ? importedThisOpen
-                  ? t('common.close')
-                  : t('common.cancel')
-                : t('sshProfiles.back')}
+              {view === 'list' ? t('common.close') : t('sshProfiles.back')}
             </Button>
             {view === 'form' ? (
               <Button type="submit" form="ssh-profile-form" disabled={busy}>
