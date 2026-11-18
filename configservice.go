@@ -57,8 +57,10 @@ type Config struct {
 	ServiceLogHighlight     bool                  `json:"serviceLogHighlightLevels"`
 	ServiceLogCollapseLines int                   `json:"serviceLogCollapseLines"`
 	PortSources             []PortSource          `json:"portSources"`
-	PortForwards            []PortForwardConfig   `json:"portForwards"`
-	PortColumnWidths        PortColumnWidths      `json:"portColumnWidths"`
+	// PortForwardSources 是端口转发自己的来源。与占用的 PortSources 分开，旧配置缺这个字段时只有本机。
+	PortForwardSources []PortSource        `json:"portForwardSources"`
+	PortForwards       []PortForwardConfig `json:"portForwards"`
+	PortColumnWidths   PortColumnWidths    `json:"portColumnWidths"`
 }
 
 // PortColumnWidths 保存端口工具两张表格的列宽（px，按列定义顺序）。
@@ -118,7 +120,7 @@ const (
 	maxServiceLogCollapseLines     = 200
 )
 
-var defaultSidebarToolIDs = []string{"json", "time", "text", "base64", "jwt", "url", "qrcode", "image", "diff", "text-generator", "image-manager", "ssh-files", "service-manager", "ports", "network-test"}
+var defaultSidebarToolIDs = []string{"json", "time", "text", "base64", "jwt", "url", "qrcode", "image", "diff", "text-generator", "image-manager", "ssh-files", "service-manager", "ports", "port-forwards", "network-test"}
 
 type TextGeneratorSource struct {
 	ID      string `json:"id"`
@@ -212,8 +214,21 @@ func defaultSidebarTools() []SidebarToolConfig {
 	return tools
 }
 
+// insertPortForwardsToolAfterPorts 把缺失的端口转发插到端口占用后面。
+// 缺失工具默认追加到末尾；这个工具要跟着用户已经排好的 ports，不能因为后加就掉到列表尾部。
+func insertPortForwardsToolAfterPorts(tools []SidebarToolConfig) []SidebarToolConfig {
+	inserted := make([]SidebarToolConfig, 0, len(tools)+1)
+	for _, tool := range tools {
+		inserted = append(inserted, tool)
+		if tool.ID == "ports" {
+			inserted = append(inserted, SidebarToolConfig{ID: "port-forwards", Enabled: true})
+		}
+	}
+	return inserted
+}
+
 func defaultConfig() Config {
-	return Config{TrayMatchEnabled: true, TrayMatchTools: []string{"json", "time", "text", "base64", "diff", "jwt", "url"}, AutoCheckUpdates: true, TaskConcurrency: 4, TaskChunkConcurrency: 4, TaskNotificationMode: "unfocused", Language: "zh-CN", TabCloseActivation: "recent", TabCloseButton: "always", ShowTabIcons: false, SidebarTools: defaultSidebarTools(), ThemeMode: "dark", LightTheme: "default-light", DarkTheme: "default-dark", WindowOpacity: defaultWindowOpacity, WindowBlur: true, DiffClipboardTargetMode: "alternate", CodeEditorFontSize: 16, TimeResultOrder: []string{"local", "dateTime", "dateOnly", "timeOnly", "zonedIso8601", "rfc3339", "utc", "compact", "underscore", "unixSeconds", "unixMilliseconds", "unixNanoseconds"}, TimeWeekStart: "monday", NtpServers: defaultNtpServers(), NetworkTestSettings: defaultNetworkTestSettings(), NetworkTestSources: defaultNetworkTestSources(), JsonAutoFormatOnFill: true, ImageSources: defaultImageSources(), SSHProfiles: []SSHProfile{}, FileSources: []FileSource{}, ServiceTargets: defaultServiceTargets(), ServiceLogHighlight: true, ServiceLogCollapseLines: defaultServiceLogCollapseLines, PortSources: defaultPortSources(), PortForwards: []PortForwardConfig{}, PortColumnWidths: PortColumnWidths{Ports: map[string][]int{}}}
+	return Config{TrayMatchEnabled: true, TrayMatchTools: []string{"json", "time", "text", "base64", "diff", "jwt", "url"}, AutoCheckUpdates: true, TaskConcurrency: 4, TaskChunkConcurrency: 4, TaskNotificationMode: "unfocused", Language: "zh-CN", TabCloseActivation: "recent", TabCloseButton: "always", ShowTabIcons: false, SidebarTools: defaultSidebarTools(), ThemeMode: "dark", LightTheme: "default-light", DarkTheme: "default-dark", WindowOpacity: defaultWindowOpacity, WindowBlur: true, DiffClipboardTargetMode: "alternate", CodeEditorFontSize: 16, TimeResultOrder: []string{"local", "dateTime", "dateOnly", "timeOnly", "zonedIso8601", "rfc3339", "utc", "compact", "underscore", "unixSeconds", "unixMilliseconds", "unixNanoseconds"}, TimeWeekStart: "monday", NtpServers: defaultNtpServers(), NetworkTestSettings: defaultNetworkTestSettings(), NetworkTestSources: defaultNetworkTestSources(), JsonAutoFormatOnFill: true, ImageSources: defaultImageSources(), SSHProfiles: []SSHProfile{}, FileSources: []FileSource{}, ServiceTargets: defaultServiceTargets(), ServiceLogHighlight: true, ServiceLogCollapseLines: defaultServiceLogCollapseLines, PortSources: defaultPortSources(), PortForwardSources: defaultPortSources(), PortForwards: []PortForwardConfig{}, PortColumnWidths: PortColumnWidths{Ports: map[string][]int{}}}
 }
 
 func normalizeThemeID(theme string, defaultID string) string {
@@ -704,6 +719,8 @@ func normalizeConfig(cfg Config) Config {
 	}
 	cfg.ServiceTargets = normalizeServiceTargets(cfg.ServiceTargets, sshProfileNameMap(cfg.SSHProfiles))
 	cfg.PortSources = normalizePortSources(cfg.PortSources, sshProfileNameMap(cfg.SSHProfiles))
+	// 转发来源单独规范化：缺字段或空列表只补本机，不从占用来源复制 SSH。
+	cfg.PortForwardSources = normalizePortSources(cfg.PortForwardSources, sshProfileNameMap(cfg.SSHProfiles))
 	cfg.PortForwards = normalizePortForwards(cfg.PortForwards)
 	cfg.PortColumnWidths = normalizePortColumnWidths(cfg.PortColumnWidths, cfg.PortSources)
 	validSidebarTool := make(map[string]bool, len(defaultSidebarToolIDs))
@@ -722,9 +739,15 @@ func normalizeConfig(cfg Config) Config {
 			}
 		}
 		for _, id := range defaultSidebarToolIDs {
-			if !seen[id] {
-				tools = append(tools, SidebarToolConfig{ID: id, Enabled: true})
+			// 先按原规则补齐其余缺失工具（包括缺失的 ports），port-forwards 留到下面插到 ports 后面。
+			if id == "port-forwards" || seen[id] {
+				continue
 			}
+			tools = append(tools, SidebarToolConfig{ID: id, Enabled: true})
+			seen[id] = true
+		}
+		if !seen["port-forwards"] {
+			tools = insertPortForwardsToolAfterPorts(tools)
 		}
 		cfg.SidebarTools = tools
 	}
@@ -1090,13 +1113,10 @@ func validateImportedConfig(cfg Config) error {
 	if err := validateUniqueConfigIDs("port source", idsOfPortSources(cfg.PortSources)); err != nil {
 		return err
 	}
-	portSources := make(map[string]struct{}, len(cfg.PortSources))
-	for _, source := range cfg.PortSources {
-		if source.Kind == "local" || source.ID == "local" {
-			continue
-		}
-		portSources[strings.TrimSpace(source.ID)] = struct{}{}
+	if err := validateUniqueConfigIDs("port forward source", idsOfPortSources(cfg.PortForwardSources)); err != nil {
+		return err
 	}
+	// 转发的 sourceID 可以不在占用来源里，也可以不在转发来源里。旧配置这种悬空引用要原样保留，不能拒绝整份导入。
 	forwardIDs := make([]string, len(cfg.PortForwards))
 	for index, forward := range cfg.PortForwards {
 		forwardIDs[index] = forward.ID
@@ -1106,9 +1126,6 @@ func validateImportedConfig(cfg Config) error {
 			TargetHost: forward.TargetHost, TargetPort: forward.TargetPort,
 		}); err != nil {
 			return err
-		}
-		if _, ok := portSources[strings.TrimSpace(forward.SourceID)]; !ok {
-			return fmt.Errorf("port forward references missing port source")
 		}
 	}
 	if err := validateUniqueConfigIDs("port forward", forwardIDs); err != nil {
@@ -1126,6 +1143,18 @@ func validateImportedConfig(cfg Config) error {
 			if _, ok := profiles[strings.TrimSpace(source.SSHProfileID)]; !ok {
 				return fmt.Errorf("port source references missing SSH profile")
 			}
+		}
+	}
+	for _, source := range cfg.PortForwardSources {
+		kind := strings.ToLower(strings.TrimSpace(source.Kind))
+		if strings.TrimSpace(source.ID) == "local" || kind == "local" {
+			continue
+		}
+		if kind != "ssh" || !validConfigValue(strings.TrimSpace(source.ID), 128) || !validTextValue(strings.TrimSpace(source.Name), 128) {
+			return fmt.Errorf("invalid port forward source")
+		}
+		if _, ok := profiles[strings.TrimSpace(source.SSHProfileID)]; !ok {
+			return fmt.Errorf("port forward source references missing SSH profile")
 		}
 	}
 	return nil
@@ -1259,6 +1288,7 @@ func (s *ConfigService) Save(cfg Config) error {
 	cfg.FileSources = copyFileSources(s.cfg.FileSources)
 	cfg.ServiceTargets = copyServiceTargets(s.cfg.ServiceTargets)
 	cfg.PortSources = append([]PortSource(nil), s.cfg.PortSources...)
+	cfg.PortForwardSources = append([]PortSource(nil), s.cfg.PortForwardSources...)
 	cfg.PortForwards = append([]PortForwardConfig(nil), s.cfg.PortForwards...)
 	cfg.NetworkTestSources = append([]NetworkTestSource(nil), s.cfg.NetworkTestSources...)
 	// 网络测试工具通过定向接口维护设置，避免设置页旧快照覆盖新值。

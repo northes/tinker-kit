@@ -31,6 +31,13 @@ export function GetColumnWidths(): $CancellablePromise<$models.PortColumnWidths>
 }
 
 /**
+ * GetForwardSources 返回端口转发自己的来源，不包括端口占用的来源。
+ */
+export function GetForwardSources(): $CancellablePromise<$models.PortSource[] | null> {
+    return $Call.ByID(1928484027);
+}
+
+/**
  * GetForwards 返回所有持久化定义及其运行态；未运行的转发状态为 stopped。
  */
 export function GetForwards(): $CancellablePromise<$models.PortForward[] | null> {
@@ -61,6 +68,13 @@ export function ReorderForwards(ids: string[] | null): $CancellablePromise<void>
  */
 export function SaveColumnWidths(widths: $models.PortColumnWidths): $CancellablePromise<void> {
     return $Call.ByID(500381824, widths);
+}
+
+/**
+ * SaveForwardSources 保存转发来源。本机不可删，只接受引用现存 SSH 配置的来源；名称回退发生在随后的规范化里。
+ */
+export function SaveForwardSources(sources: $models.PortSource[] | null): $CancellablePromise<void> {
+    return $Call.ByID(2786289082, sources);
 }
 
 export function SavePortSources(sources: $models.PortSource[] | null): $CancellablePromise<void> {

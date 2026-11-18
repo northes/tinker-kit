@@ -103,12 +103,13 @@ func NewPortService(config *ConfigService) *PortService {
 		var snapshotMu sync.Mutex
 		config.setOnChange(func(current Config) {
 			snapshotMu.Lock()
-			sourcesChanged := !reflect.DeepEqual(previous.SSHProfiles, current.SSHProfiles) ||
-				!reflect.DeepEqual(previous.PortSources, current.PortSources)
+			// 占用的 PortSources 与隧道无关，变化时不停。转发来源或 SSH 配置一变，正在跑的隧道还指着旧连接，必须全部停掉。
+			stopAll := !reflect.DeepEqual(previous.SSHProfiles, current.SSHProfiles) ||
+				!reflect.DeepEqual(previous.PortForwardSources, current.PortForwardSources)
 			forwardsChanged := !reflect.DeepEqual(previous.PortForwards, current.PortForwards)
 			previous = current
 			snapshotMu.Unlock()
-			if sourcesChanged {
+			if stopAll {
 				service.shutdown()
 				return
 			}
@@ -168,40 +169,72 @@ func (s *PortService) SavePortSources(sources []PortSource) error {
 		return userError("errors.common.configNotInitialized")
 	}
 	return s.config.updateConfigAllowDanglingRefs(func(cfg *Config) error {
-		profiles := make(map[string]string, len(cfg.SSHProfiles))
-		for _, profile := range cfg.SSHProfiles {
-			profiles[profile.ID] = profile.Name
-		}
-		normalized := make([]PortSource, 0, len(sources)+1)
-		seen := make(map[string]bool, len(sources)+1)
-		hasLocal := false
-		for index, source := range sources {
-			if strings.TrimSpace(source.ID) == "local" || strings.EqualFold(strings.TrimSpace(source.Kind), "local") {
-				if !hasLocal {
-					normalized = append(normalized, defaultPortSources()[0])
-					seen["local"] = true
-					hasLocal = true
-				}
-				continue
-			}
-			id := strings.TrimSpace(source.ID)
-			name := strings.TrimSpace(source.Name)
-			profileID := strings.TrimSpace(source.SSHProfileID)
-			if !validConfigValue(id, 128) || seen[id] || !validTextValue(name, 128) || !validConfigValue(profileID, 128) {
-				return userErrorParams("errors.port.invalidSource", map[string]any{"index": index + 1})
-			}
-			if _, ok := profiles[profileID]; !ok {
-				return userErrorParams("errors.port.sourceProfileNotFound", map[string]any{"index": index + 1})
-			}
-			seen[id] = true
-			normalized = append(normalized, PortSource{ID: id, Name: name, Kind: "ssh", SSHProfileID: profileID})
-		}
-		if !hasLocal {
-			normalized = append([]PortSource{defaultPortSources()[0]}, normalized...)
+		normalized, err := normalizeSavedPortSources(sources, cfg.SSHProfiles)
+		if err != nil {
+			return err
 		}
 		cfg.PortSources = normalized
 		return nil
 	})
+}
+
+// GetForwardSources 返回端口转发自己的来源，不包括端口占用的来源。
+func (s *PortService) GetForwardSources() []PortSource {
+	if s == nil || s.config == nil {
+		return defaultPortSources()
+	}
+	return append([]PortSource(nil), s.config.Get().PortForwardSources...)
+}
+
+// SaveForwardSources 保存转发来源。本机不可删，只接受引用现存 SSH 配置的来源；名称回退发生在随后的规范化里。
+func (s *PortService) SaveForwardSources(sources []PortSource) error {
+	if s == nil || s.config == nil {
+		return userError("errors.common.configNotInitialized")
+	}
+	return s.config.updateConfigAllowDanglingRefs(func(cfg *Config) error {
+		normalized, err := normalizeSavedPortSources(sources, cfg.SSHProfiles)
+		if err != nil {
+			return err
+		}
+		cfg.PortForwardSources = normalized
+		return nil
+	})
+}
+
+// normalizeSavedPortSources 校验前端提交的来源列表。占用和转发各保存一份，规则相同：本机始终留下，其余只能是 SSH。
+func normalizeSavedPortSources(sources []PortSource, profiles []SSHProfile) ([]PortSource, error) {
+	names := make(map[string]string, len(profiles))
+	for _, profile := range profiles {
+		names[profile.ID] = profile.Name
+	}
+	normalized := make([]PortSource, 0, len(sources)+1)
+	seen := make(map[string]bool, len(sources)+1)
+	hasLocal := false
+	for index, source := range sources {
+		if strings.TrimSpace(source.ID) == "local" || strings.EqualFold(strings.TrimSpace(source.Kind), "local") {
+			if !hasLocal {
+				normalized = append(normalized, defaultPortSources()[0])
+				seen["local"] = true
+				hasLocal = true
+			}
+			continue
+		}
+		id := strings.TrimSpace(source.ID)
+		name := strings.TrimSpace(source.Name)
+		profileID := strings.TrimSpace(source.SSHProfileID)
+		if !validConfigValue(id, 128) || seen[id] || !validTextValue(name, 128) || !validConfigValue(profileID, 128) {
+			return nil, userErrorParams("errors.port.invalidSource", map[string]any{"index": index + 1})
+		}
+		if _, ok := names[profileID]; !ok {
+			return nil, userErrorParams("errors.port.sourceProfileNotFound", map[string]any{"index": index + 1})
+		}
+		seen[id] = true
+		normalized = append(normalized, PortSource{ID: id, Name: name, Kind: "ssh", SSHProfileID: profileID})
+	}
+	if !hasLocal {
+		normalized = append([]PortSource{defaultPortSources()[0]}, normalized...)
+	}
+	return normalized, nil
 }
 
 // lsof 的字段模式保留进程与文件描述符边界，避免按空格拆解进程名或地址。
@@ -341,8 +374,20 @@ func (s *PortService) sourceProfile(id string) (SSHProfile, error) {
 	if s == nil || s.config == nil {
 		return SSHProfile{}, userError("errors.port.configUnavailable")
 	}
+	return sshProfileForSource(id, s.config.Get().PortSources, s.config.GetSSHProfiles())
+}
+
+// forwardSourceProfile 只在转发来源里找隧道主机。占用列表里的同名 SSH 不能用来启动，否则旧配置的悬空 sourceID 仍会连上。
+func (s *PortService) forwardSourceProfile(id string) (SSHProfile, error) {
+	if s == nil || s.config == nil {
+		return SSHProfile{}, userError("errors.port.configUnavailable")
+	}
+	return sshProfileForSource(id, s.config.Get().PortForwardSources, s.config.GetSSHProfiles())
+}
+
+func sshProfileForSource(id string, sources []PortSource, profiles []SSHProfile) (SSHProfile, error) {
 	var profileID string
-	for _, source := range s.config.Get().PortSources {
+	for _, source := range sources {
 		if source.ID == id && source.Kind == "ssh" {
 			profileID = source.SSHProfileID
 			break
@@ -351,7 +396,7 @@ func (s *PortService) sourceProfile(id string) (SSHProfile, error) {
 	if profileID == "" {
 		return SSHProfile{}, userError("errors.port.sourceNotFound")
 	}
-	for _, profile := range s.config.GetSSHProfiles() {
+	for _, profile := range profiles {
 		if profile.ID == profileID {
 			return profile, nil
 		}
@@ -762,7 +807,7 @@ func (s *PortService) AddForward(request PortForwardRequest) (PortForward, error
 	if err != nil {
 		return PortForward{}, err
 	}
-	profile, err := s.sourceProfile(request.SourceID)
+	profile, err := s.forwardSourceProfile(request.SourceID)
 	if err != nil {
 		return PortForward{}, err
 	}
@@ -792,7 +837,7 @@ func (s *PortService) UpdateForward(id string, request PortForwardRequest) (Port
 	if err != nil {
 		return PortForward{}, err
 	}
-	profile, err := s.sourceProfile(request.SourceID)
+	profile, err := s.forwardSourceProfile(request.SourceID)
 	if err != nil {
 		return PortForward{}, err
 	}
@@ -861,7 +906,7 @@ func (s *PortService) StartForward(id string) error {
 	if !ok {
 		return userError("errors.port.forwardNotFound")
 	}
-	profile, err := s.sourceProfile(definition.SourceID)
+	profile, err := s.forwardSourceProfile(definition.SourceID)
 	if err != nil {
 		return err
 	}

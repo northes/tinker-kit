@@ -66,6 +66,11 @@ export interface Config {
     "serviceLogHighlightLevels": boolean;
     "serviceLogCollapseLines": number;
     "portSources": PortSource[] | null;
+
+    /**
+     * PortForwardSources 是端口转发自己的来源。与占用的 PortSources 分开，旧配置缺这个字段时只有本机。
+     */
+    "portForwardSources": PortSource[] | null;
     "portForwards": PortForwardConfig[] | null;
     "portColumnWidths": PortColumnWidths;
 }

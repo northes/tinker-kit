@@ -6,6 +6,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"syscall"
 	"testing"
@@ -235,6 +236,118 @@ func TestNormalizePortColumnWidthsClampsAndDropsUnknownHosts(t *testing.T) {
 	}
 	if len(result.Forwards) != 2 || result.Forwards[0] != portColumnMinWidth || result.Forwards[1] != 170 {
 		t.Fatalf("forward widths should be normalized: %+v", result.Forwards)
+	}
+}
+
+func TestSaveForwardSourcesKeepsLocalAndRejectsInvalid(t *testing.T) {
+	profile := SSHProfile{ID: "profile", Name: "Host", Origin: "manual", Host: "host", Username: "user", Password: "secret", Port: 22}
+	cfg := defaultConfig()
+	cfg.SSHProfiles = []SSHProfile{profile}
+	cfg.PortSources = []PortSource{
+		{ID: "local", Name: "本机", Kind: "local"},
+		{ID: "usage", Name: "Host", Kind: "ssh", SSHProfileID: "profile"},
+	}
+	config := &ConfigService{path: filepath.Join(t.TempDir(), "config.json"), cfg: normalizeConfig(cfg)}
+	service := NewPortService(config)
+
+	if err := service.SaveForwardSources([]PortSource{{
+		ID: "fwd", Name: "profile", Kind: "ssh", SSHProfileID: "profile",
+	}}); err != nil {
+		t.Fatalf("保存转发来源失败: %v", err)
+	}
+	got := service.GetForwardSources()
+	if len(got) != 2 || got[0].ID != "local" || got[0].Kind != "local" {
+		t.Fatalf("省略本机时仍应保留本机: %#v", got)
+	}
+	if got[1].ID != "fwd" || got[1].Kind != "ssh" || got[1].Name != "Host" || got[1].SSHProfileID != "profile" {
+		t.Fatalf("名称应回退到 SSH 配置名: %#v", got[1])
+	}
+	usage := service.GetPortSources()
+	if len(usage) != 2 || usage[1].ID != "usage" {
+		t.Fatalf("保存转发来源不应改动占用来源: %#v", usage)
+	}
+
+	before := service.GetForwardSources()
+	invalid := [][]PortSource{
+		{{ID: "bad", Name: "", Kind: "ssh", SSHProfileID: "profile"}},
+		{{ID: "bad", Name: "Host", Kind: "ssh", SSHProfileID: "missing"}},
+		{
+			{ID: "fwd", Name: "Host", Kind: "ssh", SSHProfileID: "profile"},
+			{ID: "fwd", Name: "Again", Kind: "ssh", SSHProfileID: "profile"},
+		},
+		{{ID: "bad id", Name: "Host", Kind: "ssh", SSHProfileID: "profile"}},
+	}
+	for _, sources := range invalid {
+		if err := service.SaveForwardSources(sources); err == nil {
+			t.Fatalf("非法转发来源应拒绝: %#v", sources)
+		}
+		if !reflect.DeepEqual(service.GetForwardSources(), before) {
+			t.Fatalf("拒绝非法项后转发来源不应变化: %#v", service.GetForwardSources())
+		}
+	}
+}
+
+func TestUsageSourceChangeKeepsTunnelsAndForwardSourceChangeStopsThem(t *testing.T) {
+	profile := SSHProfile{ID: "profile", Name: "Host", Origin: "manual", Host: "host", Username: "user", Password: "secret", Port: 22}
+	cfg := defaultConfig()
+	cfg.SSHProfiles = []SSHProfile{profile}
+	cfg.PortSources = []PortSource{{ID: "local", Name: "本机", Kind: "local"}, {ID: "usage", Name: "Host", Kind: "ssh", SSHProfileID: "profile"}}
+	cfg.PortForwardSources = []PortSource{{ID: "local", Name: "本机", Kind: "local"}, {ID: "fwd", Name: "Host", Kind: "ssh", SSHProfileID: "profile"}}
+	cfg.PortForwards = []PortForwardConfig{
+		{ID: "keep", SourceID: "fwd", Direction: "local", ListenHost: "127.0.0.1", ListenPort: 8080, TargetHost: "127.0.0.1", TargetPort: 80},
+		{ID: "changed", SourceID: "fwd", Direction: "local", ListenHost: "127.0.0.1", ListenPort: 8081, TargetHost: "127.0.0.1", TargetPort: 80},
+	}
+	config := &ConfigService{path: filepath.Join(t.TempDir(), "config.json"), cfg: normalizeConfig(cfg)}
+	service := NewPortService(config)
+	definitions := config.Get().PortForwards
+	keep := newPortTunnel(definitions[0], profile)
+	changed := newPortTunnel(definitions[1], profile)
+	service.tunnels["keep"] = keep
+	service.tunnels["changed"] = changed
+
+	if err := config.updateConfigAllowDanglingRefs(func(cfg *Config) error {
+		cfg.PortSources = append(cfg.PortSources, PortSource{ID: "usage-2", Name: "Host", Kind: "ssh", SSHProfileID: "profile"})
+		return nil
+	}); err != nil {
+		t.Fatalf("更新占用来源失败: %v", err)
+	}
+	select {
+	case <-keep.ctx.Done():
+		t.Fatal("占用来源变化不应停掉转发隧道")
+	default:
+	}
+
+	if err := config.updateConfigAllowDanglingRefs(func(cfg *Config) error {
+		for index := range cfg.PortForwards {
+			if cfg.PortForwards[index].ID == "changed" {
+				cfg.PortForwards[index].ListenPort = 9090
+			}
+		}
+		return nil
+	}); err != nil {
+		t.Fatalf("更新转发定义失败: %v", err)
+	}
+	select {
+	case <-keep.ctx.Done():
+		t.Fatal("只改一条转发不应停掉其它隧道")
+	default:
+	}
+	select {
+	case <-changed.ctx.Done():
+	default:
+		t.Fatal("被改写的转发隧道应停掉")
+	}
+
+	if err := config.updateConfigAllowDanglingRefs(func(cfg *Config) error {
+		cfg.PortForwardSources = []PortSource{{ID: "local", Name: "本机", Kind: "local"}}
+		return nil
+	}); err != nil {
+		t.Fatalf("更新转发来源失败: %v", err)
+	}
+	select {
+	case <-keep.ctx.Done():
+	default:
+		t.Fatal("转发来源变化应停掉全部隧道")
 	}
 }
 

@@ -770,6 +770,145 @@ func TestNormalizeWindowAppearance(t *testing.T) {
 }
 
 // User-Agent 会被原样写进请求报文：规范化只去掉首尾空白与 CR/LF，空值表示使用工具默认标识。
+func TestNormalizeConfigInsertsPortForwardsAfterPorts(t *testing.T) {
+	defaults := defaultSidebarTools()
+	portsAt, forwardsAt, networkAt := -1, -1, -1
+	for index, tool := range defaults {
+		switch tool.ID {
+		case "ports":
+			portsAt = index
+		case "port-forwards":
+			forwardsAt = index
+			if !tool.Enabled {
+				t.Fatal("默认侧栏的 port-forwards 应为启用")
+			}
+		case "network-test":
+			networkAt = index
+		}
+	}
+	if portsAt < 0 || forwardsAt != portsAt+1 || networkAt != forwardsAt+1 {
+		t.Fatalf("默认顺序应为 ports、port-forwards、network-test: %#v", defaults)
+	}
+
+	cfg := normalizeConfig(Config{SidebarTools: []SidebarToolConfig{
+		{ID: "ports", Enabled: false},
+		{ID: "json", Enabled: true},
+		{ID: "network-test", Enabled: false},
+	}})
+	if cfg.SidebarTools[0].ID != "ports" || cfg.SidebarTools[0].Enabled {
+		t.Fatalf("排在前面的 ports 应留在原位并保持停用: %#v", cfg.SidebarTools)
+	}
+	if cfg.SidebarTools[1].ID != "port-forwards" || !cfg.SidebarTools[1].Enabled {
+		t.Fatalf("port-forwards 应紧跟 ports 且为启用: %#v", cfg.SidebarTools)
+	}
+
+	missingPorts := normalizeConfig(Config{SidebarTools: []SidebarToolConfig{{ID: "json", Enabled: true}}})
+	foundPorts := false
+	for index, tool := range missingPorts.SidebarTools {
+		if tool.ID != "ports" {
+			continue
+		}
+		foundPorts = true
+		if !tool.Enabled {
+			t.Fatal("按原规则补上的 ports 应为启用")
+		}
+		if index+1 >= len(missingPorts.SidebarTools) || missingPorts.SidebarTools[index+1].ID != "port-forwards" || !missingPorts.SidebarTools[index+1].Enabled {
+			t.Fatalf("ports 缺失时 port-forwards 应紧跟补上的 ports: %#v", missingPorts.SidebarTools)
+		}
+	}
+	if !foundPorts {
+		t.Fatal("ports 不在列表里时应先补上")
+	}
+
+	kept := normalizeConfig(Config{SidebarTools: []SidebarToolConfig{
+		{ID: "port-forwards", Enabled: false},
+		{ID: "ports", Enabled: true},
+	}})
+	if kept.SidebarTools[0].ID != "port-forwards" || kept.SidebarTools[0].Enabled {
+		t.Fatalf("已有的 port-forwards 不应被挪走或改成启用: %#v", kept.SidebarTools)
+	}
+}
+
+func TestNormalizeLegacyConfigKeepsUsageSourcesAndDanglingForwards(t *testing.T) {
+	const profile = `{"id":"profile","name":"Host","origin":"manual","host":"host","port":22,"username":"user","password":"secret"}`
+	const usage = `{"id":"local","name":"本机","kind":"local"},{"id":"remote","name":"Host","kind":"ssh","sshProfileID":"profile"}`
+	const forwards = `{"id":"forward","sourceID":"remote","direction":"local","listenHost":"127.0.0.1","listenPort":8080,"targetHost":"127.0.0.1","targetPort":80},{"id":"dangling","sourceID":"gone","direction":"local","listenHost":"127.0.0.1","listenPort":8081,"targetHost":"127.0.0.1","targetPort":80}`
+	for _, data := range []string{
+		`{"sshProfiles":[` + profile + `],"portSources":[` + usage + `],"portForwards":[` + forwards + `]}`,
+		`{"sshProfiles":[` + profile + `],"portSources":[` + usage + `],"portForwardSources":[],"portForwards":[` + forwards + `]}`,
+	} {
+		cfg, err := decodeImportedConfig([]byte(data))
+		if err != nil {
+			t.Fatalf("悬空转发不应导致导入失败: %v\n%s", err, data)
+		}
+		if len(cfg.PortSources) != 2 || cfg.PortSources[1].ID != "remote" || cfg.PortSources[1].SSHProfileID != "profile" {
+			t.Fatalf("占用的 SSH 来源应原样保留: %#v", cfg.PortSources)
+		}
+		if len(cfg.PortForwardSources) != 1 || cfg.PortForwardSources[0].ID != "local" || cfg.PortForwardSources[0].Kind != "local" {
+			t.Fatalf("转发来源应只有本机，不能从占用复制: %#v", cfg.PortForwardSources)
+		}
+		if len(cfg.PortForwards) != 2 || cfg.PortForwards[0].SourceID != "remote" || cfg.PortForwards[1].SourceID != "gone" {
+			t.Fatalf("悬空转发应保留: %#v", cfg.PortForwards)
+		}
+	}
+}
+
+func TestDecodeImportedConfigRejectsInvalidForwardSourcesButNotDanglingForwards(t *testing.T) {
+	const profile = `{"id":"profile","name":"Host","origin":"manual","host":"host","port":22,"username":"user","password":"secret"}`
+	rejects := []string{
+		`{"portForwards":[{"id":"bad","sourceID":"local","direction":"local","listenHost":"127.0.0.1","listenPort":8080,"targetHost":"127.0.0.1","targetPort":80}]}`,
+		`{"portForwards":[{"id":"bad","sourceID":"","direction":"local","listenHost":"127.0.0.1","listenPort":8080,"targetHost":"127.0.0.1","targetPort":80}]}`,
+		`{"sshProfiles":[` + profile + `],"portForwardSources":[{"id":"remote","name":"Host","kind":"http","sshProfileID":"profile"}]}`,
+		`{"portForwardSources":[{"id":"remote","name":"Host","kind":"ssh","sshProfileID":"missing"}]}`,
+		`{"sshProfiles":[` + profile + `],"portForwardSources":[{"id":"remote","name":"Host","kind":"ssh","sshProfileID":"profile"},{"id":"remote","name":"Again","kind":"ssh","sshProfileID":"profile"}]}`,
+	}
+	for _, data := range rejects {
+		if _, err := decodeImportedConfig([]byte(data)); err == nil {
+			t.Fatalf("非法转发来源或非法 sourceID 应拒绝导入: %s", data)
+		}
+	}
+}
+
+func TestSaveKeepsPortForwardSourcesFromMemory(t *testing.T) {
+	profile := SSHProfile{ID: "profile", Name: "Host", Origin: "manual", Host: "host", Port: 22, Username: "user", Password: "secret"}
+	initial := defaultConfig()
+	initial.SSHProfiles = []SSHProfile{profile}
+	initial.PortSources = []PortSource{
+		{ID: "local", Name: "本机", Kind: "local"},
+		{ID: "usage", Name: "Host", Kind: "ssh", SSHProfileID: "profile"},
+	}
+	initial.PortForwardSources = []PortSource{
+		{ID: "local", Name: "本机", Kind: "local"},
+		{ID: "fwd", Name: "Host", Kind: "ssh", SSHProfileID: "profile"},
+	}
+	initial.PortForwards = []PortForwardConfig{{
+		ID: "forward", SourceID: "gone", Direction: "local", ListenHost: "127.0.0.1", ListenPort: 8080, TargetHost: "127.0.0.1", TargetPort: 80,
+	}}
+	service := &ConfigService{path: filepath.Join(t.TempDir(), "config.json"), cfg: normalizeConfig(initial)}
+
+	snapshot := defaultConfig()
+	snapshot.Language = "en-US"
+	snapshot.PortSources = nil
+	snapshot.PortForwardSources = nil
+	snapshot.PortForwards = nil
+	if err := service.Save(snapshot); err != nil {
+		t.Fatalf("保存设置页快照失败: %v", err)
+	}
+	got := service.Get()
+	if got.Language != "en-US" {
+		t.Fatalf("设置页修改的语言未保存: %q", got.Language)
+	}
+	if len(got.PortForwardSources) != 2 || got.PortForwardSources[1].ID != "fwd" {
+		t.Fatalf("设置页保存不应冲掉转发来源: %#v", got.PortForwardSources)
+	}
+	if len(got.PortSources) != 2 || got.PortSources[1].ID != "usage" {
+		t.Fatalf("设置页保存不应冲掉占用来源: %#v", got.PortSources)
+	}
+	if len(got.PortForwards) != 1 || got.PortForwards[0].SourceID != "gone" {
+		t.Fatalf("设置页保存不应冲掉悬空转发: %#v", got.PortForwards)
+	}
+}
+
 func TestNormalizeNetworkTestUserAgent(t *testing.T) {
 	settings := normalizeNetworkTestSettings(NetworkTestSettings{UserAgent: "  Mozilla/5.0\r\nInjected: 1  "})
 	if settings.UserAgent != "Mozilla/5.0Injected: 1" {
