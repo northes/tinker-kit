@@ -15,7 +15,7 @@
 - 焦点环（Base UI 控件默认的 `focus-visible:ring-*`）是画在边框盒外的 box-shadow，会被最近的 `overflow: auto/hidden/scroll` 容器裁掉。凡是承担滚动的容器（对话框内作为滚动层的 `<form>`、`ScrollArea` 视口等），都必须为边缘控件的焦点环预留空间：给滚动层加内边距，至少覆盖 `ring-3` 的 3px（默认取 4px）；要保持与相邻内容对齐时用等量负 margin 抵消，如 `-m-1 p-1`。不要用删除焦点环、叠加阴影/描边或给单个输入写局部覆盖来回避裁切。
 - Base UI `Select`：条目必须包在 `SelectGroup` 内；浮层内边距来自 `SelectGroup` 的 `p-1`，不要给 Popup 另加 padding 覆盖官方样式。
 - Base UI `Select`：受控值使用内部 key 时，根组件必须同时提供 `items={[{ value, label }]}` 映射（动态/本地化选项按当前文案构建），仅渲染带文字的 `SelectItem` 不足以保证关闭后的 trigger 显示 label。验收时要实际选择并关闭下拉框，确认 trigger 显示本地化 label 而不是内部 key。
-- 保持 `SelectContent` 的 `alignItemWithTrigger` 默认值（原生对齐：选中项与 trigger 对齐）；不要为了“展开在下方”而设为 `false`，也不要在各处混用两种定位。
+- `SelectContent` 默认 `alignItemWithTrigger={false}`，并把 `collisionBoundary` 设为 `.workspace`。Base UI 的对齐模式按 `documentElement.clientHeight` 重写坐标，会忽略碰撞边界，把列表顶出主内容区、盖住标签栏和红绿灯。不要在各处再改回 `true`，也不要混用两种定位。
 - 允许切换来源或主机的 `Select` 必须在列表底部固定提供“管理”项，左侧带语义匹配的 phosphor icon；该项不随来源/主机数据排序或滚动，选中后打开对应的管理界面，不写入业务选中值。
 - 选择全局 SSH 配置时复用 `SSHProfileSelect`；表单需要完整 profile 对象时用 `SSHProfileFormField`，不要重造 profile 下拉框或旁边的管理按钮。工具来源切换仍使用工具自己的来源选择器和 `TargetHostManagerDialog`，来源实体与 SSH profile 的模型边界见 [wails-integration](../wails-integration/SKILL.md#服务与配置)。
 - SSH 来源表单选中 profile 时立即写入 `sshProfileID`；来源名称为空或仅含空白时同步填入 `profile.name`，已有手工名称保持不变。使用 `SSHProfileFormField` 的完整 profile 回调处理，不能只在提交时补名称，否则表单里不会即时显示来源名称。

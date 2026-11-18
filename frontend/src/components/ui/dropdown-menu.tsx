@@ -1,6 +1,7 @@
 import * as React from 'react';
 import { Menu as MenuPrimitive } from '@base-ui/react/menu';
 
+import { useWorkspaceContentBoundary } from '@/app/workspace-content-boundary';
 import { cn } from '@/lib/utils';
 import { CaretRightIcon, CheckIcon } from '@phosphor-icons/react';
 
@@ -25,6 +26,7 @@ function DropdownMenuContent({
   ...props
 }: MenuPrimitive.Popup.Props &
   Pick<MenuPrimitive.Positioner.Props, 'align' | 'alignOffset' | 'side' | 'sideOffset'>) {
+  const workspaceBoundary = useWorkspaceContentBoundary();
   return (
     <MenuPrimitive.Portal>
       <MenuPrimitive.Positioner
@@ -33,6 +35,8 @@ function DropdownMenuContent({
         alignOffset={alignOffset}
         side={side}
         sideOffset={sideOffset}
+        collisionBoundary={workspaceBoundary ?? undefined}
+        collisionPadding={8}
       >
         <MenuPrimitive.Popup
           data-slot="dropdown-menu-content"

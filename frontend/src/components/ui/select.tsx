@@ -1,5 +1,6 @@
 import * as React from 'react';
 import { Select as SelectPrimitive } from '@base-ui/react/select';
+import { useWorkspaceContentBoundary } from '@/app/workspace-content-boundary';
 import { cn } from '@/lib/utils';
 import { CaretDownIcon, CheckIcon, CaretUpIcon } from '@phosphor-icons/react';
 
@@ -58,7 +59,9 @@ function SelectContent({
   sideOffset = 4,
   align = 'center',
   alignOffset = 0,
-  alignItemWithTrigger = true,
+  // 对齐模式按 documentElement 高度重写坐标，会忽略 collisionBoundary，
+  // 把列表顶出 .workspace，盖住标签栏和红绿灯。默认关闭，交给碰撞边界。
+  alignItemWithTrigger = false,
   container,
   ...props
 }: SelectPrimitive.Popup.Props &
@@ -68,6 +71,7 @@ function SelectContent({
   > & {
     container?: SelectPrimitive.Portal.Props['container'];
   }) {
+  const workspaceBoundary = useWorkspaceContentBoundary();
   return (
     <SelectPrimitive.Portal container={container}>
       <SelectPrimitive.Positioner
@@ -76,6 +80,8 @@ function SelectContent({
         align={align}
         alignOffset={alignOffset}
         alignItemWithTrigger={alignItemWithTrigger}
+        collisionBoundary={workspaceBoundary ?? undefined}
+        collisionPadding={8}
         className="isolate z-50"
       >
         <SelectPrimitive.Popup

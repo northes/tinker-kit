@@ -43,6 +43,7 @@ import {
   normalizeWorkspaceTabWidth,
   noteWorkspaceTabWidthInputs,
 } from './app/useWorkspaceTabFitWidth';
+import { WorkspaceContentBoundaryProvider } from './app/workspace-content-boundary';
 import { workspaceTabBaseName, WorkspaceTabBar } from './app/WorkspaceTabBar';
 import { ToolSlot } from './app/tool-slot';
 import { WorkspaceTabTitleContext } from './app/workspace-tab-title';
@@ -1260,6 +1261,7 @@ function AppShell() {
             className="workspace relative h-full min-h-0 w-full overflow-hidden rounded-xl [--wails-draggable:no-drag]"
             ref={workspaceElRef}
           >
+            <WorkspaceContentBoundaryProvider boundaryRef={workspaceElRef}>
             {workspace.tabs.map((tab) => (
               <ToolSlot key={tab.id} className={toolSlotClass(tab.id === workspace.activeId)}>
                 <WorkspaceTabTitleContext.Provider value={reporterForTab(tab.id)}>
@@ -1269,6 +1271,7 @@ function AppShell() {
                 </WorkspaceTabTitleContext.Provider>
               </ToolSlot>
             ))}
+            </WorkspaceContentBoundaryProvider>
           </main>
         </div>
       </div>
