@@ -280,12 +280,12 @@ function ChoiceGroup<T extends string | number>({
     <div
       className={cn(
         settingRowClass,
-        fill && 'w-full',
+        fill && 'w-full flex-col items-stretch gap-2',
         'max-[700px]:flex-col max-[700px]:items-start max-[700px]:gap-2',
       )}
     >
       {!hideLabel ? (
-        <strong id={labelId} className={settingLabelClass}>
+        <strong id={labelId} className={cn(settingLabelClass, 'shrink-0')}>
           {label}
         </strong>
       ) : null}
