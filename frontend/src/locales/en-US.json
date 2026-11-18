@@ -113,7 +113,7 @@
       "description": "Manage Docker, PM2, and Systemd services"
     },
     "ssh-files": {
-      "name": "SSH Files",
+      "name": "File Manager",
       "description": "Browse, upload, and download SSH files"
     },
     "ports": {
@@ -146,7 +146,7 @@
     "openImage": "Image Tools",
     "openImageManager": "Image Manager",
     "openServiceManager": "Containers and Services",
-    "openSshFiles": "SSH Files",
+    "openSshFiles": "File Manager",
     "toggleSchema": "Toggle Schema",
     "togglePipeline": "Toggle pipeline",
     "toggleAutoFormatOnFill": "Toggle auto-format on fill",
@@ -1743,7 +1743,7 @@
     "tools": {
       "all": "All tools",
       "image-manager": "Image Manager",
-      "ssh-files": "SSH File Manager"
+      "ssh-files": "File Manager"
     },
     "status": {
       "queued": "Queued",
@@ -1762,7 +1762,7 @@
     "favoriteFileRemoved": "Favorite file removed",
     "favoriteOpenFailed": "Failed to open favorite path",
     "favoriteFileNotEditable": "This favorite file cannot currently be edited",
-    "title": "SSH Files",
+    "title": "File Manager",
     "source": "Target host",
     "noSource": "No target host configured",
     "loadingSources": "Loading SSH file sources…",

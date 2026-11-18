@@ -7,10 +7,11 @@ export const WorkspaceTabTitleContext = createContext<((hostName: string | null)
 );
 
 // 序号和自定义名不在这里处理。空字符串和纯空白视同没有主机名。
+// 有主机名时格式为 `主机名 · 工具名`（空格 + 间隔点 + 空格），没有时返回纯工具名。
 export function hostQualifiedName(toolName: string, hostName?: string | null) {
   const host = hostName?.trim() ?? '';
   if (!host) return toolName;
-  return `[${host}]${toolName}`;
+  return `${host} · ${toolName}`;
 }
 
 // 挂载和主机名变化时上报。卸载时清空，让标签回到纯工具名。没有 provider 不抛错。

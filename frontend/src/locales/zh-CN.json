@@ -113,7 +113,7 @@
       "description": "管理 Docker、PM2 与 Systemd 服务"
     },
     "ssh-files": {
-      "name": "SSH 文件管理",
+      "name": "文件管理",
       "description": "浏览、上传和下载 SSH 文件"
     },
     "ports": {
@@ -146,7 +146,7 @@
     "openImage": "图片处理",
     "openImageManager": "镜像管理",
     "openServiceManager": "容器与服务",
-    "openSshFiles": "SSH 文件管理",
+    "openSshFiles": "文件管理",
     "toggleSchema": "切换 Schema",
     "togglePipeline": "切换流水线",
     "toggleAutoFormatOnFill": "切换填入后自动格式化",
@@ -1743,7 +1743,7 @@
     "tools": {
       "all": "所有工具",
       "image-manager": "镜像管理",
-      "ssh-files": "SSH 文件管理"
+      "ssh-files": "文件管理"
     },
     "status": {
       "queued": "排队中",
@@ -1762,7 +1762,7 @@
     "favoriteFileRemoved": "已移除收藏文件",
     "favoriteOpenFailed": "无法打开收藏路径",
     "favoriteFileNotEditable": "该收藏文件当前不支持编辑",
-    "title": "SSH 文件管理",
+    "title": "文件管理",
     "source": "目标主机",
     "noSource": "未配置目标主机",
     "loadingSources": "正在读取 SSH 文件源…",

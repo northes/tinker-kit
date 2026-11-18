@@ -3,7 +3,7 @@ import test from 'node:test';
 import { normalizePaletteQuery, searchIndexedItems } from './palette-fuzzy.ts';
 
 function sshFilesSearchRow() {
-  const label = 'SSH 文件管理';
+  const label = '文件管理';
   const keywords = 'ssh sftp files upload download explorer 文件 上传 下载 目录';
   const raw = `${label} ${keywords}`.toLowerCase();
   return {
