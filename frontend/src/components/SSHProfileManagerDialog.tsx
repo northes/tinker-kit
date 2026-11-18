@@ -587,6 +587,12 @@ function SSHProfileManagerDialog({
                                 <span className="truncate text-xs font-medium text-foreground">
                                   {profile.name}
                                 </span>
+                                {testingID === profile.id ? (
+                                  <Spinner
+                                    aria-label={t('sshProfiles.test')}
+                                    className="motion-reduce:animate-none"
+                                  />
+                                ) : null}
                                 <Badge
                                   variant={profileIsImported(profile) ? 'secondary' : 'outline'}
                                 >
@@ -611,7 +617,7 @@ function SSHProfileManagerDialog({
                               variant="ghost"
                               size="icon-sm"
                               onClick={() => startEdit(profile)}
-                              disabled={busy}
+                              disabled={busy || testingID === profile.id}
                               aria-label={t('sshProfiles.edit')}
                             >
                               <PencilSimple weight="regular" />
@@ -853,8 +859,11 @@ function SSHProfileManagerDialog({
                         {t('sshProfiles.authKey')}
                       </Button>
                     </div>
-                    <p className="text-xs leading-5 text-muted-foreground">
-                      {t('sshProfiles.plaintextWarning')}
+                    <p className="flex items-start gap-2 rounded-md border border-warning/30 bg-warning/10 px-3 py-2 text-xs text-warning">
+                      <WarningCircle weight="regular" className="mt-0.5 size-4 shrink-0" />
+                      <span className="min-w-0 break-words">
+                        {t('sshProfiles.plaintextWarning')}
+                      </span>
                     </p>
                   </div>
                   {authMode === 'password' ? (
