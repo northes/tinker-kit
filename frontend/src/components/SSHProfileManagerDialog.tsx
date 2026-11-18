@@ -516,28 +516,24 @@ function SSHProfileManagerDialog({
               <span className="min-w-0 break-words">{listError}</span>
             </div>
           ) : null}
+          {view === 'list' ? (
+            // 搜索固定在滚动区之外：放在滚动内容里做 sticky 会在 OverlayScrollbars 视口中移位。
+            <div className="flex-none px-6 pt-4 pb-3">
+              <ToolSearchField
+                value={searchQuery}
+                onValueChange={setSearchQuery}
+                placeholder={t('sshProfiles.searchPlaceholder')}
+                ariaLabel={t('sshProfiles.searchLabel')}
+              />
+            </div>
+          ) : null}
           <ScrollArea
-            className={cn(
-              // 纵向内边距必须留在滚动容器之外：滚动容器自己的 padding 会让 sticky 停在内容盒下，
-              // 内容从顶部那一段里穿出来，分段标题也会压到搜索框上。
-              'min-h-0 flex-1 px-6 [padding-inline-end:var(--overlay-scrollbar-size)]',
-              // 吸顶块是搜索框（h-8）加它的下边距（pb-3），再加分段标题行（h-7 加 pb-3）。
-              view === 'list' && '[--scroll-edge-top-inset:5.25rem]',
-            )}
+            className="min-h-0 flex-1 px-6 [padding-inline-end:var(--overlay-scrollbar-size)]"
             edgeOverlay
             onViewport={setViewport}
           >
             {view === 'list' ? (
-              <div className="flex flex-col pt-5 pb-5">
-                {/* 吸顶块用弹窗实底盖住滚过的行；两个分段标题吸在搜索框正下方。 */}
-                <div className="sticky top-0 z-30 bg-popover pb-3">
-                  <ToolSearchField
-                    value={searchQuery}
-                    onValueChange={setSearchQuery}
-                    placeholder={t('sshProfiles.searchPlaceholder')}
-                    ariaLabel={t('sshProfiles.searchLabel')}
-                  />
-                </div>
+              <div className="flex flex-col pt-1 pb-5">
                 {normalizedQuery &&
                 filteredProfiles.length === 0 &&
                 filteredLocalProfiles.length === 0 ? (
@@ -547,7 +543,7 @@ function SSHProfileManagerDialog({
                 ) : null}
                 {!normalizedQuery || filteredProfiles.length > 0 ? (
                   <section className="flex flex-col">
-                    <div className="sticky top-11 z-20 flex items-center justify-between gap-3 bg-popover pb-3">
+                    <div className="flex items-center justify-between gap-3 pb-3">
                       <h3 className="text-sm font-medium text-foreground">
                         {t('sshProfiles.savedTitle')}
                       </h3>
@@ -684,7 +680,7 @@ function SSHProfileManagerDialog({
                 ) : null}
                 {!normalizedQuery || filteredLocalProfiles.length > 0 ? (
                   <section className={cn('flex flex-col', filteredProfiles.length ? 'mt-3' : '')}>
-                    <div className="sticky top-11 z-20 flex items-center justify-between gap-3 bg-popover pb-3">
+                    <div className="flex items-center justify-between gap-3 pb-3">
                       <h3 className="text-sm font-medium text-foreground">
                         {t('sshProfiles.localTitle')}
                       </h3>

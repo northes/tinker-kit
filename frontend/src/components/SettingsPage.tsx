@@ -525,13 +525,20 @@ function SSHKnownHostsDialog({
               {t(editing ? 'settings.sshKnownHostsEditDesc' : 'settings.sshKnownHostsDialogDesc')}
             </DialogDescription>
           </DialogHeader>
+          {showKnownHostsList ? (
+            // 搜索固定在滚动区之外：放在滚动内容里做 sticky 会在 OverlayScrollbars 视口中移位。
+            <div className="flex-none px-6 pt-4 pb-3">
+              <ToolSearchField
+                value={searchQuery}
+                onValueChange={setSearchQuery}
+                placeholder={t('sshProfiles.searchPlaceholder')}
+                ariaLabel={t('settings.sshKnownHostsSearchLabel')}
+              />
+            </div>
+          ) : null}
           <ScrollArea
             edgeOverlay
-            className={cn(
-              // 纵向内边距会制造一条 sticky 上方的缝，内容从那里穿出来。只保留横向内边距。
-              'min-h-0 flex-1 px-6 [padding-inline-end:var(--overlay-scrollbar-size)]',
-              showKnownHostsList && '[--scroll-edge-top-inset:2.75rem]',
-            )}
+            className="min-h-0 flex-1 px-6 [padding-inline-end:var(--overlay-scrollbar-size)]"
           >
             {editing ? (
               <div className="py-5">
@@ -647,15 +654,7 @@ function SSHKnownHostsDialog({
                 </p>
               </div>
             ) : (
-              <div className="flex flex-col pt-5 pb-5">
-                <div className="sticky top-0 z-20 bg-popover pb-3">
-                  <ToolSearchField
-                    value={searchQuery}
-                    onValueChange={setSearchQuery}
-                    placeholder={t('sshProfiles.searchPlaceholder')}
-                    ariaLabel={t('settings.sshKnownHostsSearchLabel')}
-                  />
-                </div>
+              <div className="flex flex-col pt-1 pb-5">
                 {normalizedQuery && filteredEntries.length === 0 ? (
                   <div className="border-y border-dashed border-border py-8 text-center text-xs text-muted-foreground">
                     {t('settings.sshKnownHostsSearchEmpty')}
