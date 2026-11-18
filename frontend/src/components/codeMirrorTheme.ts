@@ -43,7 +43,7 @@ const indentGuides = indentationMarkers({
 
 const quietBase = EditorView.theme({
   '&': { backgroundColor: 'var(--card)', color: 'var(--foreground)' },
-  '.cm-content': { caretColor: 'var(--primary)' },
+  '.cm-content': { caretColor: 'var(--primary)', padding: '0' },
   '.cm-cursor,.cm-dropCursor': { borderLeftColor: 'var(--primary)' },
   '&.cm-focused .cm-selectionBackground,.cm-selectionBackground,.cm-content ::selection': {
     backgroundColor: 'color-mix(in srgb,var(--primary) 24%,transparent)',
