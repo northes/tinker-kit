@@ -35,6 +35,7 @@ import {
   ArrowCounterClockwise,
   ArrowsClockwise,
   BellRinging,
+  Copy,
   DownloadSimple,
   Key,
   PencilSimple,
@@ -336,6 +337,40 @@ function settingsErrorMessage(error: unknown) {
   return formatBackendError(error);
 }
 
+const SSH_KNOWN_HOST_DEFAULT_PORT = 22;
+
+/**
+ * 单一主机（主机名、IP、[host]:port）显示为 host:port，未写端口时按 22；
+ * 含逗号、空白、通配符或否定项的匹配项保持原文，不编造端口。
+ */
+function sshKnownHostAddress(hosts: string) {
+  const value = hosts.trim();
+  if (!value || /[,\s*?!]/.test(value)) return hosts;
+  const bracketed = /^\[([^\]]+)\](?::(\d+))?$/.exec(value);
+  if (bracketed) {
+    const [, host, port] = bracketed;
+    // IPv6 字面量去掉方括号后无法区分端口，保留原样以防误读。
+    const shown = host.includes(':') ? `[${host}]` : host;
+    return `${shown}:${port ?? SSH_KNOWN_HOST_DEFAULT_PORT}`;
+  }
+  const plain = /^([^:]+)(?::([^:]+))?$/.exec(value);
+  if (!plain) return hosts;
+  const port = plain[2];
+  if (port === undefined) return `${plain[1]}:${SSH_KNOWN_HOST_DEFAULT_PORT}`;
+  return /^\d+$/.test(port) ? `${plain[1]}:${port}` : hosts;
+}
+
+/** 行内主指纹只显示可快速比对的短形式，完整值放到次行。 */
+function sshKnownHostFingerprintShort(fingerprint: string) {
+  const value = fingerprint.trim();
+  const prefix = 'SHA256:';
+  if (value.startsWith(prefix)) {
+    const hash = value.slice(prefix.length);
+    return `${prefix}${hash.length > 12 ? `${hash.slice(0, 12)}…` : hash}`;
+  }
+  return value.length > 12 ? `${value.slice(0, 12)}…` : value;
+}
+
 function SSHKnownHostsDialog({
   open,
   onOpenChange,
@@ -429,6 +464,18 @@ function SSHKnownHostsDialog({
     }
   };
   const canSave = Boolean(editing?.hosts.trim() && editing.publicKey.trim());
+  const copyFingerprint = async (fingerprint: string) => {
+    const short = sshKnownHostFingerprintShort(fingerprint);
+    try {
+      if (!navigator.clipboard) throw new Error('clipboard unavailable');
+      await navigator.clipboard.writeText(fingerprint);
+    } catch {
+      // 失败分支直接返回，避免紧接着再弹一次成功提示。
+      toast.add({ title: t('toast.copyFailed'), type: 'error' });
+      return;
+    }
+    toast.add({ title: t('toast.copied', { value: short }) });
+  };
 
   return (
     <>
@@ -442,7 +489,10 @@ function SSHKnownHostsDialog({
               {t(editing ? 'settings.sshKnownHostsEditDesc' : 'settings.sshKnownHostsDialogDesc')}
             </DialogDescription>
           </DialogHeader>
-          <ScrollArea className="min-h-0 flex-1 px-6 py-5 [padding-inline-end:var(--overlay-scrollbar-size)]">
+          <ScrollArea
+            edgeOverlay
+            className="min-h-0 flex-1 px-6 py-5 [padding-inline-end:var(--overlay-scrollbar-size)]"
+          >
             {editing ? (
               <form
                 className="grid gap-4"
@@ -490,9 +540,22 @@ function SSHKnownHostsDialog({
                   />
                 </div>
                 <div className="grid gap-1.5">
-                  <span className="text-xs font-medium text-foreground">
-                    {t('settings.sshKnownHostsFingerprint')}
-                  </span>
+                  <div className="flex min-w-0 items-center justify-between gap-2">
+                    <span className="text-xs font-medium text-foreground">
+                      {t('settings.sshKnownHostsFingerprint')}
+                    </span>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="text-[11px]"
+                      aria-label={t('common.copy')}
+                      title={t('common.copy')}
+                      onClick={() => void copyFingerprint(editing.fingerprint)}
+                    >
+                      <Copy data-icon="inline-start" weight="regular" />
+                      {t('common.copy')}
+                    </Button>
+                  </div>
                   <code className="break-all rounded-md border bg-muted/30 px-2 py-1 text-xs">
                     {editing.fingerprint}
                   </code>
@@ -542,64 +605,90 @@ function SSHKnownHostsDialog({
                 </p>
               </div>
             ) : (
-              <div className="divide-y divide-border">
-                {entries.map((entry) => (
-                  <div
-                    key={entry.id}
-                    className="flex min-w-0 items-start gap-3 py-3 first:pt-0 last:pb-0 max-[560px]:flex-col"
-                  >
-                    <div className="min-w-0 flex-1">
-                      <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
-                        <code className="min-w-0 break-all text-xs font-medium text-foreground">
-                          {entry.hosts}
-                        </code>
-                        <span className="rounded border border-border px-1.5 py-0.5 text-[10px] text-muted-foreground">
-                          {entry.keyType}
-                        </span>
-                        {entry.marker ? (
+              <ul className="m-0 list-none p-0">
+                {entries.map((entry, index) => {
+                  const address = sshKnownHostAddress(entry.hosts);
+                  const shortFingerprint = sshKnownHostFingerprintShort(entry.fingerprint);
+                  return (
+                    <li
+                      key={entry.id}
+                      className={cn(
+                        'flex min-w-0 items-start gap-3 rounded-md px-2 py-2.5 hover:bg-accent max-[560px]:flex-col',
+                        index % 2 === 1 && 'bg-muted/30',
+                      )}
+                    >
+                      <div className="min-w-0 flex-1">
+                        <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+                          <code className="min-w-0 break-all text-xs font-medium text-foreground">
+                            {address}
+                          </code>
                           <span className="rounded border border-border px-1.5 py-0.5 text-[10px] text-muted-foreground">
-                            {entry.marker}
+                            {entry.keyType}
                           </span>
+                          {entry.marker ? (
+                            <span className="rounded border border-border px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                              {entry.marker}
+                            </span>
+                          ) : null}
+                        </div>
+                        {address !== entry.hosts ? (
+                          <code className="mt-1 block break-all text-[10px] text-muted-foreground">
+                            {entry.hosts}
+                          </code>
+                        ) : null}
+                        <code className="mt-1 block break-all font-mono text-xs text-foreground">
+                          {shortFingerprint}
+                        </code>
+                        <code className="mt-0.5 block break-all select-text font-mono text-[10px] text-muted-foreground">
+                          {entry.fingerprint}
+                        </code>
+                        {entry.comment ? (
+                          <p className="m-0 mt-1 break-words text-[10px] leading-4 text-muted-foreground">
+                            {entry.comment}
+                          </p>
                         ) : null}
                       </div>
-                      <code className="mt-1 block break-all text-[10px] text-muted-foreground">
-                        {entry.fingerprint}
-                      </code>
-                      {entry.comment ? (
-                        <p className="m-0 mt-1 break-words text-[10px] leading-4 text-muted-foreground">
-                          {entry.comment}
-                        </p>
-                      ) : null}
-                    </div>
-                    <div className="flex shrink-0 flex-wrap justify-end gap-1 max-[560px]:w-full">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="text-[11px]"
-                        onClick={() => {
-                          setError('');
-                          setEditing({ ...entry });
-                        }}
-                      >
-                        <PencilSimple data-icon="inline-start" weight="regular" />
-                        {t('settings.sshKnownHostsEdit')}
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="text-[11px] text-destructive hover:text-destructive"
-                        onClick={() => {
-                          setDeleteError('');
-                          setDeleteTarget(entry);
-                        }}
-                      >
-                        <Trash data-icon="inline-start" weight="regular" />
-                        {t('settings.sshKnownHostsDelete')}
-                      </Button>
-                    </div>
-                  </div>
-                ))}
-              </div>
+                      <div className="flex shrink-0 flex-wrap justify-end gap-1 max-[560px]:w-full">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="text-[11px]"
+                          aria-label={t('common.copy')}
+                          title={t('common.copy')}
+                          onClick={() => void copyFingerprint(entry.fingerprint)}
+                        >
+                          <Copy data-icon="inline-start" weight="regular" />
+                          {t('common.copy')}
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="text-[11px]"
+                          onClick={() => {
+                            setError('');
+                            setEditing({ ...entry });
+                          }}
+                        >
+                          <PencilSimple data-icon="inline-start" weight="regular" />
+                          {t('settings.sshKnownHostsEdit')}
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="text-[11px] text-muted-foreground"
+                          onClick={() => {
+                            setDeleteError('');
+                            setDeleteTarget(entry);
+                          }}
+                        >
+                          <Trash data-icon="inline-start" weight="regular" />
+                          {t('settings.sshKnownHostsDelete')}
+                        </Button>
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
             )}
           </ScrollArea>
           <DialogFooter className="mx-0 mb-0 flex-none rounded-b-xl px-6 py-4">
