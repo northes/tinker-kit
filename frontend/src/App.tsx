@@ -38,6 +38,11 @@ import {
 } from './app/definitions';
 import { isToolId, paletteToolId, resolveSidebarTools, routePath } from './app/navigation';
 import { buildIndex } from './app/palette-search';
+import {
+  applyWorkspaceTabBaseWidth,
+  normalizeWorkspaceTabWidth,
+  noteWorkspaceTabWidthInputs,
+} from './app/useWorkspaceTabFitWidth';
 import { workspaceTabBaseName, WorkspaceTabBar } from './app/WorkspaceTabBar';
 import { WorkspaceTabTitleContext } from './app/workspace-tab-title';
 import {
@@ -569,6 +574,13 @@ function AppShell() {
     root.style.colorScheme = dark ? 'dark' : 'light';
     root.style.setProperty('--code-editor-font-size', `${settings.codeEditorFontSize || 16}px`);
     root.dataset.showTabIcons = settings.showTabIcons ? 'true' : 'false';
+    // 固定宽度写在这里。自适应由标签栏测量后写入，且子效果更早，不能在这里把测量结果盖掉。
+    if (settings.tabWidthMode !== 'auto') {
+      applyWorkspaceTabBaseWidth(normalizeWorkspaceTabWidth(settings.tabWidth));
+    }
+    noteWorkspaceTabWidthInputs(
+      `${settings.tabWidthMode}\0${settings.tabWidth}\0${settings.showTabIcons ? 1 : 0}`,
+    );
     applyWindowOpacity(settings.windowOpacity);
     const blurOn = hostOS === 'darwin' && settings.windowBlur !== false;
     if (hostOS === 'darwin') {
@@ -580,6 +592,8 @@ function AppShell() {
     theme,
     settings.codeEditorFontSize,
     settings.showTabIcons,
+    settings.tabWidth,
+    settings.tabWidthMode,
     settings.windowOpacity,
     settings.windowBlur,
   ]);
@@ -1201,6 +1215,7 @@ function AppShell() {
       tabHostNames={tabHostNames}
       activeId={workspace.activeId}
       showIcons={settings.showTabIcons === true}
+      fitToContent={settings.tabWidthMode === 'auto'}
       closeButton={parseTabCloseButton(settings.tabCloseButton)}
       onActivate={focusTab}
       onClose={closeWorkspaceTab}

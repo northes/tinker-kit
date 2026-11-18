@@ -38,6 +38,10 @@ import {
 } from './workspace-tabs';
 import { useWorkspaceTabActiveHighlight } from './useWorkspaceTabActiveHighlight';
 import {
+  useFlushWorkspaceTabFitWidth,
+  useWorkspaceTabFitWidth,
+} from './useWorkspaceTabFitWidth';
+import {
   useWorkspaceTabStripMotion,
   type WorkspaceTabStripMotion,
 } from './useWorkspaceTabStripMotion';
@@ -296,6 +300,7 @@ export function WorkspaceTabBar({
   tabHostNames,
   activeId,
   showIcons,
+  fitToContent,
   closeButton,
   onActivate,
   onClose,
@@ -309,6 +314,7 @@ export function WorkspaceTabBar({
   tabHostNames: Record<string, string>;
   activeId: string | null;
   showIcons: boolean;
+  fitToContent: boolean;
   closeButton: TabCloseButton;
   onActivate: (id: string) => void;
   onClose: (id: string) => void;
@@ -318,7 +324,7 @@ export function WorkspaceTabBar({
   onRename: (id: string) => void;
   onNewTab: () => void;
 }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const viewportRef = useRef<HTMLElement | null>(null);
   const listRef = useRef<HTMLDivElement | null>(null);
   const tabRefs = useRef(new Map<string, HTMLElement>());
@@ -438,6 +444,27 @@ export function WorkspaceTabBar({
     const tab = id ? tabRefs.current.get(id) : undefined;
     if (viewport && tab) scrollTabIntoView(viewport, tab);
   }, []);
+  const fitLabels = useMemo(
+    () =>
+      tabs.map((tab) => ({
+        id: tab.id,
+        label: workspaceTabLabel(
+          tab,
+          workspaceTabBaseName(tab, (key) => t(key), tabHostNames[tab.id]),
+        ),
+        pinned: tab.pinned === true,
+      })),
+    [i18n.language, t, tabHostNames, tabs],
+  );
+  const tabMotionHold = useRef<WorkspaceTabStripMotion | null>(null);
+  // 先于补位注册，宽度写入后开合动画才测位置。
+  const { probe: tabFitProbe, pendingWidthRef: tabFitWidthRef } = useWorkspaceTabFitWidth({
+    enabled: fitToContent,
+    labels: fitLabels,
+    showIcons,
+    closeButton,
+    hold: tabMotionHold,
+  });
   useLayoutEffect(() => {
     const viewport = viewportRef.current;
     const tab = activeId ? tabRefs.current.get(activeId) : undefined;
@@ -454,6 +481,8 @@ export function WorkspaceTabBar({
     draggingRef,
     dragging,
   });
+  tabMotionHold.current = tabMotion;
+  useFlushWorkspaceTabFitWidth(fitToContent, tabMotion, tabFitWidthRef);
   const { highlight: activeHighlight, reducedMotion: tabHighlightReduced } =
     useWorkspaceTabActiveHighlight({
       activeId,
@@ -464,7 +493,8 @@ export function WorkspaceTabBar({
     });
 
   return (
-    <div className="flex h-full min-h-0 min-w-0 flex-1 items-center">
+    <div className="relative flex h-full min-h-0 min-w-0 flex-1 items-center">
+      {tabFitProbe}
       <DndContext
         sensors={sensors}
         collisionDetection={collisionDetection}

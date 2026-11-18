@@ -3,8 +3,10 @@
   --app-titlebar-pad-left: 76px;
   --app-titlebar-item-offset: 1px;
   --app-titlebar-toggle-offset: 1px;
-  /* 标签宽度。无图标一档；打开图标后全部标签加宽同一截。 */
-  --workspace-tab-width: 128px;
+  /* 标签基础宽度由设置写入。实际宽度默认等于基础宽度；打开图标后加 20px。
+     不能写成同一个变量自引用，calc(var(--workspace-tab-width) + 20px) 会失效。 */
+  --workspace-tab-base-width: 128px;
+  --workspace-tab-width: var(--workspace-tab-base-width);
   --workspace-traffic-inset: 0px;
   /* 外壳缝与面板圆角：楔形补块和外圆角都由这两个值派生，别在别处写死 8px / 22px。 */
   --window-frame-inset: 8px;
@@ -36,7 +38,7 @@
   --app-titlebar-toggle-offset: 2px;
 }
 :root[data-show-tab-icons='true'] {
-  --workspace-tab-width: 148px;
+  --workspace-tab-width: calc(var(--workspace-tab-base-width) + 20px);
 }
 :root[data-window-controls='traffic-lights'] {
   --workspace-traffic-inset: var(--app-titlebar-pad-left);
@@ -273,10 +275,12 @@ textarea,
     opacity: 0;
     transform: translate3d(-6px, 0, 0) scale(0.96);
   }
+  /* 标签等宽，高亮宽度不需要过渡。宽度设置落地时连位移一起跳过，避免色块比标签晚一截。 */
   [data-workspace-tab-highlight]:not([data-workspace-tab-highlight-reduced]) {
-    transition:
-      transform var(--motion-slide-duration) var(--motion-slide-ease),
-      width var(--motion-slide-duration) var(--motion-slide-ease);
+    transition: transform var(--motion-slide-duration) var(--motion-slide-ease);
+  }
+  :root[data-workspace-tab-width-snap] [data-workspace-tab-highlight] {
+    transition: none;
   }
 }
 /* ScrollArea.scrollFade：按滚动偏移在可滚动方向边缘渐隐内容。 */
