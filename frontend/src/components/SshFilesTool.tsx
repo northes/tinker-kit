@@ -265,7 +265,6 @@ export default function SshFilesTool({ active, locate = null }: Props) {
     executeSearch,
     searchInput,
     setSearchInput,
-    clearSearch,
     setSearchMode,
     setSearchScope,
     pathEditing,
@@ -327,15 +326,7 @@ export default function SshFilesTool({ active, locate = null }: Props) {
     if (!sourceUsable || loadingSources || loading || searching) return;
     setPathInput(currentPath);
     setPathEditing(true);
-  }, [
-    sourceUsable,
-    loadingSources,
-    loading,
-    searching,
-    currentPath,
-    setPathInput,
-    setPathEditing,
-  ]);
+  }, [sourceUsable, loadingSources, loading, searching, currentPath, setPathInput, setPathEditing]);
 
   useEffect(() => {
     if (!pathEditing) return;
@@ -1386,7 +1377,7 @@ export default function SshFilesTool({ active, locate = null }: Props) {
   };
 
   return (
-    <ToolLayout>
+    <ToolLayout className="relative">
       <ToolLayoutToolbar
         left={
           <div className="flex min-w-0 flex-wrap items-end gap-3 max-[700px]:w-full">
@@ -1449,11 +1440,9 @@ export default function SshFilesTool({ active, locate = null }: Props) {
               value={searchInput}
               onValueChange={setSearchInput}
               onSubmit={() => void executeSearch()}
-              onClear={clearSearch}
               disabled={!sourceUsable || isLoading}
               placeholder={t('sshFilesTool.searchPlaceholder')}
               ariaLabel={t('sshFilesTool.search')}
-              clearLabel={t('sshFilesTool.clearSearch')}
               trailingAddon={
                 <DropdownMenu>
                   <DropdownMenuTrigger
@@ -1517,7 +1506,7 @@ export default function SshFilesTool({ active, locate = null }: Props) {
           </div>
         }
       />
-      <ToolLayoutContent className="flex min-h-0 flex-col">
+      <ToolLayoutContent className="flex min-h-0 flex-col gap-3">
         <div
           className={`flex min-h-10 min-w-0 shrink-0 items-center gap-1 rounded-md bg-muted/20 px-2 text-xs ${!pathEditing && sourceUsable && !isLoading ? 'cursor-text' : ''}`}
           aria-label={t('sshFilesTool.path')}
@@ -1800,7 +1789,7 @@ export default function SshFilesTool({ active, locate = null }: Props) {
               ) : (
                 <Table className="min-w-[840px] text-xs" containerClassName="overflow-visible">
                   <TableHeader className="sticky top-0 z-10 bg-background [&_tr]:border-b-0">
-                    <TableRow className="hover:bg-transparent">
+                    <TableRow className="hover:bg-transparent [&>th]:bg-[color-mix(in_oklch,var(--muted)_45%,var(--background))] [&>th]:text-muted-foreground [&>th:first-child]:rounded-l-md [&>th:last-child]:rounded-r-md">
                       <TableHead className="w-10 px-3 text-[10px] text-muted-foreground">
                         <Checkbox
                           checked={entries.length > 0 && selected.length === entries.length}
