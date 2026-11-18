@@ -92,7 +92,6 @@ const defaultNetworkTestSettings: NetworkTestSettings = {
   headers: '',
   body: '',
   hasBody: false,
-  sourceID: 'local',
   // 空值表示使用工具默认的 User-Agent（TinkerKit Network Test）；见后端 userAgent()。
   userAgent: '',
   proxyType: '',
@@ -166,7 +165,6 @@ function toPersistedNetworkTestSettings(
     headers: options.headers,
     body: options.body,
     hasBody: options.hasBody,
-    sourceID: options.sourceID || 'local',
     userAgent: options.userAgent.trim(),
     proxyType: options.proxyType,
     proxyAddress: options.proxyAddress,
@@ -264,6 +262,8 @@ export default function NetworkTestTool({
   const [protocolSelection, setProtocolSelection] = useState<ProtocolSelection>('auto');
   const [target, setTarget] = useState('');
   const [networkTestSources, setNetworkTestSources] = useState(defaultNetworkTestSources);
+  // 发起端只活在当前标签。null 表示还没选，展示时取已加载来源的首项，不写入设置。
+  const [sourceID, setSourceID] = useState<string | null>(null);
   const [sourceManagerOpen, setSourceManagerOpen] = useState(false);
   const [savingSources, setSavingSources] = useState(false);
   const [requestSettingsOpen, setRequestSettingsOpen] = useState(false);
@@ -330,7 +330,6 @@ export default function NetworkTestTool({
     headers,
     body,
     hasBody,
-    sourceID,
     userAgent,
     proxyType,
     proxyAddress,
@@ -390,8 +389,14 @@ export default function NetworkTestTool({
   );
   const detectedProtocol = detectTargetProtocol(target);
   const effectiveProtocol = protocolSelection === 'auto' ? detectedProtocol : protocolSelection;
+  // 未选择时跟随列表首项；不要先写死 local，否则来源加载完成会覆盖用户已经做出的选择。
+  const effectiveSourceID =
+    sourceID && networkTestSources.some((source) => source.id === sourceID)
+      ? sourceID
+      : (networkTestSources[0]?.id ?? 'local');
   const selectedSource =
-    networkTestSources.find((source) => source.id === sourceID) ?? defaultNetworkTestSources[0];
+    networkTestSources.find((source) => source.id === effectiveSourceID) ??
+    defaultNetworkTestSources[0];
   const remoteSourceSelected = selectedSource.kind === 'ssh';
   const selectedSourceProfileMissing =
     remoteSourceSelected && !profiles.some((profile) => profile.id === selectedSource.sshProfileID);
@@ -459,11 +464,12 @@ export default function NetworkTestTool({
       .then(([savedSettings, savedSources]) => {
         const sources = savedSources?.length ? savedSources : defaultNetworkTestSources;
         setNetworkTestSources(sources);
-        const storedSourceID = savedSettings?.sourceID || 'local';
-        const sourceID = sources.some((source) => source.id === storedSourceID)
-          ? storedSourceID
-          : 'local';
-        const saved = { ...defaultNetworkTestSettings, ...savedSettings, sourceID };
+        // 只修正已经选中、但不在新列表里的发起端。还没选（null）时保持不动，等渲染取首项。
+        setSourceID((current) => {
+          if (current == null) return current;
+          return sources.some((source) => source.id === current) ? current : 'local';
+        });
+        const saved = { ...defaultNetworkTestSettings, ...savedSettings };
         persistedSettingsRef.current = saved;
         if (!settingsTouched.current) {
           const loadedOptions: NetworkTestOptions = {
@@ -648,9 +654,15 @@ export default function NetworkTestTool({
     try {
       await SaveNetworkTestSources(nextSources);
       const sources = (await GetNetworkTestSources()) ?? defaultNetworkTestSources;
-      setNetworkTestSources(sources.length ? sources : defaultNetworkTestSources);
-      const nextSourceID = sources.some((source) => source.id === sourceID) ? sourceID : 'local';
-      updateNetworkSettings({ sourceID: nextSourceID });
+      const available = sources.length ? sources : defaultNetworkTestSources;
+      setNetworkTestSources(available);
+      setSourceID((current) => {
+        const previous =
+          current && networkTestSources.some((source) => source.id === current)
+            ? current
+            : (networkTestSources[0]?.id ?? 'local');
+        return available.some((source) => source.id === previous) ? previous : 'local';
+      });
     } finally {
       setSavingSources(false);
     }
@@ -742,13 +754,13 @@ export default function NetworkTestTool({
                   labelId="network-test-source-label"
                 >
                   <Select
-                    value={sourceID || 'local'}
+                    value={effectiveSourceID}
                     onValueChange={(value) => {
                       if (value === MANAGE_NETWORK_SOURCES) {
                         openSourceManager();
                         return;
                       }
-                      if (value) updateNetworkSettings({ sourceID: value });
+                      if (value) setSourceID(value);
                     }}
                     items={sourceItems}
                   >
@@ -1552,7 +1564,7 @@ export default function NetworkTestTool({
         items={networkTestSources}
         itemKey={(item) => item.id}
         itemName={(item) => sourceLabel(item, t('networkTestTool.source.local'))}
-        activeKey={sourceID}
+        activeKey={effectiveSourceID}
         itemDisabled={isLocalSource}
         createDraft={() => ({
           id: '',

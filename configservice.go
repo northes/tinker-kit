@@ -83,7 +83,6 @@ type NetworkTestSettings struct {
 	Headers        string `json:"headers"`
 	Body           string `json:"body"`
 	HasBody        bool   `json:"hasBody"`
-	SourceID       string `json:"sourceID"`
 	UserAgent      string `json:"userAgent"`
 	ProxyType      string `json:"proxyType"`
 	ProxyAddress   string `json:"proxyAddress"`
@@ -106,7 +105,6 @@ func defaultNetworkTestSettings() NetworkTestSettings {
 		TimeoutSeconds: 30,
 		MaxRedirects:   10,
 		Method:         "GET",
-		SourceID:       "local",
 		// UserAgent 留空表示使用工具默认的标识（defaultNetworkTestUserAgent）：不把默认值复制进
 		// 配置，将来默认值变化时已保存的设置不会把它固定住。
 		DNSMode: "system",
@@ -819,9 +817,6 @@ func normalizeConfig(cfg Config) Config {
 	}
 	cfg.NtpServers = normalizeNtpServers(cfg.NtpServers)
 	cfg.NetworkTestSettings = normalizeNetworkTestSettings(cfg.NetworkTestSettings)
-	if !networkTestSourceExists(cfg.NetworkTestSources, cfg.NetworkTestSettings.SourceID) {
-		cfg.NetworkTestSettings.SourceID = "local"
-	}
 	return cfg
 }
 
@@ -835,10 +830,6 @@ func normalizeNetworkTestSettings(settings NetworkTestSettings) NetworkTestSetti
 	settings.Method = strings.TrimSpace(settings.Method)
 	if settings.Method == "" {
 		settings.Method = "GET"
-	}
-	settings.SourceID = strings.TrimSpace(settings.SourceID)
-	if settings.SourceID == "" {
-		settings.SourceID = "local"
 	}
 	// User-Agent 会原样写进请求报文：去掉首尾空白与 CR/LF，其余按用户输入保留。
 	settings.UserAgent = sanitizeHeaderValue(strings.TrimSpace(settings.UserAgent))

@@ -2463,8 +2463,7 @@
     "networkTest": {
       "sourceInvalid": "Network test initiator #{{index}} is invalid",
       "sourceDuplicate": "Network test initiator ID at item {{index}} is duplicated",
-      "sourceProfileNotFound": "The SSH profile referenced by network test initiator #{{index}} does not exist",
-      "selectedSourceNotFound": "The selected network test initiator does not exist"
+      "sourceProfileNotFound": "The SSH profile referenced by network test initiator #{{index}} does not exist"
     }
   },
   "portTool": {

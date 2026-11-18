@@ -661,7 +661,6 @@ func validateConfigForSave(cfg Config, allowDanglingRefs ...bool) error {
 	if err := validateUniqueConfigIDs("network test source", idsOfNetworkTestSources(cfg.NetworkTestSources)); err != nil {
 		return err
 	}
-	networkSources := make(map[string]struct{}, len(cfg.NetworkTestSources))
 	for index, source := range cfg.NetworkTestSources {
 		id := strings.TrimSpace(source.ID)
 		kind := strings.ToLower(strings.TrimSpace(source.Kind))
@@ -673,12 +672,6 @@ func validateConfigForSave(cfg Config, allowDanglingRefs ...bool) error {
 		}
 		if _, ok := profiles[strings.TrimSpace(source.SSHProfileID)]; !ok {
 			return userErrorParams("errors.networkTest.sourceProfileNotFound", map[string]any{"index": index + 1})
-		}
-		networkSources[id] = struct{}{}
-	}
-	if sourceID := strings.TrimSpace(cfg.NetworkTestSettings.SourceID); sourceID != "" {
-		if _, ok := networkSources[sourceID]; sourceID != "local" && !ok {
-			return userError("errors.networkTest.selectedSourceNotFound")
 		}
 	}
 	return nil

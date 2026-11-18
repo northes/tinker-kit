@@ -46,15 +46,6 @@ func normalizeNetworkTestSources(sources []NetworkTestSource, profileNames map[s
 	return result
 }
 
-func networkTestSourceExists(sources []NetworkTestSource, id string) bool {
-	for _, source := range sources {
-		if source.ID == id {
-			return true
-		}
-	}
-	return false
-}
-
 func idsOfNetworkTestSources(sources []NetworkTestSource) []string {
 	ids := make([]string, len(sources))
 	for index, source := range sources {
@@ -117,9 +108,6 @@ func (s *ConfigService) SaveNetworkTestSources(sources []NetworkTestSource) erro
 			normalized = append([]NetworkTestSource{defaultNetworkTestSources()[0]}, normalized...)
 		}
 
-		if !networkTestSourceExists(normalized, cfg.NetworkTestSettings.SourceID) {
-			cfg.NetworkTestSettings.SourceID = "local"
-		}
 		cfg.NetworkTestSources = normalizeNetworkTestSources(normalized, profileNames)
 		return nil
 	})

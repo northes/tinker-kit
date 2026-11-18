@@ -2463,8 +2463,7 @@
     "networkTest": {
       "sourceInvalid": "第 {{index}} 项网络测试发起端无效",
       "sourceDuplicate": "第 {{index}} 项网络测试发起端 ID 重复",
-      "sourceProfileNotFound": "第 {{index}} 项网络测试发起端引用的 SSH 配置不存在",
-      "selectedSourceNotFound": "当前网络测试发起端不存在"
+      "sourceProfileNotFound": "第 {{index}} 项网络测试发起端引用的 SSH 配置不存在"
     }
   },
   "portTool": {

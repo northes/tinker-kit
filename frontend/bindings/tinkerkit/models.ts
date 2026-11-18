@@ -489,7 +489,6 @@ export interface NetworkTestSettings {
     "headers": string;
     "body": string;
     "hasBody": boolean;
-    "sourceID": string;
     "userAgent": string;
     "proxyType": string;
     "proxyAddress": string;

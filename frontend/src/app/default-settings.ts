@@ -58,7 +58,6 @@ export const defaultSettings: Settings = {
     headers: '',
     body: '',
     hasBody: false,
-    sourceID: 'local',
     // 空值表示使用工具默认的 User-Agent（TinkerKit Network Test）。
     userAgent: '',
     proxyType: '',
