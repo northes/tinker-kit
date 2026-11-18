@@ -18,9 +18,10 @@ const formatVersion = (value: unknown) => {
   return v ? `v${v}` : '';
 };
 
-// 顶栏胶囊与左组的 28px 图标按钮同高、同基线；两侧光学内边距统一为 10px。
+// 顶栏胶囊与标签同高、同基线；两侧光学内边距统一为 10px。
+// 不加额外的垂直偏移：标签按标题栏居中，胶囊跟着居中，两者文字才在同一水平线。
 const pillShell =
-  'relative top-(--app-titlebar-item-offset) z-[3] ml-auto flex h-7 max-w-[min(340px,calc(100vw-220px))] flex-none select-none items-center gap-1.5 self-center rounded-full border border-border bg-card pl-2.5 text-foreground transition-colors [--wails-draggable:no-drag]';
+  'relative z-[3] ml-auto flex h-8 max-w-[min(340px,calc(100vw-220px))] flex-none select-none items-stretch gap-0 self-center overflow-hidden rounded-full border border-border bg-card text-foreground transition-colors [--wails-draggable:no-drag]';
 
 export default function UpdatePill() {
   const { t } = useTranslation();
@@ -127,7 +128,7 @@ export default function UpdatePill() {
   const downloading = state === 'downloading' && percent > 0;
   if (working)
     return (
-      <div className={`${pillShell} overflow-hidden pr-2.5`} role="status">
+      <div className={`${pillShell} gap-1.5 px-2.5`} role="status">
         {downloading ? (
           <span
             aria-hidden="true"
@@ -139,11 +140,11 @@ export default function UpdatePill() {
           aria-hidden="true"
           className="relative size-3.5 flex-none text-primary"
         />
-        <span className="update-pill__text relative min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap text-[10px] leading-[14px]">
+        <span className="update-pill__text relative min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap text-[10px] leading-none">
           {label}
         </span>
         {downloading ? (
-          <span className="relative flex-none font-mono text-[10px] leading-[14px] tabular-nums text-muted-foreground">
+          <span className="relative flex-none font-mono text-[10px] leading-none tabular-nums text-muted-foreground">
             {percent}%
           </span>
         ) : null}
@@ -156,19 +157,18 @@ export default function UpdatePill() {
     >
       <Button
         variant="ghost"
-        className="flex h-full min-w-0 flex-1 items-center gap-1.5 rounded-full border-0 bg-transparent p-0 text-inherit hover:bg-transparent hover:text-inherit hover:[&_svg]:text-primary"
+        className="flex min-h-0 min-w-0 flex-1 items-center gap-1.5 self-stretch rounded-none border-0 bg-transparent px-2.5 py-0 text-inherit hover:bg-accent hover:text-inherit dark:hover:bg-accent/50 hover:[&_svg]:text-primary"
         onClick={start}
       >
         <ArrowCircleUp size={14} weight="regular" className="flex-none text-primary/70" />
-        <span className="update-pill__text min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-[10px] leading-[14px]">
+        <span className="update-pill__text min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-[10px] leading-none">
           {label}
         </span>
       </Button>
-      <span aria-hidden="true" className="h-3.5 w-px flex-none bg-border" />
+      <span aria-hidden="true" className="w-px shrink-0 self-stretch bg-border" />
       <Button
         variant="ghost"
-        size="icon-xs"
-        className="flex-none rounded-full border-0 bg-transparent text-muted-foreground hover:bg-accent hover:text-foreground"
+        className="size-auto min-h-0 w-8 shrink-0 self-stretch rounded-none border-0 bg-transparent px-0 text-muted-foreground hover:bg-accent hover:text-foreground dark:hover:bg-accent/50"
         aria-label={t('updatePill.dismiss')}
         title={t('updatePill.dismiss')}
         onClick={dismiss}

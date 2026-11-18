@@ -1445,7 +1445,7 @@
   },
   "updatePill": {
     "checking": "正在检查更新",
-    "available": "发现新版本 {{version}}",
+    "available": "新版本 {{version}}",
     "downloading": "正在下载",
     "applying": "正在准备更新…",
     "restarting": "更新完成，正在重启…",

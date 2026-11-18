@@ -1,8 +1,6 @@
 :root {
   --app-titlebar-height: 38px;
   --app-titlebar-pad-left: 76px;
-  --app-titlebar-item-offset: 1px;
-  --app-titlebar-toggle-offset: 1px;
   /* 标签基础宽度由设置写入。实际宽度默认等于基础宽度；打开图标后加 20px。
      不能写成同一个变量自引用，calc(var(--workspace-tab-width) + 20px) 会失效。 */
   --workspace-tab-base-width: 128px;
@@ -34,8 +32,6 @@
 :root[data-titlebar-variant='tall'] {
   --app-titlebar-height: 52px;
   --app-titlebar-pad-left: 96px;
-  --app-titlebar-item-offset: 3px;
-  --app-titlebar-toggle-offset: 2px;
 }
 :root[data-show-tab-icons='true'] {
   --workspace-tab-width: calc(var(--workspace-tab-base-width) + 20px);

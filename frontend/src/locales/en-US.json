@@ -1445,7 +1445,7 @@
   },
   "updatePill": {
     "checking": "Checking for updates",
-    "available": "Update available · {{version}}",
+    "available": "New version {{version}}",
     "downloading": "Downloading",
     "applying": "Preparing update…",
     "restarting": "Update ready, restarting…",
