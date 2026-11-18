@@ -65,19 +65,19 @@ export function workspaceTabLabel(tab: WorkspaceTab, baseName: string) {
 
 export type DragSlot = {
   id: string;
-  // 拖动开始时的标签中心，之后不再跟布局变化。
+  // 拖动开始时的标签中心，用滚动内容坐标，之后不跟视口滚动或让位变化。
   mid: number;
 };
 
-// 只有中心越过下一枚标签的中线才切换目标。停在两条中线之间保持当前目标，
-// 这样边界上的轻微回摆不会让相邻标签反复成为落点。
+// 只有中心越过邻近标签的中线才离开当前目标，停在两条中线之间不回摆。
+// 一次采样跨过多条中线时要一路走完：每次只跨一格会让快速拖到右边的落点落在光标前面。
 export function nextDragOverId(
   slots: readonly DragSlot[],
   currentId: string | null,
   center: number,
 ): string | null {
   if (slots.length === 0 || !Number.isFinite(center)) return null;
-  const index = currentId == null ? -1 : slots.findIndex((slot) => slot.id === currentId);
+  let index = currentId == null ? -1 : slots.findIndex((slot) => slot.id === currentId);
   if (index < 0) {
     let best = slots[0];
     let bestDistance = Math.abs(best.mid - center);
@@ -90,10 +90,19 @@ export function nextDragOverId(
     }
     return best.id;
   }
-  const next = slots[index + 1];
-  const previous = slots[index - 1];
-  if (next && center >= next.mid) return next.id;
-  if (previous && center <= previous.mid) return previous.id;
+  for (let step = 0; step < slots.length; step += 1) {
+    const next = slots[index + 1];
+    const previous = slots[index - 1];
+    if (next && center >= next.mid) {
+      index += 1;
+      continue;
+    }
+    if (previous && center <= previous.mid) {
+      index -= 1;
+      continue;
+    }
+    return slots[index].id;
+  }
   return slots[index].id;
 }
 

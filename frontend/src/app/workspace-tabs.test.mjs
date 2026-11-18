@@ -389,6 +389,10 @@ test('越过相邻标签后，中线前回摆不会把落点弹回去', () => {
   assert.equal(nextDragOverId(slots, 'b', 151), 'b');
   assert.equal(nextDragOverId(slots, 'b', 50), 'a');
   assert.equal(nextDragOverId(slots, 'b', 250), 'c');
+  assert.equal(nextDragOverId(slots, 'a', 250), 'c');
+  assert.equal(nextDragOverId(slots, 'a', 200), 'b');
+  assert.equal(nextDragOverId(slots, 'c', 50), 'a');
+  assert.equal(nextDragOverId(slots, 'c', 149), 'b');
   assert.equal(tabDragShift(0, 2, 0, 100), 0);
   assert.equal(tabDragShift(0, 2, 1, 100), -100);
   assert.equal(tabDragShift(0, 2, 2, 100), -100);

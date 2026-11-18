@@ -75,6 +75,12 @@ const REVEAL_SCROLL_EASE = [0.32, 0.72, 0, 1] as const;
 // 亚像素差值不算裁切也不算位移，避免宽度观察器和补滚来回较劲。
 const SCROLL_EPSILON = 0.5;
 
+// 落点用滚动内容坐标。拖动过程中视口 scrollLeft 变了，屏幕坐标上的中线会和眼前的标签错开。
+function contentX(viewport: HTMLElement | null, clientX: number) {
+  if (!viewport) return clientX;
+  return clientX - viewport.getBoundingClientRect().left + viewport.scrollLeft;
+}
+
 function prefersReducedMotion() {
   return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 }
@@ -527,7 +533,7 @@ export function WorkspaceTabBar({
     const pointer = args.pointerCoordinates;
     const slots = slotsRef.current;
     if (!pointer || slots.length === 0) return closestCenter(args);
-    const along = pointer.x;
+    const along = contentX(viewportRef.current, pointer.x);
     const next = nextDragOverId(slots, overIdRef.current, along - grabOffsetRef.current);
     if (!next) return [];
     overIdRef.current = next;
@@ -557,9 +563,10 @@ export function WorkspaceTabBar({
         const node = tabRefs.current.get(tab.id);
         if (!node) continue;
         const rect = node.getBoundingClientRect();
-        const start = rect.left;
-        const size = rect.width;
-        slots.push({ id: tab.id, mid: start + size / 2 });
+        slots.push({
+          id: tab.id,
+          mid: contentX(viewportRef.current, rect.left + rect.width / 2),
+        });
       }
     }
     slotsRef.current = slots;
@@ -568,7 +575,8 @@ export function WorkspaceTabBar({
     const activator = event.activatorEvent;
     const origin = slots.find((slot) => slot.id === dragId);
     const point = pointerPosition(activator);
-    grabOffsetRef.current = origin && point ? point.x - origin.mid : 0;
+    grabOffsetRef.current =
+      origin && point ? contentX(viewportRef.current, point.x) - origin.mid : 0;
   };
   const registerTab = useCallback((id: string, node: HTMLElement | null) => {
     if (node) tabRefs.current.set(id, node);
