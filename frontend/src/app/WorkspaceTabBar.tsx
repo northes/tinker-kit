@@ -41,6 +41,7 @@ import {
   useWorkspaceTabStripMotion,
   type WorkspaceTabStripMotion,
 } from './useWorkspaceTabStripMotion';
+import { hostQualifiedName } from './workspace-tab-title';
 
 // 锁的是碰撞用的位移，不只是画出来的位置。否则垂直抖动会让相邻标签反复成为 over。
 const restrictToTabAxis: Modifier = ({ transform }) => ({ ...transform, y: 0 });
@@ -72,6 +73,7 @@ function scrollTabIntoView(viewport: HTMLElement, tab: HTMLElement) {
 
 function WorkspaceTabItem({
   tab,
+  hostName,
   current,
   showIcons,
   closeButton,
@@ -86,6 +88,7 @@ function WorkspaceTabItem({
   onRename,
 }: {
   tab: WorkspaceTab;
+  hostName?: string | null;
   current: boolean;
   showIcons: boolean;
   closeButton: TabCloseButton;
@@ -113,7 +116,7 @@ function WorkspaceTabItem({
     },
     [tab.id],
   );
-  const baseName = workspaceTabBaseName(tab, (key) => t(key));
+  const baseName = workspaceTabBaseName(tab, (key) => t(key), hostName);
   const label = workspaceTabLabel(tab, baseName);
   const Icon =
     tab.kind === 'settings'
@@ -276,15 +279,21 @@ function WorkspaceTabItem({
   );
 }
 
-export function workspaceTabBaseName(tab: WorkspaceTab, translate: (key: string) => string) {
+export function workspaceTabBaseName(
+  tab: WorkspaceTab,
+  translate: (key: string) => string,
+  hostName?: string | null,
+) {
   if (tab.kind === 'settings') return translate('settings.title');
   if (tab.kind === 'blank') return translate('workspaceTabs.blankTab');
   const tool = tab.kind === 'tool' ? tools.find((item) => item.id === tab.toolId) : undefined;
-  return tool ? translate(tool.nameKey) : (tab.toolId ?? '');
+  const toolName = tool ? translate(tool.nameKey) : (tab.toolId ?? '');
+  return hostQualifiedName(toolName, hostName);
 }
 
 export function WorkspaceTabBar({
   tabs,
+  tabHostNames,
   activeId,
   showIcons,
   closeButton,
@@ -297,6 +306,7 @@ export function WorkspaceTabBar({
   onNewTab,
 }: {
   tabs: WorkspaceTab[];
+  tabHostNames: Record<string, string>;
   activeId: string | null;
   showIcons: boolean;
   closeButton: TabCloseButton;
@@ -313,6 +323,7 @@ export function WorkspaceTabBar({
   const listRef = useRef<HTMLDivElement | null>(null);
   const tabRefs = useRef(new Map<string, HTMLElement>());
   const tabsRef = useRef(tabs);
+  const tabHostNamesRef = useRef(tabHostNames);
   const suppressClickRef = useRef(false);
   const draggingRef = useRef(false);
   const [dragging, setDragging] = useState(false);
@@ -322,6 +333,7 @@ export function WorkspaceTabBar({
   const pitchRef = useRef(0);
   const activeIdRef = useRef(activeId);
   tabsRef.current = tabs;
+  tabHostNamesRef.current = tabHostNames;
   activeIdRef.current = activeId;
   const [liveMessage, setLiveMessage] = useState('');
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }));
@@ -413,7 +425,7 @@ export function WorkspaceTabBar({
       t('workspaceTabs.movedTab', {
         name: workspaceTabLabel(
           moved,
-          workspaceTabBaseName(moved, (key) => t(key)),
+          workspaceTabBaseName(moved, (key) => t(key), tabHostNamesRef.current[moved.id]),
         ),
         position: nextTabs.findIndex((tab) => tab.id === activeDragId) + 1,
         total: nextTabs.length,
@@ -509,6 +521,7 @@ export function WorkspaceTabBar({
                 <WorkspaceTabItem
                   key={tab.id}
                   tab={tab}
+                  hostName={tabHostNames[tab.id]}
                   current={tab.id === activeId}
                   showIcons={showIcons}
                   closeButton={closeButton}

@@ -39,6 +39,7 @@ import {
 import { isToolId, paletteToolId, resolveSidebarTools, routePath } from './app/navigation';
 import { buildIndex } from './app/palette-search';
 import { workspaceTabBaseName, WorkspaceTabBar } from './app/WorkspaceTabBar';
+import { WorkspaceTabTitleContext } from './app/workspace-tab-title';
 import {
   activateTab,
   activeTab,
@@ -273,6 +274,48 @@ function AppShell() {
   // 工作区状态只有 commitWorkspace 一个写入口，ref 在提交时更新，
   // 同一次事件里的后续操作读到的是最新意图而不是上一帧的状态。
   const workspaceStateRef = useRef(workspace);
+  const [tabHostNames, setTabHostNames] = useState<Record<string, string>>({});
+  // 同一标签 id 的上报回调必须稳定，否则工具里依赖它的 effect 会跟着父渲染反复触发。
+  const tabHostReportersRef = useRef(new Map<string, (hostName: string | null) => void>());
+  const reportTabHostName = useCallback((tabId: string, hostName: string | null) => {
+    const host = hostName?.trim() ?? '';
+    setTabHostNames((current) => {
+      if (!host) {
+        if (!(tabId in current)) return current;
+        const next = { ...current };
+        delete next[tabId];
+        return next;
+      }
+      if (current[tabId] === host) return current;
+      return { ...current, [tabId]: host };
+    });
+  }, []);
+  const reporterForTab = useCallback(
+    (tabId: string) => {
+      const cached = tabHostReportersRef.current.get(tabId);
+      if (cached) return cached;
+      const reporter = (hostName: string | null) => {
+        reportTabHostName(tabId, hostName);
+      };
+      tabHostReportersRef.current.set(tabId, reporter);
+      return reporter;
+    },
+    [reportTabHostName],
+  );
+  const forgetTabHostNames = useCallback((ids: readonly string[]) => {
+    if (ids.length === 0) return;
+    for (const id of ids) tabHostReportersRef.current.delete(id);
+    setTabHostNames((current) => {
+      let changed = false;
+      const next = { ...current };
+      for (const id of ids) {
+        if (!(id in next)) continue;
+        delete next[id];
+        changed = true;
+      }
+      return changed ? next : current;
+    });
+  }, []);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [romanize, setRomanize] = useState<Romanize>(() => (text) => text);
   const [delivered, setDelivered] = useState<{
@@ -411,6 +454,7 @@ function AppShell() {
   };
   const closeWorkspaceTab = (id: string) => {
     commitWorkspace(closeTab(workspaceStateRef.current, id, closeActivation()));
+    forgetTabHostNames([id]);
     setDelivered((current) => (current?.tabId === id ? null : current));
     setRenameTabId((current) => (current === id ? null : current));
   };
@@ -421,6 +465,7 @@ function AppShell() {
         .map((tab) => tab.id),
     );
     commitWorkspace(closeOtherTabs(workspaceStateRef.current, id, closeActivation()));
+    forgetTabHostNames([...closing]);
     setDelivered((current) => (current && closing.has(current.tabId) ? null : current));
     setRenameTabId((current) => (current && closing.has(current) ? null : current));
   };
@@ -450,6 +495,7 @@ function AppShell() {
       .filter((tab) => tab.toolId === toolId)
       .map((tab) => tab.id);
     commitWorkspace(closeTabs(workspaceStateRef.current, ids, closeActivation()));
+    forgetTabHostNames(ids);
     setDelivered((current) => (current && ids.includes(current.tabId) ? null : current));
     setRenameTabId((current) => (current && ids.includes(current) ? null : current));
   };
@@ -1144,6 +1190,7 @@ function AppShell() {
   const tabBar = (
     <WorkspaceTabBar
       tabs={workspace.tabs}
+      tabHostNames={tabHostNames}
       activeId={workspace.activeId}
       showIcons={settings.showTabIcons === true}
       closeButton={parseTabCloseButton(settings.tabCloseButton)}
@@ -1159,7 +1206,9 @@ function AppShell() {
   const renamingTab = renameTabId
     ? workspace.tabs.find((tab) => tab.id === renameTabId && tab.kind === 'tool')
     : undefined;
-  const renamingBaseName = renamingTab ? workspaceTabBaseName(renamingTab, (key) => t(key)) : '';
+  const renamingBaseName = renamingTab
+    ? workspaceTabBaseName(renamingTab, (key) => t(key), tabHostNames[renamingTab.id])
+    : '';
   return (
     <>
       <Toaster />
@@ -1189,9 +1238,11 @@ function AppShell() {
           >
             {workspace.tabs.map((tab) => (
               <div key={tab.id} className={toolSlotClass(tab.id === workspace.activeId)}>
-                <ToolFreshFocusContext.Provider value={freshToolTabIdsRef.current.has(tab.id)}>
-                  <Suspense fallback={null}>{renderWorkspaceTab(tab)}</Suspense>
-                </ToolFreshFocusContext.Provider>
+                <WorkspaceTabTitleContext.Provider value={reporterForTab(tab.id)}>
+                  <ToolFreshFocusContext.Provider value={freshToolTabIdsRef.current.has(tab.id)}>
+                    <Suspense fallback={null}>{renderWorkspaceTab(tab)}</Suspense>
+                  </ToolFreshFocusContext.Provider>
+                </WorkspaceTabTitleContext.Provider>
               </div>
             ))}
           </main>
