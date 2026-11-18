@@ -333,7 +333,7 @@ export function ImageManagerDetailView({
                   <ScrollArea className="mt-2" edgeOverlay>
                     <Table className="min-w-[42rem] text-[11px]">
                       <TableHeader className="[&_tr]:border-b-0">
-                        <TableRow>
+                        <TableRow className="hover:bg-transparent [&>th]:bg-[color-mix(in_oklch,var(--muted)_45%,var(--background))] [&>th]:text-muted-foreground [&>th:first-child]:rounded-l-md [&>th:last-child]:rounded-r-md">
                           <TableHead className="w-14">
                             {t('imageManagerTool.detailLayerIndex')}
                           </TableHead>

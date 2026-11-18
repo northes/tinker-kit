@@ -1299,7 +1299,7 @@ export default function ImageManagerTool({
             >
               <Table className="min-w-[640px]" containerClassName="overflow-visible">
                 <TableHeader className="sticky top-0 z-10 bg-background [&_tr]:border-b-0">
-                  <TableRow>
+                  <TableRow className="hover:bg-transparent [&>th]:bg-[color-mix(in_oklch,var(--muted)_45%,var(--background))] [&>th]:text-muted-foreground [&>th:first-child]:rounded-l-md [&>th:last-child]:rounded-r-md">
                     <TableHead className="w-10 whitespace-nowrap">
                       <Checkbox
                         checked={allSelected}
