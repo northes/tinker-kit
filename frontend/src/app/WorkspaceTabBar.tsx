@@ -573,10 +573,11 @@ export function WorkspaceTabBar({
       <div aria-live="polite" className="sr-only">
         {liveMessage}
       </div>
-      <div className="flex flex-none px-1 [--wails-draggable:no-drag]">
+      <div className="flex flex-none px-1.5 [--wails-draggable:no-drag]">
         <Button
           variant="ghost"
-          size="icon-sm"
+          size="icon"
+          className="rounded-full"
           onClick={onNewTab}
           aria-label={t('workspaceTabs.newTab')}
           title={t('workspaceTabs.newTab')}
