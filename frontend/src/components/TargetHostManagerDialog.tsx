@@ -355,7 +355,7 @@ export function TargetHostManagerDialog<TItem, TDraft>({
               </ScrollArea>
             </div>
           ) : (
-            <ScrollArea className="min-h-0 flex-1 px-6 py-5 [padding-inline-end:var(--overlay-scrollbar-size)]">
+            <ScrollArea className="min-h-0 flex-1 px-6 py-5">
               <form
                 id="target-host-form"
                 className="grid gap-4"

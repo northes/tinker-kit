@@ -528,7 +528,7 @@ function SSHProfileManagerDialog({
             </div>
           ) : null}
           <ScrollArea
-            className="min-h-0 flex-1 px-6 [padding-inline-end:var(--overlay-scrollbar-size)]"
+            className="min-h-0 flex-1 px-6"
             edgeOverlay
             onViewport={setViewport}
           >

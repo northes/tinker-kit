@@ -525,7 +525,7 @@ function SSHKnownHostsDialog({
               {t(editing ? 'settings.sshKnownHostsEditDesc' : 'settings.sshKnownHostsDialogDesc')}
             </DialogDescription>
           </DialogHeader>
-          {showKnownHostsList ? (
+          {showKnownHostsList && !editing ? (
             // 搜索固定在滚动区之外：放在滚动内容里做 sticky 会在 OverlayScrollbars 视口中移位。
             <div className="flex-none px-6 pt-4 pb-3">
               <ToolSearchField
@@ -538,7 +538,7 @@ function SSHKnownHostsDialog({
           ) : null}
           <ScrollArea
             edgeOverlay
-            className="min-h-0 flex-1 px-6 [padding-inline-end:var(--overlay-scrollbar-size)]"
+            className="min-h-0 flex-1 px-6"
           >
             {editing ? (
               <div className="py-5">
