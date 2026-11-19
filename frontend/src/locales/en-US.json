@@ -1518,6 +1518,12 @@
       "preferences": {
         "title": "Preferences"
       },
+      "workspace": {
+        "title": "Workspace"
+      },
+      "tools": {
+        "title": "Tools"
+      },
       "automation": {
         "title": "Automation & notifications"
       },
@@ -1542,7 +1548,8 @@
     "windowBlur": "Gaussian blur",
     "lightTheme": "Light theme",
     "darkTheme": "Dark theme",
-    "workspace": "Workspace",
+    "tabs": "Tabs",
+    "sidebarTools": "Sidebar",
     "tabCloseActivation": "After closing the current tab",
     "tabCloseActivationPrevious": "Previous",
     "tabCloseActivationNext": "Next",

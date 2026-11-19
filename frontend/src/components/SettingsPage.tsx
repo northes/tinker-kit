@@ -134,10 +134,13 @@ export type ToolDefinition = {
 };
 type BooleanSettingKey = 'trayMatchEnabled' | 'autoCheckUpdates';
 type ChoiceOption<T extends string | number> = { id: T; label: string };
-type SettingsCategory = 'preferences' | 'automation' | 'connections' | 'data' | 'about';
+type SettingsCategory =
+  'preferences' | 'workspace' | 'tools' | 'automation' | 'connections' | 'data' | 'about';
 
 const SETTINGS_CATEGORIES: SettingsCategory[] = [
   'preferences',
+  'workspace',
+  'tools',
   'automation',
   'connections',
   'data',
@@ -1284,7 +1287,12 @@ export default function SettingsPage({
                   />
                 </div>
               </SettingsGroup>
-              <SettingsGroup title={t('settings.workspace')}>
+            </>
+          );
+        case 'workspace':
+          return (
+            <>
+              <SettingsGroup divider={false} title={t('settings.tabs')}>
                 <div className="flex flex-col gap-3">
                   <ChoiceGroup
                     label={t('settings.tabCloseActivation')}
@@ -1352,7 +1360,12 @@ export default function SettingsPage({
                   </div>
                 </div>
               </SettingsGroup>
-              <SettingsGroup title={t('settings.tools')}>
+            </>
+          );
+        case 'tools':
+          return (
+            <>
+              <SettingsGroup divider={false} title={t('settings.sidebarTools')}>
                 <ToolOrderList
                   sidebarTools={resolveSidebarTools(settings.sidebarTools)}
                   tools={tools}

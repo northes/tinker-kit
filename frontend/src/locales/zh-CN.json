@@ -1518,6 +1518,12 @@
       "preferences": {
         "title": "常用偏好"
       },
+      "workspace": {
+        "title": "工作区"
+      },
+      "tools": {
+        "title": "工具"
+      },
       "automation": {
         "title": "自动化与通知"
       },
@@ -1542,7 +1548,8 @@
     "windowBlur": "高斯模糊",
     "lightTheme": "浅色主题",
     "darkTheme": "深色主题",
-    "workspace": "工作区",
+    "tabs": "标签",
+    "sidebarTools": "侧边栏",
     "tabCloseActivation": "关闭当前标签后",
     "tabCloseActivationPrevious": "前一个",
     "tabCloseActivationNext": "后一个",
