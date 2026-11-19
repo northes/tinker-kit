@@ -79,6 +79,14 @@ func (s *SSHProfileService) ImportSSHConfigProfile(alias string) (SSHProfile, er
 	return config.ImportSSHConfigProfile(alias)
 }
 
+func (s *SSHProfileService) ImportSSHProfilesFromLocal() (SSHProfileImportResult, error) {
+	config, err := s.configService()
+	if err != nil {
+		return SSHProfileImportResult{}, err
+	}
+	return config.ImportSSHProfilesFromLocal()
+}
+
 func (s *SSHProfileService) RefreshSSHConfigProfile(id string) (SSHProfile, error) {
 	config, err := s.configService()
 	if err != nil {
@@ -240,8 +248,9 @@ func (s *ConfigService) GetSSHProfiles() []SSHProfile {
 	return copySSHProfiles(s.Get().SSHProfiles)
 }
 
-// SaveSSHProfile 只保存一个配置，不要求调用方提交完整应用配置。本机导入配置的连接字段
-// 只读；RefreshSSHConfigProfile 是从本机 SSH config 替换快照的唯一入口。
+// SaveSSHProfile 只保存一个配置，不要求调用方提交完整应用配置。
+// 本机导入配置的连接字段与手动配置一样可编辑；来源身份仍由导入关系保持，
+// 从本机覆盖连接字段走 RefreshSSHConfigProfile 或 ImportSSHProfilesFromLocal。
 func (s *ConfigService) SaveSSHProfile(profile SSHProfile) (SSHProfile, error) {
 	return s.saveSSHProfile(profile, false)
 }
@@ -259,16 +268,9 @@ func (s *ConfigService) saveSSHProfile(profile SSHProfile, allowImportedUpdate b
 			if profiles[index].ID == profile.ID {
 				found = true
 				if profiles[index].Origin == "ssh-config" && !allowImportedUpdate {
-					// 本机导入配置只允许编辑显示名称。
+					// 来源身份仍由导入关系决定，连接字段按调用方提交保存。
 					profile.Origin = profiles[index].Origin
 					profile.OriginAlias = profiles[index].OriginAlias
-					profile.Host = profiles[index].Host
-					profile.Port = profiles[index].Port
-					profile.Username = profiles[index].Username
-					profile.Password = profiles[index].Password
-					profile.PrivateKey = profiles[index].PrivateKey
-					profile.PrivateKeyPath = profiles[index].PrivateKeyPath
-					profile.KeyPassphrase = profiles[index].KeyPassphrase
 					profile.OriginUpdatedAt = profiles[index].OriginUpdatedAt
 				}
 				break
@@ -367,6 +369,82 @@ func (s *ConfigService) ImportSSHConfigProfile(alias string) (SSHProfile, error)
 	}
 	profile.ID = newSSHProfileID()
 	return s.SaveSSHProfile(profile)
+}
+
+// SSHProfileImportResult 是一次从本机 SSH config 批量导入的结果。
+// Created、Updated 只统计本次新建和覆盖的条数；Profiles 是导入后的完整列表。
+type SSHProfileImportResult struct {
+	Created  int          `json:"created"`
+	Updated  int          `json:"updated"`
+	Profiles []SSHProfile `json:"profiles"`
+}
+
+// ImportSSHProfilesFromLocal 把本机全部可映射 Host 写入应用配置，只持久化一次。
+// 仅 origin 为 ssh-config 且 originAlias 相同的配置被覆盖；手动配置和本机已删除的历史条目保持不动。
+func (s *ConfigService) ImportSSHProfilesFromLocal() (SSHProfileImportResult, error) {
+	aliases, err := s.getSSHConfigAliases()
+	if err != nil {
+		return SSHProfileImportResult{}, err
+	}
+	resolved := make([]SSHProfile, 0, len(aliases))
+	for _, alias := range aliases {
+		profile, resolveErr := resolveSSHConfigProfile(alias)
+		if resolveErr != nil {
+			continue
+		}
+		resolved = append(resolved, profile)
+	}
+	if len(resolved) == 0 {
+		return SSHProfileImportResult{}, userError("errors.sshProfile.nothingToImport")
+	}
+
+	var created, updated int
+	if err := s.updateConfigAllowDanglingRefs(func(cfg *Config) error {
+		profiles := copySSHProfiles(cfg.SSHProfiles)
+		for _, incoming := range resolved {
+			matches := sshConfigProfileIndexes(profiles, incoming.OriginAlias)
+			if len(matches) == 0 {
+				incoming.ID = newSSHProfileID()
+				normalized, normalizeErr := normalizeSSHProfile(incoming)
+				if normalizeErr != nil {
+					return normalizeErr
+				}
+				profiles = append(profiles, normalized)
+				created++
+				continue
+			}
+			for _, index := range matches {
+				applied, applyErr := applyResolvedSSHConfigProfile(profiles[index], incoming)
+				if applyErr != nil {
+					return applyErr
+				}
+				profiles[index] = applied
+				updated++
+			}
+		}
+		cfg.SSHProfiles = profiles
+		return nil
+	}); err != nil {
+		return SSHProfileImportResult{}, err
+	}
+	return SSHProfileImportResult{Created: created, Updated: updated, Profiles: s.GetSSHProfiles()}, nil
+}
+
+func sshConfigProfileIndexes(profiles []SSHProfile, alias string) []int {
+	indexes := make([]int, 0, 1)
+	for index, profile := range profiles {
+		if profile.Origin == "ssh-config" && profile.OriginAlias == alias {
+			indexes = append(indexes, index)
+		}
+	}
+	return indexes
+}
+
+func applyResolvedSSHConfigProfile(current, resolved SSHProfile) (SSHProfile, error) {
+	resolved.ID = current.ID
+	resolved.Name = current.Name
+	resolved.JumpProfileID = current.JumpProfileID
+	return normalizeSSHProfile(resolved)
 }
 
 // RefreshSSHConfigProfile 只更新本机导入配置的连接字段，保留应用 ID 和显示名称。

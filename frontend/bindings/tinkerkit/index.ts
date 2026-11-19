@@ -109,6 +109,7 @@ export type {
     SSHConnection,
     SSHKnownHost,
     SSHProfile,
+    SSHProfileImportResult,
     ServiceActionItemResult,
     ServiceActionRequest,
     ServiceActionResult,

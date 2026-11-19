@@ -173,23 +173,29 @@ func TestDeleteSSHProfileLeavesDanglingReferences(t *testing.T) {
 	}
 }
 
-func TestSaveSSHProfileKeepsImportedConnectionFieldsReadOnly(t *testing.T) {
+func TestSaveSSHProfileAllowsEditingImportedConnectionFields(t *testing.T) {
 	service := &ConfigService{
 		path: filepath.Join(t.TempDir(), "config.json"),
 		cfg: normalizeConfig(Config{SSHProfiles: []SSHProfile{{
 			ID: "imported", Name: "旧名称", Origin: "ssh-config", OriginAlias: "prod",
 			Host: "old.example.com", Port: 22, Username: "deploy",
+			OriginUpdatedAt: "2020-01-01T00:00:00Z",
 		}}}),
 	}
 	saved, err := service.SaveSSHProfile(SSHProfile{
-		ID: "imported", Name: "新名称", Origin: "manual", Host: "changed.example.com",
-		Port: 2022, Username: "other", Password: "password",
+		ID: "imported", Name: "新名称", Origin: "manual", OriginAlias: "other",
+		Host: "changed.example.com", Port: 2022, Username: "other", Password: "password",
+		PrivateKeyPath: "/tmp/imported-key", JumpProfileID: "jump-1",
+		OriginUpdatedAt: "should-not-apply",
 	})
 	if err != nil {
-		t.Fatalf("编辑导入配置名称失败: %v", err)
+		t.Fatalf("编辑导入配置的连接字段失败: %v", err)
 	}
-	if saved.Name != "新名称" || saved.Host != "old.example.com" || saved.Port != 22 || saved.Username != "deploy" || saved.Origin != "ssh-config" {
-		t.Fatalf("导入配置的连接字段不应被普通编辑覆盖: %#v", saved)
+	if saved.Name != "新名称" || saved.Host != "changed.example.com" || saved.Port != 2022 || saved.Username != "other" || saved.Password != "password" || saved.PrivateKeyPath != "/tmp/imported-key" || saved.JumpProfileID != "jump-1" {
+		t.Fatalf("导入配置的连接字段应可保存: %#v", saved)
+	}
+	if saved.Origin != "ssh-config" || saved.OriginAlias != "prod" || saved.OriginUpdatedAt != "2020-01-01T00:00:00Z" {
+		t.Fatalf("普通保存不应改变导入来源身份: %#v", saved)
 	}
 }
 
@@ -304,4 +310,160 @@ func TestSaveSSHProfileRejectsJumpCycle(t *testing.T) {
 	}); err == nil {
 		t.Fatal("配置不应把自身设为跳板机")
 	}
+}
+
+func TestImportSSHProfilesFromLocalCreatesAndUpdatesOnce(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	writeSSHConfigTestFile(t, filepath.Join(home, ".ssh", "config"), "Host prod\n    HostName old.example.com\nHost broken\n    HostName broken.example.com\nHost staging\n    HostName staging.example.com\nHost *\n    User ignored\n")
+	stubSSHConfigResolve(t, map[string]string{
+		"prod":    "hostname prod.example.com\nport 2222\nuser deploy\nidentityfile ~/.ssh/prod_key\n",
+		"staging": "hostname staging.example.com\nport 22\nuser stage\n",
+	})
+	manual := SSHProfile{ID: "manual", Name: "staging", Origin: "manual", Host: "manual.example.com", Username: "deploy", Password: "secret"}
+	prod := SSHProfile{
+		ID: "imported-prod", Name: "生产机", Origin: "ssh-config", OriginAlias: "prod",
+		Host: "old.example.com", Port: 22, Username: "deploy", Password: "stale",
+		JumpProfileID: "jump-1", OriginUpdatedAt: "2020-01-01T00:00:00Z",
+	}
+	legacy := SSHProfile{
+		ID: "imported-legacy", Name: "旧机器", Origin: "ssh-config", OriginAlias: "legacy",
+		Host: "legacy.example.com", Port: 22, Username: "deploy",
+	}
+	service := &ConfigService{
+		path: filepath.Join(t.TempDir(), "config.json"),
+		cfg:  normalizeConfig(Config{SSHProfiles: []SSHProfile{manual, prod, legacy}}),
+	}
+	writes := 0
+	service.onChange = func(Config) { writes++ }
+	result, err := NewSSHProfileService(service).ImportSSHProfilesFromLocal()
+	if err != nil {
+		t.Fatalf("批量导入失败: %v", err)
+	}
+	if result.Created != 1 || result.Updated != 1 {
+		t.Fatalf("导入计数错误: created=%d updated=%d", result.Created, result.Updated)
+	}
+	if writes != 1 {
+		t.Fatalf("批量导入应只持久化一次，实际 %d 次", writes)
+	}
+	if len(result.Profiles) != 4 {
+		t.Fatalf("导入后配置数量错误: %#v", result.Profiles)
+	}
+	gotManual := sshProfileByID(t, result.Profiles, "manual")
+	if gotManual.Host != manual.Host || gotManual.Origin != "manual" || gotManual.Password != manual.Password {
+		t.Fatalf("手动配置不应被导入改动: %#v", gotManual)
+	}
+	gotProd := sshProfileByID(t, result.Profiles, "imported-prod")
+	if gotProd.Name != "生产机" || gotProd.JumpProfileID != "jump-1" || gotProd.Host != "prod.example.com" || gotProd.Port != 2222 || gotProd.Username != "deploy" || gotProd.Password != "" || gotProd.PrivateKeyPath != filepath.Join(home, ".ssh", "prod_key") || gotProd.Origin != "ssh-config" || gotProd.OriginAlias != "prod" || gotProd.OriginUpdatedAt == prod.OriginUpdatedAt {
+		t.Fatalf("已导入配置未按本机参数覆盖: %#v", gotProd)
+	}
+	gotLegacy := sshProfileByID(t, result.Profiles, "imported-legacy")
+	if gotLegacy.Host != legacy.Host || gotLegacy.OriginAlias != "legacy" {
+		t.Fatalf("本机已删除的历史配置不应被改动: %#v", gotLegacy)
+	}
+	created := result.Profiles[3]
+	if created.Origin != "ssh-config" || created.OriginAlias != "staging" || created.Name != "staging" || created.Host != "staging.example.com" || created.ID == "" || created.ID == "staging" {
+		t.Fatalf("新别名未建成独立配置: %#v", created)
+	}
+	persisted := service.GetSSHProfiles()
+	if len(persisted) != len(result.Profiles) || persisted[3].ID != created.ID {
+		t.Fatalf("返回列表与已保存配置不一致: %#v", persisted)
+	}
+
+	again, err := service.ImportSSHProfilesFromLocal()
+	if err != nil {
+		t.Fatalf("再次导入失败: %v", err)
+	}
+	if again.Created != 0 || again.Updated != 2 || len(again.Profiles) != 4 || writes != 2 {
+		t.Fatalf("再次导入应只更新已有本机配置: created=%d updated=%d len=%d writes=%d", again.Created, again.Updated, len(again.Profiles), writes)
+	}
+}
+
+func TestImportSSHProfilesFromLocalUpdatesEveryMatchingAlias(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	writeSSHConfigTestFile(t, filepath.Join(home, ".ssh", "config"), "Host prod\n    HostName prod.example.com\n")
+	stubSSHConfigResolve(t, map[string]string{
+		"prod": "hostname prod.example.com\nport 2200\nuser deploy\n",
+	})
+	service := &ConfigService{
+		path: filepath.Join(t.TempDir(), "config.json"),
+		cfg: normalizeConfig(Config{SSHProfiles: []SSHProfile{
+			{ID: "one", Name: "甲", Origin: "ssh-config", OriginAlias: "prod", Host: "old-a.example.com", Username: "deploy"},
+			{ID: "two", Name: "乙", Origin: "ssh-config", OriginAlias: "prod", Host: "old-b.example.com", Username: "deploy", JumpProfileID: "jump-2"},
+			{ID: "manual", Name: "prod", Origin: "manual", OriginAlias: "prod", Host: "manual.example.com", Username: "deploy", Password: "secret"},
+		}}),
+	}
+	result, err := service.ImportSSHProfilesFromLocal()
+	if err != nil {
+		t.Fatalf("批量导入失败: %v", err)
+	}
+	if result.Created != 0 || result.Updated != 2 || len(result.Profiles) != 3 {
+		t.Fatalf("同一别名应更新全部 ssh-config 配置且不新建: %#v", result)
+	}
+	for _, id := range []string{"one", "two"} {
+		profile := sshProfileByID(t, result.Profiles, id)
+		if profile.Host != "prod.example.com" || profile.Port != 2200 {
+			t.Fatalf("%s 未被本机参数覆盖: %#v", id, profile)
+		}
+	}
+	if sshProfileByID(t, result.Profiles, "two").JumpProfileID != "jump-2" || sshProfileByID(t, result.Profiles, "two").Name != "乙" {
+		t.Fatal("更新时应保留名称和跳板机")
+	}
+	manual := sshProfileByID(t, result.Profiles, "manual")
+	if manual.Host != "manual.example.com" || manual.Origin != "manual" {
+		t.Fatalf("手动配置即使别名相同也不应匹配: %#v", manual)
+	}
+}
+
+func TestImportSSHProfilesFromLocalRejectsWhenNothingMappable(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	existing := SSHProfile{ID: "manual", Name: "开发机", Host: "dev.example.com", Username: "deploy", Password: "secret"}
+	service := &ConfigService{
+		path: filepath.Join(t.TempDir(), "config.json"),
+		cfg:  normalizeConfig(Config{SSHProfiles: []SSHProfile{existing}}),
+	}
+	writes := 0
+	service.onChange = func(Config) { writes++ }
+	if _, err := service.ImportSSHProfilesFromLocal(); localizedErrorKey(err) != "errors.sshProfile.nothingToImport" || writes != 0 {
+		t.Fatalf("没有本机配置时应失败且不写盘: %v writes=%d", err, writes)
+	}
+
+	writeSSHConfigTestFile(t, filepath.Join(home, ".ssh", "config"), "Host *\n    User ignored\nHost prod\n    HostName prod.example.com\n")
+	stubSSHConfigResolve(t, map[string]string{})
+	if _, err := service.ImportSSHProfilesFromLocal(); localizedErrorKey(err) != "errors.sshProfile.nothingToImport" || writes != 0 {
+		t.Fatalf("全部别名都无法映射时应失败且不写盘: %v writes=%d", err, writes)
+	}
+	got := service.GetSSHProfiles()
+	if len(got) != 1 || got[0].ID != existing.ID || got[0].Host != existing.Host {
+		t.Fatalf("失败的导入不应改动已有配置: %#v", got)
+	}
+	if _, err := os.Stat(service.path); !os.IsNotExist(err) {
+		t.Fatalf("没有可导入配置时不应创建配置文件: %v", err)
+	}
+}
+
+func stubSSHConfigResolve(t *testing.T, outputs map[string]string) {
+	t.Helper()
+	previous := sshConfigCommand
+	t.Cleanup(func() { sshConfigCommand = previous })
+	sshConfigCommand = func(ctx context.Context, alias string) *exec.Cmd {
+		output, ok := outputs[alias]
+		if !ok {
+			return exec.CommandContext(ctx, "sh", "-c", "exit 1")
+		}
+		return exec.CommandContext(ctx, "printf", "%s", output)
+	}
+}
+
+func sshProfileByID(t *testing.T, profiles []SSHProfile, id string) SSHProfile {
+	t.Helper()
+	for _, profile := range profiles {
+		if profile.ID == id {
+			return profile
+		}
+	}
+	t.Fatalf("未找到 SSH 配置 %s", id)
+	return SSHProfile{}
 }

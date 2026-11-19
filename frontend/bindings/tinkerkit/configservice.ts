@@ -86,6 +86,14 @@ export function ImportSSHConfigProfile(alias: string): $CancellablePromise<$mode
 }
 
 /**
+ * ImportSSHProfilesFromLocal 把本机全部可映射 Host 写入应用配置，只持久化一次。
+ * 仅 origin 为 ssh-config 且 originAlias 相同的配置被覆盖；手动配置和本机已删除的历史条目保持不动。
+ */
+export function ImportSSHProfilesFromLocal(): $CancellablePromise<$models.SSHProfileImportResult> {
+    return $Call.ByID(568799517);
+}
+
+/**
  * IsAutostartEnabled 返回当前平台是否已将 TinkerKit 登记为登录时启动。
  */
 export function IsAutostartEnabled(): $CancellablePromise<boolean> {
@@ -151,8 +159,9 @@ export function SaveNetworkTestSources(sources: $models.NetworkTestSource[] | nu
 }
 
 /**
- * SaveSSHProfile 只保存一个配置，不要求调用方提交完整应用配置。本机导入配置的连接字段
- * 只读；RefreshSSHConfigProfile 是从本机 SSH config 替换快照的唯一入口。
+ * SaveSSHProfile 只保存一个配置，不要求调用方提交完整应用配置。
+ * 本机导入配置的连接字段与手动配置一样可编辑；来源身份仍由导入关系保持，
+ * 从本机覆盖连接字段走 RefreshSSHConfigProfile 或 ImportSSHProfilesFromLocal。
  */
 export function SaveSSHProfile(profile: $models.SSHProfile): $CancellablePromise<$models.SSHProfile> {
     return $Call.ByID(4015880169, profile);

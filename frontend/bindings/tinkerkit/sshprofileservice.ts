@@ -32,6 +32,10 @@ export function ImportSSHConfigProfile(alias: string): $CancellablePromise<$mode
     return $Call.ByID(1868865722, alias);
 }
 
+export function ImportSSHProfilesFromLocal(): $CancellablePromise<$models.SSHProfileImportResult> {
+    return $Call.ByID(1213738536);
+}
+
 export function RefreshSSHConfigProfile(id: string): $CancellablePromise<$models.SSHProfile> {
     return $Call.ByID(3273276388, id);
 }

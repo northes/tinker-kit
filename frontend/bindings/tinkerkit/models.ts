@@ -815,6 +815,16 @@ export interface SSHProfile {
     "originUpdatedAt": string;
 }
 
+/**
+ * SSHProfileImportResult 是一次从本机 SSH config 批量导入的结果。
+ * Created、Updated 只统计本次新建和覆盖的条数；Profiles 是导入后的完整列表。
+ */
+export interface SSHProfileImportResult {
+    "created": number;
+    "updated": number;
+    "profiles": SSHProfile[] | null;
+}
+
 export interface ServiceActionItemResult {
     "id": string;
     "name": string;
