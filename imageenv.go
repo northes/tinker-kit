@@ -50,8 +50,8 @@ func normalizeDockerCommand(raw string) (string, error) {
 	if trimmed == "" {
 		return "", nil
 	}
-	for _, r := range trimmed {
-		// 换行、回车与其它非空白控制字符一律拒绝；制表符等空白只作分隔。
+	for _, r := range raw {
+		// 换行、回车与其它非空白控制字符一律拒绝（包括只含换行的输入）；制表符等空白只作分隔。
 		if unicode.IsControl(r) && !unicode.IsSpace(r) {
 			return "", userError("errors.config.dockerCommandInvalid")
 		}
