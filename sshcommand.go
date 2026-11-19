@@ -192,6 +192,22 @@ func runAuthenticatedSSHCombined(
 }
 
 // runAuthenticatedSSHInput 把本地数据经 stdin 送给远端命令，用于在 SSH 来源上 docker load。
+func runAuthenticatedSSHInputLine(ctx context.Context, source ImageSource, label, language string, src io.Reader, commandLine string) error {
+	client, err := dialAuthenticatedSSH(ctx, source, language)
+	if err != nil {
+		return err
+	}
+	defer client.Close()
+	stderr := &limitedBuffer{limit: maxImageCommandOutput}
+	if err := runSSHCommandWritersLine(ctx, client, label, commandLine, src, io.Discard, stderr); err != nil {
+		if stderr.Len() > 0 {
+			return userErrorCause("errors.image.importFailed", errors.New(strings.TrimSpace(stderr.String())))
+		}
+		return err
+	}
+	return nil
+}
+
 func runAuthenticatedSSHInput(ctx context.Context, source ImageSource, cliPath, language string, src io.Reader, dockerArgs ...string) error {
 	client, err := dialAuthenticatedSSH(ctx, source, language)
 	if err != nil {

@@ -258,16 +258,7 @@ func (s *ImageService) cleanupImageCache() {
 	if s != nil && s.config != nil {
 		config := normalizeConfig(s.config.Get())
 		for _, source := range config.ImageSources {
-			cliPath := ""
-			if source.Kind == "local" {
-				cliPath = config.DockerCLIPath
-				if cliPath == "" {
-					cliPath = "docker"
-				}
-			} else if source.Kind == "ssh" {
-				cliPath = "docker"
-			}
-			current[source.ID] = imageSourceFingerprint(source, cliPath)
+			current[source.ID] = imageSourceFingerprint(source, imageSourceDisplayCLI(source, config))
 		}
 	}
 	s.invalidatePrewarmSources(current)

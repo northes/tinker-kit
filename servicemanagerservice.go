@@ -249,13 +249,6 @@ type ServiceManagerService struct {
 	composeCache map[string]composeCommand
 }
 
-// remoteCommandEnv 是远端登录 shell 解析出的执行环境：登录 PATH 与命令可解析状态。
-type remoteCommandEnv struct {
-	path       string
-	commands   map[string]bool
-	resolvedAt time.Time
-}
-
 func NewServiceManagerService(config *ConfigService) *ServiceManagerService {
 	ctx, cancel := context.WithCancel(context.Background())
 	return &ServiceManagerService{config: config, ctx: ctx, cancel: cancel, monitors: map[string]*logMonitorState{}, remoteEnv: map[string]remoteCommandEnv{}, metricRaw: map[string]serviceMetricRaw{}, metricSnapshots: map[string]ServiceMetricSnapshot{}, composeCache: map[string]composeCommand{}}
@@ -421,7 +414,7 @@ func (s *ServiceManagerService) remoteCommandEnv(ctx context.Context, source Ima
 	}
 	probeCtx, cancel := context.WithTimeout(ctx, remoteEnvProbeTimeout)
 	defer cancel()
-	env, err := probeRemoteCommandEnv(probeCtx, source)
+	env, err := probeRemoteCommandEnv(probeCtx, source, remoteCommandNames, "zh-CN")
 	if err != nil {
 		return remoteCommandEnv{}, false
 	}
@@ -430,68 +423,6 @@ func (s *ServiceManagerService) remoteCommandEnv(ctx context.Context, source Ima
 	s.remoteEnv[key] = env
 	s.remoteEnvMu.Unlock()
 	return env, true
-}
-
-// probeRemoteCommandEnv 通过远端登录 shell 解析 PATH：先取登录 shell 的 PATH，
-// 再补上版本管理器与常见安装目录，最后逐条确认目标命令是否存在。
-func probeRemoteCommandEnv(ctx context.Context, source ImageSource) (remoteCommandEnv, error) {
-	script := buildRemoteEnvProbeScript(remoteCommandNames)
-	var lastErr error
-	for _, sh := range []string{"bash", "zsh", "sh"} {
-		out, err := runAuthenticatedSSH(ctx, source, sh, "zh-CN", "-lc", script)
-		if err != nil {
-			lastErr = err
-			continue
-		}
-		if ctx.Err() != nil {
-			return remoteCommandEnv{}, ctx.Err()
-		}
-		env, err := parseRemoteEnvProbe(string(out))
-		if err != nil {
-			lastErr = err
-			continue
-		}
-		return env, nil
-	}
-	if lastErr == nil {
-		lastErr = errors.New("远端 shell 环境探测失败")
-	}
-	return remoteCommandEnv{}, lastErr
-}
-
-func buildRemoteEnvProbeScript(commands []string) string {
-	var b strings.Builder
-	b.WriteString("p=$PATH\n")
-	b.WriteString(`for d in /usr/local/bin /opt/homebrew/bin "$HOME/.local/bin" "$HOME/.asdf/shims" "$HOME/.local/share/fnm/aliases/default/bin" "$HOME/.volta/bin" "$HOME"/.nvm/versions/node/*/bin; do [ -d "$d" ] && p="$d:$p"; done` + "\n")
-	b.WriteString("PATH=$p; export PATH\n")
-	b.WriteString("printf '__TK_PATH__ %s\\n' \"$PATH\"\n")
-	b.WriteString("for c in")
-	for _, command := range commands {
-		b.WriteString(" " + command)
-	}
-	b.WriteString("; do printf '__TK_CMD__ %s %s\\n' \"$c\" \"$(command -v \"$c\" 2>/dev/null)\"; done\n")
-	return b.String()
-}
-
-func parseRemoteEnvProbe(out string) (remoteCommandEnv, error) {
-	env := remoteCommandEnv{commands: map[string]bool{}}
-	for _, line := range strings.Split(out, "\n") {
-		line = strings.TrimSpace(line)
-		if rest, ok := strings.CutPrefix(line, "__TK_PATH__ "); ok {
-			env.path = strings.TrimSpace(rest)
-			continue
-		}
-		if rest, ok := strings.CutPrefix(line, "__TK_CMD__ "); ok {
-			name, path, _ := strings.Cut(rest, " ")
-			if name != "" {
-				env.commands[name] = strings.TrimSpace(path) != ""
-			}
-		}
-	}
-	if env.path == "" {
-		return remoteCommandEnv{}, errors.New("解析远端 shell 环境失败")
-	}
-	return env, nil
 }
 
 // GetServiceInventory 的 ctx 来自 Wails 绑定调用；前端取消时会中断正在连接的

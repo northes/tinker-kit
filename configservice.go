@@ -139,6 +139,8 @@ type ImageSource struct {
 	Name              string `json:"name"`
 	Kind              string `json:"kind"`
 	SSHProfileID      string `json:"sshProfileID"`
+	// DockerCommand 是 SSH 来源上远端 docker 的可选命令前缀；留空则探测登录 shell PATH。
+	DockerCommand     string `json:"dockerCommand"`
 	SSHHost           string `json:"-"`
 	SSHPort           int    `json:"-"`
 	SSHUsername       string `json:"-"`
@@ -447,6 +449,7 @@ func normalizeImageSource(
 		source.RegistryTransport = ""
 		source.RegistryCAPath = ""
 		source.RegistryCAPEM = ""
+		source.DockerCommand = ""
 		if hasLocal != nil {
 			*hasLocal = true
 		}
@@ -487,6 +490,11 @@ func normalizeImageSource(
 			source.RegistryTransport = ""
 			source.RegistryCAPath = ""
 			source.RegistryCAPEM = ""
+			command, err := normalizeDockerCommand(source.DockerCommand)
+			if err != nil {
+				return ImageSource{}, err
+			}
+			source.DockerCommand = command
 			break
 		}
 		// SSH 来源必须引用 SSHProfiles；未绑定配置的来源不保留。
@@ -529,6 +537,11 @@ func normalizeImageSource(
 		source.RegistryTransport = ""
 		source.RegistryCAPath = ""
 		source.RegistryCAPEM = ""
+		command, err := normalizeDockerCommand(source.DockerCommand)
+		if err != nil {
+			return ImageSource{}, err
+		}
+		source.DockerCommand = command
 	case "registry":
 		if source.ID == localImageSourceID {
 			return ImageSource{}, userError("errors.config.registryImageSourceIDForbiddenLocal")
@@ -584,6 +597,7 @@ func normalizeImageSource(
 		source.SSHPrivateKeyPath = ""
 		source.SSHKeyPassphrase = ""
 		source.SSHProfileID = ""
+		source.DockerCommand = ""
 	default:
 		return ImageSource{}, userErrorParams("errors.config.imageSourceKindUnknown", map[string]any{"kind": source.Kind})
 	}

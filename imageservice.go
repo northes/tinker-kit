@@ -262,6 +262,8 @@ type ImageService struct {
 	watchDeleting         map[string]bool
 	taskMu                sync.Mutex
 	tasks                 map[string]*imageTaskState
+	remoteEnvMu           sync.Mutex
+	remoteEnv             map[string]remoteCommandEnv
 	taskOrder             []string
 	taskRevision          uint64
 	exportWG              sync.WaitGroup
@@ -290,7 +292,7 @@ func (s *ImageService) acquireTaskSlot(ctx context.Context, taskID string) bool 
 
 func NewImageService(config *ConfigService) *ImageService {
 	ctx, cancel := context.WithCancel(context.Background())
-	service := &ImageService{config: config, ctx: ctx, cancel: cancel, cacheCalls: make(map[string]*imageCacheCall), inventory: make(map[string]imageInventory), prewarmGenerations: make(map[string]*prewarmGeneration)}
+	service := &ImageService{config: config, ctx: ctx, cancel: cancel, cacheCalls: make(map[string]*imageCacheCall), inventory: make(map[string]imageInventory), prewarmGenerations: make(map[string]*prewarmGeneration), remoteEnv: make(map[string]remoteCommandEnv)}
 	if config != nil {
 		config.setOnChange(func(Config) { service.cleanupImageCache() })
 	}
@@ -381,10 +383,12 @@ func (s *ImageService) sourceSnapshot(sourceID string) (ImageSource, string, str
 					if err != nil {
 						return ImageSource{}, "", "", err
 					}
-					return resolved, "docker", imageSourceFingerprint(resolved, "docker"), nil
+					displayCLI := imageSourceDisplayCLI(resolved, config)
+					return resolved, displayCLI, imageSourceFingerprint(resolved, displayCLI), nil
 				}
 				if validSSHHost(source.SSHHost) {
-					return source, "docker", imageSourceFingerprint(source, "docker"), nil
+					displayCLI := imageSourceDisplayCLI(source, config)
+					return source, displayCLI, imageSourceFingerprint(source, displayCLI), nil
 				}
 			}
 			if source.Kind == "registry" {
@@ -432,6 +436,7 @@ func imageSourceFingerprint(source ImageSource, cliPath string) string {
 		PrivateKey    string `json:"privateKey"`
 		KeyPassphrase string `json:"keyPassphrase"`
 		Jump          string `json:"jump"`
+		DockerCommand string `json:"dockerCommand,omitempty"`
 		Transport     string `json:"transport,omitempty"`
 		CAPath        string `json:"caPath,omitempty"`
 		CAPEM         string `json:"caPEM,omitempty"`
@@ -450,6 +455,7 @@ func imageSourceFingerprint(source ImageSource, cliPath string) string {
 		value.Host, value.Port, value.Username = source.SSHHost, source.SSHPort, source.SSHUsername
 		value.Password, value.KeyPath = source.SSHPassword, source.SSHPrivateKeyPath
 		value.PrivateKey, value.KeyPassphrase = source.SSHPrivateKey, source.SSHKeyPassphrase
+		value.DockerCommand = source.DockerCommand
 		jumps := make([]string, 0, len(source.SSHJump))
 		for _, jump := range source.SSHJump {
 			jumps = append(jumps, fmt.Sprintf("%s@%s:%d", jump.Username, jump.Host, jump.Port))
@@ -500,10 +506,14 @@ func buildImageCommand(source ImageSource, cliPath string, dockerArgs ...string)
 	if source.Kind == "local" {
 		return cliPath, append([]string(nil), dockerArgs...), nil
 	}
+	return buildImageCommandLine(source, shellJoin(append([]string{cliPath}, dockerArgs...)))
+}
+
+// buildImageCommandLine 用已拼接好的远端命令构造系统 ssh 调用，用于来源自带命令前缀的 SSH 路径。
+func buildImageCommandLine(source ImageSource, remoteCommand string) (string, []string, error) {
 	if source.Kind != "ssh" || !validSSHHost(source.SSHHost) {
 		return "", nil, userError("errors.image.sourceInvalid")
 	}
-	remoteArgs := append([]string{cliPath}, dockerArgs...)
 	sshArgs := []string{"-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=yes"}
 	if source.SSHPort > 0 && source.SSHPort != 22 {
 		sshArgs = append(sshArgs, "-p", strconv.Itoa(source.SSHPort))
@@ -514,7 +524,7 @@ func buildImageCommand(source ImageSource, cliPath string, dockerArgs ...string)
 	if source.SSHPrivateKeyPath != "" {
 		sshArgs = append(sshArgs, "-i", source.SSHPrivateKeyPath)
 	}
-	sshArgs = append(sshArgs, "--", source.SSHHost, shellJoin(remoteArgs))
+	sshArgs = append(sshArgs, "--", source.SSHHost, remoteCommand)
 	return "ssh", sshArgs, nil
 }
 
@@ -533,10 +543,10 @@ func (s *ImageService) runDockerSnapshot(source ImageSource, cliPath string, arg
 }
 
 func (s *ImageService) runDockerSnapshotContext(ctx context.Context, source ImageSource, cliPath string, args []string) ([]byte, error) {
-	if source.Kind == "ssh" && (source.SSHPassword != "" || source.SSHPrivateKey != "" || source.SSHPrivateKeyPath != "") {
-		return runAuthenticatedSSH(ctx, source, cliPath, s.sshLanguage(), args...)
+	if source.Kind == "ssh" && hasSSHCredentials(source) {
+		return s.runImageSSH(ctx, source, args...)
 	}
-	name, commandArgs, err := buildImageCommand(source, cliPath, args...)
+	name, commandArgs, err := buildImageInvocation(source, cliPath, args)
 	if err != nil {
 		return nil, err
 	}
@@ -595,9 +605,9 @@ func (s *ImageService) TestImageSourceConnection(source ImageSource) error {
 		}
 		normalized = resolved
 	}
-	cliPath := config.DockerCLIPath
+	cliPath := imageSourceDisplayCLI(normalized, config)
 	if cliPath == "" {
-		cliPath = "docker"
+		cliPath = dockerCommandName
 	}
 	if _, err := s.probeSourceConnection(s.serviceContext(), normalized, cliPath); err != nil {
 		return err
@@ -633,12 +643,35 @@ func (s *ImageService) probeSourceConnection(ctx context.Context, source ImageSo
 	}
 	itemCtx, cancel := context.WithTimeout(ctx, imageCommandTimeout)
 	defer cancel()
-	command, args := cliPath, []string{"--version"}
-	if source.Kind == "ssh" {
-		// 合并到一次 SSH 调用，避免为架构探测额外建立远程连接。
-		command, args = "sh", []string{"-c", "uname -m && exec " + shellQuote(cliPath) + " --version"}
+	var output []byte
+	var err error
+	if source.Kind == "ssh" && hasSSHCredentials(source) {
+		line, label, perr := s.sshArchitectureProbeCommand(itemCtx, source)
+		if perr != nil {
+			status.Error = perr.Error()
+			return status, perr
+		}
+		output, err = runAuthenticatedSSHLine(itemCtx, source, label, s.sshLanguage(), line)
+	} else if source.Kind == "ssh" {
+		// 没有保存凭据时走系统 ssh：这条路径没有登录 PATH 探测，只按来源命令前缀拼接。
+		script, _, perr := imageSSHSystemProbeCommand(source)
+		if perr != nil {
+			status.Error = perr.Error()
+			return status, perr
+		}
+		name, commandArgs, buildErr := buildImageCommand(source, "sh", "-c", script)
+		if buildErr != nil {
+			status.Error = buildErr.Error()
+			return status, buildErr
+		}
+		runner := s.runner
+		if runner == nil {
+			runner = runImageCommand
+		}
+		output, err = runner(itemCtx, name, commandArgs...)
+	} else {
+		output, err = s.runDockerSnapshotContext(itemCtx, source, cliPath, []string{"--version"})
 	}
-	output, err := s.runDockerSnapshotContext(itemCtx, source, command, args)
 	if err != nil {
 		status.Error = err.Error()
 		return status, err

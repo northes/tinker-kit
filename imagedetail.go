@@ -184,15 +184,19 @@ func (s *ImageService) inspectDockerIndex(ctx context.Context, source ImageSourc
 	stderr := &limitedBuffer{limit: maxImageCommandOutput}
 	args := []string{"system", "dial-stdio"}
 	var err error
-	if source.Kind == "ssh" && (source.SSHPassword != "" || source.SSHPrivateKey != "" || source.SSHPrivateKeyPath != "") {
+	if source.Kind == "ssh" && hasSSHCredentials(source) {
+		line, label, lineErr := s.imageSSHCommandLine(ctx, source, args)
+		if lineErr != nil {
+			return item, lineErr
+		}
 		client, dialErr := dialAuthenticatedSSH(ctx, source, s.sshLanguage())
 		if dialErr != nil {
 			return item, dialErr
 		}
 		defer client.Close()
-		err = runSSHCommandToWriters(ctx, client, cliPath, strings.NewReader(request), stdout, stderr, args...)
+		err = runSSHCommandWritersLine(ctx, client, label, line, strings.NewReader(request), stdout, stderr)
 	} else {
-		name, commandArgs, buildErr := buildImageCommand(source, cliPath, args...)
+		name, commandArgs, buildErr := buildImageInvocation(source, cliPath, args)
 		if buildErr != nil {
 			return item, buildErr
 		}

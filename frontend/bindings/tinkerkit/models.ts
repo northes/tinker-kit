@@ -331,6 +331,11 @@ export interface ImageSource {
     "name": string;
     "kind": string;
     "sshProfileID": string;
+
+    /**
+     * DockerCommand 是 SSH 来源上远端 docker 的可选命令前缀；留空则探测登录 shell PATH。
+     */
+    "dockerCommand": string;
     "registryURL": string;
     "registryUsername": string;
     "registryPassword": string;

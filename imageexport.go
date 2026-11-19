@@ -707,10 +707,10 @@ func (s *ImageService) exportDockerTar(ctx context.Context, taskID string, sourc
 }
 
 func (s *ImageService) streamDockerCommand(ctx context.Context, source ImageSource, cliPath string, args []string, dst io.Writer) error {
-	if source.Kind == "ssh" && (source.SSHPassword != "" || source.SSHPrivateKey != "" || source.SSHPrivateKeyPath != "") {
-		return runAuthenticatedSSHStream(ctx, source, cliPath, s.sshLanguage(), dst, args...)
+	if source.Kind == "ssh" && hasSSHCredentials(source) {
+		return s.runImageSSHStream(ctx, source, dst, args...)
 	}
-	name, commandArgs, err := buildImageCommand(source, cliPath, args...)
+	name, commandArgs, err := buildImageInvocation(source, cliPath, args)
 	if err != nil {
 		return err
 	}
@@ -1059,10 +1059,10 @@ func (s *ImageService) streamDockerPull(ctx context.Context, source ImageSource,
 		args = append(args, "--platform", platform)
 	}
 	args = append(args, imageRef)
-	if source.Kind == "ssh" && (source.SSHPassword != "" || source.SSHPrivateKey != "" || source.SSHPrivateKeyPath != "") {
-		return runAuthenticatedSSHCombined(ctx, source, cliPath, s.sshLanguage(), writer, args...)
+	if source.Kind == "ssh" && hasSSHCredentials(source) {
+		return s.runImageSSHStream(ctx, source, writer, args...)
 	}
-	name, commandArgs, err := buildImageCommand(source, cliPath, args...)
+	name, commandArgs, err := buildImageInvocation(source, cliPath, args)
 	if err != nil {
 		return err
 	}
@@ -1324,10 +1324,10 @@ func (r *progressReader) Read(p []byte) (int, error) {
 // streamDockerLoad 把本地 tar 经 stdin 交给 docker image load（本地或 SSH 远端）。
 func (s *ImageService) streamDockerLoad(ctx context.Context, source ImageSource, cliPath string, src io.Reader) error {
 	args := []string{"image", "load"}
-	if source.Kind == "ssh" && (source.SSHPassword != "" || source.SSHPrivateKey != "" || source.SSHPrivateKeyPath != "") {
-		return runAuthenticatedSSHInput(ctx, source, cliPath, s.sshLanguage(), src, args...)
+	if source.Kind == "ssh" && hasSSHCredentials(source) {
+		return s.runImageSSHInput(ctx, source, src, args...)
 	}
-	name, commandArgs, err := buildImageCommand(source, cliPath, args...)
+	name, commandArgs, err := buildImageInvocation(source, cliPath, args)
 	if err != nil {
 		return err
 	}
