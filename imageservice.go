@@ -635,10 +635,12 @@ func (s *ImageService) testImageSourceConnectionSteps(source ImageSource) ([]Con
 	steps := make([]ConnectionTestStep, 0, len(probes))
 	for index, probe := range probes {
 		itemCtx, cancel := context.WithTimeout(s.serviceContext(), imageCommandTimeout)
-		output, probeErr := s.runSourceProbe(itemCtx, normalized, cliPath, probe.args)
+		output, stderrText, probeErr := s.runSourceProbe(itemCtx, normalized, cliPath, probe.args)
 		cancel()
 		if probeErr == nil {
-			_, _, probeErr = splitImageProbeOutput(normalized, output)
+			if _, _, parsed := splitImageProbeOutput(normalized, output); !parsed {
+				probeErr = imageProbeError(output, stderrText)
+			}
 		}
 		if probeErr != nil {
 			steps = append(steps, ConnectionTestStep{Key: probe.key, Error: probeErr.Error()})
@@ -722,13 +724,14 @@ func (s *ImageService) probeSourceConnection(ctx context.Context, source ImageSo
 	itemCtx, cancel := context.WithTimeout(ctx, imageCommandTimeout)
 	defer cancel()
 	// 一次命令同时拿架构与 daemon 版本：只问客户端版本时，socket 权限问题会被掩盖。
-	output, err := s.runSourceProbe(itemCtx, source, cliPath, imageDaemonProbeArgs)
+	output, stderrText, err := s.runSourceProbe(itemCtx, source, cliPath, imageDaemonProbeArgs)
 	if err != nil {
 		status.Error = err.Error()
 		return status, err
 	}
-	architecture, version, err := splitImageProbeOutput(source, output)
-	if err != nil {
+	architecture, version, parsed := splitImageProbeOutput(source, output)
+	if !parsed {
+		err := imageProbeError(output, stderrText)
 		status.Error = err.Error()
 		return status, err
 	}
@@ -740,49 +743,65 @@ func (s *ImageService) probeSourceConnection(ctx context.Context, source ImageSo
 
 // runSourceProbe 执行一次探测命令：有凭据的 SSH 来源走 Go 客户端，没凭据的走系统 ssh，
 // 本机来源直接跑 CLI。SSH 探测总在命令前拼 uname -m，输出首行是架构。
-func (s *ImageService) runSourceProbe(ctx context.Context, source ImageSource, cliPath string, dockerArgs []string) ([]byte, error) {
+// stderr 单独返回，供输出不足以解析时展示原始线索。
+func (s *ImageService) runSourceProbe(ctx context.Context, source ImageSource, cliPath string, dockerArgs []string) ([]byte, string, error) {
 	if source.Kind != "ssh" {
-		return s.runDockerSnapshotContext(ctx, source, cliPath, dockerArgs)
+		out, err := s.runDockerSnapshotContext(ctx, source, cliPath, dockerArgs)
+		return out, "", err
 	}
 	if hasSSHCredentials(source) {
 		line, label, err := s.sshArchitectureProbeCommand(ctx, source, dockerArgs)
 		if err != nil {
-			return nil, err
+			return nil, "", err
 		}
-		return runAuthenticatedSSHLine(ctx, source, label, s.sshLanguage(), line)
+		out, stderrOut, captureErr := runAuthenticatedSSHLineCapture(ctx, source, label, s.sshLanguage(), line)
+		return out, string(stderrOut), captureErr
 	}
 	// 没有保存凭据时走系统 ssh：这条路径没有登录 PATH 探测，只按来源命令前缀拼接。
 	script, _, err := imageSSHSystemProbeCommand(source, dockerArgs)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	name, commandArgs, err := buildImageCommand(source, "sh", "-c", script)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	runner := s.runner
 	if runner == nil {
 		runner = runImageCommand
 	}
-	return runner(ctx, name, commandArgs...)
+	out, err := runner(ctx, name, commandArgs...)
+	return out, "", err
 }
 
 // splitImageProbeOutput 拆分探测输出：SSH 首行是 uname -m，其余部分是 docker 输出；
-// 本机来源没有架构行，整体就是 docker 输出。输出不足时直接把远端原始输出当错误，
-// 不再换成自定义提示，免得掩盖真实原因。
-func splitImageProbeOutput(source ImageSource, output []byte) (architecture string, version string, err error) {
+// 本机来源没有架构行，整体就是 docker 输出。合并后为空时返回 false，由调用方给出原始输出。
+func splitImageProbeOutput(source ImageSource, output []byte) (architecture string, version string, ok bool) {
 	trimmed := strings.TrimSpace(string(output))
 	if source.Kind != "ssh" {
-		return "", trimmed, nil
+		return "", trimmed, trimmed != ""
 	}
-	architecture, remainder, ok := strings.Cut(trimmed, "\n")
-	if !ok || strings.TrimSpace(remainder) == "" {
-		if trimmed != "" {
-			return "", "", errors.New(trimmed)
-		}
-		return "", "", userError("errors.image.sshArchitectureProbeInvalid")
+	architecture, remainder, found := strings.Cut(trimmed, "\n")
+	if !found || strings.TrimSpace(remainder) == "" {
+		return "", "", false
 	}
-	return normalizeImageArchitecture(architecture), strings.TrimSpace(remainder), nil
+	return normalizeImageArchitecture(architecture), strings.TrimSpace(remainder), true
+}
+
+// imageProbeError 在输出不足以解析时给出远端原始内容（stdout 与 stderr 各一行），
+// 避免用自定义提示掩盖真实失败原因。
+func imageProbeError(stdout []byte, stderr string) error {
+	parts := make([]string, 0, 2)
+	if text := strings.TrimSpace(string(stdout)); text != "" {
+		parts = append(parts, text)
+	}
+	if text := strings.TrimSpace(stderr); text != "" {
+		parts = append(parts, text)
+	}
+	if len(parts) == 0 {
+		return userError("errors.image.sshArchitectureProbeInvalid")
+	}
+	return errors.New(strings.Join(parts, "\n"))
 }
 
 func (s *ImageService) pingRegistry(ctx context.Context, source ImageSource) error {

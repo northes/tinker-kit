@@ -229,6 +229,20 @@ func runSSHCommand(ctx context.Context, client *ssh.Client, cliPath string, dock
 }
 
 // runSSHCommandLine 执行一条已由调用方安全拼接的远程命令；label 只用于错误信息。
+// runAuthenticatedSSHLineCapture 执行命令行并同时返回 stdout 与 stderr。
+// 探测类命令即使退出码为 0 也可能只把线索写在 stderr，调用方需要保留它。
+func runAuthenticatedSSHLineCapture(ctx context.Context, source ImageSource, label, language, commandLine string) (stdout, stderr []byte, err error) {
+	client, dialErr := dialAuthenticatedSSH(ctx, source, language)
+	if dialErr != nil {
+		return nil, nil, dialErr
+	}
+	defer client.Close()
+	out := &limitedBuffer{limit: maxImageCommandOutput}
+	errOut := &limitedBuffer{limit: maxImageCommandOutput}
+	err = runSSHCommandWritersLine(ctx, client, label, commandLine, nil, out, errOut)
+	return out.Bytes(), errOut.Bytes(), err
+}
+
 func runSSHCommandLine(ctx context.Context, client *ssh.Client, label, commandLine string) ([]byte, error) {
 	session, err := client.NewSession()
 	if err != nil {

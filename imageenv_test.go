@@ -285,3 +285,16 @@ func TestTestImageSourceConnectionStepsFailsValidationBeforeSSH(t *testing.T) {
 		t.Fatal("校验失败时不应执行任何命令")
 	}
 }
+
+func TestImageProbeErrorKeepsRawStdoutAndStderr(t *testing.T) {
+	if _, _, parsed := splitImageProbeOutput(ImageSource{Kind: "ssh"}, []byte("x86_64\n")); parsed {
+		t.Fatal("只有架构行时不应视为解析成功")
+	}
+	err := imageProbeError([]byte("x86_64\n"), "flag provided but not defined: -format")
+	if got := err.Error(); got != "x86_64\nflag provided but not defined: -format" {
+		t.Fatalf("原始输出应原样保留: %q", got)
+	}
+	if empty := imageProbeError(nil, ""); localizedErrorKey(empty) != "errors.image.sshArchitectureProbeInvalid" {
+		t.Fatalf("完全无输出时才用提示文案: %v", empty)
+	}
+}
