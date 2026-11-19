@@ -896,7 +896,6 @@
     "registryTransportSkipVerify": "Skip verification",
     "registryTransportCustomCA": "Custom CA",
     "registryTransportPlaintext": "Plain HTTP",
-    "registryTransportHTTP": "HTTP",
     "registryTransportPlaintextRisk": "Plain HTTP is not encrypted. The username and password are sent in cleartext with Basic Auth.",
     "registryTransportSkipVerifyRisk": "Certificate chain and hostname checks are skipped, so the server identity cannot be verified.",
     "registryTransportSchemeHTTP": "Plain HTTP requires an http:// address.",

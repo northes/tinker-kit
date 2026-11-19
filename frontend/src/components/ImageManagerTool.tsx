@@ -80,7 +80,6 @@ import {
   MANAGE_SOURCES_VALUE,
   renameFormHasInput,
   resolveContentViewState,
-  registryTransportMarkKey,
   resolveSources,
   resolveSourceViewState,
   shortId,
@@ -190,21 +189,6 @@ function registryTransportSchemeMismatch(
   const expected = transport === 'plaintext' ? 'http:' : 'https:';
   if (parsed.protocol === expected) return null;
   return transport === 'plaintext' ? 'http' : 'https';
-}
-
-function RegistryTransportBadge({ source }: { source: ImageSource }) {
-  const { t } = useTranslation();
-  const mark = registryTransportMarkKey(source);
-  if (!mark) return null;
-  const labelKey =
-    mark === 'http'
-      ? 'imageManagerTool.registryTransportHTTP'
-      : mark === 'skipVerify'
-        ? REGISTRY_TRANSPORT_LABELS.tlsSkipVerify
-        : REGISTRY_TRANSPORT_LABELS.tlsCustomCA;
-  return (
-    <Badge variant={mark === 'customCA' ? 'secondary' : 'warning'}>{t(labelKey)}</Badge>
-  );
 }
 
 function RegistryTransportFields({
@@ -1306,10 +1290,7 @@ export default function ImageManagerTool({
                     <SelectGroup>
                       {sources.map((item) => (
                         <SelectItem key={item.id} value={item.id}>
-                          <span className="flex items-center gap-2">
-                            {sourceDisplayName(item, t, profiles)}
-                            <RegistryTransportBadge source={item} />
-                          </span>
+                          {sourceDisplayName(item, t, profiles)}
                         </SelectItem>
                       ))}
                       {sources.length > 0 ? <SelectSeparator /> : null}
@@ -2280,7 +2261,6 @@ export default function ImageManagerTool({
                   ? t('imageManagerTool.kindRegistry')
                   : t('imageManagerTool.kindSsh')}
               </span>
-              <RegistryTransportBadge source={item} />
               {sourceMissingSSHProfile(item, profiles) ? (
                 <Badge variant="destructive">{t('imageManagerTool.sshProfileMissing')}</Badge>
               ) : null}

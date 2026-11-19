@@ -205,23 +205,6 @@ export function sourceTabHostName(source: ImageSource, profiles: SSHProfile[]): 
   return null;
 }
 
-export function registryTransportMarkKey(source: {
-  kind?: string;
-  registryTransport?: string;
-}): 'http' | 'skipVerify' | 'customCA' | null {
-  if (source.kind !== 'registry') return null;
-  switch (source.registryTransport?.trim()) {
-    case 'plaintext':
-      return 'http';
-    case 'tlsSkipVerify':
-      return 'skipVerify';
-    case 'tlsCustomCA':
-      return 'customCA';
-    default:
-      return null;
-  }
-}
-
 export function bindingSource(source: ManagedImageSource): ImageSource {
   const ssh = source.kind === 'ssh';
   const registry = source.kind === 'registry';

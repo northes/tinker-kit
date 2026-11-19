@@ -896,7 +896,6 @@
     "registryTransportSkipVerify": "跳过校验",
     "registryTransportCustomCA": "自定义 CA",
     "registryTransportPlaintext": "明文 HTTP",
-    "registryTransportHTTP": "HTTP",
     "registryTransportPlaintextRisk": "明文 HTTP 不加密。用户名和密码会以 Basic Auth 在网络上明文传输。",
     "registryTransportSkipVerifyRisk": "已跳过证书链和主机名校验，无法确认对方身份。",
     "registryTransportSchemeHTTP": "明文 HTTP 只能搭配 http:// 地址。",
