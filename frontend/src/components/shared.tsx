@@ -21,7 +21,14 @@ import {
 } from './ui/dropdown-menu';
 import { Input } from './ui/input';
 import { Tabs, TabsList, TabsTrigger } from './ui/tabs';
-import { BracketsCurly, CaretDown, MagnifyingGlass, XCircle } from '@phosphor-icons/react';
+import {
+  ArrowsClockwise,
+  BracketsCurly,
+  CaretDown,
+  MagnifyingGlass,
+  X,
+  XCircle,
+} from '@phosphor-icons/react';
 import { useTranslation } from 'react-i18next';
 import { cn } from '../lib/utils';
 export { parseJsonLoose, stripJsonComments, stripTrailingCommas } from '../lib/json-parse';
@@ -358,12 +365,15 @@ export function ToolLayoutFooter({ children }: { children?: ReactNode }) {
 
 type ToolStateShellProps = {
   icon?: ReactNode;
-  title: ReactNode;
+  title?: ReactNode;
   hint?: ReactNode;
   detail?: string;
   action?: ReactNode;
   className?: string;
 };
+
+// 居中状态块主图标与 Spinner 默认 size-4（16px）对齐。
+const toolStateStatusIconClass = 'size-4 text-muted-foreground';
 
 // 所有远程工具的状态块共用一套排版：图标/加载指示、标题、说明、操作。
 function ToolStateShell({
@@ -379,7 +389,7 @@ function ToolStateShell({
       className={`flex min-h-0 flex-1 flex-col items-center justify-center gap-2 p-6 text-center ${className}`}
     >
       {icon}
-      <div className="text-sm font-medium text-foreground">{title}</div>
+      {title ? <div className="text-sm font-medium text-foreground">{title}</div> : null}
       {hint ? <div className="max-w-md text-xs leading-5 text-muted-foreground">{hint}</div> : null}
       {detail ? (
         <div className="max-w-full truncate font-mono text-[11px] text-muted-foreground/70">
@@ -409,13 +419,13 @@ export function ToolLoadingState({
   return (
     <ToolStateShell
       className={className}
-      icon={<Spinner />}
-      title={label ?? t('common.loading')}
+      icon={<Spinner className={toolStateStatusIconClass} />}
+      hint={label ?? t('common.loading')}
       detail={detail}
       action={
         onCancel ? (
-          <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={onCancel}>
-            <XCircle weight="regular" data-icon="inline-start" size={14} />
+          <Button variant="secondary" size="sm" onClick={onCancel}>
+            <X weight="regular" data-icon="inline-start" size={14} />
             {cancelLabel ?? t('common.cancel')}
           </Button>
         ) : undefined
@@ -424,15 +434,13 @@ export function ToolLoadingState({
   );
 }
 
-// 已取消：保留重试入口，不把取消当成错误。
+// 已取消：保留重试入口，不把取消当成错误；不再用标题重复「已取消」，只留说明和重试。
 export function ToolCanceledState({
-  title,
   hint,
   retryLabel,
   onRetry,
   className,
 }: {
-  title?: ReactNode;
   hint?: ReactNode;
   retryLabel?: string;
   onRetry?: () => void;
@@ -442,12 +450,12 @@ export function ToolCanceledState({
   return (
     <ToolStateShell
       className={className}
-      icon={<XCircle size={24} weight="regular" className="text-muted-foreground" />}
-      title={title ?? t('common.canceled')}
+      icon={<XCircle weight="regular" className={toolStateStatusIconClass} />}
       hint={hint ?? t('common.canceledHint')}
       action={
         onRetry ? (
-          <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={onRetry}>
+          <Button variant="secondary" size="sm" onClick={onRetry}>
+            <ArrowsClockwise weight="regular" data-icon="inline-start" size={14} />
             {retryLabel ?? t('common.retry')}
           </Button>
         ) : undefined
@@ -476,7 +484,7 @@ export function ToolEmptyState({
     <ToolStateShell
       className={className}
       icon={
-        Icon ? <Icon size={28} weight="regular" className="text-muted-foreground" /> : undefined
+        Icon ? <Icon weight="regular" className={toolStateStatusIconClass} /> : undefined
       }
       title={title}
       hint={hint}
@@ -567,12 +575,14 @@ export const toolActionButtonClass = 'h-[30px] flex-none px-[11px] text-[11px]';
 
 // header 与 footer 共用的动作按钮：图标 14px regular 置于文字前，统一「图标 + 文字」。
 // `active` 用于可切换的视图入口，激活时切到 shadcn secondary 实心样式。
+// `solid` 用于刷新/取消等次级实心按钮，与居中加载态的 Button secondary 一致。
 export function ToolActionButton({
   label,
   icon: IconComponent,
   leading,
   variant = 'secondary',
   active = false,
+  solid = false,
   disabled,
   onPress,
   className = '',
@@ -583,6 +593,7 @@ export function ToolActionButton({
   leading?: ReactNode;
   variant?: ToolActionVariant;
   active?: boolean;
+  solid?: boolean;
   disabled?: boolean;
   onPress?: () => void;
   className?: string;
@@ -590,7 +601,7 @@ export function ToolActionButton({
 }) {
   return (
     <Button
-      variant={active ? 'secondary' : buttonVariant[variant]}
+      variant={active || solid ? 'secondary' : buttonVariant[variant]}
       disabled={disabled}
       onClick={onPress}
       className={`${toolActionButtonClass}${className ? ` ${className}` : ''}`}

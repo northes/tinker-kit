@@ -1700,7 +1700,6 @@
     "loading": "加载中",
     "cancel": "取消",
     "retry": "重试",
-    "canceled": "已取消",
     "canceledHint": "连接已中断，可重新加载当前内容。",
     "save": "保存",
     "done": "完成",

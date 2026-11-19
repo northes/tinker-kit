@@ -1700,7 +1700,6 @@
     "loading": "Loading",
     "cancel": "Cancel",
     "retry": "Retry",
-    "canceled": "Canceled",
     "canceledHint": "The connection stopped; reload to try again.",
     "save": "Save",
     "done": "Done",
