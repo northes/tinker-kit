@@ -33,6 +33,7 @@ export {
 export type {
     CompletionOption,
     Config,
+    ConnectionTestStep,
     DockerComposeGroup,
     DockerContainer,
     DockerContainerDetail,

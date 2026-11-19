@@ -52,6 +52,18 @@ type DockerStatus struct {
 	Architecture      string `json:"architecture"`
 }
 
+// ConnectionTestStep 是「测试连接」面板的一步结果。Key 对应 locale 中的步骤名，
+// Error 为空表示该步通过；非空时是后端错误原文（本地化错误是 JSON 载荷，由前端按语言渲染）。
+type ConnectionTestStep struct {
+	Key   string `json:"key"`
+	Error string `json:"error"`
+}
+
+const (
+	imageConnectionStepConnect = "connect"
+	imageConnectionStepDaemon  = "daemon"
+)
+
 type DockerImage struct {
 	ID         string             `json:"id"`
 	Name       string             `json:"name"`
@@ -575,17 +587,72 @@ func (s *ImageService) GetDockerStatus(sourceID string) DockerStatus {
 	return s.sourceConnectionStatus(source, cliPath)
 }
 
-// TestImageSourceConnection 使用未持久化的来源配置测试 SSH 或 Registry 连接。
+// TestImageSourceConnection 使用未持久化的来源配置测试 SSH 或 Registry 连接，
+// 任一步失败即返回该步的原始错误。
 func (s *ImageService) TestImageSourceConnection(source ImageSource) error {
+	_, err := s.testImageSourceConnectionSteps(source)
+	return err
+}
+
+// TestImageSourceConnectionSteps 与 TestImageSourceConnection 同源，但逐步返回结果，
+// 供编辑弹窗内的分步面板展示：SSH 为「连接 / daemon 探测」两步，Registry 只有「连接」。
+func (s *ImageService) TestImageSourceConnectionSteps(source ImageSource) []ConnectionTestStep {
+	steps, _ := s.testImageSourceConnectionSteps(source)
+	return steps
+}
+
+// testImageSourceConnectionSteps 按执行顺序返回已尝试的步骤；失败即停，返回值和错误同时给出。
+func (s *ImageService) testImageSourceConnectionSteps(source ImageSource) ([]ConnectionTestStep, error) {
+	failed := func(err error) ([]ConnectionTestStep, error) {
+		return []ConnectionTestStep{{Key: imageConnectionStepConnect, Error: err.Error()}}, err
+	}
+	normalized, cliPath, err := s.prepareConnectionTest(source)
+	if err != nil {
+		// 校验失败发生在任何连接之前，因此只完成「连接」一步。
+		return failed(err)
+	}
+	if normalized.Kind == "registry" {
+		itemCtx, cancel := context.WithTimeout(s.serviceContext(), imageCommandTimeout)
+		defer cancel()
+		if err := s.pingRegistry(itemCtx, normalized); err != nil {
+			return failed(err)
+		}
+		return []ConnectionTestStep{{Key: imageConnectionStepConnect}}, nil
+	}
+	probes := []struct {
+		key  string
+		args []string
+	}{
+		{imageConnectionStepConnect, imageConnectProbeArgs},
+		{imageConnectionStepDaemon, imageDaemonProbeArgs},
+	}
+	steps := make([]ConnectionTestStep, 0, len(probes))
+	for _, probe := range probes {
+		itemCtx, cancel := context.WithTimeout(s.serviceContext(), imageCommandTimeout)
+		output, probeErr := s.runSourceProbe(itemCtx, normalized, cliPath, probe.args)
+		cancel()
+		if probeErr == nil {
+			_, _, probeErr = splitImageProbeOutput(normalized, output)
+		}
+		if probeErr != nil {
+			return append(steps, ConnectionTestStep{Key: probe.key, Error: probeErr.Error()}), probeErr
+		}
+		steps = append(steps, ConnectionTestStep{Key: probe.key})
+	}
+	return steps, nil
+}
+
+// prepareConnectionTest 在发起任何连接前完成校验、SSH 配置解析与 CLI 解析。
+func (s *ImageService) prepareConnectionTest(source ImageSource) (ImageSource, string, error) {
 	if s == nil || s.config == nil {
-		return userError("errors.common.configNotInitialized")
+		return ImageSource{}, "", userError("errors.common.configNotInitialized")
 	}
 	normalized, err := s.config.ValidateImageSource(source)
 	if err != nil {
-		return err
+		return ImageSource{}, "", err
 	}
 	if normalized.Kind != "ssh" && normalized.Kind != "registry" {
-		return userError("errors.image.testUnsupportedSource")
+		return ImageSource{}, "", userError("errors.image.testUnsupportedSource")
 	}
 	config := normalizeConfig(s.config.Get())
 	if normalized.Kind == "ssh" && normalized.SSHProfileID != "" {
@@ -597,11 +664,11 @@ func (s *ImageService) TestImageSourceConnection(source ImageSource) error {
 			}
 		}
 		if profile.ID == "" {
-			return userError("errors.image.sshProfileMissing")
+			return ImageSource{}, "", userError("errors.image.sshProfileMissing")
 		}
 		resolved, err := imageSourceFromSSHProfile(normalized, profile, config.SSHProfiles)
 		if err != nil {
-			return err
+			return ImageSource{}, "", err
 		}
 		normalized = resolved
 	}
@@ -609,17 +676,14 @@ func (s *ImageService) TestImageSourceConnection(source ImageSource) error {
 	if cliPath == "" {
 		cliPath = dockerCommandName
 	}
-	if _, err := s.probeSourceConnection(s.serviceContext(), normalized, cliPath); err != nil {
-		return err
-	}
-	return nil
+	return normalized, cliPath, nil
 }
 
 func (s *ImageService) sourceConnectionStatus(source ImageSource, cliPath string) DockerStatus {
 	return s.sourceConnectionStatusContext(s.serviceContext(), source, cliPath)
 }
 
-// sourceConnectionStatusContext 从外部 ctx 派生连接探测（registry ping 与 CLI --version），
+// sourceConnectionStatusContext 从外部 ctx 派生连接探测（registry ping 与 daemon 探测），
 // 保证所有 CLI/registry 状态操作随调用方 ctx（watch 循环/shutdown）取消。
 func (s *ImageService) sourceConnectionStatusContext(ctx context.Context, source ImageSource, cliPath string) DockerStatus {
 	status, _ := s.probeSourceConnection(ctx, source, cliPath)
@@ -643,52 +707,64 @@ func (s *ImageService) probeSourceConnection(ctx context.Context, source ImageSo
 	}
 	itemCtx, cancel := context.WithTimeout(ctx, imageCommandTimeout)
 	defer cancel()
-	var output []byte
-	var err error
-	if source.Kind == "ssh" && hasSSHCredentials(source) {
-		line, label, perr := s.sshArchitectureProbeCommand(itemCtx, source)
-		if perr != nil {
-			status.Error = perr.Error()
-			return status, perr
-		}
-		output, err = runAuthenticatedSSHLine(itemCtx, source, label, s.sshLanguage(), line)
-	} else if source.Kind == "ssh" {
-		// 没有保存凭据时走系统 ssh：这条路径没有登录 PATH 探测，只按来源命令前缀拼接。
-		script, _, perr := imageSSHSystemProbeCommand(source)
-		if perr != nil {
-			status.Error = perr.Error()
-			return status, perr
-		}
-		name, commandArgs, buildErr := buildImageCommand(source, "sh", "-c", script)
-		if buildErr != nil {
-			status.Error = buildErr.Error()
-			return status, buildErr
-		}
-		runner := s.runner
-		if runner == nil {
-			runner = runImageCommand
-		}
-		output, err = runner(itemCtx, name, commandArgs...)
-	} else {
-		output, err = s.runDockerSnapshotContext(itemCtx, source, cliPath, []string{"--version"})
-	}
+	// 一次命令同时拿架构与 daemon 版本：只问客户端版本时，socket 权限问题会被掩盖。
+	output, err := s.runSourceProbe(itemCtx, source, cliPath, imageDaemonProbeArgs)
 	if err != nil {
 		status.Error = err.Error()
 		return status, err
 	}
-	version := strings.TrimSpace(string(output))
-	if source.Kind == "ssh" {
-		architecture, remainder, ok := strings.Cut(version, "\n")
-		if !ok || strings.TrimSpace(remainder) == "" {
-			err := userError("errors.image.sshArchitectureProbeInvalid")
-			status.Error = err.Error()
-			return status, err
-		}
-		status.Architecture, version = normalizeImageArchitecture(architecture), strings.TrimSpace(remainder)
+	architecture, version, err := splitImageProbeOutput(source, output)
+	if err != nil {
+		status.Error = err.Error()
+		return status, err
 	}
+	status.Architecture = architecture
 	status.Available = true
 	status.Version = version
 	return status, nil
+}
+
+// runSourceProbe 执行一次探测命令：有凭据的 SSH 来源走 Go 客户端，没凭据的走系统 ssh，
+// 本机来源直接跑 CLI。SSH 探测总在命令前拼 uname -m，输出首行是架构。
+func (s *ImageService) runSourceProbe(ctx context.Context, source ImageSource, cliPath string, dockerArgs []string) ([]byte, error) {
+	if source.Kind != "ssh" {
+		return s.runDockerSnapshotContext(ctx, source, cliPath, dockerArgs)
+	}
+	if hasSSHCredentials(source) {
+		line, label, err := s.sshArchitectureProbeCommand(ctx, source, dockerArgs)
+		if err != nil {
+			return nil, err
+		}
+		return runAuthenticatedSSHLine(ctx, source, label, s.sshLanguage(), line)
+	}
+	// 没有保存凭据时走系统 ssh：这条路径没有登录 PATH 探测，只按来源命令前缀拼接。
+	script, _, err := imageSSHSystemProbeCommand(source, dockerArgs)
+	if err != nil {
+		return nil, err
+	}
+	name, commandArgs, err := buildImageCommand(source, "sh", "-c", script)
+	if err != nil {
+		return nil, err
+	}
+	runner := s.runner
+	if runner == nil {
+		runner = runImageCommand
+	}
+	return runner(ctx, name, commandArgs...)
+}
+
+// splitImageProbeOutput 拆分探测输出：SSH 首行是 uname -m，其余部分是 docker 输出；
+// 本机来源没有架构行，整体就是 docker 输出。
+func splitImageProbeOutput(source ImageSource, output []byte) (architecture string, version string, err error) {
+	trimmed := strings.TrimSpace(string(output))
+	if source.Kind != "ssh" {
+		return "", trimmed, nil
+	}
+	architecture, remainder, ok := strings.Cut(trimmed, "\n")
+	if !ok || strings.TrimSpace(remainder) == "" {
+		return "", "", userError("errors.image.sshArchitectureProbeInvalid")
+	}
+	return normalizeImageArchitecture(architecture), strings.TrimSpace(remainder), nil
 }
 
 func (s *ImageService) pingRegistry(ctx context.Context, source ImageSource) error {

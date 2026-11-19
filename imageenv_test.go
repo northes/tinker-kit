@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -136,7 +137,7 @@ func TestImageSSHCommandLineReportsMissingDocker(t *testing.T) {
 	if _, _, err := service.imageSSHCommandLine(context.Background(), source, []string{"image", "ls"}); err == nil || localizedErrorKey(err) != "errors.service.remoteCommandMissing" {
 		t.Fatalf("探测成功但缺少 docker 时应直接报未找到: %v", err)
 	}
-	if _, _, err := service.sshArchitectureProbeCommand(context.Background(), source); err == nil || localizedErrorKey(err) != "errors.service.remoteCommandMissing" {
+	if _, _, err := service.sshArchitectureProbeCommand(context.Background(), source, imageDaemonProbeArgs); err == nil || localizedErrorKey(err) != "errors.service.remoteCommandMissing" {
 		t.Fatalf("连接探测也不应再 exec 一次: %v", err)
 	}
 }
@@ -152,11 +153,11 @@ func TestImageSSHCommandLineFallsBackWhenProbeFails(t *testing.T) {
 	if label != "docker" || line != "'docker' 'image' 'ls'" {
 		t.Fatalf("应退回裸 docker: line=%q label=%q", line, label)
 	}
-	probe, _, err := service.sshArchitectureProbeCommand(context.Background(), source)
+	probe, _, err := service.sshArchitectureProbeCommand(context.Background(), source, imageDaemonProbeArgs)
 	if err != nil {
 		t.Fatalf("探测失败时连接探测不应报错: %v", err)
 	}
-	if want := "uname -m && exec 'docker' --version"; probe != want {
+	if want := "uname -m && exec 'docker' 'info' '--format' '{{.ServerVersion}}'"; probe != want {
 		t.Fatalf("连接探测命令 = %q, 期望 %q", probe, want)
 	}
 }
@@ -174,11 +175,11 @@ func TestImageSSHCommandLineUsesCustomPrefix(t *testing.T) {
 	if label != "sudo" {
 		t.Fatalf("错误信息命令名应为 sudo: %q", label)
 	}
-	probe, _, err := service.sshArchitectureProbeCommand(context.Background(), source)
+	probe, _, err := service.sshArchitectureProbeCommand(context.Background(), source, imageDaemonProbeArgs)
 	if err != nil {
 		t.Fatalf("自定义前缀连接探测失败: %v", err)
 	}
-	if want := "uname -m && exec '/usr/bin/sudo' '-n' '/usr/bin/docker' '--version'"; probe != want {
+	if want := "uname -m && exec '/usr/bin/sudo' '-n' '/usr/bin/docker' 'info' '--format' '{{.ServerVersion}}'"; probe != want {
 		t.Fatalf("连接探测命令 = %q, 期望 %q", probe, want)
 	}
 }
@@ -230,5 +231,54 @@ func TestTestImageSourceConnectionRejectsInvalidDockerCommandWithoutSSH(t *testi
 	}
 	if got := config.Get().ImageSources; len(got) != 1 || got[0].DockerCommand != "" {
 		t.Fatalf("连接测试不应写入配置: %#v", got)
+	}
+}
+
+func TestTestImageSourceConnectionStepsReportsDaemonSocketDenied(t *testing.T) {
+	config := &ConfigService{cfg: normalizeConfig(defaultConfig())}
+	var lines []string
+	service := &ImageService{config: config, runner: func(_ context.Context, _ string, args ...string) ([]byte, error) {
+		line := args[len(args)-1]
+		lines = append(lines, line)
+		if strings.Contains(line, "'info'") {
+			return []byte("aarch64\n"), userErrorParamsCause(
+				"errors.image.remoteCommandFailed",
+				map[string]any{"command": "docker"},
+				errors.New("permission denied while trying to connect to the Docker daemon socket at unix:///var/run/docker.sock"),
+			)
+		}
+		return []byte("aarch64\nDocker version 27.0.0, build deadbeef\n"), nil
+	}}
+	steps := service.TestImageSourceConnectionSteps(ImageSource{ID: "ssh:draft", Kind: "ssh", SSHHost: "dev-box"})
+	if len(steps) != 2 || steps[0].Key != imageConnectionStepConnect || steps[0].Error != "" {
+		t.Fatalf("第一步应通过: %#v", steps)
+	}
+	if steps[1].Key != imageConnectionStepDaemon || steps[1].Error == "" {
+		t.Fatalf("daemon 探测应失败: %#v", steps)
+	}
+	if !strings.Contains(steps[1].Error, "permission denied") {
+		t.Fatalf("失败原因应包含远端 stderr: %q", steps[1].Error)
+	}
+	if want := []string{"uname", "info"}; len(lines) != 2 || !strings.Contains(lines[0], "'--version'") || !strings.Contains(lines[1], "'info'") {
+		t.Fatalf("应按连接、daemon 顺序执行: %#v (%v)", lines, want)
+	}
+}
+
+func TestTestImageSourceConnectionStepsFailsValidationBeforeSSH(t *testing.T) {
+	config := &ConfigService{cfg: normalizeConfig(defaultConfig())}
+	called := false
+	service := &ImageService{config: config, runner: func(context.Context, string, ...string) ([]byte, error) {
+		called = true
+		return nil, nil
+	}}
+	steps := service.TestImageSourceConnectionSteps(ImageSource{ID: "ssh:draft", Kind: "ssh", SSHHost: "dev-box", DockerCommand: "/usr/bin/docker;rm -rf /"})
+	if len(steps) != 1 || steps[0].Key != imageConnectionStepConnect || steps[0].Error == "" {
+		t.Fatalf("校验失败应只让第一步失败: %#v", steps)
+	}
+	if !strings.Contains(steps[0].Error, "errors.config.dockerCommandInvalid") {
+		t.Fatalf("失败原因应指向非法命令前缀: %q", steps[0].Error)
+	}
+	if called {
+		t.Fatal("校验失败时不应执行任何命令")
 	}
 }

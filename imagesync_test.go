@@ -274,7 +274,7 @@ func TestWatchUnavailableStopsBeforeSnapshot(t *testing.T) {
 	service.cacheDir = t.TempDir()
 	var listCalls atomic.Int32
 	service.runner = func(_ context.Context, _ string, args ...string) ([]byte, error) {
-		if len(args) == 1 && args[0] == "--version" {
+		if len(args) == 3 && args[0] == "info" && args[1] == "--format" {
 			return nil, errors.New("docker unavailable")
 		}
 		listCalls.Add(1)

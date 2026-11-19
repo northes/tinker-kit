@@ -17,6 +17,13 @@ const (
 // dockerCommandName 是镜像管理在默认 PATH 下执行的命令名（子命令在调用处追加）。
 const dockerCommandName = "docker"
 
+// imageConnectProbeArgs 是「测试连接」第一步的 docker 参数：只验证客户端可执行。
+var imageConnectProbeArgs = []string{"--version"}
+
+// imageDaemonProbeArgs 是连接探测的 docker 参数：取 daemon 的 ServerVersion。
+// 只看客户端版本无法发现 socket 权限问题（例如未加入 docker 组），必须真正问一次 daemon。
+var imageDaemonProbeArgs = []string{"info", "--format", "{{.ServerVersion}}"}
+
 // imageSourceDisplayCLI 返回来源在状态与指纹里展示的 CLI：本机用全局 Docker CLI 路径，
 // SSH 用来源自己的 Docker 命令（留空即 docker），Registry 没有 CLI。
 func imageSourceDisplayCLI(source ImageSource, config Config) string {
@@ -153,17 +160,17 @@ func hasSSHCredentials(source ImageSource) bool {
 	return source.SSHPassword != "" || source.SSHPrivateKey != "" || source.SSHPrivateKeyPath != ""
 }
 
-// imageSSHSystemProbeCommand 构建系统 ssh 路径上的架构 + 客户端版本探测脚本。
+// imageSSHSystemProbeCommand 构建系统 ssh 路径上的架构 + docker 探测脚本。
 // 该路径没有登录 PATH 探测，前缀留空时直接探测裸 docker。
-func imageSSHSystemProbeCommand(source ImageSource) (script string, label string, err error) {
+func imageSSHSystemProbeCommand(source ImageSource, dockerArgs []string) (script string, label string, err error) {
 	prefix, err := imageSSHCommandPrefix(source)
 	if err != nil {
 		return "", "", err
 	}
 	if len(prefix) > 0 {
-		return "uname -m && exec " + shellJoin(append(prefix, "--version")), remoteCommandLabel(prefix[0]), nil
+		return "uname -m && exec " + shellJoin(append(prefix, dockerArgs...)), remoteCommandLabel(prefix[0]), nil
 	}
-	return "uname -m && exec " + shellQuote(dockerCommandName) + " --version", dockerCommandName, nil
+	return "uname -m && exec " + shellJoin(append([]string{dockerCommandName}, dockerArgs...)), dockerCommandName, nil
 }
 
 // imageSSHCommandPrefix 返回来源自带的命令前缀；空表示需要走登录 PATH。
@@ -234,26 +241,28 @@ func (s *ImageService) runImageSSHInput(ctx context.Context, source ImageSource,
 	return runAuthenticatedSSHInputLine(ctx, source, label, s.sshLanguage(), src, line)
 }
 
-// sshArchitectureProbeCommand 构建 SSH 来源的架构 + 客户端版本探测命令：
-// 先取 uname -m，再 exec docker --version。前缀留空且已确认找不到 docker 时不生成命令。
-func (s *ImageService) sshArchitectureProbeCommand(ctx context.Context, source ImageSource) (line string, label string, err error) {
+// sshArchitectureProbeCommand 构建 SSH 来源的架构 + docker 探测命令：
+// 先取 uname -m，再 exec 给定的 docker 参数（连接探测用 info，测试连接第一步用 --version）。
+// 前缀留空且已确认找不到 docker 时不生成命令。
+func (s *ImageService) sshArchitectureProbeCommand(ctx context.Context, source ImageSource, dockerArgs []string) (line string, label string, err error) {
 	prefix, err := imageSSHCommandPrefix(source)
 	if err != nil {
 		return "", "", err
 	}
 	if len(prefix) > 0 {
-		return "uname -m && exec " + shellJoin(append(prefix, "--version")), remoteCommandLabel(prefix[0]), nil
+		return "uname -m && exec " + shellJoin(append(prefix, dockerArgs...)), remoteCommandLabel(prefix[0]), nil
 	}
+	bare := "uname -m && exec " + shellJoin(append([]string{dockerCommandName}, dockerArgs...))
 	env, ok := s.imageRemoteCommandEnv(ctx, source)
 	if !ok {
 		// 探测本身失败：退回与服务管理一致的裸 docker 探测。
-		return "uname -m && exec " + shellQuote(dockerCommandName) + " --version", dockerCommandName, nil
+		return bare, dockerCommandName, nil
 	}
 	if found, checked := env.commands[dockerCommandName]; checked && !found {
 		return "", "", userErrorParams("errors.service.remoteCommandMissing", map[string]any{"command": dockerCommandName})
 	}
 	if env.path == "" {
-		return "uname -m && exec " + shellQuote(dockerCommandName) + " --version", dockerCommandName, nil
+		return bare, dockerCommandName, nil
 	}
-	return "uname -m && PATH=" + shellQuote(env.path) + " exec " + shellQuote(dockerCommandName) + " --version", dockerCommandName, nil
+	return "uname -m && PATH=" + shellQuote(env.path) + " exec " + shellJoin(append([]string{dockerCommandName}, dockerArgs...)), dockerCommandName, nil
 }

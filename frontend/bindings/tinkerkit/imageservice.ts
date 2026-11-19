@@ -176,10 +176,19 @@ export function TagDockerImages(sourceID: string, changes: $models.DockerImageRe
 }
 
 /**
- * TestImageSourceConnection 使用未持久化的来源配置测试 SSH 或 Registry 连接。
+ * TestImageSourceConnection 使用未持久化的来源配置测试 SSH 或 Registry 连接，
+ * 任一步失败即返回该步的原始错误。
  */
 export function TestImageSourceConnection(source: $models.ImageSource): $CancellablePromise<void> {
     return $Call.ByID(2168672400, source);
+}
+
+/**
+ * TestImageSourceConnectionSteps 与 TestImageSourceConnection 同源，但逐步返回结果，
+ * 供编辑弹窗内的分步面板展示：SSH 为「连接 / daemon 探测」两步，Registry 只有「连接」。
+ */
+export function TestImageSourceConnectionSteps(source: $models.ImageSource): $CancellablePromise<$models.ConnectionTestStep[] | null> {
+    return $Call.ByID(767230195, source);
 }
 
 /**

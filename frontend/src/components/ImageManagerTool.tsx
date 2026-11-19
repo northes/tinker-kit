@@ -31,9 +31,10 @@ import {
   StartImagePulls,
   StartImageTagChanges,
   StartRegistryImagePulls,
-  TestImageSourceConnection,
+  TestImageSourceConnectionSteps,
 } from '../../bindings/tinkerkit/imageservice';
 import type {
+  ConnectionTestStep,
   DockerDeleteTarget,
   DockerImageBatchResult,
   ImageImportEntry,
@@ -48,6 +49,10 @@ import { imageArchitectures } from '../lib/image-architectures';
 import { ConfirmDialog } from './ConfirmDialog';
 import ImageManagerDetailPage from './ImageManagerDetailPage';
 import { ImageSearchField } from './image-manager/ImageSearchField';
+import {
+  ImageConnectionTestPanel,
+  sourceDraftSignature,
+} from './image-manager/ConnectionTestPanel';
 import { runImageBatches } from './image-manager/batch';
 import {
   createImageDeleteItems,
@@ -324,7 +329,13 @@ export default function ImageManagerTool({
   const [busy, setBusy] = useState<'push' | 'tag' | 'delete' | null>(null);
   const [manageOpen, setManageOpen] = useState(false);
   const [savingSources, setSavingSources] = useState(false);
-  const [testingSource, setTestingSource] = useState(false);
+  // 「测试连接」的分步结果只对产生它时的草稿有效：signature 不匹配即视为已清空。
+  const [connectionTest, setConnectionTest] = useState<{
+    signature: string;
+    running: boolean;
+    steps: ConnectionTestStep[];
+  } | null>(null);
+  const testingSource = connectionTest?.running ?? false;
   const [confirm, setConfirm] = useState<ConfirmState>(null);
   const [operationDialog, setOperationDialog] = useState<ImageOperationDialogState>(null);
   const [operationError, setOperationError] = useState('');
@@ -334,6 +345,10 @@ export default function ImageManagerTool({
   } | null>(null);
   const [search, setSearch] = useState('');
   const searchRef = useRef<HTMLInputElement>(null);
+  // 关闭来源管理弹窗时清空测试结果，下次打开不展示上一次的结论。
+  useEffect(() => {
+    if (!manageOpen) setConnectionTest(null);
+  }, [manageOpen]);
   useFocusOnActivate(active, () => {
     if (detailTarget) return true; // 详情页盖住列表时放弃，不要补
     const el = searchRef.current;
@@ -550,6 +565,26 @@ export default function ImageManagerTool({
       name: draft.name?.trim() ?? '',
       sshProfileID: draft.sshProfileID?.trim() ?? '',
     } as ManagedImageSource);
+  };
+
+  // 测试连接不落盘：用当前草稿探测，结果按步展示在表单内的面板里，任一字段变化即失效。
+  const runConnectionTest = (draft: SourceDraft) => {
+    const signature = sourceDraftSignature(draft);
+    setConnectionTest({ signature, running: true, steps: [] });
+    const settle = (steps: ConnectionTestStep[]) =>
+      setConnectionTest((current) =>
+        current?.signature === signature ? { signature, running: false, steps } : current,
+      );
+    void TestImageSourceConnectionSteps(sourceCandidate(draft))
+      .then((steps) => settle(steps ?? []))
+      .catch((error) => settle([{ key: 'connect', error: errorMessage(error) }]));
+  };
+
+  const renderConnectionTest = (draft: SourceDraft) => {
+    if (!connectionTest || connectionTest.signature !== sourceDraftSignature(draft)) return null;
+    return (
+      <ImageConnectionTestPanel steps={connectionTest.steps} running={connectionTest.running} />
+    );
   };
 
   const saveManagedSources = async (managed: ImageSource[]) => {
@@ -2379,6 +2414,7 @@ export default function ImageManagerTool({
                 </div>
               </>
             )}
+            {renderConnectionTest(draft)}
           </>
         )}
         renderFormActions={(draft) =>
@@ -2389,23 +2425,7 @@ export default function ImageManagerTool({
               disabled={
                 testingSource || (draft.kind === 'ssh' && !draft.sshProfileID?.trim())
               }
-              onClick={() => {
-                setTestingSource(true);
-                void TestImageSourceConnection(sourceCandidate(draft))
-                  .then(() =>
-                    toast.add({
-                      title: t('imageManagerTool.connectionSucceeded'),
-                      type: 'success',
-                    }),
-                  )
-                  .catch((error) =>
-                    toast.add({
-                      title: errorMessage(error) || t('imageManagerTool.connectionFailed'),
-                      type: 'error',
-                    }),
-                  )
-                  .finally(() => setTestingSource(false));
-              }}
+              onClick={() => runConnectionTest(draft)}
             >
               {testingSource ? <Spinner data-icon="inline-start" /> : null}
               {t('imageManagerTool.testConnection')}

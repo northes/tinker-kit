@@ -189,7 +189,7 @@ func TestNormalizeImageSourcesAndRegistryCredentials(t *testing.T) {
 	}
 }
 
-func TestGetDockerStatusUsesCLIWithoutDaemon(t *testing.T) {
+func TestGetDockerStatusReportsDaemonServerVersion(t *testing.T) {
 	config := &ConfigService{cfg: normalizeConfig(Config{ImageSources: []ImageSource{
 		{ID: localImageSourceID, Kind: "local"},
 		{ID: "remote", Name: "远端", Kind: "ssh", SSHHost: "dev-box"},
@@ -202,20 +202,21 @@ func TestGetDockerStatusUsesCLIWithoutDaemon(t *testing.T) {
 			commandName = name
 			commandArgs = append([]string(nil), args...)
 			if name == "ssh" {
-				return []byte("x86_64\nDocker version 27.0.0, build deadbeef\n"), nil
+				return []byte("x86_64\n27.0.0\n"), nil
 			}
-			return []byte("Docker version 27.0.0, build deadbeef\n"), nil
+			return []byte("27.0.0\n"), nil
 		},
 	}
+	daemonArgs := []string{"info", "--format", "{{.ServerVersion}}"}
 	status := service.GetDockerStatus("local")
-	if !status.Available || status.Version != "Docker version 27.0.0, build deadbeef" {
+	if !status.Available || status.Version != "27.0.0" {
 		t.Fatalf("Docker CLI 状态为 %#v", status)
 	}
-	if commandName != "docker" || !reflect.DeepEqual(commandArgs, []string{"--version"}) {
-		t.Fatalf("Docker 状态命令为 %q %#v，期望 docker --version", commandName, commandArgs)
+	if commandName != "docker" || !reflect.DeepEqual(commandArgs, daemonArgs) {
+		t.Fatalf("Docker 状态命令为 %q %#v，期望 docker info", commandName, commandArgs)
 	}
 	status = service.GetDockerStatus("remote")
-	if !status.Available || status.Architecture != "amd64" || status.LocalArchitecture == "" || commandName != "ssh" || !reflect.DeepEqual(commandArgs, []string{"-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=yes", "--", "dev-box", shellQuote("sh") + " " + shellQuote("-c") + " " + shellQuote("uname -m && exec "+shellQuote("docker")+" --version")}) {
+	if !status.Available || status.Version != "27.0.0" || status.Architecture != "amd64" || status.LocalArchitecture == "" || commandName != "ssh" || !reflect.DeepEqual(commandArgs, []string{"-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=yes", "--", "dev-box", shellQuote("sh") + " " + shellQuote("-c") + " " + shellQuote("uname -m && exec "+shellJoin(append([]string{"docker"}, daemonArgs...)))}) {
 		t.Fatalf("远程 Docker 状态命令为 %#v %#v，状态为 %#v", commandName, commandArgs, status)
 	}
 }
@@ -224,15 +225,25 @@ func TestImageSourceConnectionTestsDraftWithoutPersistence(t *testing.T) {
 	config := &ConfigService{cfg: normalizeConfig(defaultConfig())}
 	service := NewImageService(config)
 	defer service.shutdown()
+	wantConnect := shellQuote("sh") + " " + shellQuote("-c") + " " + shellQuote("uname -m && exec 'docker' '--version'")
+	wantDaemon := shellQuote("sh") + " " + shellQuote("-c") + " " + shellQuote("uname -m && exec "+shellJoin(append([]string{"docker"}, imageDaemonProbeArgs...)))
+	var commands []string
 	service.runner = func(_ context.Context, name string, args ...string) ([]byte, error) {
-		if name != "ssh" || !reflect.DeepEqual(args, []string{"-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=yes", "--", "dev-box", shellQuote("sh") + " " + shellQuote("-c") + " " + shellQuote("uname -m && exec "+shellQuote("docker")+" --version")}) {
+		if name != "ssh" || len(args) != 7 {
 			t.Fatalf("SSH 连接测试命令为 %q %#v", name, args)
+		}
+		commands = append(commands, args[6])
+		if args[6] == wantDaemon {
+			return []byte("aarch64\n27.0.0\n"), nil
 		}
 		return []byte("aarch64\nDocker version 27.0.0\n"), nil
 	}
 
 	if err := service.TestImageSourceConnection(ImageSource{ID: "ssh:connection-test", Kind: "ssh", SSHHost: "dev-box"}); err != nil {
 		t.Fatalf("SSH 草稿连接测试失败: %v", err)
+	}
+	if !reflect.DeepEqual(commands, []string{wantConnect, wantDaemon}) {
+		t.Fatalf("SSH 连接测试应依次执行连接与 daemon 探测: %#v", commands)
 	}
 	if got := config.Get().ImageSources; len(got) != 1 || got[0].ID != localImageSourceID {
 		t.Fatalf("连接测试不应写入配置: %#v", got)
