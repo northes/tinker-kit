@@ -267,6 +267,7 @@ function SSHProfileManagerDialog({
       return;
     }
     centeredSelectionRef.current = false;
+    // 本机候选列表已去掉，打开时列表就是已保存配置，选中行可以立刻居中。
     setListReady(true);
     setView('list');
     setDraft(emptyProfile);
@@ -491,11 +492,6 @@ function SSHProfileManagerDialog({
           >
             {view === 'list' ? (
               <div className="flex flex-col pt-1 pb-5">
-                {normalizedQuery && filteredProfiles.length === 0 ? (
-                  <div className="border-y border-dashed border-border py-8 text-center text-xs text-muted-foreground">
-                    {t('sshProfiles.searchEmpty')}
-                  </div>
-                ) : null}
                 <section className="flex flex-col">
                   <div className="flex items-center justify-end gap-1 pb-3">
                     <Button
@@ -524,101 +520,101 @@ function SSHProfileManagerDialog({
                       {t('sshProfiles.add')}
                     </Button>
                   </div>
-                    {filteredProfiles.length ? (
-                      <div>
-                        {filteredProfiles.map((profile, index) => (
-                          <div
-                            key={profile.id}
-                            ref={profile.id === selectedProfileID ? selectedProfileRef : undefined}
-                            aria-current={profile.id === selectedProfileID ? 'true' : undefined}
-                            className={cn(
-                              'flex min-w-0 items-center gap-2 rounded-md px-2 py-2.5 hover:bg-accent',
-                              index % 2 === 1 && 'bg-muted/30',
-                              profile.id === selectedProfileID &&
-                                'bg-primary/20 hover:bg-primary/20',
-                            )}
-                          >
-                            <div className="min-w-0 flex-1">
-                              <div className="flex min-w-0 items-center gap-2">
-                                <span className="truncate text-xs font-medium text-foreground">
-                                  {profile.name}
-                                </span>
-                                {testingID === profile.id ? (
-                                  <Spinner
-                                    aria-label={t('sshProfiles.test')}
-                                    className="motion-reduce:animate-none"
-                                  />
-                                ) : null}
-                              </div>
-                              <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-2 text-[10px] text-muted-foreground">
-                                <span className="truncate font-mono">
-                                  {profileAddress(profile)}
-                                </span>
-                                {profile.origin === 'ssh-config' && profile.originAlias ? (
-                                  <span className="truncate">{profile.originAlias}</span>
-                                ) : null}
-                                {profile.jumpProfileID ? (
-                                  <span className="truncate">{jumpLabel(profile)}</span>
-                                ) : null}
-                              </div>
+                  {filteredProfiles.length ? (
+                    <div>
+                      {filteredProfiles.map((profile, index) => (
+                        <div
+                          key={profile.id}
+                          ref={profile.id === selectedProfileID ? selectedProfileRef : undefined}
+                          aria-current={profile.id === selectedProfileID ? 'true' : undefined}
+                          className={cn(
+                            'flex min-w-0 items-center gap-2 rounded-md px-2 py-2.5 hover:bg-accent',
+                            index % 2 === 1 && 'bg-muted/30',
+                            profile.id === selectedProfileID &&
+                              'bg-primary/20 hover:bg-primary/20',
+                          )}
+                        >
+                          <div className="min-w-0 flex-1">
+                            <div className="flex min-w-0 items-center gap-2">
+                              <span className="truncate text-xs font-medium text-foreground">
+                                {profile.name}
+                              </span>
+                              {testingID === profile.id ? (
+                                <Spinner
+                                  aria-label={t('sshProfiles.test')}
+                                  className="motion-reduce:animate-none"
+                                />
+                              ) : null}
                             </div>
-                            <Button
-                              variant="ghost"
-                              size="icon-sm"
-                              onClick={() => startEdit(profile)}
-                              disabled={busy || testingID === profile.id}
-                              aria-label={t('sshProfiles.edit')}
-                              title={t('sshProfiles.edit')}
-                            >
-                              <PencilSimple weight="regular" />
-                            </Button>
-                            <DropdownMenu>
-                              <DropdownMenuTrigger
-                                render={
-                                  <Button
-                                    variant="ghost"
-                                    size="icon-sm"
-                                    className="text-muted-foreground"
-                                    disabled={busy}
-                                    aria-label={t('sshProfiles.moreActions')}
-                                  />
-                                }
-                              >
-                                <DotsThreeOutlineVertical weight="regular" />
-                              </DropdownMenuTrigger>
-                              <DropdownMenuContent align="end" className="min-w-48">
-                                <DropdownMenuGroup>
-                                  <DropdownMenuItem
-                                    onClick={() => void test(profile)}
-                                    disabled={busy || Boolean(testingID)}
-                                  >
-                                    {testingID === profile.id ? (
-                                      <Spinner data-icon="inline-start" />
-                                    ) : (
-                                      <CheckCircle data-icon="inline-start" weight="regular" />
-                                    )}
-                                    {t('sshProfiles.test')}
-                                  </DropdownMenuItem>
-                                </DropdownMenuGroup>
-                                <DropdownMenuSeparator />
-                                <DropdownMenuItem
-                                  variant="destructive"
-                                  onClick={() => setDeleteTarget(profile)}
-                                  disabled={busy}
-                                >
-                                  <Trash data-icon="inline-start" weight="regular" />
-                                  {t('sshProfiles.delete')}
-                                </DropdownMenuItem>
-                              </DropdownMenuContent>
-                            </DropdownMenu>
+                            <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-2 text-[10px] text-muted-foreground">
+                              <span className="truncate font-mono">
+                                {profileAddress(profile)}
+                              </span>
+                              {profile.origin === 'ssh-config' && profile.originAlias ? (
+                                <span className="truncate">{profile.originAlias}</span>
+                              ) : null}
+                              {profile.jumpProfileID ? (
+                                <span className="truncate">{jumpLabel(profile)}</span>
+                              ) : null}
+                            </div>
                           </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <div className="border-y border-dashed border-border py-8 text-center text-xs text-muted-foreground">
-                        {t('sshProfiles.empty')}
-                      </div>
-                    )}
+                          <Button
+                            variant="ghost"
+                            size="icon-sm"
+                            onClick={() => startEdit(profile)}
+                            disabled={busy || testingID === profile.id}
+                            aria-label={t('sshProfiles.edit')}
+                            title={t('sshProfiles.edit')}
+                          >
+                            <PencilSimple weight="regular" />
+                          </Button>
+                          <DropdownMenu>
+                            <DropdownMenuTrigger
+                              render={
+                                <Button
+                                  variant="ghost"
+                                  size="icon-sm"
+                                  className="text-muted-foreground"
+                                  disabled={busy}
+                                  aria-label={t('sshProfiles.moreActions')}
+                                />
+                              }
+                            >
+                              <DotsThreeOutlineVertical weight="regular" />
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end" className="min-w-48">
+                              <DropdownMenuGroup>
+                                <DropdownMenuItem
+                                  onClick={() => void test(profile)}
+                                  disabled={busy || Boolean(testingID)}
+                                >
+                                  {testingID === profile.id ? (
+                                    <Spinner data-icon="inline-start" />
+                                  ) : (
+                                    <CheckCircle data-icon="inline-start" weight="regular" />
+                                  )}
+                                  {t('sshProfiles.test')}
+                                </DropdownMenuItem>
+                              </DropdownMenuGroup>
+                              <DropdownMenuSeparator />
+                              <DropdownMenuItem
+                                variant="destructive"
+                                onClick={() => setDeleteTarget(profile)}
+                                disabled={busy}
+                              >
+                                <Trash data-icon="inline-start" weight="regular" />
+                                {t('sshProfiles.delete')}
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="border-y border-dashed border-border py-8 text-center text-xs text-muted-foreground">
+                      {t(normalizedQuery ? 'sshProfiles.searchEmpty' : 'sshProfiles.empty')}
+                    </div>
+                  )}
                 </section>
               </div>
             ) : (
