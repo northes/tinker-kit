@@ -768,7 +768,8 @@ func (s *ImageService) runSourceProbe(ctx context.Context, source ImageSource, c
 }
 
 // splitImageProbeOutput 拆分探测输出：SSH 首行是 uname -m，其余部分是 docker 输出；
-// 本机来源没有架构行，整体就是 docker 输出。
+// 本机来源没有架构行，整体就是 docker 输出。输出不足时直接把远端原始输出当错误，
+// 不再换成自定义提示，免得掩盖真实原因。
 func splitImageProbeOutput(source ImageSource, output []byte) (architecture string, version string, err error) {
 	trimmed := strings.TrimSpace(string(output))
 	if source.Kind != "ssh" {
@@ -776,6 +777,9 @@ func splitImageProbeOutput(source ImageSource, output []byte) (architecture stri
 	}
 	architecture, remainder, ok := strings.Cut(trimmed, "\n")
 	if !ok || strings.TrimSpace(remainder) == "" {
+		if trimmed != "" {
+			return "", "", errors.New(trimmed)
+		}
 		return "", "", userError("errors.image.sshArchitectureProbeInvalid")
 	}
 	return normalizeImageArchitecture(architecture), strings.TrimSpace(remainder), nil

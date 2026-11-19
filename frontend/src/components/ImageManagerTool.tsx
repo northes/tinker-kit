@@ -2371,9 +2371,6 @@ export default function ImageManagerTool({
                     placeholder={t('imageManagerTool.dockerCommandPlaceholder')}
                     onChange={(event) => setDraft({ ...draft, dockerCommand: event.target.value })}
                   />
-                  <p className="text-xs leading-5 text-muted-foreground">
-                    {t('imageManagerTool.dockerCommandHint')}
-                  </p>
                 </div>
               </>
             ) : (
