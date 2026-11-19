@@ -581,7 +581,7 @@ func TestConfigServiceSaveRejectsInvalidImageSource(t *testing.T) {
 		wantName string
 	}{
 		{name: "空 registry 地址", sources: []ImageSource{{ID: "registry:repo-a", Name: "仓库A", Kind: "registry", RegistryURL: ""}}, wantKey: "errors.config.registryURLInvalid"},
-		{name: "非 https registry 地址", sources: []ImageSource{{ID: "registry:repo-a", Name: "仓库A", Kind: "registry", RegistryURL: "http://registry.example"}}, wantKey: "errors.config.registryURLInvalid"},
+		{name: "明文地址配标准 TLS", sources: []ImageSource{{ID: "registry:repo-a", Name: "仓库A", Kind: "registry", RegistryURL: "http://registry.example"}}, wantKey: "errors.config.registryURLSchemeMismatch"},
 		{name: "无用户名的 registry 密码", sources: []ImageSource{{ID: "registry:repo-a", Name: "仓库A", Kind: "registry", RegistryURL: "https://registry.example", RegistryPassword: "secret"}}, wantKey: "errors.config.registryPasswordWithoutUsername"},
 		{name: "无私钥的密钥口令", sources: []ImageSource{{ID: "ssh:box-a", Name: "构建机A", Kind: "ssh", SSHHost: "box-a", SSHKeyPassphrase: "pass"}}, wantKey: "errors.config.sshKeyPassphraseWithoutKey"},
 		{name: "非法 SSH 主机", sources: []ImageSource{{ID: "ssh:box-a", Name: "构建机A", Kind: "ssh", SSHHost: "bad host"}}, wantKey: "errors.config.sshHostInvalid"},
@@ -967,5 +967,68 @@ func TestNormalizeNetworkTestUserAgent(t *testing.T) {
 	empty := normalizeNetworkTestSettings(NetworkTestSettings{UserAgent: "   "})
 	if empty.UserAgent != "" {
 		t.Fatalf("空白 User-Agent 应保持为空（表示默认）：%q", empty.UserAgent)
+	}
+}
+
+func TestNormalizeRegistryTransport(t *testing.T) {
+	seen := func() map[string]bool { return map[string]bool{} }
+	plaintext, err := normalizeImageSource(ImageSource{
+		ID: "registry:repo-a", Kind: "registry", Name: "仓库",
+		RegistryURL: "HTTP://Registry.Example:5000/", RegistryTransport: "plaintext",
+		RegistryCAPath: "/tmp/ca.pem", RegistryCAPEM: "ignored",
+	}, seen(), nil, nil)
+	if err != nil {
+		t.Fatalf("明文来源应保存成功: %v", err)
+	}
+	if plaintext.RegistryURL != "http://registry.example:5000" || plaintext.RegistryTransport != "plaintext" || plaintext.RegistryCAPath != "" || plaintext.RegistryCAPEM != "" {
+		t.Fatalf("明文来源规范化结果为 %#v", plaintext)
+	}
+
+	tlsSource, err := normalizeImageSource(ImageSource{
+		ID: "registry:repo-b", Kind: "registry", RegistryURL: "HTTPS://Registry.Example/",
+		RegistryCAPath: "/tmp/ca.pem", RegistryCAPEM: "-----BEGIN CERTIFICATE-----\n",
+	}, seen(), nil, nil)
+	if err != nil {
+		t.Fatalf("标准 TLS 来源应保存成功: %v", err)
+	}
+	if tlsSource.RegistryURL != "https://registry.example" || tlsSource.RegistryTransport != "tls" || tlsSource.RegistryCAPath != "" || tlsSource.RegistryCAPEM != "" {
+		t.Fatalf("标准 TLS 不应保留 CA 字段: %#v", tlsSource)
+	}
+
+	custom, err := normalizeImageSource(ImageSource{
+		ID: "registry:repo-c", Kind: "registry", RegistryURL: "https://registry.example",
+		RegistryTransport: "tlsCustomCA", RegistryCAPath: "/tmp/ca.pem", RegistryCAPEM: "pem",
+	}, seen(), nil, nil)
+	if err != nil || custom.RegistryCAPath != "/tmp/ca.pem" || custom.RegistryCAPEM != "pem" {
+		t.Fatalf("自定义 CA 应同时保留路径和 PEM: %#v，错误 %v", custom, err)
+	}
+
+	sshSource, err := normalizeImageSource(ImageSource{
+		ID: "ssh:box-a", Kind: "ssh", Name: "构建机", SSHHost: "box-a",
+		RegistryTransport: "tlsCustomCA", RegistryCAPath: "/tmp/ca.pem", RegistryCAPEM: "pem",
+	}, seen(), nil, nil)
+	if err != nil || sshSource.RegistryTransport != "" || sshSource.RegistryCAPath != "" || sshSource.RegistryCAPEM != "" {
+		t.Fatalf("SSH 来源应清空 registry 传输字段: %#v，错误 %v", sshSource, err)
+	}
+
+	cases := []struct {
+		name   string
+		source ImageSource
+		key    string
+	}{
+		{name: "模式非法", source: ImageSource{ID: "registry:repo-a", Kind: "registry", RegistryURL: "https://registry.example", RegistryTransport: "skip"}, key: "errors.config.registryTransportInvalid"},
+		{name: "明文配 https", source: ImageSource{ID: "registry:repo-a", Kind: "registry", RegistryURL: "https://registry.example", RegistryTransport: "plaintext"}, key: "errors.config.registryURLSchemeMismatch"},
+		{name: "跳过校验配 http", source: ImageSource{ID: "registry:repo-a", Kind: "registry", RegistryURL: "http://registry.example", RegistryTransport: "tlsSkipVerify"}, key: "errors.config.registryURLSchemeMismatch"},
+		{name: "自定义 CA 都空", source: ImageSource{ID: "registry:repo-a", Kind: "registry", RegistryURL: "https://registry.example", RegistryTransport: "tlsCustomCA"}, key: "errors.config.registryCustomCARequired"},
+		{name: "CA 路径以横线开头", source: ImageSource{ID: "registry:repo-a", Kind: "registry", RegistryURL: "https://registry.example", RegistryTransport: "tlsCustomCA", RegistryCAPath: "-ca.pem"}, key: "errors.config.registryCAPathInvalid"},
+		{name: "PEM 含空字节", source: ImageSource{ID: "registry:repo-a", Kind: "registry", RegistryURL: "https://registry.example", RegistryTransport: "tlsCustomCA", RegistryCAPEM: "a\x00b"}, key: "errors.config.registryCAPEMInvalid"},
+	}
+	for _, test := range cases {
+		t.Run(test.name, func(t *testing.T) {
+			_, err := normalizeImageSource(test.source, seen(), nil, nil)
+			if localizedErrorKey(err) != test.key {
+				t.Fatalf("错误 key 为 %q，期望 %s，错误 %v", localizedErrorKey(err), test.key, err)
+			}
+		})
 	}
 }

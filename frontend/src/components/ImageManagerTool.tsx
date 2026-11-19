@@ -80,6 +80,7 @@ import {
   MANAGE_SOURCES_VALUE,
   renameFormHasInput,
   resolveContentViewState,
+  registryTransportMarkKey,
   resolveSources,
   resolveSourceViewState,
   shortId,
@@ -153,6 +154,7 @@ import {
 } from './ui/select';
 import { Spinner } from './ui/spinner';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
+import { Textarea } from './ui/textarea';
 import { toast } from './ui/toast';
 
 let imageBatchLimitRequest: Promise<number> | null = null;
@@ -161,6 +163,99 @@ let imageBatchLimitRequest: Promise<number> | null = null;
 function imageBatchLimit() {
   imageBatchLimitRequest ??= ImageBatchLimit().catch(() => Number.POSITIVE_INFINITY);
   return imageBatchLimitRequest;
+}
+
+const REGISTRY_TRANSPORTS = ['tls', 'tlsSkipVerify', 'tlsCustomCA', 'plaintext'] as const;
+
+const REGISTRY_TRANSPORT_LABELS = {
+  tls: 'imageManagerTool.registryTransportTLS',
+  tlsSkipVerify: 'imageManagerTool.registryTransportSkipVerify',
+  tlsCustomCA: 'imageManagerTool.registryTransportCustomCA',
+  plaintext: 'imageManagerTool.registryTransportPlaintext',
+} as const;
+
+function RegistryTransportBadge({ source }: { source: ImageSource }) {
+  const { t } = useTranslation();
+  const mark = registryTransportMarkKey(source);
+  if (!mark) return null;
+  const labelKey =
+    mark === 'http'
+      ? 'imageManagerTool.registryTransportHTTP'
+      : mark === 'skipVerify'
+        ? REGISTRY_TRANSPORT_LABELS.tlsSkipVerify
+        : REGISTRY_TRANSPORT_LABELS.tlsCustomCA;
+  return (
+    <Badge variant={mark === 'customCA' ? 'secondary' : 'warning'}>{t(labelKey)}</Badge>
+  );
+}
+
+function RegistryTransportFields({
+  draft,
+  setDraft,
+}: {
+  draft: SourceDraft;
+  setDraft: (draft: SourceDraft) => void;
+}) {
+  const { t } = useTranslation();
+  const labelId = useId();
+  const transport = (
+    REGISTRY_TRANSPORTS.includes(draft.registryTransport as (typeof REGISTRY_TRANSPORTS)[number])
+      ? draft.registryTransport
+      : 'tls'
+  ) as (typeof REGISTRY_TRANSPORTS)[number];
+  return (
+    <div className="grid gap-1.5">
+      <Label id={labelId}>{t('imageManagerTool.registryTransport')}</Label>
+      <div role="radiogroup" aria-labelledby={labelId} className="flex w-fit flex-wrap gap-1">
+        {REGISTRY_TRANSPORTS.map((option) => (
+          <Button
+            key={option}
+            type="button"
+            size="sm"
+            role="radio"
+            variant={transport === option ? 'secondary' : 'ghost'}
+            aria-checked={transport === option}
+            onClick={() => setDraft({ ...draft, registryTransport: option })}
+          >
+            {t(REGISTRY_TRANSPORT_LABELS[option])}
+          </Button>
+        ))}
+      </div>
+      {transport === 'plaintext' ? (
+        <p className="m-0 text-xs text-warning-foreground">
+          {t('imageManagerTool.registryTransportPlaintextRisk')}
+        </p>
+      ) : null}
+      {transport === 'tlsSkipVerify' ? (
+        <p className="m-0 text-xs text-warning-foreground">
+          {t('imageManagerTool.registryTransportSkipVerifyRisk')}
+        </p>
+      ) : null}
+      {transport === 'tlsCustomCA' ? (
+        <>
+          <div className="grid gap-1.5">
+            <Label htmlFor="registry-ca-path">{t('imageManagerTool.registryCAPath')}</Label>
+            <Input
+              id="registry-ca-path"
+              value={draft.registryCAPath ?? ''}
+              placeholder={t('imageManagerTool.registryCAPathPlaceholder')}
+              onChange={(event) => setDraft({ ...draft, registryCAPath: event.target.value })}
+            />
+          </div>
+          <div className="grid gap-1.5">
+            <Label htmlFor="registry-ca-pem">{t('imageManagerTool.registryCAPEM')}</Label>
+            <Textarea
+              id="registry-ca-pem"
+              value={draft.registryCAPEM ?? ''}
+              placeholder={t('imageManagerTool.registryCAPEMPlaceholder')}
+              spellCheck={false}
+              onChange={(event) => setDraft({ ...draft, registryCAPEM: event.target.value })}
+            />
+          </div>
+        </>
+      ) : null}
+    </div>
+  );
 }
 
 export default function ImageManagerTool({
@@ -1181,7 +1276,10 @@ export default function ImageManagerTool({
                     <SelectGroup>
                       {sources.map((item) => (
                         <SelectItem key={item.id} value={item.id}>
-                          {sourceDisplayName(item, t, profiles)}
+                          <span className="flex items-center gap-2">
+                            {sourceDisplayName(item, t, profiles)}
+                            <RegistryTransportBadge source={item} />
+                          </span>
                         </SelectItem>
                       ))}
                       {sources.length > 0 ? <SelectSeparator /> : null}
@@ -2152,6 +2250,7 @@ export default function ImageManagerTool({
                   ? t('imageManagerTool.kindRegistry')
                   : t('imageManagerTool.kindSsh')}
               </span>
+              <RegistryTransportBadge source={item} />
               {sourceMissingSSHProfile(item, profiles) ? (
                 <Badge variant="destructive">{t('imageManagerTool.sshProfileMissing')}</Badge>
               ) : null}
@@ -2174,6 +2273,9 @@ export default function ImageManagerTool({
                       registryURL: '',
                       registryUsername: '',
                       registryPassword: '',
+                      registryTransport: '',
+                      registryCAPath: '',
+                      registryCAPEM: '',
                     })
                   }
                 >
@@ -2218,9 +2320,11 @@ export default function ImageManagerTool({
                   <Label>{t('imageManagerTool.registryURL')}</Label>
                   <Input
                     value={draft.registryURL ?? ''}
+                    placeholder={t('imageManagerTool.registryURLPlaceholder')}
                     onChange={(event) => setDraft({ ...draft, registryURL: event.target.value })}
                   />
                 </div>
+                <RegistryTransportFields draft={draft} setDraft={setDraft} />
                 <div className="grid gap-1.5 sm:grid-cols-2">
                   <div className="grid gap-1.5">
                     <Label>{t('imageManagerTool.registryUsername')}</Label>

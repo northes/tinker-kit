@@ -334,6 +334,9 @@ export interface ImageSource {
     "registryURL": string;
     "registryUsername": string;
     "registryPassword": string;
+    "registryTransport": string;
+    "registryCAPath": string;
+    "registryCAPEM": string;
 }
 
 export interface ImageTask {

@@ -8,7 +8,6 @@ import (
 	"log"
 	"math"
 	"net/http"
-	"net/url"
 	"sort"
 	"strconv"
 	"strings"
@@ -23,15 +22,11 @@ import (
 )
 
 func registryEndpoint(source ImageSource) (name.Registry, error) {
-	u, ok := normalizeRegistryURL(source.RegistryURL)
-	if !ok {
-		return name.Registry{}, userError("errors.image.registryURLHTTPSOnly")
-	}
-	parsed, err := url.Parse(u)
+	parsed, err := validatedRegistryURL(source)
 	if err != nil {
-		return name.Registry{}, userError("errors.image.registryURLInvalid")
+		return name.Registry{}, err
 	}
-	registry, err := name.NewRegistry(parsed.Host)
+	registry, err := name.NewRegistry(parsed.Host, registryEndpointOptions(source)...)
 	if err != nil {
 		return name.Registry{}, userErrorCause("errors.image.registryAddressParseFailed", err)
 	}
@@ -48,12 +43,19 @@ func registryOptions(ctx context.Context, source ImageSource) []remote.Option {
 
 func (s *ImageService) registryOptions(ctx context.Context, source ImageSource) []remote.Option {
 	options := registryOptions(ctx, source)
-	transport := http.RoundTripper(remote.DefaultTransport)
-	if s != nil && s.registryTransport != nil {
-		transport = s.registryTransport
-	}
-	options = append(options, remote.WithTransport(&limitedRegistryTransport{base: transport}))
+	options = append(options, remote.WithTransport(&limitedRegistryTransport{base: s.registryBaseTransport(source)}))
 	return options
+}
+
+func (s *ImageService) registryBaseTransport(source ImageSource) http.RoundTripper {
+	transport, err := s.registryRoundTripper(source)
+	if err != nil {
+		return registryErrorTransport{err: err}
+	}
+	if transport == nil {
+		return remote.DefaultTransport
+	}
+	return transport
 }
 
 type limitedRegistryTransport struct {

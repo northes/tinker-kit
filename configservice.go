@@ -12,6 +12,7 @@ import (
 	"reflect"
 	"strings"
 	"sync"
+	"unicode/utf8"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
 )
@@ -146,10 +147,13 @@ type ImageSource struct {
 	SSHPrivateKeyPath string `json:"-"`
 	SSHKeyPassphrase  string `json:"-"`
 	// SSHJump 是已展开的跳板机链（最外层在前），连接时先经这些主机转发。
-	SSHJump          []SSHConnection `json:"-"`
-	RegistryURL      string          `json:"registryURL"`
-	RegistryUsername string          `json:"registryUsername"`
-	RegistryPassword string          `json:"registryPassword"`
+	SSHJump           []SSHConnection `json:"-"`
+	RegistryURL       string          `json:"registryURL"`
+	RegistryUsername  string          `json:"registryUsername"`
+	RegistryPassword  string          `json:"registryPassword"`
+	RegistryTransport string          `json:"registryTransport"`
+	RegistryCAPath    string          `json:"registryCAPath"`
+	RegistryCAPEM     string          `json:"registryCAPEM"`
 }
 
 // SSHProfile 是应用全局复用的 SSH 连接配置。JumpProfileID 指向另一条配置，
@@ -331,15 +335,27 @@ func validSecretValue(value string, maxLength int) bool {
 func normalizeRegistryURL(value string) (string, bool) {
 	value = strings.TrimSpace(value)
 	u, err := url.Parse(value)
-	if err != nil || u.Scheme != "https" || u.Host == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" {
+	if err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Host == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" {
 		return "", false
 	}
 	if u.Path != "" && u.Path != "/" {
 		return "", false
 	}
-	u.Path = ""
-	u.RawPath = ""
-	return "https://" + strings.ToLower(u.Host), true
+	return u.Scheme + "://" + strings.ToLower(u.Host), true
+}
+
+// validateRegistryCustomCA 只检查自定义 CA 的形状：路径不读盘，PEM 只确认能存进配置。
+func validateRegistryCustomCA(source ImageSource) error {
+	if source.RegistryCAPath == "" && source.RegistryCAPEM == "" {
+		return userError("errors.config.registryCustomCARequired")
+	}
+	if source.RegistryCAPath != "" && (!validPathValue(source.RegistryCAPath, 4096) || strings.HasPrefix(source.RegistryCAPath, "-")) {
+		return userError("errors.config.registryCAPathInvalid")
+	}
+	if source.RegistryCAPEM != "" && (!utf8.ValidString(source.RegistryCAPEM) || !validSecretValue(source.RegistryCAPEM, 1<<20)) {
+		return userError("errors.config.registryCAPEMInvalid")
+	}
+	return nil
 }
 
 func validImageSourceID(value string) bool {
@@ -394,6 +410,9 @@ func normalizeImageSource(
 	source.SSHUsername = strings.TrimSpace(source.SSHUsername)
 	source.RegistryURL = strings.TrimSpace(source.RegistryURL)
 	source.RegistryUsername = strings.TrimSpace(source.RegistryUsername)
+	source.RegistryTransport = strings.TrimSpace(source.RegistryTransport)
+	source.RegistryCAPath = strings.TrimSpace(source.RegistryCAPath)
+	source.RegistryCAPEM = strings.TrimSpace(source.RegistryCAPEM)
 	if source.Kind == "" && (source.ID == "" || source.ID == localImageSourceID) {
 		source.Kind = "local"
 	}
@@ -422,6 +441,9 @@ func normalizeImageSource(
 		source.RegistryURL = ""
 		source.RegistryUsername = ""
 		source.RegistryPassword = ""
+		source.RegistryTransport = ""
+		source.RegistryCAPath = ""
+		source.RegistryCAPEM = ""
 		if hasLocal != nil {
 			*hasLocal = true
 		}
@@ -459,6 +481,9 @@ func normalizeImageSource(
 			source.RegistryURL = ""
 			source.RegistryUsername = ""
 			source.RegistryPassword = ""
+			source.RegistryTransport = ""
+			source.RegistryCAPath = ""
+			source.RegistryCAPEM = ""
 			break
 		}
 		// SSH 来源必须引用 SSHProfiles；未绑定配置的来源不保留。
@@ -498,6 +523,9 @@ func normalizeImageSource(
 		source.RegistryURL = ""
 		source.RegistryUsername = ""
 		source.RegistryPassword = ""
+		source.RegistryTransport = ""
+		source.RegistryCAPath = ""
+		source.RegistryCAPEM = ""
 	case "registry":
 		if source.ID == localImageSourceID {
 			return ImageSource{}, userError("errors.config.registryImageSourceIDForbiddenLocal")
@@ -508,10 +536,21 @@ func normalizeImageSource(
 		if seen[source.ID] {
 			return ImageSource{}, userErrorParams("errors.config.imageSourceIDDuplicate", map[string]any{"id": source.ID})
 		}
-		var ok bool
+		mode, ok := registryTransportMode(source.RegistryTransport)
+		if !ok {
+			return ImageSource{}, userError("errors.config.registryTransportInvalid")
+		}
+		source.RegistryTransport = mode
 		source.RegistryURL, ok = normalizeRegistryURL(source.RegistryURL)
 		if !ok {
 			return ImageSource{}, userError("errors.config.registryURLInvalid")
+		}
+		scheme := "https"
+		if strings.HasPrefix(source.RegistryURL, "http://") {
+			scheme = "http"
+		}
+		if !registrySchemeMatches(mode, scheme) {
+			return ImageSource{}, userError("errors.config.registryURLSchemeMismatch")
 		}
 		if !validSecretValue(source.RegistryPassword, 4096) {
 			return ImageSource{}, userError("errors.config.registryPasswordInvalid")
@@ -527,6 +566,12 @@ func normalizeImageSource(
 		}
 		if !validTextValue(source.Name, 128) {
 			return ImageSource{}, userError("errors.config.registryImageSourceNameInvalid")
+		}
+		if mode != registryTransportTLSCustomCA {
+			source.RegistryCAPath = ""
+			source.RegistryCAPEM = ""
+		} else if err := validateRegistryCustomCA(source); err != nil {
+			return ImageSource{}, err
 		}
 		source.SSHHost = ""
 		source.SSHPort = 0

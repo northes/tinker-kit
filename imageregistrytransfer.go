@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"net/http"
 	"sort"
 	"time"
 
@@ -33,11 +32,7 @@ func (s *ImageService) acquireImageImportMutation(ctx context.Context) (func(), 
 
 // 元数据仍限制大小，层数据由库流式传输并验证 digest，不能套用元数据的 8 MiB 上限。
 func (s *ImageService) registryTransferOptions(ctx context.Context, source ImageSource) []remote.Option {
-	base := http.RoundTripper(remote.DefaultTransport)
-	if s.registryTransport != nil {
-		base = s.registryTransport
-	}
-	return append(registryOptions(ctx, source), remote.WithTransport(&limitedRegistryTransport{base: base, streamBlobs: true}))
+	return append(registryOptions(ctx, source), remote.WithTransport(&limitedRegistryTransport{base: s.registryBaseTransport(source), streamBlobs: true}))
 }
 
 func (s *ImageService) registryPullSource(reference name.Reference, target ImageSource) ImageSource {
@@ -54,7 +49,15 @@ func (s *ImageService) registryPullSource(reference name.Reference, target Image
 			}
 		}
 	}
-	return ImageSource{Kind: "registry", RegistryURL: "https://" + reference.Context().RegistryStr()}
+	scheme := reference.Context().Scheme()
+	if scheme != "http" && scheme != "https" {
+		scheme = "https"
+	}
+	mode := registryTransportTLS
+	if scheme == "http" {
+		mode = registryTransportPlaintext
+	}
+	return ImageSource{Kind: "registry", RegistryURL: scheme + "://" + reference.Context().RegistryStr(), RegistryTransport: mode}
 }
 
 // StartRegistryImagePulls 按所选平台复制镜像到当前 Registry，Source 可以是 tag 或 digest。

@@ -25,12 +25,21 @@ export const IMAGE_TASK_RETENTION_MS = 24 * 60 * 60 * 1000;
 
 export type ManagedImageSource = Omit<
   ImageSource,
-  'sshProfileID' | 'registryURL' | 'registryUsername' | 'registryPassword'
+  | 'sshProfileID'
+  | 'registryURL'
+  | 'registryUsername'
+  | 'registryPassword'
+  | 'registryTransport'
+  | 'registryCAPath'
+  | 'registryCAPEM'
 > & {
   sshProfileID?: string;
   registryURL?: string;
   registryUsername?: string;
   registryPassword?: string;
+  registryTransport?: string;
+  registryCAPath?: string;
+  registryCAPEM?: string;
   capabilities?: { canDelete?: boolean; canPush?: boolean };
 };
 
@@ -196,6 +205,23 @@ export function sourceTabHostName(source: ImageSource, profiles: SSHProfile[]): 
   return null;
 }
 
+export function registryTransportMarkKey(source: {
+  kind?: string;
+  registryTransport?: string;
+}): 'http' | 'skipVerify' | 'customCA' | null {
+  if (source.kind !== 'registry') return null;
+  switch (source.registryTransport?.trim()) {
+    case 'plaintext':
+      return 'http';
+    case 'tlsSkipVerify':
+      return 'skipVerify';
+    case 'tlsCustomCA':
+      return 'customCA';
+    default:
+      return null;
+  }
+}
+
 export function bindingSource(source: ManagedImageSource): ImageSource {
   const ssh = source.kind === 'ssh';
   const registry = source.kind === 'registry';
@@ -203,7 +229,7 @@ export function bindingSource(source: ManagedImageSource): ImageSource {
   let normalizedRegistryURL = registryURL.replace(/\/+$/, '');
   try {
     const parsed = new URL(registryURL);
-    if (parsed.protocol === 'https:') {
+    if (parsed.protocol === 'https:' || parsed.protocol === 'http:') {
       parsed.hostname = parsed.hostname.toLowerCase();
       parsed.pathname = parsed.pathname.replace(/\/+$/, '');
       normalizedRegistryURL = parsed.toString().replace(/\/$/, '');
@@ -211,6 +237,8 @@ export function bindingSource(source: ManagedImageSource): ImageSource {
   } catch {
     // 让服务端返回具体的 URL 校验错误。
   }
+  const registryTransport = registry ? (source.registryTransport?.trim() ?? '') : '';
+  const customCA = registryTransport === 'tlsCustomCA';
   return {
     id: source.id,
     name: source.name.trim(),
@@ -219,6 +247,9 @@ export function bindingSource(source: ManagedImageSource): ImageSource {
     registryURL: normalizedRegistryURL,
     registryUsername: registry ? (source.registryUsername?.trim() ?? '') : '',
     registryPassword: registry ? (source.registryPassword ?? '') : '',
+    registryTransport,
+    registryCAPath: customCA ? (source.registryCAPath?.trim() ?? '') : '',
+    registryCAPEM: customCA ? (source.registryCAPEM?.trim() ?? '') : '',
   } as ImageSource;
 }
 

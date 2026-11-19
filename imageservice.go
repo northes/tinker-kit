@@ -15,8 +15,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-
-	"github.com/google/go-containerregistry/pkg/v1/remote"
 )
 
 const (
@@ -238,6 +236,7 @@ type ImageService struct {
 	cacheCalls            map[string]*imageCacheCall
 	cacheDir              string
 	registryTransport     http.RoundTripper
+	registryTLSCache      map[registryTransportCacheKey]*http.Transport
 	eventEmitter          func(string, any)
 	registrySem           chan struct{}
 	detailSem             chan struct{}
@@ -433,10 +432,20 @@ func imageSourceFingerprint(source ImageSource, cliPath string) string {
 		PrivateKey    string `json:"privateKey"`
 		KeyPassphrase string `json:"keyPassphrase"`
 		Jump          string `json:"jump"`
+		Transport     string `json:"transport,omitempty"`
+		CAPath        string `json:"caPath,omitempty"`
+		CAPEM         string `json:"caPEM,omitempty"`
 	}{Kind: source.Kind, CLI: cliPath}
 	switch source.Kind {
 	case "registry":
 		value.Endpoint, value.Username, value.Password = source.RegistryURL, source.RegistryUsername, source.RegistryPassword
+		mode, ok := registryTransportMode(source.RegistryTransport)
+		if !ok {
+			mode = strings.TrimSpace(source.RegistryTransport)
+		}
+		value.Transport = mode
+		value.CAPath = source.RegistryCAPath
+		value.CAPEM = source.RegistryCAPEM
 	case "ssh":
 		value.Host, value.Port, value.Username = source.SSHHost, source.SSHPort, source.SSHUsername
 		value.Password, value.KeyPath = source.SSHPassword, source.SSHPrivateKeyPath
@@ -655,20 +664,20 @@ func (s *ImageService) pingRegistry(ctx context.Context, source ImageSource) err
 		return err
 	}
 	defer release()
-	endpoint, ok := normalizeRegistryURL(source.RegistryURL)
-	if !ok {
-		return userError("errors.image.registryURLHTTPSOnly")
+	parsed, err := validatedRegistryURL(source)
+	if err != nil {
+		return err
 	}
-	request, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint+"/v2/", nil)
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, parsed.String()+"/v2/", nil)
 	if err != nil {
 		return userError("errors.image.registryRequestCreateFailed")
 	}
 	if source.RegistryUsername != "" {
 		request.SetBasicAuth(source.RegistryUsername, source.RegistryPassword)
 	}
-	transport := http.RoundTripper(remote.DefaultTransport)
-	if s.registryTransport != nil {
-		transport = s.registryTransport
+	transport, err := s.registryRoundTripper(source)
+	if err != nil {
+		return err
 	}
 	client := &http.Client{Transport: &limitedRegistryTransport{base: transport}}
 	response, err := client.Do(request)
