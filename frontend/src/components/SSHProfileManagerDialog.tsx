@@ -23,16 +23,13 @@ import {
 import type { SSHProfile } from '../../bindings/tinkerkit/models';
 import {
   DeleteSSHProfile,
-  GetSSHConfigProfiles,
   GetSSHProfiles,
-  ImportSSHConfigProfile,
-  RefreshSSHConfigProfile,
+  ImportSSHProfilesFromLocal,
   SaveSSHProfile,
   TestSSHProfile,
 } from '../../bindings/tinkerkit/sshprofileservice';
 import { ConfirmDialog } from './ConfirmDialog';
 import { ToolSearchField } from './shared';
-import { Badge } from './ui/badge';
 import { ScrollArea } from './ui/scroll-area';
 import { Button } from './ui/button';
 import {
@@ -65,7 +62,7 @@ import { Label } from './ui/label';
 import { Spinner } from './ui/spinner';
 import { Textarea } from './ui/textarea';
 import { toast } from './ui/toast';
-import { formatBackendError } from '../lib/backend-error';
+import { backendErrorKey, formatBackendError } from '../lib/backend-error';
 import { cn } from '@/lib/utils';
 
 type SSHProfileContextValue = {
@@ -95,10 +92,6 @@ export const emptyProfile: SSHProfile = {
 function profileAddress(profile: SSHProfile) {
   const host = profile.host || profile.originAlias;
   return `${profile.username ? `${profile.username}@` : ''}${host}:${profile.port || 22}`;
-}
-
-function profileIsImported(profile: SSHProfile) {
-  return profile.origin === 'ssh-config';
 }
 
 // profileJumpCandidates 排除配置自身和所有经它转发的配置：后者当跳板机会形成环路。
@@ -232,8 +225,6 @@ function SSHProfileManagerDialog({
   const [loading, setLoading] = useState(false);
   const [testingID, setTestingID] = useState('');
   const [deleteTarget, setDeleteTarget] = useState<SSHProfile | null>(null);
-  const [localProfiles, setLocalProfiles] = useState<SSHProfile[]>([]);
-  const [localLoading, setLocalLoading] = useState(false);
   const [listReady, setListReady] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [discardAction, setDiscardAction] = useState<'close' | 'back' | null>(null);
@@ -241,7 +232,6 @@ function SSHProfileManagerDialog({
   const [viewport, setViewport] = useState<HTMLElement | null>(null);
   const selectedProfileRef = useRef<HTMLDivElement | null>(null);
   const centeredSelectionRef = useRef(false);
-  const imported = profileIsImported(draft);
   const jumpCandidates = profileJumpCandidates(profiles, draft.id);
   const jumpMissing =
     Boolean(draft.jumpProfileID) &&
@@ -270,7 +260,6 @@ function SSHProfileManagerDialog({
       .filter(Boolean)
       .some((value) => value.toLowerCase().includes(normalizedQuery));
   const filteredProfiles = profiles.filter(matchesQuery);
-  const filteredLocalProfiles = localProfiles.filter(matchesQuery);
 
   useEffect(() => {
     if (!open) {
@@ -278,7 +267,7 @@ function SSHProfileManagerDialog({
       return;
     }
     centeredSelectionRef.current = false;
-    setListReady(false);
+    setListReady(true);
     setView('list');
     setDraft(emptyProfile);
     formBaselineRef.current = { ...emptyProfile };
@@ -286,7 +275,6 @@ function SSHProfileManagerDialog({
     setListError('');
     setSearchQuery('');
     setDiscardAction(null);
-    void loadLocalProfiles();
   }, [open]);
 
   useEffect(() => {
@@ -316,30 +304,39 @@ function SSHProfileManagerDialog({
     return () => cancelAnimationFrame(frame);
   }, [open, listReady, viewport, view, profiles, selectedProfileID]);
 
-  const loadLocalProfiles = async () => {
-    setLocalLoading(true);
-    setListError('');
-    try {
-      setLocalProfiles((await GetSSHConfigProfiles()) ?? []);
-    } catch (reason) {
-      setLocalProfiles([]);
-      setListError(errorMessage(reason));
-    } finally {
-      setLocalLoading(false);
-      setListReady(true);
-    }
-  };
-
   const refreshProfiles = async () => {
     setLoading(true);
     setListError('');
     try {
       onProfilesChange((await GetSSHProfiles()) ?? []);
-      await loadLocalProfiles();
     } catch (reason) {
       setListError(errorMessage(reason));
     } finally {
       setLoading(false);
+    }
+  };
+
+  const importFromLocal = async () => {
+    setBusy(true);
+    setListError('');
+    try {
+      const result = await ImportSSHProfilesFromLocal();
+      onProfilesChange(result.profiles ?? []);
+      toast.add({
+        title: t('sshProfiles.bulkImportSucceeded', {
+          created: result.created,
+          updated: result.updated,
+        }),
+        type: 'success',
+      });
+    } catch (reason) {
+      if (backendErrorKey(reason) === 'errors.sshProfile.nothingToImport') {
+        toast.add({ title: t('errors.sshProfile.nothingToImport'), type: 'error' });
+      } else {
+        setListError(errorMessage(reason));
+      }
+    } finally {
+      setBusy(false);
     }
   };
 
@@ -392,14 +389,12 @@ function SSHProfileManagerDialog({
     try {
       // 认证方式二选一：保存时清掉未选方式留下的旧字段，避免残留数据触发另一种认证。
       const payload: SSHProfile = { ...draft, port: Number(draft.port) || 22 };
-      if (!imported) {
-        if (authMode === 'password') {
-          payload.privateKey = '';
-          payload.privateKeyPath = '';
-          payload.keyPassphrase = '';
-        } else {
-          payload.password = '';
-        }
+      if (authMode === 'password') {
+        payload.privateKey = '';
+        payload.privateKeyPath = '';
+        payload.keyPassphrase = '';
+      } else {
+        payload.password = '';
       }
       const saved = await SaveSSHProfile(payload);
       onProfilesChange(
@@ -431,40 +426,6 @@ function SSHProfileManagerDialog({
       toast.add({ title: t('sshProfiles.connectionFailed'), description: message, type: 'error' });
     } finally {
       setTestingID('');
-    }
-  };
-
-  const importProfile = async (candidate: SSHProfile) => {
-    setBusy(true);
-    setListError('');
-    try {
-      const saved = await ImportSSHConfigProfile(candidate.originAlias);
-      onProfilesChange([...profiles, saved]);
-      toast.add({ title: t('sshProfiles.importSucceeded'), type: 'success' });
-    } catch (reason) {
-      setListError(errorMessage(reason));
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const refreshImported = async (profile: SSHProfile) => {
-    setBusy(true);
-    setListError('');
-    try {
-      const updated = await RefreshSSHConfigProfile(profile.id);
-      onProfilesChange(profiles.map((item) => (item.id === updated.id ? updated : item)));
-      if (draft.id === updated.id) {
-        setDraft(updated);
-        formBaselineRef.current = { ...updated };
-      }
-      toast.add({ title: t('sshProfiles.updateSucceeded'), type: 'success' });
-    } catch (reason) {
-      const message = errorMessage(reason);
-      if (view === 'form' && draft.id === profile.id) setFormError(message);
-      else setListError(message);
-    } finally {
-      setBusy(false);
     }
   };
 
@@ -530,38 +491,39 @@ function SSHProfileManagerDialog({
           >
             {view === 'list' ? (
               <div className="flex flex-col pt-1 pb-5">
-                {normalizedQuery &&
-                filteredProfiles.length === 0 &&
-                filteredLocalProfiles.length === 0 ? (
+                {normalizedQuery && filteredProfiles.length === 0 ? (
                   <div className="border-y border-dashed border-border py-8 text-center text-xs text-muted-foreground">
                     {t('sshProfiles.searchEmpty')}
                   </div>
                 ) : null}
-                {!normalizedQuery || filteredProfiles.length > 0 ? (
-                  <section className="flex flex-col">
-                    <div className="flex items-center justify-between gap-3 pb-3">
-                      <h3 className="text-sm font-medium text-foreground">
-                        {t('sshProfiles.savedTitle')}
-                      </h3>
-                      <div className="flex shrink-0 items-center gap-1">
-                        <Button
-                          variant="ghost"
-                          size="icon-sm"
-                          onClick={() => void refreshProfiles()}
-                          disabled={loading || busy}
-                          aria-label={t('sshProfiles.refresh')}
-                        >
-                          <ArrowClockwise
-                            weight="regular"
-                            className={loading ? 'animate-spin motion-reduce:animate-none' : ''}
-                          />
-                        </Button>
-                        <Button variant="outline" size="sm" onClick={startNew} disabled={busy}>
-                          <Plus data-icon="inline-start" weight="regular" />
-                          {t('sshProfiles.add')}
-                        </Button>
-                      </div>
-                    </div>
+                <section className="flex flex-col">
+                  <div className="flex items-center justify-end gap-1 pb-3">
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      onClick={() => void refreshProfiles()}
+                      disabled={loading || busy}
+                      aria-label={t('sshProfiles.refresh')}
+                    >
+                      <ArrowClockwise
+                        weight="regular"
+                        className={loading ? 'animate-spin motion-reduce:animate-none' : ''}
+                      />
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => void importFromLocal()}
+                      disabled={busy || loading}
+                    >
+                      <DownloadSimple data-icon="inline-start" weight="regular" />
+                      {t('sshProfiles.importFromLocal')}
+                    </Button>
+                    <Button variant="outline" size="sm" onClick={startNew} disabled={busy}>
+                      <Plus data-icon="inline-start" weight="regular" />
+                      {t('sshProfiles.add')}
+                    </Button>
+                  </div>
                     {filteredProfiles.length ? (
                       <div>
                         {filteredProfiles.map((profile, index) => (
@@ -587,19 +549,12 @@ function SSHProfileManagerDialog({
                                     className="motion-reduce:animate-none"
                                   />
                                 ) : null}
-                                <Badge
-                                  variant={profileIsImported(profile) ? 'secondary' : 'outline'}
-                                >
-                                  {profileIsImported(profile)
-                                    ? t('sshProfiles.originLocal')
-                                    : t('sshProfiles.originManual')}
-                                </Badge>
                               </div>
                               <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-2 text-[10px] text-muted-foreground">
                                 <span className="truncate font-mono">
                                   {profileAddress(profile)}
                                 </span>
-                                {profileIsImported(profile) ? (
+                                {profile.origin === 'ssh-config' && profile.originAlias ? (
                                   <span className="truncate">{profile.originAlias}</span>
                                 ) : null}
                                 {profile.jumpProfileID ? (
@@ -644,15 +599,6 @@ function SSHProfileManagerDialog({
                                     )}
                                     {t('sshProfiles.test')}
                                   </DropdownMenuItem>
-                                  {profileIsImported(profile) ? (
-                                    <DropdownMenuItem
-                                      onClick={() => void refreshImported(profile)}
-                                      disabled={busy}
-                                    >
-                                      <ArrowClockwise data-icon="inline-start" weight="regular" />
-                                      {t('sshProfiles.updateFromLocal')}
-                                    </DropdownMenuItem>
-                                  ) : null}
                                 </DropdownMenuGroup>
                                 <DropdownMenuSeparator />
                                 <DropdownMenuItem
@@ -673,84 +619,10 @@ function SSHProfileManagerDialog({
                         {t('sshProfiles.empty')}
                       </div>
                     )}
-                  </section>
-                ) : null}
-                {!normalizedQuery || filteredLocalProfiles.length > 0 ? (
-                  <section className={cn('flex flex-col', filteredProfiles.length ? 'mt-3' : '')}>
-                    <div className="flex items-center justify-between gap-3 pb-3">
-                      <h3 className="text-sm font-medium text-foreground">
-                        {t('sshProfiles.localTitle')}
-                      </h3>
-                      <Button
-                        variant="ghost"
-                        size="icon-sm"
-                        onClick={() => void loadLocalProfiles()}
-                        disabled={localLoading || busy}
-                        aria-label={t('sshProfiles.refresh')}
-                      >
-                        <ArrowClockwise
-                          weight="regular"
-                          className={localLoading ? 'animate-spin motion-reduce:animate-none' : ''}
-                        />
-                      </Button>
-                    </div>
-                    {filteredLocalProfiles.length ? (
-                      <div>
-                        {filteredLocalProfiles.map((candidate, index) => {
-                          const exists = profiles.some(
-                            (profile) =>
-                              profile.origin === 'ssh-config' &&
-                              profile.originAlias === candidate.originAlias,
-                          );
-                          return (
-                            <div
-                              key={candidate.originAlias}
-                              className={cn(
-                                'flex min-w-0 items-center gap-2 rounded-md px-2 py-2.5 hover:bg-accent',
-                                index % 2 === 1 && 'bg-muted/30',
-                              )}
-                            >
-                              <div className="min-w-0 flex-1">
-                                <span className="block truncate text-xs font-medium text-foreground">
-                                  {candidate.originAlias}
-                                </span>
-                                <span className="mt-1 block truncate font-mono text-[10px] text-muted-foreground">
-                                  {profileAddress(candidate)}
-                                </span>
-                              </div>
-                              {exists ? (
-                                <Badge variant="secondary">{t('sshProfiles.imported')}</Badge>
-                              ) : (
-                                <Button
-                                  variant="outline"
-                                  size="sm"
-                                  onClick={() => void importProfile(candidate)}
-                                  disabled={busy}
-                                >
-                                  <DownloadSimple data-icon="inline-start" weight="regular" />
-                                  {t('sshProfiles.import')}
-                                </Button>
-                              )}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    ) : (
-                      <div className="border-y border-dashed border-border py-6 text-center text-xs text-muted-foreground">
-                        {t('sshProfiles.localEmpty')}
-                      </div>
-                    )}
-                  </section>
-                ) : null}
+                </section>
               </div>
             ) : (
               <div className="mx-auto grid w-full max-w-[560px] gap-5 py-5">
-                {imported ? (
-                  <div className="flex items-start gap-2 rounded-md border border-border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
-                    <CheckCircle weight="regular" className="mt-0.5 size-4 shrink-0" />
-                    <span>{t('sshProfiles.importedHint', { alias: draft.originAlias })}</span>
-                  </div>
-                ) : null}
                 <form
                   className="grid gap-4"
                   id="ssh-profile-form"
@@ -773,7 +645,6 @@ function SSHProfileManagerDialog({
                       <Input
                         id="ssh-profile-host"
                         value={draft.host}
-                        disabled={imported}
                         onChange={(event) => setField('host', event.target.value)}
                       />
                     </div>
@@ -785,7 +656,6 @@ function SSHProfileManagerDialog({
                         min={1}
                         max={65535}
                         value={draft.port}
-                        disabled={imported}
                         onChange={(event) => setField('port', Number(event.target.value))}
                       />
                     </div>
@@ -795,7 +665,6 @@ function SSHProfileManagerDialog({
                     <Input
                       id="ssh-profile-username"
                       value={draft.username}
-                      disabled={imported}
                       onChange={(event) => setField('username', event.target.value)}
                     />
                   </div>
@@ -838,7 +707,6 @@ function SSHProfileManagerDialog({
                         size="sm"
                         variant={authMode === 'password' ? 'secondary' : 'ghost'}
                         aria-pressed={authMode === 'password'}
-                        disabled={imported}
                         onClick={() => setAuthMode('password')}
                       >
                         {t('sshProfiles.authPassword')}
@@ -848,7 +716,6 @@ function SSHProfileManagerDialog({
                         size="sm"
                         variant={authMode === 'key' ? 'secondary' : 'ghost'}
                         aria-pressed={authMode === 'key'}
-                        disabled={imported}
                         onClick={() => setAuthMode('key')}
                       >
                         {t('sshProfiles.authKey')}
@@ -867,7 +734,6 @@ function SSHProfileManagerDialog({
                       <PasswordInput
                         id="ssh-profile-password"
                         value={draft.password}
-                        disabled={imported}
                         onChange={(value) => setField('password', value)}
                       />
                     </div>
@@ -880,7 +746,6 @@ function SSHProfileManagerDialog({
                         <Textarea
                           id="ssh-profile-private-key"
                           value={draft.privateKey}
-                          disabled={imported}
                           onChange={(event) => setField('privateKey', event.target.value)}
                           className="min-h-24 font-mono text-xs"
                         />
@@ -892,7 +757,6 @@ function SSHProfileManagerDialog({
                         <Input
                           id="ssh-profile-private-key-path"
                           value={draft.privateKeyPath}
-                          disabled={imported}
                           onChange={(event) => setField('privateKeyPath', event.target.value)}
                         />
                       </div>
@@ -903,7 +767,6 @@ function SSHProfileManagerDialog({
                         <PasswordInput
                           id="ssh-profile-key-passphrase"
                           value={draft.keyPassphrase}
-                          disabled={imported}
                           onChange={(value) => setField('keyPassphrase', value)}
                         />
                       </div>
@@ -915,7 +778,7 @@ function SSHProfileManagerDialog({
                     {formError}
                   </p>
                 ) : null}
-                <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border pt-4">
+                <div className="flex flex-wrap items-center gap-2 border-t border-border pt-4">
                   <Button
                     variant="outline"
                     onClick={() => void test(draft)}
@@ -924,15 +787,6 @@ function SSHProfileManagerDialog({
                     {testingID ? <Spinner data-icon="inline-start" /> : null}
                     {t('sshProfiles.test')}
                   </Button>
-                  {imported ? (
-                    <Button
-                      variant="outline"
-                      onClick={() => void refreshImported(draft)}
-                      disabled={busy}
-                    >
-                      {t('sshProfiles.updateFromLocal')}
-                    </Button>
-                  ) : null}
                 </div>
               </div>
             )}
