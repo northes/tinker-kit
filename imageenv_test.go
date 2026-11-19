@@ -249,7 +249,7 @@ func TestTestImageSourceConnectionStepsReportsDaemonSocketDenied(t *testing.T) {
 		}
 		return []byte("aarch64\nDocker version 27.0.0, build deadbeef\n"), nil
 	}}
-	steps := service.TestImageSourceConnectionSteps(ImageSource{ID: "ssh:draft", Kind: "ssh", SSHHost: "dev-box"})
+	steps := service.TestImageSourceConnectionSteps(context.Background(), ImageSource{ID: "ssh:draft", Kind: "ssh", SSHHost: "dev-box"})
 	if len(steps) != 2 || steps[0].Key != imageConnectionStepConnect || steps[0].Error != "" {
 		t.Fatalf("第一步应通过: %#v", steps)
 	}
@@ -271,7 +271,7 @@ func TestTestImageSourceConnectionStepsFailsValidationBeforeSSH(t *testing.T) {
 		called = true
 		return nil, nil
 	}}
-	steps := service.TestImageSourceConnectionSteps(ImageSource{ID: "ssh:draft", Kind: "ssh", SSHHost: "dev-box", DockerCommand: "/usr/bin/docker;rm -rf /"})
+	steps := service.TestImageSourceConnectionSteps(context.Background(), ImageSource{ID: "ssh:draft", Kind: "ssh", SSHHost: "dev-box", DockerCommand: "/usr/bin/docker;rm -rf /"})
 	if len(steps) != 2 || steps[0].Key != imageConnectionStepConnect || steps[0].Error == "" {
 		t.Fatalf("校验失败应只让第一步失败: %#v", steps)
 	}
@@ -283,6 +283,20 @@ func TestTestImageSourceConnectionStepsFailsValidationBeforeSSH(t *testing.T) {
 	}
 	if called {
 		t.Fatal("校验失败时不应执行任何命令")
+	}
+}
+
+func TestTestImageSourceConnectionStepsStopsOnCancel(t *testing.T) {
+	config := &ConfigService{cfg: normalizeConfig(defaultConfig())}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	service := &ImageService{config: config, runner: func(context.Context, string, ...string) ([]byte, error) {
+		t.Fatal("取消后不应再执行任何命令")
+		return nil, nil
+	}}
+	steps := service.TestImageSourceConnectionSteps(ctx, ImageSource{ID: "ssh:draft", Kind: "ssh", SSHHost: "dev-box"})
+	if len(steps) != 2 || !steps[0].Skipped || !steps[1].Skipped {
+		t.Fatalf("取消后两步都应标记为未执行: %#v", steps)
 	}
 }
 

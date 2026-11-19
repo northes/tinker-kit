@@ -333,8 +333,10 @@ export default function ImageManagerTool({
   const [connectionTest, setConnectionTest] = useState<{
     signature: string;
     running: boolean;
+    canceled: boolean;
     steps: ConnectionTestStep[];
   } | null>(null);
+  const connectionTestCall = useRef<{ cancel?: () => void } | null>(null);
   const testingSource = connectionTest?.running ?? false;
   const [confirm, setConfirm] = useState<ConfirmState>(null);
   const [operationDialog, setOperationDialog] = useState<ImageOperationDialogState>(null);
@@ -570,27 +572,53 @@ export default function ImageManagerTool({
   // 测试连接不落盘：用当前草稿探测，结果按步展示在表单内的面板里，任一字段变化即失效。
   const runConnectionTest = (draft: SourceDraft) => {
     const signature = sourceDraftSignature(draft);
-    setConnectionTest({ signature, running: true, steps: [] });
+    setConnectionTest({ signature, running: true, canceled: false, steps: [] });
     const settle = (steps: ConnectionTestStep[]) =>
       setConnectionTest((current) =>
-        current?.signature === signature ? { signature, running: false, steps } : current,
+        current?.signature === signature
+          ? { signature, running: false, canceled: current.canceled, steps }
+          : current,
       );
-    void TestImageSourceConnectionSteps(sourceCandidate(draft))
+    const call = TestImageSourceConnectionSteps(sourceCandidate(draft));
+    connectionTestCall.current = call;
+    void call
       .then((steps) => settle(steps ?? []))
       .catch((error) =>
-        settle([
-          { key: 'connect', error: errorMessage(error), skipped: false },
-          ...(draft.kind === 'ssh'
-            ? [{ key: 'daemon', error: '', skipped: true }]
-            : []),
-        ]),
+        setConnectionTest((current) => {
+          if (current?.signature !== signature) return current;
+          // 用户主动取消时不再把中断当成失败展示。
+          if (current.canceled) return { ...current, running: false };
+          return {
+            signature,
+            running: false,
+            canceled: false,
+            steps: [
+              { key: 'connect', error: errorMessage(error), skipped: false },
+              ...(draft.kind === 'ssh'
+                ? [{ key: 'daemon', error: '', skipped: true }]
+                : []),
+            ],
+          };
+        }),
       );
+  };
+
+  // 取消只中断后端探测，已完成的步骤由后端随返回值带回。
+  const cancelConnectionTest = () => {
+    connectionTestCall.current?.cancel?.();
+    setConnectionTest((current) =>
+      current ? { ...current, canceled: true, running: false } : current,
+    );
   };
 
   const renderConnectionTest = (draft: SourceDraft) => {
     if (!connectionTest || connectionTest.signature !== sourceDraftSignature(draft)) return null;
     return (
-      <ImageConnectionTestPanel steps={connectionTest.steps} running={connectionTest.running} />
+      <ImageConnectionTestPanel
+        steps={connectionTest.steps}
+        running={connectionTest.running}
+        canceled={connectionTest.canceled}
+      />
     );
   };
 
@@ -2410,21 +2438,26 @@ export default function ImageManagerTool({
             {renderConnectionTest(draft)}
           </>
         )}
-        renderFormActions={(draft) =>
-          draft.kind === 'registry' || draft.kind === 'ssh' ? (
+        renderFormActions={(draft) => {
+          if (draft.kind !== 'registry' && draft.kind !== 'ssh') return null;
+          if (testingSource) {
+            return (
+              <Button type="button" variant="outline" onClick={cancelConnectionTest}>
+                {t('common.cancel')}
+              </Button>
+            );
+          }
+          return (
             <Button
               type="button"
               variant="outline"
-              disabled={
-                testingSource || (draft.kind === 'ssh' && !draft.sshProfileID?.trim())
-              }
+              disabled={draft.kind === 'ssh' && !draft.sshProfileID?.trim()}
               onClick={() => runConnectionTest(draft)}
             >
-              {testingSource ? <Spinner data-icon="inline-start" /> : null}
               {t('imageManagerTool.testConnection')}
             </Button>
-          ) : null
-        }
+          );
+        }}
         strings={{
           title: t('imageManagerTool.manageSourcesTitle'),
           edit: t('imageManagerTool.editTargetHost'),

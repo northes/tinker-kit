@@ -591,20 +591,24 @@ func (s *ImageService) GetDockerStatus(sourceID string) DockerStatus {
 // TestImageSourceConnection 使用未持久化的来源配置测试 SSH 或 Registry 连接，
 // 任一步失败即返回该步的原始错误。
 func (s *ImageService) TestImageSourceConnection(source ImageSource) error {
-	_, err := s.testImageSourceConnectionSteps(source)
+	_, err := s.testImageSourceConnectionSteps(s.serviceContext(), source)
 	return err
 }
 
 // TestImageSourceConnectionSteps 与 TestImageSourceConnection 同源，但逐步返回结果，
 // 供编辑弹窗内的分步面板展示：SSH 为「连接 / daemon 探测」两步，Registry 只有「连接」。
-func (s *ImageService) TestImageSourceConnectionSteps(source ImageSource) []ConnectionTestStep {
-	steps, _ := s.testImageSourceConnectionSteps(source)
+// ctx 由 Wails 绑定传入，前端取消时会关闭当前 SSH 会话，已完成步骤保留、其余标为未执行。
+func (s *ImageService) TestImageSourceConnectionSteps(ctx context.Context, source ImageSource) []ConnectionTestStep {
+	steps, _ := s.testImageSourceConnectionSteps(ctx, source)
 	return steps
 }
 
-// testImageSourceConnectionSteps 按执行顺序返回每一步；任一步失败后，其后的步骤标记为未执行，
-// 面板因此始终能展示完整的步骤列表，不会因为第一步失败而少一行。
-func (s *ImageService) testImageSourceConnectionSteps(source ImageSource) ([]ConnectionTestStep, error) {
+// testImageSourceConnectionSteps 按执行顺序返回每一步；任一步失败或调用方取消后，
+// 其后的步骤标记为未执行，面板因此始终能展示完整的步骤列表。
+func (s *ImageService) testImageSourceConnectionSteps(ctx context.Context, source ImageSource) ([]ConnectionTestStep, error) {
+	if ctx == nil {
+		ctx = s.serviceContext()
+	}
 	failedBeforeDocker := func(err error) ([]ConnectionTestStep, error) {
 		steps := []ConnectionTestStep{{Key: imageConnectionStepConnect, Error: err.Error()}}
 		if isSSHImageSource(source) {
@@ -618,7 +622,7 @@ func (s *ImageService) testImageSourceConnectionSteps(source ImageSource) ([]Con
 		return failedBeforeDocker(err)
 	}
 	if normalized.Kind == "registry" {
-		itemCtx, cancel := context.WithTimeout(s.serviceContext(), imageCommandTimeout)
+		itemCtx, cancel := context.WithTimeout(ctx, imageCommandTimeout)
 		defer cancel()
 		if err := s.pingRegistry(itemCtx, normalized); err != nil {
 			return []ConnectionTestStep{{Key: imageConnectionStepConnect, Error: err.Error()}}, err
@@ -633,8 +637,17 @@ func (s *ImageService) testImageSourceConnectionSteps(source ImageSource) ([]Con
 		{imageConnectionStepDaemon, imageDaemonProbeArgs},
 	}
 	steps := make([]ConnectionTestStep, 0, len(probes))
+	skipRest := func(from int) []ConnectionTestStep {
+		for _, rest := range probes[from:] {
+			steps = append(steps, ConnectionTestStep{Key: rest.key, Skipped: true})
+		}
+		return steps
+	}
 	for index, probe := range probes {
-		itemCtx, cancel := context.WithTimeout(s.serviceContext(), imageCommandTimeout)
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return skipRest(index), ctxErr
+		}
+		itemCtx, cancel := context.WithTimeout(ctx, imageCommandTimeout)
 		output, stderrText, probeErr := s.runSourceProbe(itemCtx, normalized, cliPath, probe.args)
 		cancel()
 		if probeErr == nil {
@@ -643,11 +656,11 @@ func (s *ImageService) testImageSourceConnectionSteps(source ImageSource) ([]Con
 			}
 		}
 		if probeErr != nil {
-			steps = append(steps, ConnectionTestStep{Key: probe.key, Error: probeErr.Error()})
-			for _, rest := range probes[index+1:] {
-				steps = append(steps, ConnectionTestStep{Key: rest.key, Skipped: true})
+			if ctxErr := ctx.Err(); ctxErr != nil {
+				return skipRest(index), ctxErr
 			}
-			return steps, probeErr
+			steps = append(steps, ConnectionTestStep{Key: probe.key, Error: probeErr.Error()})
+			return skipRest(index + 1), probeErr
 		}
 		steps = append(steps, ConnectionTestStep{Key: probe.key})
 	}

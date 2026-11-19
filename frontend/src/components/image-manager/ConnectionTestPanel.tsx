@@ -1,4 +1,4 @@
-import { CheckCircle, Copy, MinusCircle, WarningCircle } from '@phosphor-icons/react';
+import { CheckCircle, Copy, MinusCircle, WarningCircle, XCircle } from '@phosphor-icons/react';
 import { useTranslation } from 'react-i18next';
 import type { ConnectionTestStep } from '../../../bindings/tinkerkit/models';
 import { formatBackendError } from '../../lib/backend-error';
@@ -25,9 +25,11 @@ function stepLabel(key: string, t: (key: string) => string) {
 export function ImageConnectionTestPanel({
   steps,
   running,
+  canceled,
 }: {
   steps: ConnectionTestStep[];
   running: boolean;
+  canceled: boolean;
 }) {
   const { t } = useTranslation();
 
@@ -51,8 +53,7 @@ export function ImageConnectionTestPanel({
         </div>
       ) : (
         <ul className="m-0 grid list-none gap-1.5 p-0">
-          {steps.map((step) => {
-            const label = stepLabel(step.key, t);
+          {steps.map((step) => {            const label = stepLabel(step.key, t);
             const failure = step.error ? formatBackendError(step.error) : '';
             return (
               <li key={step.key} className="flex min-w-0 items-center gap-2 text-xs">
@@ -102,6 +103,18 @@ export function ImageConnectionTestPanel({
               </li>
             );
           })}
+          {canceled ? (
+            <li className="flex min-w-0 items-center gap-2 text-xs">
+              <XCircle
+                weight="regular"
+                aria-hidden="true"
+                className="size-4 shrink-0 text-muted-foreground"
+              />
+              <span className="min-w-0 flex-1 truncate text-muted-foreground">
+                {t('imageManagerTool.connectionTestCanceled')}
+              </span>
+            </li>
+          ) : null}
         </ul>
       )}
     </div>

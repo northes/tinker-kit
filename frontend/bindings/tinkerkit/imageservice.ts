@@ -186,6 +186,7 @@ export function TestImageSourceConnection(source: $models.ImageSource): $Cancell
 /**
  * TestImageSourceConnectionSteps 与 TestImageSourceConnection 同源，但逐步返回结果，
  * 供编辑弹窗内的分步面板展示：SSH 为「连接 / daemon 探测」两步，Registry 只有「连接」。
+ * ctx 由 Wails 绑定传入，前端取消时会关闭当前 SSH 会话，已完成步骤保留、其余标为未执行。
  */
 export function TestImageSourceConnectionSteps(source: $models.ImageSource): $CancellablePromise<$models.ConnectionTestStep[] | null> {
     return $Call.ByID(767230195, source);

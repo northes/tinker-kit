@@ -872,6 +872,7 @@
     "connectionTestRunning": "Testing connection…",
     "connectionTestPassed": "Passed",
     "connectionTestSkipped": "Not run",
+    "connectionTestCanceled": "Canceled",
     "connectionTestErrorDetail": "failure reason",
     "copyConnectionError": "Copy the {{step}} failure reason",
     "sshProfile": "SSH profile",
