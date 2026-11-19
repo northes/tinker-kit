@@ -2230,7 +2230,9 @@ export default function ImageManagerTool({
         itemName={(item) => sourceDisplayName(item, t, profiles)}
         activeKey={source.id}
         itemDisabled={isLocalSource}
-        createDraft={() => ({ id: '', name: '', kind: 'ssh', sshProfileID: '' }) as SourceDraft}
+        createDraft={() =>
+          ({ id: '', name: '', kind: 'ssh', sshProfileID: '', dockerCommand: '' }) as SourceDraft
+        }
         toDraft={(item) => ({ ...(item as ManagedImageSource) }) as SourceDraft}
         commitDraft={async (draft, previous) => {
           const kind = draft.kind as 'ssh' | 'registry';
@@ -2286,6 +2288,7 @@ export default function ImageManagerTool({
                       registryTransport: '',
                       registryCAPath: '',
                       registryCAPEM: '',
+                      dockerCommand: draft.dockerCommand ?? '',
                     })
                   }
                 >
@@ -2295,7 +2298,9 @@ export default function ImageManagerTool({
                   type="button"
                   size="sm"
                   variant={draft.kind === 'registry' ? 'secondary' : 'ghost'}
-                  onClick={() => setDraft({ ...draft, kind: 'registry', sshProfileID: '' })}
+                  onClick={() =>
+                    setDraft({ ...draft, kind: 'registry', sshProfileID: '', dockerCommand: '' })
+                  }
                 >
                   {t('imageManagerTool.kindRegistry')}
                 </Button>
@@ -2310,20 +2315,36 @@ export default function ImageManagerTool({
               />
             </div>
             {draft.kind === 'ssh' ? (
-              <div className="grid gap-1.5">
-                <Label>{t('imageManagerTool.sshProfile')}</Label>
-                <SSHProfileFormField
-                  value={draft.sshProfileID ?? ''}
-                  onSelect={(profile) =>
-                    setDraft({
-                      ...draft,
-                      sshProfileID: profile?.id ?? '',
-                      name: draft.name?.trim() || profile?.name || draft.name,
-                    })
-                  }
-                  placeholder={t('imageManagerTool.selectSSHProfile')}
-                />
-              </div>
+              <>
+                <div className="grid gap-1.5">
+                  <Label>{t('imageManagerTool.sshProfile')}</Label>
+                  <SSHProfileFormField
+                    value={draft.sshProfileID ?? ''}
+                    onSelect={(profile) =>
+                      setDraft({
+                        ...draft,
+                        sshProfileID: profile?.id ?? '',
+                        name: draft.name?.trim() || profile?.name || draft.name,
+                      })
+                    }
+                    placeholder={t('imageManagerTool.selectSSHProfile')}
+                  />
+                </div>
+                <div className="grid gap-1.5">
+                  <Label htmlFor="target-host-docker-command">
+                    {t('imageManagerTool.dockerCommand')}
+                  </Label>
+                  <Input
+                    id="target-host-docker-command"
+                    value={draft.dockerCommand ?? ''}
+                    placeholder={t('imageManagerTool.dockerCommandPlaceholder')}
+                    onChange={(event) => setDraft({ ...draft, dockerCommand: event.target.value })}
+                  />
+                  <p className="text-xs leading-5 text-muted-foreground">
+                    {t('imageManagerTool.dockerCommandHint')}
+                  </p>
+                </div>
+              </>
             ) : (
               <>
                 <div className="grid gap-1.5">
@@ -2361,11 +2382,13 @@ export default function ImageManagerTool({
           </>
         )}
         renderFormActions={(draft) =>
-          draft.kind === 'registry' ? (
+          draft.kind === 'registry' || draft.kind === 'ssh' ? (
             <Button
               type="button"
               variant="outline"
-              disabled={testingSource}
+              disabled={
+                testingSource || (draft.kind === 'ssh' && !draft.sshProfileID?.trim())
+              }
               onClick={() => {
                 setTestingSource(true);
                 void TestImageSourceConnection(sourceCandidate(draft))

@@ -82,6 +82,7 @@ export const defaultSettings: Settings = {
       name: '本机',
       kind: 'local',
       sshProfileID: '',
+      dockerCommand: '',
       registryURL: '',
       registryUsername: '',
       registryPassword: '',

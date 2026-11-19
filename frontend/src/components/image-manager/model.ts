@@ -34,6 +34,7 @@ export type ManagedImageSource = Omit<
   | 'registryCAPEM'
 > & {
   sshProfileID?: string;
+  dockerCommand?: string;
   registryURL?: string;
   registryUsername?: string;
   registryPassword?: string;
@@ -227,6 +228,7 @@ export function bindingSource(source: ManagedImageSource): ImageSource {
     name: source.name.trim(),
     kind: source.kind.trim(),
     sshProfileID: ssh ? (source.sshProfileID?.trim() ?? '') : '',
+    dockerCommand: ssh ? (source.dockerCommand?.trim() ?? '') : '',
     registryURL: normalizedRegistryURL,
     registryUsername: registry ? (source.registryUsername?.trim() ?? '') : '',
     registryPassword: registry ? (source.registryPassword ?? '') : '',
