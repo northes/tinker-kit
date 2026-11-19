@@ -682,7 +682,7 @@ func (s *ImageService) pingRegistry(ctx context.Context, source ImageSource) err
 	client := &http.Client{Transport: &limitedRegistryTransport{base: transport}}
 	response, err := client.Do(request)
 	if err != nil {
-		return userErrorCause("errors.image.registryUnreachable", redactRegistryError(err, source))
+		return registryTransportError(err, "errors.image.registryUnreachable", source)
 	}
 	defer response.Body.Close()
 	if response.StatusCode >= 200 && response.StatusCode < 300 {

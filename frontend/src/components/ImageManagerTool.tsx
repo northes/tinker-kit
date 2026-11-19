@@ -174,6 +174,24 @@ const REGISTRY_TRANSPORT_LABELS = {
   plaintext: 'imageManagerTool.registryTransportPlaintext',
 } as const;
 
+// 地址还空着或解析不了时不提示；能解析才对照传输模式。
+function registryTransportSchemeMismatch(
+  registryURL: string | undefined,
+  transport: (typeof REGISTRY_TRANSPORTS)[number],
+) {
+  const raw = registryURL?.trim() ?? '';
+  if (!raw) return null;
+  let parsed: URL;
+  try {
+    parsed = new URL(raw);
+  } catch {
+    return null;
+  }
+  const expected = transport === 'plaintext' ? 'http:' : 'https:';
+  if (parsed.protocol === expected) return null;
+  return transport === 'plaintext' ? 'http' : 'https';
+}
+
 function RegistryTransportBadge({ source }: { source: ImageSource }) {
   const { t } = useTranslation();
   const mark = registryTransportMarkKey(source);
@@ -203,6 +221,7 @@ function RegistryTransportFields({
       ? draft.registryTransport
       : 'tls'
   ) as (typeof REGISTRY_TRANSPORTS)[number];
+  const schemeMismatch = registryTransportSchemeMismatch(draft.registryURL, transport);
   return (
     <div className="grid gap-1.5">
       <Label id={labelId}>{t('imageManagerTool.registryTransport')}</Label>
@@ -221,6 +240,16 @@ function RegistryTransportFields({
           </Button>
         ))}
       </div>
+      {schemeMismatch === 'http' ? (
+        <p className="m-0 text-xs text-warning-foreground">
+          {t('imageManagerTool.registryTransportSchemeHTTP')}
+        </p>
+      ) : null}
+      {schemeMismatch === 'https' ? (
+        <p className="m-0 text-xs text-warning-foreground">
+          {t('imageManagerTool.registryTransportSchemeHTTPS')}
+        </p>
+      ) : null}
       {transport === 'plaintext' ? (
         <p className="m-0 text-xs text-warning-foreground">
           {t('imageManagerTool.registryTransportPlaintextRisk')}
@@ -246,6 +275,7 @@ function RegistryTransportFields({
             <Label htmlFor="registry-ca-pem">{t('imageManagerTool.registryCAPEM')}</Label>
             <Textarea
               id="registry-ca-pem"
+              className="max-h-40 overflow-y-auto font-mono"
               value={draft.registryCAPEM ?? ''}
               placeholder={t('imageManagerTool.registryCAPEMPlaceholder')}
               spellCheck={false}

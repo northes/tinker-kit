@@ -767,7 +767,7 @@ func (s *ImageService) exportRegistryOCI(ctx context.Context, taskID string, sou
 	}
 	root, err := puller.Get(ctx, rootRef)
 	if err != nil {
-		return userErrorCause("errors.imageExport.readRegistryManifest", redactRegistryError(err, source))
+		return registryTransportError(err, "errors.imageExport.readRegistryManifest", source)
 	}
 	rootDigest := root.Digest.String()
 	if !canonicalSHA256Digest(rootDigest) {

@@ -154,6 +154,9 @@ type ImageSource struct {
 	RegistryTransport string          `json:"registryTransport"`
 	RegistryCAPath    string          `json:"registryCAPath"`
 	RegistryCAPEM     string          `json:"registryCAPEM"`
+	// transportInferred 标记由镜像引用反推、没有用户声明传输模式的来源。
+	// 这类来源不强制 scheme，交给库先试 https、失败再回退 http。
+	transportInferred bool
 }
 
 // SSHProfile 是应用全局复用的 SSH 连接配置。JumpProfileID 指向另一条配置，

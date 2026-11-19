@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
@@ -9,11 +10,17 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
+	"errors"
+	"fmt"
 	"math/big"
+	"net"
 	"net/http"
+	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -34,7 +41,7 @@ func TestRegistryEndpointUsesInsecureOnlyForPlaintext(t *testing.T) {
 	}
 }
 
-func TestRegistryPullSourceFallbackKeepsReferenceScheme(t *testing.T) {
+func TestRegistryPullSourceFallbackKeepsLibrarySchemeHandling(t *testing.T) {
 	service := &ImageService{}
 	target := ImageSource{Kind: "registry", RegistryURL: "https://other.example", RegistryTransport: "tlsCustomCA", RegistryCAPath: "/tmp/ca.pem"}
 	publicRef, err := name.NewTag("registry.example/repo:latest")
@@ -42,15 +49,16 @@ func TestRegistryPullSourceFallbackKeepsReferenceScheme(t *testing.T) {
 		t.Fatalf("解析引用失败: %v", err)
 	}
 	fallback := service.registryPullSource(publicRef, target)
-	if fallback.RegistryURL != "https://registry.example" || fallback.RegistryTransport != "tls" {
+	if fallback.RegistryURL != "https://registry.example" || fallback.RegistryTransport != "tls" || !fallback.transportInferred {
 		t.Fatalf("公网兜底来源为 %#v", fallback)
 	}
+	// 库把回环地址一律猜成 http，这不是用户声明的明文模式，不能据此强制明文。
 	loopbackRef, err := name.NewTag("127.0.0.1:5000/repo:latest")
 	if err != nil {
 		t.Fatalf("解析回环引用失败: %v", err)
 	}
 	loopback := service.registryPullSource(loopbackRef, target)
-	if loopback.RegistryURL != "http://127.0.0.1:5000" || loopback.RegistryTransport != "plaintext" {
+	if loopback.RegistryURL != "https://127.0.0.1:5000" || loopback.RegistryTransport != "tls" || !loopback.transportInferred {
 		t.Fatalf("回环兜底来源为 %#v", loopback)
 	}
 	matchedRef, err := name.NewTag("other.example/repo:latest")
@@ -58,8 +66,32 @@ func TestRegistryPullSourceFallbackKeepsReferenceScheme(t *testing.T) {
 		t.Fatalf("解析目标引用失败: %v", err)
 	}
 	matched := service.registryPullSource(matchedRef, target)
-	if matched.RegistryTransport != "tlsCustomCA" || matched.RegistryCAPath != "/tmp/ca.pem" {
+	if matched.RegistryTransport != "tlsCustomCA" || matched.RegistryCAPath != "/tmp/ca.pem" || matched.transportInferred {
 		t.Fatalf("命中目标来源时应保留传输配置: %#v", matched)
+	}
+}
+
+func TestRegistryInferredSourceSkipsSchemeEnforcement(t *testing.T) {
+	base := &http.Transport{}
+	service := &ImageService{registryTransport: base}
+	ref, err := name.NewTag("127.0.0.1:5000/repo:latest")
+	if err != nil {
+		t.Fatalf("解析回环引用失败: %v", err)
+	}
+	inferred := service.registryPullSource(ref, ImageSource{Kind: "registry", RegistryURL: "https://other.example"})
+	transport, err := service.registryRoundTripper(inferred)
+	if err != nil {
+		t.Fatalf("构建反推来源传输失败: %v", err)
+	}
+	if transport != http.RoundTripper(base) {
+		t.Fatalf("反推来源不应强制 scheme，实际为 %#v", transport)
+	}
+	declared, err := service.registryRoundTripper(ImageSource{Kind: "registry", RegistryURL: "https://127.0.0.1:5000", RegistryTransport: "tls"})
+	if err != nil {
+		t.Fatalf("构建声明来源传输失败: %v", err)
+	}
+	if enforced, ok := declared.(schemeEnforcingTransport); !ok || enforced.scheme != "https" || enforced.base != http.RoundTripper(base) {
+		t.Fatalf("声明来源应强制 https: %#v", declared)
 	}
 }
 
@@ -182,6 +214,122 @@ func certPoolHasSubject(pool *x509.CertPool, commonName string) bool {
 		}
 	}
 	return false
+}
+
+func TestRegistryTransportErrorClassifiesCertificateFailures(t *testing.T) {
+	source := ImageSource{RegistryURL: "https://registry.example", RegistryPassword: "secret-password"}
+	hostname := x509.HostnameError{Certificate: &x509.Certificate{}, Host: "registry.example"}
+	cases := []struct {
+		name     string
+		err      error
+		fallback string
+		want     string
+	}{
+		{
+			name:     "未知 CA",
+			err:      &url.Error{Op: "Get", URL: "https://registry.example/v2/", Err: &tls.CertificateVerificationError{Err: x509.UnknownAuthorityError{}}},
+			fallback: "errors.image.registryUnreachable",
+			want:     registryCertificateVerificationFailedKey,
+		},
+		{
+			name:     "主机名不匹配",
+			err:      hostname,
+			fallback: "errors.imageExport.registryTransferFailed",
+			want:     registryCertificateVerificationFailedKey,
+		},
+		{
+			name:     "证书无效",
+			err:      x509.CertificateInvalidError{Reason: x509.Expired, Detail: "expired"},
+			fallback: "errors.image.registryUnreachable",
+			want:     registryCertificateVerificationFailedKey,
+		},
+		{
+			name:     "证书错误仍脱敏",
+			err:      fmt.Errorf("auth secret-password: %w", x509.UnknownAuthorityError{}),
+			fallback: "errors.imageExport.registryTransferFailed",
+			want:     registryCertificateVerificationFailedKey,
+		},
+		{
+			name:     "连接被拒绝",
+			err:      &url.Error{Err: &net.OpError{Op: "dial", Err: syscall.ECONNREFUSED}},
+			fallback: "errors.image.registryUnreachable",
+			want:     "errors.image.registryUnreachable",
+		},
+		{
+			name:     "超时",
+			err:      &url.Error{Err: context.DeadlineExceeded},
+			fallback: "errors.image.registryUnreachable",
+			want:     "errors.image.registryUnreachable",
+		},
+		{
+			name:     "DNS 失败",
+			err:      &url.Error{Err: &net.DNSError{Err: "no such host", Name: "registry.example", IsNotFound: true}},
+			fallback: "errors.imageExport.registryTransferFailed",
+			want:     "errors.imageExport.registryTransferFailed",
+		},
+		{
+			name:     "只有文本不算证书错误",
+			err:      errors.New("tls: failed to verify certificate: x509: certificate signed by unknown authority"),
+			fallback: "errors.image.registryUnreachable",
+			want:     "errors.image.registryUnreachable",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := registryTransportError(tc.err, tc.fallback, source)
+			if localizedErrorKey(err) != tc.want {
+				t.Fatalf("key = %s，错误 %v", localizedErrorKey(err), err)
+			}
+			if strings.Contains(err.Error(), "secret-password") {
+				t.Fatalf("凭据泄露在错误里: %v", err)
+			}
+		})
+	}
+}
+
+func TestPingAndPullShareCertificateVerificationFailure(t *testing.T) {
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+	source := ImageSource{Kind: "registry", Name: "本地", RegistryURL: server.URL, RegistryTransport: "tls"}
+	pingErr := (&ImageService{}).pingRegistry(context.Background(), source)
+	if localizedErrorKey(pingErr) != registryCertificateVerificationFailedKey {
+		t.Fatalf("探活 = %v", pingErr)
+	}
+	if !strings.Contains(pingErr.Error(), "x509:") {
+		t.Fatalf("证书细节应留在探活错误里: %v", pingErr)
+	}
+
+	transport, err := (&ImageService{}).registryRoundTripper(source)
+	if err != nil {
+		t.Fatalf("构建传输失败: %v", err)
+	}
+	request, err := http.NewRequest(http.MethodGet, server.URL+"/v2/repo/manifests/latest", nil)
+	if err != nil {
+		t.Fatalf("创建拉取请求失败: %v", err)
+	}
+	_, pullErr := transport.RoundTrip(request)
+	if !isRegistryCertificateVerificationFailure(pullErr) {
+		t.Fatalf("拉取错误链应是证书校验失败: %v", pullErr)
+	}
+	classified := registryTransportError(pullErr, "errors.imageExport.registryTransferFailed", source)
+	if localizedErrorKey(classified) != registryCertificateVerificationFailedKey {
+		t.Fatalf("拉取 = %v", classified)
+	}
+
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("监听失败: %v", err)
+	}
+	address := listener.Addr().String()
+	listener.Close()
+	refused := (&ImageService{}).pingRegistry(context.Background(), ImageSource{
+		Kind: "registry", RegistryURL: "https://" + address, RegistryTransport: "tls",
+	})
+	if localizedErrorKey(refused) != "errors.image.registryUnreachable" {
+		t.Fatalf("连接被拒绝应仍是不可达: %v", refused)
+	}
 }
 
 func stringsContainsAll(value string, parts ...string) bool {

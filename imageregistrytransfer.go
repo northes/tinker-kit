@@ -49,15 +49,14 @@ func (s *ImageService) registryPullSource(reference name.Reference, target Image
 			}
 		}
 	}
-	scheme := reference.Context().Scheme()
-	if scheme != "http" && scheme != "https" {
-		scheme = "https"
+	// 引用里的 scheme 是库对回环和内网地址的猜测（127.0.0.1、10/8 一律猜成 http），
+	// 不是用户声明的传输模式。反推来源因此标成 inferred：交给库先试 https、失败再回退 http。
+	return ImageSource{
+		Kind:              "registry",
+		RegistryURL:       "https://" + reference.Context().RegistryStr(),
+		RegistryTransport: registryTransportTLS,
+		transportInferred: true,
 	}
-	mode := registryTransportTLS
-	if scheme == "http" {
-		mode = registryTransportPlaintext
-	}
-	return ImageSource{Kind: "registry", RegistryURL: scheme + "://" + reference.Context().RegistryStr(), RegistryTransport: mode}
 }
 
 // StartRegistryImagePulls 按所选平台复制镜像到当前 Registry，Source 可以是 tag 或 digest。
@@ -108,7 +107,7 @@ func (s *ImageService) runRegistryImagePull(ctx context.Context, taskID string, 
 	s.updateTask(taskID, func(task *imageTaskState) { task.Status, task.Stage = imageTaskRunning, "pulling" })
 	err := s.copyRegistryImage(ctx, taskID, source, origin, change, options)
 	if err != nil {
-		err = userErrorCause("errors.imageExport.registryTransferFailed", redactRegistryError(redactRegistryError(err, origin), source))
+		err = registryTransportError(err, "errors.imageExport.registryTransferFailed", origin, source)
 	}
 	s.finishImageTransfer(taskID, source, ctx, err)
 }

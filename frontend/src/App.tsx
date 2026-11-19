@@ -153,7 +153,7 @@ function normalizedImageSource(source: NonNullable<Settings['imageSources']>[num
     : '';
   try {
     const parsed = new URL(registryURL);
-    if (parsed.protocol === 'https:') {
+    if (parsed.protocol === 'https:' || parsed.protocol === 'http:') {
       parsed.hostname = parsed.hostname.toLowerCase();
       parsed.pathname = parsed.pathname.replace(/\/+$/, '');
       registryURL = parsed.toString().replace(/\/$/, '');
@@ -161,6 +161,11 @@ function normalizedImageSource(source: NonNullable<Settings['imageSources']>[num
   } catch {
     // 保留服务端可接受的非标准地址，由服务端负责最终校验。
   }
+  // 与服务端规范化保持一致：空传输模式等价于 tls，非自定义 CA 模式清空 CA 字段。
+  const registryTransport = registry
+    ? String(value.registryTransport ?? '').trim() || 'tls'
+    : '';
+  const customCA = registryTransport === 'tlsCustomCA';
   return {
     id: String(value.id ?? ''),
     name: String(value.name ?? '').trim(),
@@ -169,6 +174,9 @@ function normalizedImageSource(source: NonNullable<Settings['imageSources']>[num
     registryURL,
     registryUsername: registry ? String(value.registryUsername ?? '').trim() : '',
     registryPassword: registry ? String(value.registryPassword ?? '') : '',
+    registryTransport,
+    registryCAPath: customCA ? String(value.registryCAPath ?? '').trim() : '',
+    registryCAPEM: customCA ? String(value.registryCAPEM ?? '').trim() : '',
   };
 }
 

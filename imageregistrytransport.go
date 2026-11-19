@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -39,6 +40,65 @@ func registrySchemeMatches(mode, scheme string) bool {
 		return scheme == "http"
 	}
 	return scheme == "https"
+}
+
+// registryCertificateVerificationFailedKey 只用于错误链里确实是证书校验失败的情况。
+const registryCertificateVerificationFailedKey = "errors.image.registryCertificateVerificationFailed"
+
+// isRegistryCertificateVerificationFailure 判断建链失败是不是证书校验。
+// 自签、主机名不匹配、过期或用法不对都会走到这里；连接被拒绝、超时、DNS 失败不会。
+// 只看错误链里的类型，不看错误文本，避免把别人拼出来的 x509 字样当成证书问题。
+func isRegistryCertificateVerificationFailure(err error) bool {
+	if err == nil {
+		return false
+	}
+	var verification *tls.CertificateVerificationError
+	if errors.As(err, &verification) {
+		return true
+	}
+	var unknownAuthority x509.UnknownAuthorityError
+	if errors.As(err, &unknownAuthority) {
+		return true
+	}
+	var hostname x509.HostnameError
+	if errors.As(err, &hostname) {
+		return true
+	}
+	var invalid x509.CertificateInvalidError
+	if errors.As(err, &invalid) {
+		return true
+	}
+	var insecure x509.InsecureAlgorithmError
+	if errors.As(err, &insecure) {
+		return true
+	}
+	var constraint x509.ConstraintViolationError
+	if errors.As(err, &constraint) {
+		return true
+	}
+	var critical x509.UnhandledCriticalExtension
+	if errors.As(err, &critical) {
+		return true
+	}
+	return false
+}
+
+// registryTransportError 把建链失败分成证书校验失败和调用方自己的兜底。
+// 探活用不可达做兜底，拉取用传输失败做兜底；证书失败两边走同一条判定。
+// 其它错误仍用 fallbackKey，避免把原本更具体的失败改写成另一条文案。
+func registryTransportError(err error, fallbackKey string, sources ...ImageSource) error {
+	if err == nil {
+		return nil
+	}
+	cert := isRegistryCertificateVerificationFailure(err)
+	redacted := err
+	for _, source := range sources {
+		redacted = redactRegistryError(redacted, source)
+	}
+	if cert {
+		return userErrorCause(registryCertificateVerificationFailedKey, redacted)
+	}
+	return userErrorCause(fallbackKey, redacted)
 }
 
 // validatedRegistryURL 确认地址形态，以及 scheme 与传输模式一致。
@@ -140,6 +200,10 @@ func (s *ImageService) registryRoundTripper(source ImageSource) (http.RoundTripp
 	scheme := "https"
 	if mode == registryTransportPlaintext {
 		scheme = "http"
+	}
+	if source.transportInferred {
+		// 反推来源没有用户声明的模式，不能把库的 https 尝试改写成明文。
+		return transport, nil
 	}
 	// name.Registry 对回环和私网地址固定返回 http。按模式强制 scheme，
 	// 避免内网 https 被库降级成明文，也避免明文来源误走 TLS。
