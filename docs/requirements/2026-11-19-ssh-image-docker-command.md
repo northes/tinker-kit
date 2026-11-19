@@ -22,7 +22,8 @@
    - 探测成功且找到 `docker`：执行 `PATH=<探测到的 PATH> docker <原有子命令>`。
 4. 非空：按 Unicode 空白拆成 argv（与 `strings.Fields` 相同），不解析引号，不再套登录 PATH。这些 token 后面原样接上现有 docker 子命令。例如前缀 `/usr/bin/sudo -n /usr/bin/docker` 加 `images` 得到 `/usr/bin/sudo -n /usr/bin/docker images`。不经过 shell，不支持管道、重定向、命令替换。
 5. 镜像管理里所有走 SSH 的 docker 调用都用同一条规则，包括列表、详情、拉取、推送、打标签、删除、导出，以及 `docker load` 的 stdin。应用不插入 `sudo -S`，不自行消费 stdin；stdin 仍交给远端会话，由用户写在前缀里的命令接收。
-6. 连接探测保持现在的深度：SSH 为 `uname -m` 再 exec 上述命令的 `--version`；本机仍只跑 CLI `--version`。不额外跑 `docker info`。状态徽标仍表示客户端能执行，不表示 daemon 可用。前缀留空且已判定找不到 `docker` 时，探测按第 3 条直接失败，不 exec。
+6. 连接探测改为验证 daemon 可访问：SSH 与本地来源都执行一条 `<命令> info --format '{{.ServerVersion}}'`（SSH 前面拼 `uname -m &&` 以同时取架构），daemon 不可访问即判为不可用。状态里的版本改用 `ServerVersion`。`registry` 来源不变。
+   - 测试连接改为在 dialog 内分步展示：「连接」用 `uname -m && <命令> --version`（SSH）或 `<命令> --version`（本地）；「daemon 探测」用上述 info 命令。两步都通过才算测试成功。
 7. 保存与测试连接都先校验 `dockerCommand`，非法则拒绝，不写配置，也不发起 SSH，不得悄悄清空：
    - 整段 trim 后为空：合法，表示默认。
    - 原始字符串最长 4096。
@@ -35,7 +36,10 @@
     - 标签：`Docker 命令` / `Docker command`。
     - 占位：`/usr/bin/sudo -n /usr/bin/docker`。
     - 说明：留空则使用登录 shell PATH 中的 docker；填写则按空格拆成命令，不经过 shell，也不会询问 sudo 密码，需要免密 sudo（`sudo -n`）。英文表达同一含义。
-11. SSH 来源编辑表单提供「测试连接」，与 Registry 的测试一样不落盘。用当前草稿（含 SSH 配置解析和 `dockerCommand`）做与进入来源时相同的连接探测。失败展示远端或校验错误。免密 sudo 或 socket 权限不足时，测试可能成功，加载镜像列表才会失败。
+11. SSH 来源编辑表单提供「测试连接」，与 Registry 的测试一样不落盘。用当前草稿（含 SSH 配置解析和 `dockerCommand`）做与进入来源时相同的连接探测。失败展示远端或校验错误。
+    - 测试结果展示在编辑弹窗内的面板里，分「连接」「daemon 探测」两行；成功行显示成功，失败行显示单行截断（不换行、末尾省略号）的原因，点击该行把完整错误（含远端 stderr）复制到剪贴板，并弹出应用现有的「已复制」提示。
+    - 不再弹「连接成功 / 连接失败」toast。面板在编辑任一字段、切换来源类型或关闭弹窗时清空。
+    - Registry 来源只有「连接」一步（registry 探活），不显示 daemon 行。
 12. 新增用户可见文案同时写入 `zh-CN` 与 `en-US`。
 
 ## 已定决策
@@ -69,10 +73,17 @@
 - SSH 来源表单同时加输入框和测试连接。
 - 说明必须写明不会询问 sudo 密码、需要免密 sudo。
 
-### 探测深度（第三轮）
+### 探测深度（第三轮，已由下方「daemon 探测」取代）
 
-- 测试连接和来源状态都继续只检查客户端 `--version`（SSH 另加 `uname -m`），不跑 `docker info`。
-- 连接徽标不改成「daemon 可用」。
+- ~~测试连接和来源状态都继续只检查客户端 `--version`，不跑 `docker info`。~~
+
+### daemon 探测与测试面板（第四轮）
+
+- 起因：`docker --version` 无法暴露 daemon socket 权限问题，导致测试连接成功、加载列表报 `permission denied`。
+- 进入或切换来源时的自动检查改成一条命令同时拿架构与服务端版本：`uname -m && <docker 命令> info --format '{{.ServerVersion}}'`。本机来源同理（不带 `uname`）。
+- 测试连接在弹窗内分两步展示，失败原因单行截断、点击复制完整原因；不再弹 toast。
+- 不为 socket 权限错误额外追加可操作提示，保持原样。
+- 本机来源与 SSH 来源口径一致。
 
 ## 非目标
 
@@ -80,13 +91,14 @@
 - 不支持 shell 语法（管道、重定向、引号、变量替换）。需要更复杂的包装时，用户在远端放脚本，并把脚本路径填进前缀。
 - 不改服务管理的目标、探测命令列表、缓存和错误行为。
 - 不把全局 `DockerCLIPath` 应用到 SSH 来源，也不为本机来源增加单独的命令前缀。
-- 不把连接探测升级为 daemon 检查，不改变「已连接」的含义。
+- 不为 daemon socket 权限错误追加专门的可操作文案，保持现有错误展示。
 - 不为 Podman 或其他 CLI 另做子命令兼容；前缀写成别的可执行文件时，仍追加现有 docker 子命令。
 - 不改 Registry 传输、镜像业务操作的其它语义，或 SSH 配置对话框。
 
 ## 验收标准
 
-- 已有 SSH 来源不填 `dockerCommand`：若登录 PATH 能找到 `docker`，列表与 `--version` 探测使用该 PATH；若探测成功但找不到，状态为不可用，文案为远端未找到命令 `docker`，且不再出现一次 `exec: docker: not found`。
+- 已有 SSH 来源仍只检查版本：若登录 PATH 能找到 `docker`，列表与探测使用该 PATH；若探测成功但找不到，状态为不可用，文案为远端未找到命令 `docker`。
+- 当前用户可执行 docker 但不能访问 daemon socket（未入 docker 组、无 `sudo -n` 前缀）时：切换来源立即显示不可用，原因包含 `permission denied` 与 socket 路径；测试连接的「daemon 探测」行失败并可点击复制完整原因，不再出现「测试成功但加载失败」。
 - 探测用的登录 shell 全部失败时，仍尝试裸 `docker`，来源不因探测步骤本身被标死。
 - SSH 来源填写 `/usr/bin/docker`：远端执行该绝对路径，不依赖 PATH 探测。
 - SSH 来源填写 `/usr/bin/sudo -n /usr/bin/docker`：列表、探测、`docker load` 的 argv 都以此前缀开头；load 的镜像数据仍从会话 stdin 送入，应用不改写为 `sudo -S`。sudo 需要密码时失败信息包含远端 stderr。
@@ -104,3 +116,4 @@
 ## 变更记录
 
 - 2026-11-19：对齐首版。命令前缀挂在 SSH 镜像来源；留空走登录 PATH；不保存 sudo 密码；探测仍只检查客户端版本。
+- 2026-11-19（后续）：探测改为验证 daemon（`info --format '{{.ServerVersion}}'`，SSH 拼 `uname -m`），本机同步；测试连接改为弹窗内「连接 / daemon 探测」两步面板，失败原因单行截断并可点击复制，不再弹 toast。早先「只检查客户端版本」的结论作废。
