@@ -8,7 +8,7 @@ import {
   ListBullets,
   Queue,
   Trash,
-  XCircle,
+  X,
 } from '@phosphor-icons/react';
 import { CancelError, Events } from '@wailsio/runtime';
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
@@ -1072,13 +1072,15 @@ export default function ServiceManagerTool({
               {loading ? (
                 <ToolActionButton
                   variant="secondary"
-                  icon={XCircle}
+                  solid
+                  icon={X}
                   label={t('common.cancel')}
                   onPress={cancelLoad}
                 />
               ) : (
                 <ToolActionButton
                   variant="secondary"
+                  solid
                   label={t('serviceManagerTool.refresh')}
                   leading={<ArrowsClockwise className="size-3.5" weight="regular" aria-hidden />}
                   onPress={() =>
@@ -1112,7 +1114,8 @@ export default function ServiceManagerTool({
               {busy && !loading ? (
                 <ToolActionButton
                   variant="secondary"
-                  icon={XCircle}
+                  solid
+                  icon={X}
                   label={t('common.cancel')}
                   onPress={cancelAction}
                 />

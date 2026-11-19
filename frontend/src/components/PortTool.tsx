@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { ArrowsClockwise, GearSix, XCircle } from '@phosphor-icons/react';
+import { ArrowsClockwise, GearSix, X } from '@phosphor-icons/react';
 import { useTranslation } from 'react-i18next';
 import {
   GetColumnWidths,
@@ -436,12 +436,12 @@ export default function PortTool({ active }: { active: boolean }) {
               ]}
             />
             {loading ? (
-              <Button variant="outline" className="ml-auto" onClick={cancelPorts}>
-                <XCircle data-icon="inline-start" weight="regular" />
+              <Button variant="secondary" className="ml-auto" onClick={cancelPorts}>
+                <X data-icon="inline-start" weight="regular" />
                 {t('common.cancel')}
               </Button>
             ) : (
-              <Button variant="outline" className="ml-auto" onClick={() => void refreshPorts()}>
+              <Button variant="secondary" className="ml-auto" onClick={() => void refreshPorts()}>
                 <ArrowsClockwise data-icon="inline-start" weight="regular" />
                 {t('portTool.refresh')}
               </Button>

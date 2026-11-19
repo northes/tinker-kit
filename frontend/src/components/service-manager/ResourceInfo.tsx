@@ -155,7 +155,7 @@ function ContainerSizePopover({
             {loading ? (
               <PixelAlignedSpinner />
             ) : canceled ? (
-              t('common.canceled')
+              <span className="font-mono">—</span>
             ) : (
               t('serviceManagerTool.detail.sizeUnavailable')
             )}

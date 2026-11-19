@@ -12,7 +12,7 @@ import {
   PencilSimple,
   Trash,
   UploadSimple,
-  XCircle,
+  X,
 } from '@phosphor-icons/react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { CancelError } from '@wailsio/runtime';
@@ -1233,13 +1233,15 @@ export default function ImageManagerTool({
               {sourceViewState === 'connecting' ? (
                 <ToolActionButton
                   variant="secondary"
-                  icon={XCircle}
+                  solid
+                  icon={X}
                   label={t('common.cancel')}
                   onPress={cancelWatch}
                 />
               ) : (
                 <ToolActionButton
                   variant="secondary"
+                  solid
                   label={t('imageManagerTool.refresh')}
                   leading={<ArrowsClockwise className="size-3.5" weight="regular" aria-hidden />}
                   disabled={busy !== null || sourceProfileMissing}
@@ -1274,6 +1276,7 @@ export default function ImageManagerTool({
               </div>
               <ToolActionButton
                 variant="secondary"
+                solid
                 icon={ArrowsClockwise}
                 label={t('imageManagerTool.refresh')}
                 onPress={refreshList}

@@ -1769,7 +1769,7 @@ export default function SshFilesTool({ active, locate = null }: Props) {
                   </div>
                   <div className="max-w-lg break-words text-xs text-muted-foreground">{error}</div>
                   <Button
-                    variant="outline"
+                    variant="secondary"
                     className="mt-1 h-8 text-xs"
                     onClick={reloadCurrentView}
                   >
@@ -2220,7 +2220,8 @@ export default function SshFilesTool({ active, locate = null }: Props) {
               </span>
               <ToolActionButton
                 variant="secondary"
-                icon={searching ? XCircle : ArrowClockwise}
+                solid
+                icon={searching ? X : ArrowClockwise}
                 label={t(searching ? 'common.cancel' : 'sshFilesTool.refresh')}
                 onPress={searching ? cancelLoading : reloadCurrentView}
               />
