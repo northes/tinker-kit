@@ -272,8 +272,11 @@ func TestTestImageSourceConnectionStepsFailsValidationBeforeSSH(t *testing.T) {
 		return nil, nil
 	}}
 	steps := service.TestImageSourceConnectionSteps(ImageSource{ID: "ssh:draft", Kind: "ssh", SSHHost: "dev-box", DockerCommand: "/usr/bin/docker;rm -rf /"})
-	if len(steps) != 1 || steps[0].Key != imageConnectionStepConnect || steps[0].Error == "" {
+	if len(steps) != 2 || steps[0].Key != imageConnectionStepConnect || steps[0].Error == "" {
 		t.Fatalf("校验失败应只让第一步失败: %#v", steps)
+	}
+	if steps[1].Key != imageConnectionStepDaemon || !steps[1].Skipped {
+		t.Fatalf("daemon 探测应标记为未执行: %#v", steps)
 	}
 	if !strings.Contains(steps[0].Error, "errors.config.dockerCommandInvalid") {
 		t.Fatalf("失败原因应指向非法命令前缀: %q", steps[0].Error)

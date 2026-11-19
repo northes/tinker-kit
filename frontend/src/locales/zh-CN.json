@@ -871,6 +871,7 @@
     "connectionStepDaemon": "daemon 探测",
     "connectionTestRunning": "正在测试连接…",
     "connectionTestPassed": "通过",
+    "connectionTestSkipped": "未执行",
     "connectionTestErrorDetail": "失败原因",
     "copyConnectionError": "复制{{step}}的失败原因",
     "sshProfile": "SSH 配置",

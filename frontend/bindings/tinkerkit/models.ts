@@ -87,11 +87,12 @@ export interface Config {
 
 /**
  * ConnectionTestStep 是「测试连接」面板的一步结果。Key 对应 locale 中的步骤名，
- * Error 为空表示该步通过；非空时是后端错误原文（本地化错误是 JSON 载荷，由前端按语言渲染）。
+ * Error 为空表示该步通过，Skipped 表示上一步已失败、本步未执行。
  */
 export interface ConnectionTestStep {
     "key": string;
     "error": string;
+    "skipped": boolean;
 }
 
 export interface DockerComposeGroup {

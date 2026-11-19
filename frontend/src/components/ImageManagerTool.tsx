@@ -577,7 +577,14 @@ export default function ImageManagerTool({
       );
     void TestImageSourceConnectionSteps(sourceCandidate(draft))
       .then((steps) => settle(steps ?? []))
-      .catch((error) => settle([{ key: 'connect', error: errorMessage(error) }]));
+      .catch((error) =>
+        settle([
+          { key: 'connect', error: errorMessage(error), skipped: false },
+          ...(draft.kind === 'ssh'
+            ? [{ key: 'daemon', error: '', skipped: true }]
+            : []),
+        ]),
+      );
   };
 
   const renderConnectionTest = (draft: SourceDraft) => {

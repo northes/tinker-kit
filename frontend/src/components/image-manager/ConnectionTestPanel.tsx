@@ -1,4 +1,4 @@
-import { CheckCircle, Copy, WarningCircle } from '@phosphor-icons/react';
+import { CheckCircle, Copy, MinusCircle, WarningCircle } from '@phosphor-icons/react';
 import { useTranslation } from 'react-i18next';
 import type { ConnectionTestStep } from '../../../bindings/tinkerkit/models';
 import { formatBackendError } from '../../lib/backend-error';
@@ -56,7 +56,13 @@ export function ImageConnectionTestPanel({
             const failure = step.error ? formatBackendError(step.error) : '';
             return (
               <li key={step.key} className="flex min-w-0 items-center gap-2 text-xs">
-                {failure ? (
+                {step.skipped ? (
+                  <MinusCircle
+                    weight="regular"
+                    aria-hidden="true"
+                    className="size-4 shrink-0 text-muted-foreground"
+                  />
+                ) : failure ? (
                   <WarningCircle
                     weight="regular"
                     aria-hidden="true"
@@ -70,7 +76,11 @@ export function ImageConnectionTestPanel({
                   />
                 )}
                 <span className="shrink-0 text-muted-foreground">{label}</span>
-                {failure ? (
+                {step.skipped ? (
+                  <span className="min-w-0 flex-1 truncate text-muted-foreground">
+                    {t('imageManagerTool.connectionTestSkipped')}
+                  </span>
+                ) : failure ? (
                   <button
                     type="button"
                     aria-label={t('imageManagerTool.copyConnectionError', { step: label })}

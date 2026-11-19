@@ -53,10 +53,11 @@ type DockerStatus struct {
 }
 
 // ConnectionTestStep 是「测试连接」面板的一步结果。Key 对应 locale 中的步骤名，
-// Error 为空表示该步通过；非空时是后端错误原文（本地化错误是 JSON 载荷，由前端按语言渲染）。
+// Error 为空表示该步通过，Skipped 表示上一步已失败、本步未执行。
 type ConnectionTestStep struct {
-	Key   string `json:"key"`
-	Error string `json:"error"`
+	Key     string `json:"key"`
+	Error   string `json:"error"`
+	Skipped bool   `json:"skipped"`
 }
 
 const (
@@ -601,21 +602,26 @@ func (s *ImageService) TestImageSourceConnectionSteps(source ImageSource) []Conn
 	return steps
 }
 
-// testImageSourceConnectionSteps 按执行顺序返回已尝试的步骤；失败即停，返回值和错误同时给出。
+// testImageSourceConnectionSteps 按执行顺序返回每一步；任一步失败后，其后的步骤标记为未执行，
+// 面板因此始终能展示完整的步骤列表，不会因为第一步失败而少一行。
 func (s *ImageService) testImageSourceConnectionSteps(source ImageSource) ([]ConnectionTestStep, error) {
-	failed := func(err error) ([]ConnectionTestStep, error) {
-		return []ConnectionTestStep{{Key: imageConnectionStepConnect, Error: err.Error()}}, err
+	failedBeforeDocker := func(err error) ([]ConnectionTestStep, error) {
+		steps := []ConnectionTestStep{{Key: imageConnectionStepConnect, Error: err.Error()}}
+		if isSSHImageSource(source) {
+			steps = append(steps, ConnectionTestStep{Key: imageConnectionStepDaemon, Skipped: true})
+		}
+		return steps, err
 	}
 	normalized, cliPath, err := s.prepareConnectionTest(source)
 	if err != nil {
 		// 校验失败发生在任何连接之前，因此只完成「连接」一步。
-		return failed(err)
+		return failedBeforeDocker(err)
 	}
 	if normalized.Kind == "registry" {
 		itemCtx, cancel := context.WithTimeout(s.serviceContext(), imageCommandTimeout)
 		defer cancel()
 		if err := s.pingRegistry(itemCtx, normalized); err != nil {
-			return failed(err)
+			return []ConnectionTestStep{{Key: imageConnectionStepConnect, Error: err.Error()}}, err
 		}
 		return []ConnectionTestStep{{Key: imageConnectionStepConnect}}, nil
 	}
@@ -627,7 +633,7 @@ func (s *ImageService) testImageSourceConnectionSteps(source ImageSource) ([]Con
 		{imageConnectionStepDaemon, imageDaemonProbeArgs},
 	}
 	steps := make([]ConnectionTestStep, 0, len(probes))
-	for _, probe := range probes {
+	for index, probe := range probes {
 		itemCtx, cancel := context.WithTimeout(s.serviceContext(), imageCommandTimeout)
 		output, probeErr := s.runSourceProbe(itemCtx, normalized, cliPath, probe.args)
 		cancel()
@@ -635,11 +641,19 @@ func (s *ImageService) testImageSourceConnectionSteps(source ImageSource) ([]Con
 			_, _, probeErr = splitImageProbeOutput(normalized, output)
 		}
 		if probeErr != nil {
-			return append(steps, ConnectionTestStep{Key: probe.key, Error: probeErr.Error()}), probeErr
+			steps = append(steps, ConnectionTestStep{Key: probe.key, Error: probeErr.Error()})
+			for _, rest := range probes[index+1:] {
+				steps = append(steps, ConnectionTestStep{Key: rest.key, Skipped: true})
+			}
+			return steps, probeErr
 		}
 		steps = append(steps, ConnectionTestStep{Key: probe.key})
 	}
 	return steps, nil
+}
+
+func isSSHImageSource(source ImageSource) bool {
+	return strings.EqualFold(strings.TrimSpace(source.Kind), "ssh")
 }
 
 // prepareConnectionTest 在发起任何连接前完成校验、SSH 配置解析与 CLI 解析。

@@ -871,6 +871,7 @@
     "connectionStepDaemon": "Daemon check",
     "connectionTestRunning": "Testing connection…",
     "connectionTestPassed": "Passed",
+    "connectionTestSkipped": "Not run",
     "connectionTestErrorDetail": "failure reason",
     "copyConnectionError": "Copy the {{step}} failure reason",
     "sshProfile": "SSH profile",
