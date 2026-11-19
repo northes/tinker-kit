@@ -34,7 +34,7 @@
 8. 非 `tlsCustomCA` 模式归一化时清空 `registryCAPath` 与 `registryCAPEM`，同现有「ssh 分支清空 registry 字段」的做法。
 9. `imageSourceFingerprint` 必须把传输模式与用于建链的 CA 内容（或路径）纳入指纹，避免缓存 key 在信任策略变化后不变。
 10. 前端表单：Registry 来源编辑弹窗新增「传输安全」单选（4 项）；选 `tlsCustomCA` 时显示「CA 证书文件路径」输入与「或粘贴 CA 证书（PEM）」多行输入；选 `plaintext` 或 `tlsSkipVerify` 时在该控件下显示一行风险提示（`plaintext` 额外说明用户名密码会以 Basic Auth 明文传输）。
-11. 前端来源列表：非 `tls` 模式的 Registry 来源显示标记（`HTTP` / `跳过校验` / `自定义 CA`），一眼能看出哪些来源不是标准校验。
+11. 目标主机下拉和目标主机管理列表都不标注传输模式。非默认模式的风险只在编辑表单里提示，不加 `HTTP` / `跳过校验` / `自定义 CA` 标记。
 12. 文案中英双份，`zh-CN` 与 `en-US` 都补齐，key 结构对齐（`test:i18n` 必须通过）。
 
 ## 已定决策
@@ -65,7 +65,7 @@
 
 ### 风险提示
 
-- 表单内联提示 + 来源列表标记，两处都要有；只在表单里提示不够。
+- 风险提示只放在编辑表单里。目标主机列表不标传输模式。
 
 ### 存量配置
 
@@ -91,10 +91,15 @@
 - 选 `tlsCustomCA` 但路径与 PEM 都空 → 保存失败，错误文案说明必须提供其一。
 - `plaintext` 配 `https://...`、或 `tls` 配 `http://...` → 保存失败并说明 scheme 与模式不一致。
 - 非 `tlsCustomCA` 模式下保存后 `registryCAPath` / `registryCAPEM` 被清空（检查配置文件内容）。
-- 表单：选 `plaintext` 或 `tlsSkipVerify` 时出现风险提示；选 `tlsCustomCA` 时出现路径与 PEM 两个输入；来源列表里这三个非默认模式都有对应标记。
+- 表单：选 `plaintext` 或 `tlsSkipVerify` 时出现风险提示；选 `tlsCustomCA` 时出现路径与 PEM 两个输入。目标主机下拉和管理列表不显示传输模式标记。
 - 中英文两份 locale 都有新文案，`wails3 task test:i18n` 通过；`frontend/bindings/` 由 `wails3 task common:generate:bindings` 重新生成，不手工编辑。
 - `wails3 task common:frontend:run SCRIPT=build`、`wails3 task test:go` 无新增失败；`git diff --check` 干净。
 
 ## 待定问题
 
 无。
+
+## 变更记录
+
+- 2026-11-19：目标主机列表不再标注 HTTP、跳过校验或自定义 CA。风险提示仍留在编辑表单。来源下拉里的标记本次不动。
+- 2026-11-19：目标主机下拉里的传输模式标记也去掉。风险提示仍只留在编辑表单。
