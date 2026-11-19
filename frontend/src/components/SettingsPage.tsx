@@ -550,7 +550,7 @@ function SSHKnownHostsDialog({
   return (
     <>
       <Dialog open={open} onOpenChange={handleOpenChange}>
-        <DialogContent className="flex max-h-[min(720px,calc(100dvh-32px))] w-[min(640px,calc(100vw-32px))] max-w-none flex-col gap-0 overflow-hidden p-0 sm:max-w-none">
+        <DialogContent className="flex h-[min(720px,calc(100dvh-32px))] max-h-[min(720px,calc(100dvh-32px))] w-[min(640px,calc(100vw-32px))] max-w-none flex-col gap-0 overflow-hidden p-0 sm:max-w-none">
           <DialogHeader className="flex-none border-b border-border px-6 py-5">
             <DialogTitle className="text-base">
               {t(editing ? 'settings.sshKnownHostsEditTitle' : 'settings.sshKnownHostsTitle')}
