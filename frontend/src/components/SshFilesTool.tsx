@@ -122,14 +122,7 @@ import {
   ContextMenuSeparator,
   ContextMenuTrigger,
 } from './ui/context-menu';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from './ui/dialog';
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from './ui/dialog';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -2423,9 +2416,7 @@ export default function SshFilesTool({ active, locate = null }: Props) {
               </ScrollArea>
             </div>
             <div className="grid gap-1.5">
-              <Label htmlFor="ssh-upload-target" className="text-xs text-muted-foreground">
-                {t('sshFilesTool.targetPath')}
-              </Label>
+              <Label htmlFor="ssh-upload-target">{t('sshFilesTool.targetPath')}</Label>
               <Input
                 id="ssh-upload-target"
                 value={uploadTarget}
@@ -2433,7 +2424,7 @@ export default function SshFilesTool({ active, locate = null }: Props) {
                 className="font-mono text-xs"
                 disabled={uploadStarting}
               />
-              <p className="m-0 text-[10px] leading-4 text-muted-foreground">
+              <p className="m-0 text-xs leading-5 text-muted-foreground">
                 {t('sshFilesTool.uploadTargetHint')}
               </p>
             </div>
@@ -2525,9 +2516,6 @@ export default function SshFilesTool({ active, locate = null }: Props) {
                   ? t(`sshFilesTool.${operationDialog.operation}Title`)
                   : ''}
             </DialogTitle>
-            <DialogDescription className="text-xs leading-5">
-              {t('sshFilesTool.operationDesc', { count: operationDialog?.paths.length ?? 0 })}
-            </DialogDescription>
           </DialogHeader>
           <form
             className="grid gap-4"
@@ -2540,9 +2528,7 @@ export default function SshFilesTool({ active, locate = null }: Props) {
             {usesDirectoryTree(operationDialog?.operation) ? (
               <div className="grid gap-1.5">
                 <div className="flex items-center justify-between gap-2">
-                  <Label className="text-xs text-muted-foreground">
-                    {t('sshFilesTool.directoryTree')}
-                  </Label>
+                  <Label>{t('sshFilesTool.directoryTree')}</Label>
                   <Button
                     type="button"
                     variant="outline"
@@ -2772,7 +2758,7 @@ export default function SshFilesTool({ active, locate = null }: Props) {
                   className="font-mono text-xs"
                   disabled={operationRunning}
                 />
-                <p className="m-0 text-[10px] leading-4 text-muted-foreground">
+                <p className="m-0 text-xs leading-5 text-muted-foreground">
                   {operationDialog?.operation === 'compress'
                     ? t('sshFilesTool.archivePathHint')
                     : t('sshFilesTool.targetDirectoryHint')}

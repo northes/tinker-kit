@@ -481,7 +481,7 @@ export default function TextGeneratorTool({
           ) : (
             <div className="no-scrollbar min-h-28 overflow-y-auto divide-y divide-border">
               {sources.length === 0 ? (
-                <p className="py-8 text-center text-muted-foreground">
+                <p className="py-8 text-center text-xs leading-5 text-muted-foreground">
                   {t('textGeneratorTool.noCustomSources')}
                 </p>
               ) : (

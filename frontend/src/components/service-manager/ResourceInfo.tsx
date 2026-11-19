@@ -629,7 +629,7 @@ export function ResourceInfoTab({
             <DialogDescription>{t('serviceManagerTool.detail.rawTitle')}</DialogDescription>
           </DialogHeader>
           <ScrollArea className="min-h-0 flex-1 rounded-md border border-border bg-muted/20 p-3">
-            <pre className="m-0 font-mono text-[11px] break-all whitespace-pre-wrap text-foreground">
+            <pre className="m-0 font-mono text-xs break-all whitespace-pre-wrap text-foreground">
               {JSON.stringify(
                 info?.runtime === 'docker'
                   ? { ...info.detail, size: containerSize }

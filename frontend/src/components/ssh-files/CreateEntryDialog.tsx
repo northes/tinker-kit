@@ -97,11 +97,15 @@ export function CreateEntryDialog({
             aria-describedby={error ? 'ssh-create-entry-error' : 'ssh-create-entry-hint'}
             autoFocus
           />
-          <p id="ssh-create-entry-hint" className="text-sm text-muted-foreground">
+          <p id="ssh-create-entry-hint" className="text-xs leading-5 text-muted-foreground">
             {t(isFile ? 'sshFilesTool.fileNameHint' : 'sshFilesTool.folderNameHint')}
           </p>
           {error ? (
-            <p id="ssh-create-entry-error" className="text-sm text-destructive" role="alert">
+            <p
+              id="ssh-create-entry-error"
+              className="text-xs leading-5 text-destructive"
+              role="alert"
+            >
               {t(isFile ? 'sshFilesTool.fileCreateFailed' : 'sshFilesTool.folderCreateFailed')}:{' '}
               {error}
             </p>

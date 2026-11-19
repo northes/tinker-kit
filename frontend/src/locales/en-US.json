@@ -175,7 +175,7 @@
     "autoFormatOnFill": "Auto-format after fill",
     "displaySettings": "Display settings",
     "formatTime": "Format time",
-    "formatTimeHint": "Only changes table previews, not the original JSON. Date formats use the system time zone; ISO 8601 uses UTC.",
+    "formatTimeHint": "Only changes table previews, not the original JSON; ISO 8601 uses UTC",
     "timeFormats": {
       "none": "Do not format",
       "datetime": "yyyy-MM-dd HH:mm:ss",
@@ -428,7 +428,7 @@
       "mapCandidate": "Map candidate: {{zone}}",
       "ntpTitle": "NTP servers",
       "ntpConfigure": "Edit NTP servers",
-      "ntpDescription": "Queried in parallel; the first successful response is used. A hostname without a port defaults to 123.",
+      "ntpDescription": "Queried in parallel; the first success is returned",
       "ntpServerLabel": "NTP server {{index}}",
       "ntpPlaceholder": "e.g. pool.ntp.org:123",
       "ntpAdd": "Add server",
@@ -981,15 +981,13 @@
     "pushRemote": "Push to remote",
     "batchPushRemote": "Push selected to remote",
     "pushTitle": "Push image to remote",
-    "pushBody": "Enter the target image name. If it differs from the current name, a tag is created before pushing.",
     "targetImageName": "Target image name",
     "batchPushTitle": "Push images",
-    "batchPushBody": "Push the current name of each of the {{count}} selected images.",
     "rename": "Rename",
     "batchRename": "Rename selected",
     "renameTitle": "Rename image",
     "batchRenameTitle": "Rename images",
-    "renameBody": "Generate new names for {{total}} images; the original tag is removed after renaming and other associated tags stay intact.",
+    "renameBody": "Renaming removes the original tag",
     "renameScope": "Target",
     "renameScopeTag": "Tag",
     "renameScopeName": "Full name",
@@ -1018,7 +1016,6 @@
     "copyTagAction": "Copy to new tag",
     "batchCopyTagAction": "Copy selected to a new tag",
     "copyTagTitle": "Copy to new tag",
-    "copyTagBody": "Create a new tag for {{count}} images and keep their existing tags.",
     "newTag": "New tag",
     "newTagPlaceholder": "e.g. release",
     "operationInputRequired": "Enter a target value",
@@ -1129,7 +1126,6 @@
     "pullFailed": "Failed to pull image",
     "pull": "Pull",
     "pullImage": "Pull image",
-    "pullImageBody": "Pull an image using Docker CLI on the current source with its existing authentication configuration.",
     "imageReference": "Image reference",
     "imageReferencePlaceholder": "e.g. alpine:3.19",
     "importTar": "Import",
@@ -1159,13 +1155,12 @@
     "taskStatusFailed": "Failed",
     "taskStatusCanceled": "Canceled",
     "importPreviewTitle": "Confirm image import",
-    "importPreviewBody": "Check the target repository and tag. Rename incoming images when the target already exists.",
     "importTarget": "Target repository:tag",
     "importTargetPlaceholder": "e.g. myapp:1.0-amd64",
-    "importRenameRequired": "This reference already exists. Change the target repository or tag.",
-    "importDuplicateTargets": "Incoming images have duplicate target references. Give each a distinct name.",
+    "importRenameRequired": "This reference already exists. Change the target repository or tag",
+    "importDuplicateTargets": "Incoming images have duplicate target references. Give each a distinct name",
     "importTasksStarted": "Created {{total}} image import tasks",
-    "registryPullBody": "Copy an image to the current Registry. Enter optional source credentials, or leave blank to reuse configured Registry credentials.",
+    "registryPullBody": "Leave the credentials blank to reuse a saved Registry source's credentials",
     "architectureMulti": "Multi-arch",
     "architectureHint": "Image architectures: {{architectures}}",
     "pullPlatform": "Architecture",
@@ -1173,10 +1168,10 @@
     "pullCurrentPlatform": "Current architecture ({{architecture}})",
     "pullAllPlatforms": "All architectures",
     "resolvePullPlatforms": "Resolve supported architectures",
-    "pullPlatformsIdle": "Not resolved. Click the button to fetch supported architectures.",
+    "pullPlatformsIdle": "Not resolved. Click the button to fetch supported architectures",
     "pullPlatformsLoading": "Resolving supported architectures…",
     "pullPlatformsFailed": "Failed to resolve architectures: {{detail}}",
-    "pullPlatformsReady": "Resolved {{total}} architectures.",
+    "pullPlatformsReady": "Resolved {{total}} architectures",
     "pullUsername": "Username (optional)",
     "pullPassword": "Password (optional)"
   },
@@ -1319,8 +1314,8 @@
     "composeGroup": "Compose · {{name}}",
     "expandGroup": "Expand group",
     "collapseGroup": "Collapse group",
-    "pickSelectTitle": "Select containers to pick",
-    "pickSelectDesc": "Choose which containers of {{name}} to pick",
+    "pickSelectTitle": "Pick containers",
+    "pickSelectDesc": "{{name}}",
     "clearLogs": "Clear logs",
     "clearLogsTitle": "Clear logs?",
     "clearLogsConfirm": "This clears the log buffer for this resource and cannot be undone.",
@@ -1367,7 +1362,7 @@
     "targetUnavailable": "Removed host",
     "confirmAction": "Run “{{action}}” on “{{name}}”?",
     "updateTitle": "Update Compose services",
-    "updateDescription": "Choose how to update “{{name}}”.",
+    "updateDescription": "{{name}}",
     "pullOnly": "Pull only",
     "pullAndStart": "Pull and start",
     "actionSucceeded": "{{action}} completed for {{resource}}",
@@ -1393,9 +1388,9 @@
     "wholeWord": "Match whole word",
     "advancedSettings": "Advanced settings",
     "highlightLevels": "Highlight log levels",
-    "highlightLevelsDescription": "Use a red background for ERROR logs and yellow for WARN logs.",
+    "highlightLevelsDescription": "Use a red background for ERROR logs and yellow for WARN logs",
     "collapseLogLines": "Fold long logs after",
-    "collapseLogLinesDescription": "Lines beyond this number are folded; use the button below the entry to show the full text.",
+    "collapseLogLinesDescription": "Lines beyond this number are folded; use the button below the entry to show the full text",
     "collapseLinesNoMatch": "Enter a line count from 1 to 200",
     "expandLogText": "Show full log",
     "collapseLogText": "Fold log",
@@ -1406,44 +1401,44 @@
     "historyFailed": "Failed to read or save log filter history",
     "filterHelp": {
       "title": "Advanced syntax",
-      "description": "Regular conditions filter all logs in the current scope. @name scopes the following conditions until the closing parenthesis, or the end of the expression at the top level.",
-      "rules": "Precedence: parentheses, not, and, or. Keywords use case-insensitive substring matching by default. The input buttons enable whole-word, regex and case-sensitive matching. Regex mode treats the entire input as a regular expression and bypasses this syntax. Inside quotes, use \\\" for a quote and \\\\ for a backslash.",
-      "shortcuts": "Type @ to complete names in the current scope. Use arrow keys and Enter to accept a suggestion; press Enter again to apply the filter. Esc closes suggestions. Names match exactly; resources sharing a name all receive the filter.",
+      "description": "Regular conditions filter all logs in the current scope. @name scopes the following conditions until the closing parenthesis, or the end of the expression at the top level",
+      "rules": "Precedence: parentheses, not, and, or. Keywords use case-insensitive substring matching by default. The input buttons enable whole-word, regex and case-sensitive matching. Regex mode treats the entire input as a regular expression and bypasses this syntax. Inside quotes, use \\\" for a quote and \\\\ for a backslash",
+      "shortcuts": "Type @ to complete names in the current scope. Use arrow keys and Enter to accept a suggestion; press Enter again to apply the filter. Esc closes suggestions. Names match exactly; resources sharing a name all receive the filter",
       "examples": {
         "text": {
           "title": "Match a keyword",
           "query": "\"error\"",
-          "description": "Show logs whose text contains error. Quote multi-word phrases too, such as \"connection refused\"."
+          "description": "Show logs whose text contains error. Quote multi-word phrases too, such as \"connection refused\""
         },
         "or": {
           "title": "Match either condition",
           "query": "\"error\" or \"timeout\"",
-          "description": "Show logs containing error or timeout."
+          "description": "Show logs containing error or timeout"
         },
         "exclude": {
           "title": "Match and exclude",
           "query": "\"error\" and not \"healthcheck\"",
-          "description": "Show logs containing error but not healthcheck."
+          "description": "Show logs containing error but not healthcheck"
         },
         "group": {
           "title": "Group conditions",
           "query": "(\"error\" or \"timeout\") and \"api\"",
-          "description": "Show logs containing api and either error or timeout."
+          "description": "Show logs containing api and either error or timeout"
         },
         "scope": {
           "title": "Filter one container or service",
           "query": "@zot.dev \"error\" and \"fm\"",
-          "description": "Show only logs containing both error and fm for zot.dev. Other containers and services are unaffected. Replace zot.dev with the actual name."
+          "description": "Show only logs containing both error and fm for zot.dev. Other containers and services are unaffected. Replace zot.dev with the actual name"
         },
         "quotedName": {
           "title": "Names containing spaces",
           "query": "@\"worker service\" \"timeout\"",
-          "description": "Quote the name to filter timeout logs for worker service while leaving other resources unchanged."
+          "description": "Quote the name to filter timeout logs for worker service while leaving other resources unchanged"
         },
         "mixedScope": {
           "title": "Combine global and scoped conditions",
           "query": "\"bb\" and (@zot.dev \"a\")",
-          "description": "Every container and service must contain bb; zot.dev must also contain a. The scoped condition ends at the closing parenthesis. Use and to combine multiple parenthesized @name conditions."
+          "description": "Every container and service must contain bb; zot.dev must also contain a. The scoped condition ends at the closing parenthesis. Use and to combine multiple parenthesized @name conditions"
         }
       }
     }
@@ -1475,9 +1470,7 @@
   },
   "sshProfiles": {
     "title": "SSH profiles",
-    "description": "Connection parameters shared by every tool.",
-    "plaintextWarning": "Passwords and private keys are stored in plain text on this device.",
-    "formDescription": "Fill in the connection parameters and authentication method.",
+    "plaintextWarning": "Passwords and private keys are stored in plain text on this device",
     "searchPlaceholder": "Search…",
     "searchLabel": "Search SSH profiles",
     "searchEmpty": "No matching SSH profiles",
@@ -1508,7 +1501,7 @@
     "port": "Port",
     "username": "Username",
     "jumpTitle": "Jump host",
-    "jumpHint": "Connect through this host first and let it forward to the address above. Leave empty to connect directly.",
+    "jumpHint": "Connect through this host first and let it forward to the address above. Leave empty to connect directly",
     "jumpNone": "No jump host (direct)",
     "jumpVia": "Via {{name}}",
     "jumpMissing": "Jump host missing",
@@ -1626,10 +1619,10 @@
     "taskNotificationTestBody": "System notifications are working.",
     "taskNotificationTestSent": "Test notification sent",
     "taskNotificationUnavailable": "TinkerKit can't send system notifications",
-    "taskNotificationBlockedDesc": "Allow TinkerKit in system notification settings.",
+    "taskNotificationBlockedDesc": "Allow TinkerKit in system notification settings",
     "openTaskNotificationSettings": "Open notification settings",
     "taskNotificationSettingsOpenFailed": "Couldn't open notification settings",
-    "taskNotificationSettingsOpenFailedDesc": "Allow TinkerKit under System Settings > Notifications.",
+    "taskNotificationSettingsOpenFailedDesc": "Allow TinkerKit under System Settings > Notifications",
     "taskNotificationDialogLater": "Later",
     "taskNotificationSettingsRetry": "Retry",
     "taskNotificationSettingsOpening": "Opening",
@@ -1653,24 +1646,21 @@
     "sshKnownHostsDesc": "Manage fingerprints saved by the app's SSH connections. System known_hosts is not read or changed.",
     "manageSSHKnownHosts": "Manage fingerprints",
     "sshKnownHostsTitle": "App SSH host keys",
-    "sshKnownHostsDialogDesc": "Only records saved by this app are shown. New records are added after first-connection confirmation.",
     "sshKnownHostsSearchLabel": "Search host fingerprints",
     "sshKnownHostsSearchEmpty": "No matching host fingerprints",
     "sshKnownHostsEditTitle": "Edit SSH host key",
-    "sshKnownHostsEditDesc": "Change the host patterns, public key, or comment. Changes apply to later manual SSH connections.",
     "sshKnownHostsDiscardTitle": "Discard unsaved changes?",
     "sshKnownHostsDiscardDescription": "This host key has unsaved changes. Going back to the list will lose them.",
     "sshKnownHostsDiscardConfirm": "Discard changes",
     "sshKnownHostsLoading": "Reading app host keys…",
     "sshKnownHostsEmpty": "No app SSH host keys",
-    "sshKnownHostsEmptyHint": "A record appears here after you confirm a host key on the first app SSH connection.",
+    "sshKnownHostsEmptyHint": "A record appears here after you confirm a host key on the first app SSH connection",
     "sshKnownHostsLoadFailed": "Failed to read app SSH host keys",
     "sshKnownHostsRetry": "Retry",
     "sshKnownHostsHosts": "Host patterns",
-    "sshKnownHostsHostsHint": "Supports host names, port patterns, wildcards, and saved match patterns.",
+    "sshKnownHostsHostsHint": "Supports host names, [host]:port patterns, and wildcards, space-separated",
     "sshKnownHostsPublicKey": "Public key",
     "sshKnownHostsFingerprint": "Fingerprint",
-    "sshKnownHostsFingerprintHint": "The fingerprint is derived from the public key and cannot be edited directly; saving a changed key recalculates it.",
     "sshKnownHostsComment": "Comment",
     "sshKnownHostsDelete": "Delete",
     "sshKnownHostsSaveFailed": "Failed to save SSH host key",
@@ -1913,9 +1903,9 @@
     "connectionFailed": "Connection failed",
     "uploadTitle": "Confirm upload",
     "uploadItems": "Items to upload ({{count}})",
-    "uploadTargetHint": "Absolute and relative paths are supported; the current directory is used by default.",
+    "uploadTargetHint": "Absolute and relative paths are supported; the current directory is used by default",
     "uploadFailed": "Upload could not be started",
-    "uploadOverwriteWarning": "If a file with the same name exists remotely, the upload will overwrite its contents.",
+    "uploadOverwriteWarning": "If a file with the same name exists remotely, the upload will overwrite its contents",
     "uploadOverwriteConfirm": "I understand and allow overwriting remote files",
     "targetPath": "Target path",
     "startUpload": "Start upload",
@@ -1923,10 +1913,10 @@
     "pathCopied": "Path copied",
     "copyPathFailed": "Could not copy path",
     "createFile": "New file",
-    "createFileDesc": "Create an empty plain-text file in {{path}}.",
+    "createFileDesc": "Create in {{path}}",
     "fileName": "File name",
     "fileNamePlaceholder": "For example, notes.txt",
-    "fileNameHint": "Enter a file name only, without a path. No extension is added automatically.",
+    "fileNameHint": "File name only, no path or extension",
     "fileNameRequired": "Enter a file name.",
     "fileNameInvalid": "The name cannot be . or .., or contain a path separator or null character.",
     "fileCreated": "Plain-text file created",
@@ -1934,9 +1924,9 @@
     "createContextChanged": "The file source or directory changed. Close this dialog and try again.",
     "createFolder": "Create folder",
     "createFolderTitle": "Create folder",
-    "createFolderDesc": "Create a folder in {{path}}.",
+    "createFolderDesc": "Create in {{path}}",
     "folderName": "Folder name",
-    "folderNameHint": "Enter a folder name only; do not include a path.",
+    "folderNameHint": "Folder name only, no path",
     "folderNameRequired": "Enter a folder name.",
     "folderNameInvalid": "The folder name cannot contain a path separator.",
     "createFolderAction": "Create",
@@ -1979,15 +1969,14 @@
     "renamePartialFailed": "Renamed {{completed}} items; remaining operation failed: {{error}}",
     "extractTitle": "Extract remote archives",
     "compressTitle": "Compress remote items",
-    "operationDesc": "Process {{count}} remote items.",
     "targetDirectory": "Target directory",
     "directoryTree": "Choose a directory",
     "expandDirectory": "Expand directory {{name}}",
     "collapseDirectory": "Collapse directory {{name}}",
     "newName": "New name",
     "archivePath": "Archive path",
-    "targetDirectoryHint": "Absolute and relative paths are supported; missing directories are created automatically.",
-    "archivePathHint": "Supports .zip, .tar, .tar.gz, and .tgz.",
+    "targetDirectoryHint": "Absolute and relative paths are supported; missing directories are created automatically",
+    "archivePathHint": "Supports .zip, .tar, .tar.gz, and .tgz",
     "operationTargetRequired": "Enter a target path.",
     "archiveExtensionRequired": "Use a .zip, .tar, .tar.gz, or .tgz extension for the archive.",
     "applyOperation": "Apply",
@@ -2037,11 +2026,11 @@
   },
   "sshHostKeyDialog": {
     "title": "SSH host key verification",
-    "unknownDescription": "This is the first connection to SSH host {{address}}.",
-    "changedDescription": "The SSH host key for {{address}} does not match the saved record.",
+    "unknownDescription": "This is the first connection to SSH host {{address}}",
+    "changedDescription": "The SSH host key for {{address}} does not match the saved record",
     "knownFingerprints": "Saved fingerprint(s)",
     "currentFingerprint": "Current fingerprint",
-    "verifyHint": "A server rebuild can change its fingerprint, but this may also indicate a man-in-the-middle attack. Verify that the current fingerprint belongs to the trusted server before continuing.",
+    "verifyHint": "A server rebuild can change its fingerprint, but this may also indicate a man-in-the-middle attack. Verify that the current fingerprint belongs to the trusted server before continuing",
     "trust": "Trust and save",
     "update": "Update and save",
     "cancel": "Cancel",
@@ -2591,8 +2580,8 @@
     "editForward": "Edit forward",
     "copyForward": "Copy forward",
     "forwardNotStarted": "Forward saved but not started",
-    "forwardHintLocal": "Listen on this machine and reach the target through the selected host; reconnects up to five times.",
-    "forwardHintRemote": "Listen on the selected host and forward back to this machine; reconnects up to five times.",
+    "forwardHintLocal": "Listen on this machine and reach the target through the selected host",
+    "forwardHintRemote": "Listen on the selected host and forward to this machine",
     "listenHostLocal": "Local listen address",
     "listenHostRemote": "Remote listen address",
     "listenPortLocal": "Local listen port",
@@ -2659,17 +2648,16 @@
       "discardConfirm": "Discard changes",
       "profileMissing": "SSH profile not found",
       "httpOnly": "SSH initiators support HTTP / HTTPS requests only.",
-      "remoteRoutingNote": "Requests are initiated on the remote host over SSH. The SSH host resolves the target; local proxy, DNS, and interface settings do not apply."
+      "remoteRoutingNote": "Requests are initiated on the remote host over SSH. The SSH host resolves the target; local proxy, DNS, and interface settings do not apply"
     },
     "requestSettings": {
       "title": "HTTP request settings",
-      "description": "Set the method, headers, and body, or paste a curl command to import them.",
       "method": "Request method",
       "methodPlaceholder": "Choose or enter a method; leave blank to use GET",
       "headers": "Request headers",
       "headersPlaceholder": "One header per line, for example:\nAccept: application/json\nAuthorization: Bearer …",
       "sendBody": "Send request body",
-      "sendBodyNote": "When enabled, a body is sent even if it is empty.",
+      "sendBodyNote": "When enabled, a body is sent even if it is empty",
       "body": "Request body",
       "bodyPlaceholder": "Enter the request body"
     },
@@ -2702,28 +2690,28 @@
       },
       "customLabel": "Custom User-Agent",
       "customPlaceholder": "Mozilla/5.0 …",
-      "note": "Sent with HTTP, WebSocket, and RTSP requests (the TLS probe replays it too); TCP, UDP, and NTP send no User-Agent. Empty uses the TinkerKit default identity."
+      "note": "Sent with HTTP, WebSocket, and RTSP requests (the TLS probe replays it too); TCP, UDP, and NTP send no User-Agent. Empty uses the TinkerKit default identity"
     },
     "udp": {
       "payload": "Payload (UTF-8)",
       "payloadPlaceholder": "For example: ping",
-      "payloadNote": "This UDP test succeeds only when a reply arrives; no reply does not prove the target is unreachable. Text is sent as UTF-8, up to 1200 bytes."
+      "payloadNote": "This UDP test succeeds only when a reply arrives; no reply does not prove the target is unreachable. Text is sent as UTF-8, up to 1200 bytes"
     },
     "timeout": {
       "label": "Total timeout (seconds)"
     },
     "tls": {
       "skipVerification": "Skip TLS certificate verification",
-      "skipVerificationNote": "Skips certificate chain and hostname checks. Use for self-signed or internal certificates only."
+      "skipVerificationNote": "Skips certificate chain and hostname checks. Use for self-signed or internal certificates only"
     },
     "redirects": {
       "label": "Redirect limit",
-      "note": "Counted per request chain for HTTP, WebSocket, and RTSP; follow up to 10 redirects. Set to 0 to stop and return the 3xx response.",
+      "note": "Counted per request chain for HTTP, WebSocket, and RTSP; follow up to 10 redirects. Set to 0 to stop and return the 3xx response",
       "request": "Request after redirect #{{count}}"
     },
     "advanced": {
       "title": "Advanced options",
-      "routingNote": "The interface binds the local address used for the next-hop connection. With a proxy, the next hop is the proxy server. System proxy reads manual settings on macOS, Windows, and GNOME, plus proxy environment variables; PAC/WPAD is not supported. System DNS routing remains under OS control; target DNS behavior for HTTP and SOCKS5 proxies is shown in the stage details. UDP/NTP proxying requires SOCKS5 with UDP ASSOCIATE support; RTSP tunnels through HTTP CONNECT, and rtsps adds a TLS handshake on top of that tunnel; credentials embedded in the target address are used to answer Digest (or Basic) challenges automatically."
+      "routingNote": "The interface binds the local address used for the next-hop connection. With a proxy, the next hop is the proxy server. System proxy reads manual settings on macOS, Windows, and GNOME, plus proxy environment variables; PAC/WPAD is not supported. System DNS routing remains under OS control; target DNS behavior for HTTP and SOCKS5 proxies is shown in the stage details. UDP/NTP proxying requires SOCKS5 with UDP ASSOCIATE support; RTSP tunnels through HTTP CONNECT, and rtsps adds a TLS handshake on top of that tunnel; credentials embedded in the target address are used to answer Digest (or Basic) challenges automatically"
     },
     "proxy": {
       "label": "Proxy",

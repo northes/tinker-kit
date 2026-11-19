@@ -3,14 +3,7 @@ import { useTranslation } from 'react-i18next';
 import type { ImageImportEntry } from '../../bindings/tinkerkit/models';
 import { formatBackendError } from '../lib/backend-error';
 import { Button } from './ui/button';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from './ui/dialog';
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from './ui/dialog';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { ScrollArea } from './ui/scroll-area';
@@ -51,7 +44,6 @@ export function ImageImportDialog({
       <DialogContent>
         <DialogHeader>
           <DialogTitle>{t('imageManagerTool.importPreviewTitle')}</DialogTitle>
-          <DialogDescription>{t('imageManagerTool.importPreviewBody')}</DialogDescription>
         </DialogHeader>
         <ScrollArea
           element="form"

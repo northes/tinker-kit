@@ -40,14 +40,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from './ui/select';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from './ui/dialog';
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from './ui/dialog';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -461,9 +454,6 @@ function SSHProfileManagerDialog({
                   ? t('sshProfiles.editTitle')
                   : t('sshProfiles.newTitle')}
             </DialogTitle>
-            <DialogDescription className="text-xs leading-5">
-              {view === 'list' ? t('sshProfiles.description') : t('sshProfiles.formDescription')}
-            </DialogDescription>
           </DialogHeader>
           {listError && view === 'list' ? (
             <div
@@ -546,7 +536,7 @@ function SSHProfileManagerDialog({
                                 />
                               ) : null}
                             </div>
-                            <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-2 text-[10px] text-muted-foreground">
+                            <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
                               <span className="truncate font-mono">
                                 {profileAddress(profile)}
                               </span>

@@ -31,7 +31,7 @@ import {
   type NetworkTestProtocol,
 } from '../lib/network-target';
 import { Button } from './ui/button';
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from './ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from './ui/dialog';
 import { ScrollArea } from './ui/scroll-area';
 import {
   Reveal,
@@ -1188,7 +1188,7 @@ export default function NetworkTestTool({
           </DialogHeader>
           <div className="no-scrollbar -m-1 grid min-h-0 grid-cols-2 gap-x-5 gap-y-3 overflow-y-auto p-1 max-[450px]:grid-cols-1">
             {remoteSourceSelected ? (
-              <p className="col-span-2 m-0 text-[10px] leading-relaxed text-muted-foreground max-[450px]:col-span-1">
+              <p className="col-span-2 m-0 text-xs leading-5 text-muted-foreground max-[450px]:col-span-1">
                 {t('networkTestTool.source.remoteRoutingNote')}
               </p>
             ) : null}
@@ -1303,7 +1303,7 @@ export default function NetworkTestTool({
               <div className="flex min-h-8 items-center justify-between gap-3">
                 <span
                   id="network-test-skip-tls-verify-description"
-                  className="text-[10px] leading-relaxed text-muted-foreground"
+                  className="text-xs leading-5 text-muted-foreground"
                 >
                   {t('networkTestTool.tls.skipVerificationNote')}
                 </span>
@@ -1338,7 +1338,7 @@ export default function NetworkTestTool({
               />
               <p
                 id="network-test-max-redirects-note"
-                className="m-0 text-[10px] leading-relaxed text-muted-foreground"
+                className="m-0 text-xs leading-5 text-muted-foreground"
               >
                 {t('networkTestTool.redirects.note')}
               </p>
@@ -1397,7 +1397,7 @@ export default function NetworkTestTool({
                 ) : null}
               </div>
             </ToolHeaderField>
-            <p className="col-span-2 m-0 text-[10px] leading-relaxed text-muted-foreground max-[450px]:col-span-1">
+            <p className="col-span-2 m-0 text-xs leading-5 text-muted-foreground max-[450px]:col-span-1">
               {t('networkTestTool.userAgent.note')}
             </p>
             <ToolHeaderField
@@ -1418,7 +1418,7 @@ export default function NetworkTestTool({
                 className="font-mono text-xs"
               />
             </ToolHeaderField>
-            <p className="col-span-2 m-0 text-[10px] leading-relaxed text-muted-foreground max-[450px]:col-span-1">
+            <p className="col-span-2 m-0 text-xs leading-5 text-muted-foreground max-[450px]:col-span-1">
               {t('networkTestTool.udp.payloadNote')}
             </p>
             <ToolHeaderField
@@ -1454,7 +1454,7 @@ export default function NetworkTestTool({
               </Select>
             </ToolHeaderField>
             {!remoteSourceSelected ? (
-              <p className="col-span-2 m-0 text-[10px] leading-relaxed text-muted-foreground max-[450px]:col-span-1">
+              <p className="col-span-2 m-0 text-xs leading-5 text-muted-foreground max-[450px]:col-span-1">
                 {t('networkTestTool.advanced.routingNote')}
               </p>
             ) : null}
@@ -1465,9 +1465,6 @@ export default function NetworkTestTool({
         <DialogContent className="grid max-h-[min(720px,calc(100dvh-2rem))] min-h-0 sm:max-w-2xl">
           <DialogHeader>
             <DialogTitle>{t('networkTestTool.requestSettings.title')}</DialogTitle>
-            <DialogDescription>
-              {t('networkTestTool.requestSettings.description')}
-            </DialogDescription>
           </DialogHeader>
           <ScrollArea className="min-h-0 -m-1 p-1">
             <div className="grid gap-4">
@@ -1544,7 +1541,7 @@ export default function NetworkTestTool({
                 labelId="network-test-http-has-body-label"
               >
                 <div className="flex min-h-8 items-center justify-between gap-3">
-                  <span className="text-[10px] leading-relaxed text-muted-foreground">
+                  <span className="text-xs leading-5 text-muted-foreground">
                     {t('networkTestTool.requestSettings.sendBodyNote')}
                   </span>
                   <Switch

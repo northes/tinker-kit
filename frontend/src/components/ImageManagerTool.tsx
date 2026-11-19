@@ -988,6 +988,15 @@ export default function ImageManagerTool({
   // 字段表单按操作类型唯一渲染，页脚确认按钮通过 form 关联，回车即可提交。
   const operationFormID = operationDialog ? `image-operation-${operationDialog.type}` : undefined;
 
+  // 只有会改变用户决策的后果才占描述：重命名删除原 Tag、远端凭据的回退规则。
+  const operationDescription = operationDialog
+    ? operationDialog.type === 'rename'
+      ? t('imageManagerTool.renameBody')
+      : operationDialog.type === 'pull-image' && isRegistrySource
+        ? t('imageManagerTool.registryPullBody')
+        : ''
+    : '';
+
   const renamePreview = useMemo(
     () =>
       operationDialog?.type === 'rename' && renameFormHasInput(operationDialog.form)
@@ -1785,27 +1794,9 @@ export default function ImageManagerTool({
                       ? t('imageManagerTool.copyTagTitle')
                       : t('imageManagerTool.pullImage')}
               </DialogTitle>
-              <DialogDescription>
-                {operationDialog?.type === 'push'
-                  ? operationDialog.changes.length > 1
-                    ? t('imageManagerTool.batchPushBody', {
-                        count: operationDialog.changes.length,
-                      })
-                    : t('imageManagerTool.pushBody')
-                  : operationDialog?.type === 'rename'
-                    ? t('imageManagerTool.renameBody', {
-                        total: operationDialog.rows.length,
-                      })
-                    : operationDialog?.type === 'copy-tag'
-                      ? t('imageManagerTool.copyTagBody', {
-                          count: operationDialog.rows.length,
-                        })
-                      : t(
-                          isRegistrySource
-                            ? 'imageManagerTool.registryPullBody'
-                            : 'imageManagerTool.pullImageBody',
-                        )}
-              </DialogDescription>
+              {operationDescription ? (
+                <DialogDescription>{operationDescription}</DialogDescription>
+              ) : null}
             </DialogHeader>
             {operationDialog?.type === 'push' && operationDialog.changes.length === 1 ? (
               <form
@@ -1986,7 +1977,7 @@ export default function ImageManagerTool({
                               </code>
                             </div>
                             {item.status !== 'ok' ? (
-                              <span className="text-[10px] text-destructive">
+                              <span className="text-xs text-destructive">
                                 {t(
                                   item.status === 'empty'
                                     ? 'imageManagerTool.renameInvalidEmpty'
@@ -2366,9 +2357,7 @@ export default function ImageManagerTool({
                   />
                 </div>
                 <div className="grid gap-1.5">
-                  <Label htmlFor="target-host-docker-command">
-                    {t('imageManagerTool.dockerCommand')}
-                  </Label>
+                  <Label htmlFor="target-host-docker-command">{t('imageManagerTool.dockerCommand')}</Label>
                   <Input
                     id="target-host-docker-command"
                     value={draft.dockerCommand ?? ''}

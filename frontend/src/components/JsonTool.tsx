@@ -1705,7 +1705,7 @@ export default function JsonTool({
                   </SelectGroup>
                 </SelectContent>
               </Select>
-              <p id="json-time-format-hint" className="text-sm text-muted-foreground">
+              <p id="json-time-format-hint" className="text-xs leading-5 text-muted-foreground">
                 {t('jsonTool.formatTimeHint')}
               </p>
             </div>

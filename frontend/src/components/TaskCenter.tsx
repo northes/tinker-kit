@@ -664,9 +664,7 @@ export function TaskCenter({
                       <Label htmlFor={`task-center-${key}`} className="text-xs font-medium">
                         {label}
                       </Label>
-                      <p className="m-0 text-[10px] leading-tight text-muted-foreground">
-                        {description}
-                      </p>
+                      <p className="m-0 text-xs leading-5 text-muted-foreground">{description}</p>
                       <Select
                         items={concurrencyOptions}
                         value={String(concurrencyDraft[key])}
@@ -763,7 +761,7 @@ export function TaskCenter({
                               >
                                 {taskTitle(task, t)}
                               </div>
-                              <div className="mt-1 flex min-w-0 items-center gap-2 text-[10px] text-muted-foreground">
+                              <div className="mt-1 flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
                                 <span className="shrink-0">{toolName}</span>
                                 <span aria-hidden="true">·</span>
                                 <span
@@ -860,7 +858,7 @@ export function TaskCenter({
                           />
                           {task.error ? (
                             <div
-                              className="mt-1 line-clamp-2 break-all text-[10px] text-destructive"
+                              className="mt-1 line-clamp-2 break-all text-xs text-destructive"
                               title={formatBackendError(task.error)}
                             >
                               {formatBackendError(task.error)}
@@ -876,7 +874,7 @@ export function TaskCenter({
           )}
           <DialogFooter className="flex-col shrink-0 gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex min-w-0 flex-1 flex-col gap-2">
-              <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_8rem] items-center gap-x-2 gap-y-1 text-[10px] tabular-nums text-muted-foreground sm:grid-cols-[7rem_4.5rem_5rem_5rem]">
+              <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_8rem] items-center gap-x-2 gap-y-1 text-xs tabular-nums text-muted-foreground sm:grid-cols-[7rem_4.5rem_5rem_5rem]">
                 <span className="min-w-0 truncate" title={formatTaskBytes(totalSpeed) + '/s'}>
                   {t('taskCenter.totalSpeed', { speed: `${formatTaskBytes(totalSpeed)}/s` })}
                 </span>

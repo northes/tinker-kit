@@ -23,14 +23,7 @@ import {
 import { Slider } from './ui/slider';
 import { Switch } from './ui/switch';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from './ui/dialog';
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from './ui/dialog';
 import {
   ArrowSquareOut,
   ArrowCounterClockwise,
@@ -555,9 +548,6 @@ function SSHKnownHostsDialog({
             <DialogTitle className="text-base">
               {t(editing ? 'settings.sshKnownHostsEditTitle' : 'settings.sshKnownHostsTitle')}
             </DialogTitle>
-            <DialogDescription className="text-xs leading-5">
-              {t(editing ? 'settings.sshKnownHostsEditDesc' : 'settings.sshKnownHostsDialogDesc')}
-            </DialogDescription>
           </DialogHeader>
           {showKnownHostsList && !editing ? (
             // 搜索固定在滚动区之外：放在滚动内容里做 sticky 会在 OverlayScrollbars 视口中移位。
@@ -602,7 +592,7 @@ function SSHKnownHostsDialog({
                       );
                     }}
                   />
-                  <p className="m-0 text-[10px] leading-4 text-muted-foreground">
+                  <p className="m-0 text-xs leading-5 text-muted-foreground">
                     {t('settings.sshKnownHostsHostsHint')}
                   </p>
                 </div>
@@ -629,7 +619,6 @@ function SSHKnownHostsDialog({
                     <Button
                       variant="ghost"
                       size="sm"
-                      className="text-[11px]"
                       aria-label={t('common.copy')}
                       title={t('common.copy')}
                       onClick={() => void copyFingerprint(editing.fingerprint)}
@@ -641,9 +630,6 @@ function SSHKnownHostsDialog({
                   <code className="break-all rounded-md border bg-muted/30 px-2 py-1 text-xs">
                     {editing.fingerprint}
                   </code>
-                  <p className="m-0 text-[10px] leading-4 text-muted-foreground">
-                    {t('settings.sshKnownHostsFingerprintHint')}
-                  </p>
                 </div>
                 <div className="grid gap-1.5">
                   <Label htmlFor={commentID}>{t('settings.sshKnownHostsComment')}</Label>
@@ -662,7 +648,7 @@ function SSHKnownHostsDialog({
               </form>
               </div>
             ) : loading ? (
-              <div className="flex min-h-32 flex-col items-center justify-center gap-2 py-5 text-center text-sm text-muted-foreground">
+              <div className="flex min-h-32 flex-col items-center justify-center gap-2 py-5 text-center text-xs leading-5 text-muted-foreground">
                 <Spinner className="size-6 text-primary motion-reduce:animate-none" />
                 <span>{t('settings.sshKnownHostsLoading')}</span>
               </div>
@@ -719,7 +705,7 @@ function SSHKnownHostsDialog({
                               {entry.fingerprint}
                             </code>
                             {entry.comment ? (
-                              <p className="m-0 mt-1 break-words text-[10px] leading-4 text-muted-foreground">
+                              <p className="m-0 mt-1 break-words text-xs leading-5 text-muted-foreground">
                                 {entry.comment}
                               </p>
                             ) : null}

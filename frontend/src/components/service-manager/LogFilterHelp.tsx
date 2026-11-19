@@ -37,7 +37,7 @@ export function LogFilterHelp() {
                     {t(`serviceManagerTool.filterHelp.examples.${example}.title`)}
                   </dt>
                   <dd className="space-y-1">
-                    <code className="block rounded-md bg-muted px-3 py-2 text-sm break-all whitespace-pre-wrap">
+                    <code className="block rounded-md bg-muted px-3 py-2 text-xs break-all whitespace-pre-wrap">
                       {t(`serviceManagerTool.filterHelp.examples.${example}.query`)}
                     </code>
                     <p className="text-xs text-muted-foreground">

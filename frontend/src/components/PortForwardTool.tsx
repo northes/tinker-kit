@@ -1002,7 +1002,7 @@ export default function PortForwardTool({ active }: { active: boolean }) {
             </div>
           </form>
           {formError && (
-            <p role="alert" className="text-sm text-destructive">
+            <p role="alert" className="text-xs leading-5 text-destructive">
               {formError}
             </p>
           )}

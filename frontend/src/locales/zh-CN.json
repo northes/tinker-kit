@@ -175,7 +175,7 @@
     "autoFormatOnFill": "填入后自动格式化",
     "displaySettings": "显示设置",
     "formatTime": "格式化时间",
-    "formatTimeHint": "仅影响表格预览，不修改原始 JSON。普通格式使用系统时区，ISO 8601 使用 UTC。",
+    "formatTimeHint": "仅影响表格预览，不改动原始 JSON；ISO 8601 使用 UTC",
     "timeFormats": {
       "none": "不格式化",
       "datetime": "yyyy-MM-dd HH:mm:ss",
@@ -428,7 +428,7 @@
       "mapCandidate": "地图候选：{{zone}}",
       "ntpTitle": "NTP 服务器",
       "ntpConfigure": "修改 NTP 服务器",
-      "ntpDescription": "并行查询下列服务器，任一成功即返回。只填主机名时默认端口为 123。",
+      "ntpDescription": "并行查询，任一成功即返回",
       "ntpServerLabel": "NTP 服务器 {{index}}",
       "ntpPlaceholder": "例如 pool.ntp.org:123",
       "ntpAdd": "添加服务器",
@@ -981,15 +981,13 @@
     "pushRemote": "推送到远程",
     "batchPushRemote": "批量推送到远程",
     "pushTitle": "推送镜像到远程",
-    "pushBody": "输入目标镜像名称。目标名称不同于当前名称时，将先创建 Tag，再执行推送。",
     "targetImageName": "目标镜像名",
     "batchPushTitle": "批量推送镜像",
-    "batchPushBody": "将逐项推送 {{count}} 个已选镜像的当前名称。",
     "rename": "重命名",
     "batchRename": "批量重命名",
     "renameTitle": "重命名镜像",
     "batchRenameTitle": "批量重命名镜像",
-    "renameBody": "为 {{total}} 个镜像生成新名称；重命名后删除原 Tag，其他关联 Tag 将保留。",
+    "renameBody": "重命名会删除原 Tag",
     "renameScope": "作用对象",
     "renameScopeTag": "Tag",
     "renameScopeName": "完整镜像名",
@@ -1018,7 +1016,6 @@
     "copyTagAction": "复制到新 Tag",
     "batchCopyTagAction": "批量复制到新 Tag",
     "copyTagTitle": "复制到新 Tag",
-    "copyTagBody": "为 {{count}} 个镜像创建新的 Tag，原 Tag 将保留。",
     "newTag": "新 Tag",
     "newTagPlaceholder": "例如 release",
     "operationInputRequired": "请输入目标值",
@@ -1129,7 +1126,6 @@
     "pullFailed": "镜像拉取失败",
     "pull": "拉取",
     "pullImage": "拉取镜像",
-    "pullImageBody": "在当前来源通过 Docker CLI 拉取镜像，复用 CLI 的认证配置。",
     "imageReference": "镜像名称",
     "imageReferencePlaceholder": "如 alpine:3.19",
     "importTar": "导入",
@@ -1159,13 +1155,12 @@
     "taskStatusFailed": "失败",
     "taskStatusCanceled": "已取消",
     "importPreviewTitle": "确认导入镜像",
-    "importPreviewBody": "检查目标仓库名与 Tag。同名镜像已存在时，请为待导入镜像重命名。",
     "importTarget": "目标仓库名:Tag",
     "importTargetPlaceholder": "例如 myapp:1.0-amd64",
-    "importRenameRequired": "同名镜像已存在，请修改目标仓库名或 Tag。",
-    "importDuplicateTargets": "待导入镜像的目标名称重复，请分别重命名。",
+    "importRenameRequired": "同名镜像已存在，请修改目标仓库名或 Tag",
+    "importDuplicateTargets": "待导入镜像的目标名称重复，请分别重命名",
     "importTasksStarted": "已创建 {{total}} 个镜像导入任务",
-    "registryPullBody": "将来源镜像复制到当前 Registry。可输入来源账号和密码；留空则复用已添加的 Registry 来源凭据。",
+    "registryPullBody": "账号和密码留空时，使用已添加的 Registry 来源凭据",
     "architectureMulti": "多架构",
     "architectureHint": "镜像架构：{{architectures}}",
     "pullPlatform": "架构",
@@ -1173,10 +1168,10 @@
     "pullCurrentPlatform": "当前架构（{{architecture}}）",
     "pullAllPlatforms": "全部架构",
     "resolvePullPlatforms": "解析支持的架构",
-    "pullPlatformsIdle": "尚未解析，点击右侧按钮获取支持的架构。",
+    "pullPlatformsIdle": "尚未解析，点击右侧按钮获取支持的架构",
     "pullPlatformsLoading": "正在解析支持的架构…",
     "pullPlatformsFailed": "架构解析失败：{{detail}}",
-    "pullPlatformsReady": "已解析 {{total}} 个架构。",
+    "pullPlatformsReady": "已解析 {{total}} 个架构",
     "pullUsername": "账号（可选）",
     "pullPassword": "密码（可选）"
   },
@@ -1319,8 +1314,8 @@
     "composeGroup": "Compose · {{name}}",
     "expandGroup": "展开分组",
     "collapseGroup": "折叠分组",
-    "pickSelectTitle": "选择要挑选的容器",
-    "pickSelectDesc": "勾选 {{name}} 中需要挑选的容器",
+    "pickSelectTitle": "挑选容器",
+    "pickSelectDesc": "{{name}}",
     "clearLogs": "清空日志",
     "clearLogsTitle": "清空日志？",
     "clearLogsConfirm": "将清空该资源的日志缓冲，此操作无法撤销。",
@@ -1367,7 +1362,7 @@
     "targetUnavailable": "已移除的主机",
     "confirmAction": "确定要对“{{name}}”执行“{{action}}”吗？",
     "updateTitle": "更新 Compose 服务",
-    "updateDescription": "选择“{{name}}”的更新方式。",
+    "updateDescription": "{{name}}",
     "pullOnly": "仅拉取",
     "pullAndStart": "拉取后启动",
     "actionSucceeded": "{{resource}}：{{action}}操作已完成",
@@ -1393,9 +1388,9 @@
     "wholeWord": "单独单词匹配",
     "advancedSettings": "高级设置",
     "highlightLevels": "凸显着色",
-    "highlightLevelsDescription": "ERROR 日志使用红色背景，WARN 日志使用黄色背景。",
+    "highlightLevelsDescription": "ERROR 日志使用红色背景，WARN 日志使用黄色背景",
     "collapseLogLines": "长日志折叠行数",
-    "collapseLogLinesDescription": "单条日志显示超过该行数时折叠，点击日志下方的按钮展开全文。",
+    "collapseLogLinesDescription": "单条日志显示超过该行数时折叠，点击日志下方的按钮展开全文",
     "collapseLinesNoMatch": "输入 1 至 200 之间的行数",
     "expandLogText": "展开全文",
     "collapseLogText": "折叠日志",
@@ -1406,44 +1401,44 @@
     "historyFailed": "日志过滤历史读写失败",
     "filterHelp": {
       "title": "高级语法",
-      "description": "普通条件筛选当前范围内的全部日志；@名称 将后面的条件限定到当前括号结束，未加括号时限定到整条表达式结束。",
-      "rules": "括号优先，其次为 not、and、or。关键词默认按包含匹配且忽略大小写；可用输入框右侧按钮启用全词、正则和大小写敏感。正则模式将整段输入视为正则表达式，不解析上述语法。双引号内用 \\\" 表示引号，用 \\\\ 表示反斜杠。",
-      "shortcuts": "输入 @ 后可补全当前范围内的名称，方向键选择、回车接受；再次回车应用筛选，Esc 关闭提示。名称按完整名称精确匹配，同名对象都会应用该筛选。",
+      "description": "普通条件筛选当前范围内的全部日志；@名称 将后面的条件限定到当前括号结束，未加括号时限定到整条表达式结束",
+      "rules": "括号优先，其次为 not、and、or。关键词默认按包含匹配且忽略大小写；可用输入框右侧按钮启用全词、正则和大小写敏感。正则模式将整段输入视为正则表达式，不解析上述语法。双引号内用 \\\" 表示引号，用 \\\\ 表示反斜杠",
+      "shortcuts": "输入 @ 后可补全当前范围内的名称，方向键选择、回车接受；再次回车应用筛选，Esc 关闭提示。名称按完整名称精确匹配，同名对象都会应用该筛选",
       "examples": {
         "text": {
           "title": "匹配关键词",
           "query": "\"error\"",
-          "description": "显示正文中包含 error 的日志。多个词组成的短语也放在双引号内，例如 \"connection refused\"。"
+          "description": "显示正文中包含 error 的日志。多个词组成的短语也放在双引号内，例如 \"connection refused\""
         },
         "or": {
           "title": "满足任一条件",
           "query": "\"error\" or \"timeout\"",
-          "description": "显示包含 error 或 timeout 的日志。"
+          "description": "显示包含 error 或 timeout 的日志"
         },
         "exclude": {
           "title": "同时匹配与排除",
           "query": "\"error\" and not \"healthcheck\"",
-          "description": "显示包含 error 且不包含 healthcheck 的日志。"
+          "description": "显示包含 error 且不包含 healthcheck 的日志"
         },
         "group": {
           "title": "用括号组合条件",
           "query": "(\"error\" or \"timeout\") and \"api\"",
-          "description": "显示包含 api，且同时包含 error 或 timeout 的日志。"
+          "description": "显示包含 api，且同时包含 error 或 timeout 的日志"
         },
         "scope": {
           "title": "只筛选指定容器或服务",
           "query": "@zot.dev \"error\" and \"fm\"",
-          "description": "仅让 zot.dev 显示同时包含 error 和 fm 的日志；其他容器和服务的日志不受影响。将 zot.dev 替换成实际名称。"
+          "description": "仅让 zot.dev 显示同时包含 error 和 fm 的日志；其他容器和服务的日志不受影响。将 zot.dev 替换成实际名称"
         },
         "quotedName": {
           "title": "名称中包含空格",
           "query": "@\"worker service\" \"timeout\"",
-          "description": "为名称加双引号，仅筛选 worker service 中包含 timeout 的日志，其他对象不受影响。"
+          "description": "为名称加双引号，仅筛选 worker service 中包含 timeout 的日志，其他对象不受影响"
         },
         "mixedScope": {
           "title": "全局条件叠加局部条件",
           "query": "\"bb\" and (@zot.dev \"a\")",
-          "description": "所有容器和服务都必须包含 bb；zot.dev 还必须包含 a。局部条件在括号结束处终止。可以用 and 连接多个带括号的 @名称 条件。"
+          "description": "所有容器和服务都必须包含 bb；zot.dev 还必须包含 a。局部条件在括号结束处终止。可以用 and 连接多个带括号的 @名称 条件"
         }
       }
     }
@@ -1475,9 +1470,7 @@
   },
   "sshProfiles": {
     "title": "SSH 配置",
-    "description": "所有工具共用的连接参数。",
-    "plaintextWarning": "密码与私钥以明文保存在本机配置中。",
-    "formDescription": "填写连接参数与认证方式。",
+    "plaintextWarning": "密码与私钥以明文保存在本机配置中",
     "searchPlaceholder": "搜索…",
     "searchLabel": "搜索 SSH 配置",
     "searchEmpty": "没有匹配的 SSH 配置",
@@ -1508,7 +1501,7 @@
     "port": "Port",
     "username": "Username",
     "jumpTitle": "跳板机",
-    "jumpHint": "先连接这台机器，再由它转发到当前地址；留空表示直接连接。",
+    "jumpHint": "先连接这台机器，再由它转发到当前地址；留空表示直接连接",
     "jumpNone": "不使用跳板机（直连）",
     "jumpVia": "经 {{name}} 连接",
     "jumpMissing": "跳板机配置不存在",
@@ -1626,10 +1619,10 @@
     "taskNotificationTestBody": "系统通知已正常工作。",
     "taskNotificationTestSent": "测试通知已发送",
     "taskNotificationUnavailable": "TinkerKit 无法发送系统通知",
-    "taskNotificationBlockedDesc": "请在系统通知设置中允许 TinkerKit。",
+    "taskNotificationBlockedDesc": "请在系统通知设置中允许 TinkerKit",
     "openTaskNotificationSettings": "打开通知设置",
     "taskNotificationSettingsOpenFailed": "无法打开通知设置",
-    "taskNotificationSettingsOpenFailedDesc": "请在系统设置 > 通知中允许 TinkerKit。",
+    "taskNotificationSettingsOpenFailedDesc": "请在系统设置 > 通知中允许 TinkerKit",
     "taskNotificationDialogLater": "稍后",
     "taskNotificationSettingsRetry": "重试",
     "taskNotificationSettingsOpening": "正在打开",
@@ -1653,24 +1646,21 @@
     "sshKnownHostsDesc": "管理应用内 SSH 连接保存的指纹，不会读取或修改系统 known_hosts。",
     "manageSSHKnownHosts": "管理指纹",
     "sshKnownHostsTitle": "应用内 SSH 主机指纹",
-    "sshKnownHostsDialogDesc": "仅管理应用保存的记录。首次连接确认指纹后会自动添加。",
     "sshKnownHostsSearchLabel": "搜索主机指纹",
     "sshKnownHostsSearchEmpty": "没有匹配的主机指纹",
     "sshKnownHostsEditTitle": "编辑 SSH 主机指纹",
-    "sshKnownHostsEditDesc": "修改主机匹配项、公钥或备注；保存后将立即用于后续手动 SSH 连接。",
     "sshKnownHostsDiscardTitle": "放弃未保存的修改？",
     "sshKnownHostsDiscardDescription": "当前主机指纹尚未保存，返回列表后这些修改会丢失。",
     "sshKnownHostsDiscardConfirm": "放弃修改",
     "sshKnownHostsLoading": "正在读取应用内指纹…",
     "sshKnownHostsEmpty": "暂无应用内 SSH 主机指纹",
-    "sshKnownHostsEmptyHint": "应用内 SSH 连接首次确认指纹后，记录会自动出现在这里。",
+    "sshKnownHostsEmptyHint": "应用内 SSH 连接首次确认指纹后，记录会自动出现在这里",
     "sshKnownHostsLoadFailed": "读取应用内 SSH 指纹失败",
     "sshKnownHostsRetry": "重试",
     "sshKnownHostsHosts": "主机匹配项",
-    "sshKnownHostsHostsHint": "支持主机名、端口格式、通配符和已保存的匹配项。",
+    "sshKnownHostsHostsHint": "支持主机名、[host]:port 与通配符，空格分隔",
     "sshKnownHostsPublicKey": "公钥",
     "sshKnownHostsFingerprint": "指纹",
-    "sshKnownHostsFingerprintHint": "指纹由公钥计算，不能直接编辑；修改公钥后保存将重新计算。",
     "sshKnownHostsComment": "备注",
     "sshKnownHostsDelete": "删除",
     "sshKnownHostsSaveFailed": "保存 SSH 指纹失败",
@@ -1913,9 +1903,9 @@
     "connectionFailed": "连接失败",
     "uploadTitle": "确认上传",
     "uploadItems": "待上传项目（{{count}}）",
-    "uploadTargetHint": "支持绝对路径和相对路径；默认使用当前目录。",
+    "uploadTargetHint": "支持绝对路径和相对路径；默认使用当前目录",
     "uploadFailed": "上传启动失败",
-    "uploadOverwriteWarning": "如果远程目录中存在同名文件，上传会覆盖原文件内容。",
+    "uploadOverwriteWarning": "如果远程目录中存在同名文件，上传会覆盖原文件内容",
     "uploadOverwriteConfirm": "我确认允许覆盖远程同名文件",
     "targetPath": "目标路径",
     "startUpload": "开始上传",
@@ -1923,10 +1913,10 @@
     "pathCopied": "路径已复制",
     "copyPathFailed": "复制路径失败",
     "createFile": "新建文件",
-    "createFileDesc": "在 {{path}} 中创建空白纯文本文件。",
+    "createFileDesc": "在 {{path}} 中创建",
     "fileName": "文件名称",
     "fileNamePlaceholder": "例如 notes.txt",
-    "fileNameHint": "只填写文件名，不要包含路径；不会自动添加扩展名。",
+    "fileNameHint": "只填文件名，不含路径和扩展名",
     "fileNameRequired": "请填写文件名称。",
     "fileNameInvalid": "文件名称不能为 . 或 ..，也不能包含路径分隔符或空字符。",
     "fileCreated": "纯文本文件已创建",
@@ -1934,9 +1924,9 @@
     "createContextChanged": "文件源或目录已改变，请关闭弹窗后重试。",
     "createFolder": "创建文件夹",
     "createFolderTitle": "创建文件夹",
-    "createFolderDesc": "在 {{path}} 中创建文件夹。",
+    "createFolderDesc": "在 {{path}} 中创建",
     "folderName": "文件夹名称",
-    "folderNameHint": "只填写文件夹名称，不要包含路径。",
+    "folderNameHint": "只填文件夹名称，不含路径",
     "folderNameRequired": "请填写文件夹名称。",
     "folderNameInvalid": "文件夹名称不能包含路径分隔符。",
     "createFolderAction": "创建",
@@ -1979,15 +1969,14 @@
     "renamePartialFailed": "已完成 {{completed}} 项，后续操作失败：{{error}}",
     "extractTitle": "解压远程项目",
     "compressTitle": "压缩远程项目",
-    "operationDesc": "处理 {{count}} 个远程项目。",
     "targetDirectory": "目标目录",
     "directoryTree": "选择目录",
     "expandDirectory": "展开目录 {{name}}",
     "collapseDirectory": "折叠目录 {{name}}",
     "newName": "新名称",
     "archivePath": "压缩文件路径",
-    "targetDirectoryHint": "支持绝对路径和相对路径；不存在的目录会自动创建。",
-    "archivePathHint": "支持 .zip、.tar、.tar.gz 和 .tgz。",
+    "targetDirectoryHint": "支持绝对路径和相对路径；不存在的目录会自动创建",
+    "archivePathHint": "支持 .zip、.tar、.tar.gz 和 .tgz",
     "operationTargetRequired": "请填写目标路径。",
     "archiveExtensionRequired": "压缩文件请使用 .zip、.tar、.tar.gz 或 .tgz 扩展名。",
     "applyOperation": "执行",
@@ -2037,11 +2026,11 @@
   },
   "sshHostKeyDialog": {
     "title": "SSH 主机指纹确认",
-    "unknownDescription": "首次连接 SSH 主机 {{address}}。",
-    "changedDescription": "SSH 主机 {{address}} 的指纹与已保存记录不一致。",
+    "unknownDescription": "首次连接 SSH 主机 {{address}}",
+    "changedDescription": "SSH 主机 {{address}} 的指纹与已保存记录不一致",
     "knownFingerprints": "已保存指纹",
     "currentFingerprint": "当前指纹",
-    "verifyHint": "服务器重装可能导致指纹变化，也可能表示存在中间人攻击。请先确认当前指纹来自可信服务器。",
+    "verifyHint": "服务器重装可能导致指纹变化，也可能表示存在中间人攻击。请先确认当前指纹来自可信服务器",
     "trust": "信任并保存",
     "update": "更新并保存",
     "cancel": "取消",
@@ -2591,8 +2580,8 @@
     "editForward": "编辑转发",
     "copyForward": "复制转发",
     "forwardNotStarted": "转发已保存但未启动",
-    "forwardHintLocal": "在本机监听，通过所选主机访问远程目标；连接断开后最多重连 5 次。",
-    "forwardHintRemote": "在所选主机监听，转发回本机目标；连接断开后最多重连 5 次。",
+    "forwardHintLocal": "在本机监听，通过所选主机访问远程目标",
+    "forwardHintRemote": "在所选主机监听，转发回本机目标",
     "listenHostLocal": "本机监听地址",
     "listenHostRemote": "远程监听地址",
     "listenPortLocal": "本机监听端口",
@@ -2659,17 +2648,16 @@
       "discardConfirm": "放弃修改",
       "profileMissing": "SSH 配置不存在",
       "httpOnly": "SSH 发起端仅支持 HTTP / HTTPS 请求。",
-      "remoteRoutingNote": "请求经 SSH 转发并由远端发起；远端负责解析目标域名，本机代理、DNS 和网卡设置不生效。"
+      "remoteRoutingNote": "请求经 SSH 转发并由远端发起；远端负责解析目标域名，本机代理、DNS 和网卡设置不生效"
     },
     "requestSettings": {
       "title": "HTTP 请求设置",
-      "description": "设置请求方法、Header 和请求体，也可以粘贴 curl 命令导入。",
       "method": "请求方法",
       "methodPlaceholder": "选择或输入请求方法；留空时使用 GET",
       "headers": "请求 Header",
       "headersPlaceholder": "每行一个 Header，例如：\nAccept: application/json\nAuthorization: Bearer …",
       "sendBody": "发送请求体",
-      "sendBodyNote": "启用后即使内容为空也会发送请求体。",
+      "sendBodyNote": "启用后即使内容为空也会发送请求体",
       "body": "请求体",
       "bodyPlaceholder": "输入请求体内容"
     },
@@ -2702,28 +2690,28 @@
       },
       "customLabel": "自定义 User-Agent",
       "customPlaceholder": "Mozilla/5.0 …",
-      "note": "HTTP、WebSocket 与 RTSP 请求会带上它（加密探测的重放一致）；TCP、UDP、NTP 不发送 User-Agent。留空时使用 TinkerKit 默认标识。"
+      "note": "HTTP、WebSocket 与 RTSP 请求会带上它（加密探测的重放一致）；TCP、UDP、NTP 不发送 User-Agent。留空时使用 TinkerKit 默认标识"
     },
     "udp": {
       "payload": "发送内容（UTF-8）",
       "payloadPlaceholder": "例如：ping",
-      "payloadNote": "收到回包才算本次 UDP 测试成功；没有回包不代表目标一定不可达。文本会按 UTF-8 发送，最多 1200 字节。"
+      "payloadNote": "收到回包才算本次 UDP 测试成功；没有回包不代表目标一定不可达。文本会按 UTF-8 发送，最多 1200 字节"
     },
     "timeout": {
       "label": "总超时（秒）"
     },
     "tls": {
       "skipVerification": "跳过 TLS 证书校验",
-      "skipVerificationNote": "跳过证书链和主机名检查，仅建议用于自签名或内部证书。"
+      "skipVerificationNote": "跳过证书链和主机名检查，仅建议用于自签名或内部证书"
     },
     "redirects": {
       "label": "重定向次数",
-      "note": "HTTP、WebSocket、RTSP 分别计数，最多跟随 10 次；设为 0 时不跟随，直接返回 3xx。",
+      "note": "HTTP、WebSocket、RTSP 分别计数，最多跟随 10 次；设为 0 时不跟随，直接返回 3xx",
       "request": "重定向后请求 · 第 {{count}} 次"
     },
     "advanced": {
       "title": "高级选项",
-      "routingNote": "网卡用于绑定本机到下一跳的连接地址；使用代理时下一跳是代理服务器。系统代理读取 macOS、Windows、GNOME 的手动代理设置及代理环境变量；PAC/WPAD 自动代理暂不支持。系统 DNS 仍由操作系统选择路由；HTTP 代理和 SOCKS5 代理解析目标域名的行为会显示在阶段详情中。UDP/NTP 代理仅支持启用 UDP ASSOCIATE 的 SOCKS5；RTSP 通过 HTTP CONNECT 建立隧道，rtsps 在隧道之上完成 TLS 握手；目标地址带凭据时会自动应答 Digest（或 Basic）认证挑战。"
+      "routingNote": "网卡用于绑定本机到下一跳的连接地址；使用代理时下一跳是代理服务器。系统代理读取 macOS、Windows、GNOME 的手动代理设置及代理环境变量；PAC/WPAD 自动代理暂不支持。系统 DNS 仍由操作系统选择路由；HTTP 代理和 SOCKS5 代理解析目标域名的行为会显示在阶段详情中。UDP/NTP 代理仅支持启用 UDP ASSOCIATE 的 SOCKS5；RTSP 通过 HTTP CONNECT 建立隧道，rtsps 在隧道之上完成 TLS 握手；目标地址带凭据时会自动应答 Digest（或 Basic）认证挑战"
     },
     "proxy": {
       "label": "代理",

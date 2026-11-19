@@ -306,7 +306,7 @@ export function TargetHostManagerDialog<TItem, TDraft>({
                                 <div className="truncate text-xs font-medium text-foreground">
                                   {itemName(item)}
                                 </div>
-                                <div className="mt-1 flex min-w-0 flex-wrap items-center gap-2 text-[10px] text-muted-foreground">
+                                <div className="mt-1 flex min-w-0 flex-wrap items-center gap-2 text-xs text-muted-foreground">
                                   {renderMeta(item)}
                                 </div>
                               </div>

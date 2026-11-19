@@ -507,7 +507,7 @@ export function ResourcePanel({
                 onValueChange={setCollapseLines}
               />
             </div>
-            <p className="text-sm text-muted-foreground">
+            <p className="text-xs leading-5 text-muted-foreground">
               {t('serviceManagerTool.collapseLogLinesDescription')}
             </p>
           </div>
