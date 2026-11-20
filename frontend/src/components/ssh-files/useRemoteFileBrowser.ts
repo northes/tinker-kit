@@ -25,6 +25,10 @@ import {
   type RemoteSearchScope,
 } from './model';
 
+// 本次运行内最近一次连上的来源：新建的文件管理标签沿用同一个连接。
+// 只活在内存里，标签和其中的选择不跨重启恢复。
+let lastConnectedSourceID = '';
+
 // 目录浏览、搜索与来源加载共用修订号和取消边界，缓存同时供目录树使用。
 export function useRemoteFileBrowser({
   active,
@@ -40,6 +44,9 @@ export function useRemoteFileBrowser({
   const [sourceID, setSourceID] = useState('');
   const sourceIDRef = useRef(sourceID);
   sourceIDRef.current = sourceID;
+  useEffect(() => {
+    if (sourceID) lastConnectedSourceID = sourceID;
+  }, [sourceID]);
   const setTrackedSourceID = (value: SetStateAction<string>) => {
     if (typeof value === 'function') {
       setSourceID((current) => {
@@ -165,9 +172,12 @@ export function useRemoteFileBrowser({
       const nextSources = await sourceRequest;
       if (requestID !== sourcesRequestRef.current) return;
       setSources(nextSources ?? []);
-      setSourceID((current) =>
-        nextSources?.some((item) => item.id === current) ? current : nextSources?.[0]?.id || '',
-      );
+      setSourceID((current) => {
+        if (nextSources?.some((item) => item.id === current)) return current;
+        if (nextSources?.some((item) => item.id === lastConnectedSourceID))
+          return lastConnectedSourceID;
+        return nextSources?.[0]?.id || '';
+      });
       sourcesLoadedRef.current = true;
     } catch (reason) {
       if (requestID !== sourcesRequestRef.current) return;
