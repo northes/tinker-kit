@@ -31,12 +31,17 @@ function profileAddress(profile: SSHProfile) {
   return `${profile.username ? `${profile.username}@` : ''}${host}:${profile.port || 22}`;
 }
 
-// 过滤条件：配置名称、user@host:port、本机别名，忽略大小写。
+// 搜索时忽略空格、下划线和连字符，便于用 gxprod 找到 gx_prod、gx-prod 等别名。
+function normalizeProfileSearch(value: string) {
+  return value.toLowerCase().replace(/[\s_-]+/g, '');
+}
+
+// 过滤条件：配置名称、user@host:port、本机别名，忽略大小写与常见分隔符。
 function matchesProfile(profile: SSHProfile, query: string) {
-  const needle = query.trim().toLowerCase();
+  const needle = normalizeProfileSearch(query.trim());
   if (!needle) return true;
   return [profile.name, profileAddress(profile), profile.originAlias].some((field) =>
-    field.toLowerCase().includes(needle),
+    normalizeProfileSearch(field).includes(needle),
   );
 }
 
