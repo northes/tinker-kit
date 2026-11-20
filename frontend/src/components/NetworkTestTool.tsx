@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { CancelError, Events } from '@wailsio/runtime';
 import { ArrowClockwise, Code, GearSix, Network, Stop } from '@phosphor-icons/react';
@@ -284,6 +284,7 @@ export default function NetworkTestTool({
   taskNotificationMode?: string;
 }) {
   const { t } = useTranslation();
+  const sourceLabelId = useId();
   const { profiles } = useSSHProfiles();
   const [protocolSelection, setProtocolSelection] = useState<ProtocolSelection>('auto');
   const [target, setTarget] = useState('');
@@ -783,11 +784,11 @@ export default function NetworkTestTool({
                 </ToolHeaderField>
                 <ToolHeaderField
                   label={t('networkTestTool.source.label')}
-                  labelId="network-test-source-label"
+                  labelId={sourceLabelId}
                 >
                   <SourceCombobox
                     label={t('networkTestTool.source.label')}
-                    labelId="network-test-source-label"
+                    labelId={sourceLabelId}
                     className={toolHeaderControlClassName}
                     disabled={running}
                     items={sourceItems}

@@ -113,12 +113,15 @@ export function SourceCombobox({
           }
         }}
         onKeyDown={(event) => {
-          if (!open) return;
+          if (event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229) {
+            event.preventBaseUIHandler();
+            return;
+          }
           if (event.key === 'Enter') {
-            // 筛选中没有高亮项时，避免回车提交外层表单。
+            // 避免隐式提交外层表单，选项确认仍由 Combobox 处理。
             event.preventDefault();
           }
-          if (event.key === 'Tab' && !event.shiftKey && manageButtonRef.current) {
+          if (open && event.key === 'Tab' && !event.shiftKey && manageButtonRef.current) {
             // 管理按钮位于 Portal 内，按 Tab 从输入框进入固定动作行。
             event.preventDefault();
             manageButtonRef.current.focus();

@@ -35,6 +35,7 @@ import {
   Suspense,
   useCallback,
   useEffect,
+  useId,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -160,6 +161,7 @@ type CreateEntryTarget = {
 
 export default function SshFilesTool({ active, locate = null }: Props) {
   const { t, i18n } = useTranslation();
+  const sourceLabelId = useId();
   const { profiles } = useSSHProfiles();
   const [sortKey, setSortKey] = useState<FileSortKey>('name');
   const [searchSort, setSearchSort] = useState<{
@@ -1354,12 +1356,12 @@ export default function SshFilesTool({ active, locate = null }: Props) {
           <div className="flex min-w-0 flex-wrap items-end gap-3 max-[700px]:w-full">
             <ToolHeaderField
               label={t('sshFilesTool.source')}
-              labelId="ssh-file-source-label"
+              labelId={sourceLabelId}
               className="max-[700px]:w-full"
             >
               <SourceCombobox
                 label={t('sshFilesTool.source')}
-                labelId="ssh-file-source-label"
+                labelId={sourceLabelId}
                 className={toolHeaderControlClassName}
                 placeholder={t('sshFilesTool.noSource')}
                 disabled={isLoading}

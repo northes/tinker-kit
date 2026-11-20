@@ -10,8 +10,6 @@ import type {
 import { backendErrorKey } from '../../lib/backend-error';
 import { isLocalSource, sourceLabel } from '../../lib/local-source';
 
-export const MANAGE_TARGETS_VALUE = '__manage-targets__';
-
 export const VISIBLE_LOG_LIMIT = 5000;
 
 // 单条日志折叠行数的可选值与合法区间；区间与 configservice.go 的

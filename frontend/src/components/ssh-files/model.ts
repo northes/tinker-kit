@@ -45,8 +45,6 @@ import { type RenameForm } from './rename';
 
 export type ManagedFileSource = FileSource;
 
-export const MANAGE_SOURCES_VALUE = '__manage-sources__';
-
 export function emptyFileSource(sshProfileID = ''): ManagedFileSource {
   return {
     id: '',

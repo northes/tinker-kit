@@ -13,8 +13,6 @@ import type { ImageDeleteItem } from './delete-selection';
 
 export { LOCAL_SOURCE_ID, isLocalSource };
 
-export const MANAGE_SOURCES_VALUE = '__manage-sources__';
-
 export const LOCAL_SOURCE = {
   id: LOCAL_SOURCE_ID,
   name: '本机',
