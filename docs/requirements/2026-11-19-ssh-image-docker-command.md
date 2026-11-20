@@ -21,7 +21,7 @@
    - 探测成功但 PATH 中没有 `docker`：不执行 docker。错误文案与服务管理一致：「远端未找到命令 docker；请确认已在远端安装并加入登录 shell PATH」。
    - 探测成功且找到 `docker`：执行 `PATH=<探测到的 PATH> docker <原有子命令>`。
 4. 非空：按 Unicode 空白拆成 argv（与 `strings.Fields` 相同），不解析引号，不再套登录 PATH。这些 token 后面原样接上现有 docker 子命令。例如前缀 `/usr/bin/sudo -n /usr/bin/docker` 加 `images` 得到 `/usr/bin/sudo -n /usr/bin/docker images`。不经过 shell，不支持管道、重定向、命令替换。
-5. 镜像管理里所有走 SSH 的 docker 调用都用同一条规则，包括列表、详情、拉取、推送、打标签、删除、导出，以及 `docker load` 的 stdin。应用不插入 `sudo -S`，不自行消费 stdin；stdin 仍交给远端会话，由用户写在前缀里的命令接收。
+5. 镜像管理的 SSH 调用共用 Docker 命令解析和提权规则，覆盖列表、详情、拉取、推送、打标签、删除、导出和导入。未配置 sudo 密码时，输入直接交给用户配置的命令。
 6. 连接探测改为验证 daemon 可访问：SSH 与本地来源都执行一条 `<命令> info --format '{{.ServerVersion}}'`（SSH 前面拼 `uname -m &&` 以同时取架构），daemon 不可访问即判为不可用。状态里的版本改用 `ServerVersion`。`registry` 来源不变。
    - 测试连接改为在 dialog 内分步展示：「连接」用 `uname -m && <命令> --version`（SSH）或 `<命令> --version`（本地）；「daemon 探测」用上述 info 命令。两步都通过才算测试成功。
 7. 保存与测试连接都先校验 `dockerCommand`，非法则拒绝，不写配置，也不发起 SSH，不得悄悄清空：
@@ -35,19 +35,18 @@
 10. SSH 来源编辑表单增加一项，Registry 与本机不显示。从 SSH 改成 Registry 时清空草稿里的该字段。
     - 标签：`Docker 命令` / `Docker command`。
     - 占位：`/usr/bin/sudo -n /usr/bin/docker`。
-    - 说明：改成两段——留空则使用登录 shell PATH 中的 docker，填写则按空格拆成命令且不经过 shell；填了 sudo 密码时应用自动加 `sudo -S -p ''`，密码只走 stdin，不进命令行。英文表达同一含义。
+    - 说明：改成两段——留空则使用登录 shell PATH 中的 docker，填写则按空格拆成命令且不经过 shell；填了 sudo 密码时由应用负责认证，密码通过 SSH 会话输入传输。英文表达同一含义。
 11. SSH 来源编辑表单提供「测试连接」，与 Registry 的测试一样不落盘。用当前草稿（含 SSH 配置解析和 `dockerCommand`）做与进入来源时相同的连接探测。失败展示远端或校验错误。
     - 测试结果展示在编辑弹窗内的面板里，分「连接」「daemon 探测」两行；成功行显示成功，失败行显示单行截断（不换行、末尾省略号）的原因，点击该行把完整错误（含远端 stderr）复制到剪贴板，并弹出应用现有的「已复制」提示。
     - 不再弹「连接成功 / 连接失败」toast。面板在编辑任一字段、切换来源类型或关闭弹窗时清空。
     - Registry 来源只有「连接」一步（registry 探活），不显示 daemon 行。
 12. 新增用户可见文案同时写入 `zh-CN` 与 `en-US`。
 13. SSH 来源可保存 sudo 密码（`sudoPassword`，本机配置持久化，仅 SSH 来源保留）：
-    - 非空时应用自动以 `sudo -S -p '' <CLI 路径> <子命令>` 执行，密码不进入命令行，作为 stdin 首行喂入；用户不要在「Docker 命令」里再写 sudo（含 sudo token 时保存报错）。
+    - 非空时应用通过 sudo 执行 Docker。探测等无 Docker 输入的调用使用 `sudo -S -p '' <CLI 路径> <子命令>`。需要 Docker 输入的导入和详情使用 `sudo -A` 和独立的认证通道。
     - 「Docker 命令」留空但填了密码：用登录 PATH 探测到的 docker 绝对路径作为 `<CLI 路径>`；探测结论是「PATH 中没有 docker」时按第 3 条同一文案报未找到，不再执行。
     - 「Docker 命令」非空但含 `sudo` token，同时密码非空：保存与测试连接都拒绝，要求二选一（用户不写密码，或去掉前缀里的 sudo）。
-    - 来源没有保存 SSH 凭据、实际走系统 `ssh` 执行时同样支持密码：密码行经 `ssh` 的 stdin 交给远端 `sudo -S`，调用方把「密码行 + 原有 stdin（如镜像数据）」拼成一个流。
-    - `docker load` 的 stdin 为「密码行 + 镜像数据」，由应用拼成一个流；导出、保存等只用 stdout 的调用即使用空 stdin 也要喂密码行。
-    - 状态探测、测试连接两步、列表、详情、拉取、导出、打标签、删除、导入全部使用同一包装。
+    - Go SSH 与系统 `ssh` 都通过会话 stdin 传输密码。导入和详情的远端入口从会话输入拆出首行，按需交给临时 askpass 助手。Docker 直接读取剩余输入。密码不进入远端 argv、环境变量或磁盘文件。
+    - 远端助手及其私有管道随调用创建和清理，sudo 直接执行 Docker。sudo 免密、缓存命中或认证失败时，密码也不会进入 Docker 的输入。
     - 密码框回显已保存值（与 Registry 密码一致）；从 SSH 改成 Registry 时清空。
     - 密码校验：最长 4096；不允许换行、回车与其它非空白控制字符；不做 trim（首尾空格是密码的一部分）。
     - 密码进入 `imageSourceFingerprint`（与既有 SSH 密码、私钥口径一致），改密码后旧缓存指纹失效。
@@ -104,14 +103,18 @@
 
 ### sudo 密码实现细则（第六轮）
 
-- 空前缀 + 密码：docker 的可执行文件取登录 PATH 探测到的绝对路径（`sudo` 会重置 PATH，不能靠 `PATH=` 前缀）；探测成功但 PATH 里没有 docker 时按第 3 条报未找到。
+- 仅填写密码时，使用登录 PATH 探测到的 Docker 绝对路径，避免 sudo 重置 PATH 后选择到其他版本。登录 PATH 里没有 docker 时按第 3 条报未找到。
 - 前缀自带 sudo + 密码：口径冲突，保存与测试连接都拒绝，不默默忽略任何一侧。
 - 无保存凭据、走系统 `ssh` 的来源：密码行走 `ssh` 的 stdin，与 Go SSH 客户端路径口径一致，不降级成 `sudo -n`。
 - 「Docker 命令」说明文案改成不带密码 / 带密码两段：留空使用登录 shell PATH、填写按空格拆分且不经 shell；填了密码则自动 `sudo -S -p ''`，密码只走 stdin。
 
+### 流式操作认证（第七轮）
+
+- 远端临时 askpass 助手将 sudo 密码和 Docker 输入分开。导入和详情走这一认证通道，普通调用继续走 `sudo -S`。
+
 ## 非目标
 
-- 不分配 PTY，不做交互式 sudo 提示，不使用 askpass；密码只走 stdin。
+- 不分配 PTY，不做交互式 sudo 提示。远端 sudoers 继续授权 Docker 命令。
 - 不支持 shell 语法（管道、重定向、引号、变量替换）。需要更复杂的包装时，用户在远端放脚本，并把脚本路径填进前缀。
 - 不改服务管理的目标、探测命令列表、缓存和错误行为。
 - 不把全局 `DockerCLIPath` 应用到 SSH 来源，也不为本机来源增加单独的命令前缀。
@@ -132,9 +135,9 @@
 - 修改 `dockerCommand` 后镜像缓存指纹变化，不继续使用旧前缀的缓存结果。
 - SSH 来源只填 sudo 密码、不填前缀：登录 PATH 能探测到 docker 时执行的 argv 为 `sudo -S -p '' <docker 绝对路径> <子命令>`，密码只作为 stdin 首行；登录 PATH 没有 docker 时报未找到。
 - 前缀 `/usr/bin/sudo -n /usr/bin/docker` 与密码同时存在：保存失败且配置不变，测试连接也不发起 SSH。
-- 无保存凭据的 SSH 来源填密码后，系统 `ssh` 调用的 stdin 首行是密码；`docker load` 时其后再接镜像数据，远端 `docker load` 不吃到密码行以外的杂质。
+- Go SSH 和系统 `ssh` 都能在 sudo 要求密码、免密和认证缓存命中时将 tar 或 HTTP 请求原样交给 Docker。密码错误时保留 sudo 的错误，避免启动 Docker 或让重试卡住。
 - 密码含换行或超过 4096 时保存失败；密码为首尾带空格的字符串时按原样保存与使用。
-- 表单仅 SSH 来源显示「Docker 命令」、占位符和免密 sudo 说明；测试连接不写入配置。中英文 locale 都有这些文案。
+- 表单仅 SSH 来源显示「Docker 命令」、占位符和 sudo 密码输入框；测试连接不写入配置。中英文 locale 都有对应文案。
 - 服务管理相关测试与行为保持不变。
 - `frontend/bindings/` 只由生成命令更新。`wails3 task test:i18n`、`wails3 task test:go`、`wails3 task common:frontend:run SCRIPT=build` 无新增失败；`git diff --check` 干净。
 
@@ -149,3 +152,4 @@
 - 2026-11-19（再后续）：测试连接支持中途取消（按钮原地变取消，取消后已完成步骤保留、其余标未执行）。
 - 2026-11-19（再后续）：SSH 来源新增 sudo 密码字段，应用自动以 `sudo -S` 执行、密码只走 stdin；`docker load` 使用「密码行 + 镜像数据」单一流。早先「不保存 sudo 密码」的限制作废。
 - 2026-11-20（第六轮）：落实 sudo 密码实现细则。空前缀 + 密码用登录 PATH 探测到的绝对路径；前缀自带 sudo 又填密码则保存报错；系统 `ssh` 路径也把密码行写进 stdin；表单说明改成不带密码 / 带密码两段；密码不 trim，进指纹。
+- 2026-11-20（第七轮）：确认 sudo 可以跳过读取密码。导入和详情采用独立的 askpass 认证通道，Docker 始终收到原始输入。其他调用继续使用 `sudo -S`。
