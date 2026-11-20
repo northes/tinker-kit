@@ -104,7 +104,8 @@ export function RefreshDockerImages(sourceID: string, clientID: string): $Cancel
 }
 
 /**
- * ResolveImagePullPlatforms 仅由显式操作调用；SSH 使用远端 CLI 的认证配置。
+ * ResolveImagePullPlatforms 仅由显式操作调用；SSH 使用远端 CLI 的认证配置，
+ * 本机中转时改在本机 Docker 上解析。
  */
 export function ResolveImagePullPlatforms(sourceID: string, image: string, options: $models.ImagePullOptions): $CancellablePromise<string[] | null> {
     return $Call.ByID(2385541818, sourceID, image, options);

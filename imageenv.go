@@ -156,10 +156,8 @@ func (s *ImageService) imageRemoteCommandEnv(ctx context.Context, source ImageSo
 	if ok && time.Since(cached.resolvedAt) < imageRemoteEnvTTL {
 		return cached, true
 	}
+	// 无保存凭据的来源同样要探测登录 PATH（依赖 ssh-agent 或 ~/.ssh/config），由闭包选择系统 ssh。
 	authenticated := hasSSHCredentials(source)
-	if !authenticated && source.SudoPassword == "" {
-		return remoteCommandEnv{}, false
-	}
 	probeCtx, cancel := context.WithTimeout(ctx, imageRemoteEnvProbeTimeout)
 	defer cancel()
 	// 记录登录 shell 的目录，便于把 PATH 里的相对可执行路径转换成绝对路径。

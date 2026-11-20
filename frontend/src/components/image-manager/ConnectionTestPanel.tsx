@@ -84,11 +84,14 @@ export function ImageConnectionTestPanel({
                 ) : failure ? (
                   <button
                     type="button"
-                    aria-label={t('imageManagerTool.copyConnectionError', { step: label })}
+                    title={t('imageManagerTool.copyConnectionError', { step: label })}
                     onClick={() => void copyFailure(failure)}
                     className="flex min-w-0 flex-1 cursor-pointer items-center gap-1.5 rounded-sm text-left text-destructive outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
                   >
                     <span className="min-w-0 flex-1 truncate">{failure}</span>
+                    <span className="sr-only">
+                      {t('imageManagerTool.copyConnectionError', { step: label })}
+                    </span>
                     <Copy
                       weight="regular"
                       aria-hidden="true"

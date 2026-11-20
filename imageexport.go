@@ -731,6 +731,8 @@ func (s *ImageService) streamDockerCommand(ctx context.Context, source ImageSour
 		return err
 	}
 	_, copyErr := io.Copy(dst, stdout)
+	// 关闭读端，让仍在写 stdout 的进程收到 EPIPE 后退出，Wait 才能立即返回并回收进程。
+	_ = stdout.Close()
 	waitErr := cmd.Wait()
 	if copyErr != nil {
 		return copyErr
@@ -1134,6 +1136,7 @@ func (s *ImageService) runImagePull(ctx context.Context, taskID, imageRef string
 	if s.taskScheduler != nil {
 		defer s.taskScheduler.Release()
 	}
+	pullSource, pullCLIPath, relay := s.imagePullExecutionSource(source, cliPath, options)
 	s.updateTask(taskID, func(task *imageTaskState) {
 		task.Status = imageTaskRunning
 		task.Stage = "pulling"
@@ -1142,14 +1145,14 @@ func (s *ImageService) runImagePull(ctx context.Context, taskID, imageRef string
 	platforms := []string{options.Platform}
 	var err error
 	if options.Platform == "all" {
-		platforms, err = s.resolveImagePullPlatforms(ctx, source, cliPath, imageRef, options)
+		platforms, err = s.resolveImagePullPlatforms(ctx, pullSource, pullCLIPath, imageRef, options)
 	}
 	for _, platform := range platforms {
 		if err != nil {
 			break
 		}
 		tracker = newPullProgress()
-		err = s.streamDockerPull(ctx, source, cliPath, imageRef, platform, func(line string) {
+		err = s.streamDockerPull(ctx, pullSource, pullCLIPath, imageRef, platform, func(line string) {
 			if tracker.observe(line) {
 				completed, total, stage := tracker.snapshot()
 				s.updateTask(taskID, func(task *imageTaskState) {
@@ -1159,6 +1162,10 @@ func (s *ImageService) runImagePull(ctx context.Context, taskID, imageRef string
 				})
 			}
 		})
+	}
+	if err == nil && relay {
+		s.updateTask(taskID, func(task *imageTaskState) { task.Stage = "transferring" })
+		err = s.relayImageToTarget(ctx, taskID, imageRef, pullSource, pullCLIPath, source, cliPath)
 	}
 	switch {
 	case errors.Is(err, context.Canceled):
@@ -1293,6 +1300,11 @@ func (s *ImageService) runImageTagChange(ctx context.Context, taskID string, cha
 
 // importProgress 返回读取本地 tar 时的节流进度回调，用已读字节更新任务进度。
 func (s *ImageService) importProgress(taskID string) func(int64) {
+	return s.streamProgress(taskID, "loading")
+}
+
+// streamProgress 返回读取/写入字节时的节流进度回调，用已读写字节更新任务进度与阶段。
+func (s *ImageService) streamProgress(taskID, stage string) func(int64) {
 	var mu sync.Mutex
 	var pending int64
 	var last time.Time
@@ -1309,7 +1321,7 @@ func (s *ImageService) importProgress(taskID string) func(int64) {
 		mu.Unlock()
 		s.updateTask(taskID, func(task *imageTaskState) {
 			task.Bytes += delta
-			task.Stage = "loading"
+			task.Stage = stage
 		})
 	}
 }
@@ -1347,6 +1359,36 @@ func (s *ImageService) streamDockerLoad(ctx context.Context, source ImageSource,
 			return userErrorParams("errors.imageExport.importImageFailed", map[string]any{"detail": strings.TrimSpace(stderr.String())})
 		}
 		return userErrorCause("errors.imageExport.importImageFailed", err)
+	}
+	return nil
+}
+
+// relayImageToTarget 把本机已拉取的镜像经 docker save | docker load 流式送到目标，
+// 全程不落中间 tar 文件。save 的 stderr 单独收集，只有 stdout 进入目标的 stdin。
+func (s *ImageService) relayImageToTarget(ctx context.Context, taskID, imageRef string, localSource ImageSource, localCLIPath string, target ImageSource, targetCLIPath string) error {
+	reader, writer := io.Pipe()
+	saveCtx, cancelSave := context.WithCancel(ctx)
+	saveDone := make(chan error, 1)
+	go func() {
+		err := s.streamDockerCommand(saveCtx, localSource, localCLIPath, []string{"image", "save", imageRef}, writer)
+		_ = writer.CloseWithError(err)
+		saveDone <- err
+	}()
+	loadErr := s.streamDockerLoad(ctx, target, targetCLIPath, &progressReader{reader: reader, onRead: s.streamProgress(taskID, "transferring")})
+	// 关闭读端并取消 save 侧，确保 load 先结束时 save 不会一直阻塞在 pipe 上或残留进程。
+	_ = reader.CloseWithError(loadErr)
+	cancelSave()
+	saveErr := <-saveDone
+	if loadErr != nil {
+		// load 先失败时该错误会经 pipe 传回 save 侧（二者为同一错误），以目标 docker load
+		// 的 stderr 为准；否则 save 独立失败，返回本机 docker save 的 stderr。
+		if saveErr != nil && !errors.Is(saveErr, loadErr) {
+			return saveErr
+		}
+		return loadErr
+	}
+	if saveErr != nil {
+		return saveErr
 	}
 	return nil
 }

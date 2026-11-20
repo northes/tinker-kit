@@ -334,6 +334,11 @@ export interface ImagePullOptions {
     "username": string;
     "password": string;
     "platform": string;
+
+    /**
+     * Relay 为 true 时，SSH 来源改为在本机拉取并流式传输到目标（本机中转）。
+     */
+    "relay": boolean;
 }
 
 export interface ImageSource {

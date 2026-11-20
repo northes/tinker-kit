@@ -503,6 +503,7 @@ export default function ImageManagerTool({
   const interactionBlocked = busy !== null;
   const sourceSupportsDockerMutations = source.kind !== 'registry';
   const isRegistrySource = source.kind === 'registry';
+  const isSSHSource = source.kind === 'ssh';
   const currentPullPlatform = status?.localArchitecture ? `linux/${status.localArchitecture}` : '';
   const currentPullPlatformLabel = t('imageManagerTool.pullCurrentPlatform', {
     architecture: status?.localArchitecture || t('imageManagerTool.architectureUnknown'),
@@ -939,6 +940,7 @@ export default function ImageManagerTool({
       platforms: [],
       platformStatus: 'idle',
       platformError: '',
+      relay: false,
     });
   };
 
@@ -985,6 +987,17 @@ export default function ImageManagerTool({
         : current,
     );
   };
+  // 切换「本机中转」会改变架构解析与拉取所在的主机，之前解析出的架构列表随之失效。
+  const updatePullRelay = (relay: boolean) => {
+    pullRevision.current++;
+    pullPlatformRequest.current?.cancel();
+    setOperationError('');
+    setOperationDialog((current) =>
+      current?.type === 'pull-image'
+        ? { ...current, relay, platforms: [], platformStatus: 'idle', platformError: '' }
+        : current,
+    );
+  };
   const resolvePullPlatforms = async () => {
     if (operationDialog?.type !== 'pull-image' || !operationDialog.value.trim()) return;
     pullPlatformRequest.current?.cancel();
@@ -993,6 +1006,7 @@ export default function ImageManagerTool({
       username: operationDialog.username,
       password: operationDialog.password,
       platform: '',
+      relay: operationDialog.relay,
     });
     pullPlatformRequest.current = request;
     setOperationDialog((current) =>
@@ -1247,7 +1261,7 @@ export default function ImageManagerTool({
   };
   const runPullRefs = async (
     requestedRefs: string[],
-    options = { username: '', password: '', platform: '' },
+    options = { username: '', password: '', platform: '', relay: false },
   ) => {
     const refs = [...new Set(requestedRefs.map((ref) => ref.trim()).filter(Boolean))];
     if (refs.length === 0 || pullStarting) return;
@@ -1274,7 +1288,7 @@ export default function ImageManagerTool({
   const runRegistryPull = async (
     reference: string,
     target: string,
-    options: { username: string; password: string; platform: string },
+    options: { username: string; password: string; platform: string; relay: boolean },
   ) => {
     if (pullStarting) return;
     setPullStarting(true);
@@ -2051,6 +2065,36 @@ export default function ImageManagerTool({
                   submitOperation();
                 }}
               >
+                {isSSHSource ? (
+                  <>
+                    <Label htmlFor="image-operation-pull-location">
+                      {t('imageManagerTool.pullLocation')}
+                    </Label>
+                    <Select
+                      value={operationDialog.relay ? 'relay' : 'target'}
+                      items={[
+                        { value: 'target', label: t('imageManagerTool.pullLocationTarget') },
+                        { value: 'relay', label: t('imageManagerTool.pullLocationRelay') },
+                      ]}
+                      disabled={pullStarting}
+                      onValueChange={(value) => updatePullRelay(value === 'relay')}
+                    >
+                      <SelectTrigger id="image-operation-pull-location" className="w-full">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectGroup>
+                          <SelectItem value="target">
+                            {t('imageManagerTool.pullLocationTarget')}
+                          </SelectItem>
+                          <SelectItem value="relay">
+                            {t('imageManagerTool.pullLocationRelay')}
+                          </SelectItem>
+                        </SelectGroup>
+                      </SelectContent>
+                    </Select>
+                  </>
+                ) : null}
                 <Label htmlFor="image-operation-reference">
                   {t('imageManagerTool.imageReference')}
                 </Label>
@@ -2415,6 +2459,9 @@ export default function ImageManagerTool({
                     value={draft.sudoPassword ?? ''}
                     onChange={(event) => setDraft({ ...draft, sudoPassword: event.target.value })}
                   />
+                  <p className="m-0 text-xs leading-5 text-muted-foreground">
+                    {t('imageManagerTool.sudoPasswordHint')}
+                  </p>
                 </div>
               </>
             ) : (

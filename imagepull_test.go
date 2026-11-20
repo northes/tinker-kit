@@ -50,16 +50,16 @@ func TestCLIPullPlatforms(t *testing.T) {
 func TestResolvePullPlatformsUsesSSHCLIAndCancellation(t *testing.T) {
 	source := ImageSource{Kind: "ssh", SSHHost: "test-host"}
 	calls := 0
-	s := &ImageService{runner: func(ctx context.Context, command string, args ...string) ([]byte, error) {
+	s := &ImageService{runner: withRemoteEnvProbe(func(ctx context.Context, command string, args ...string) ([]byte, error) {
 		calls++
-		if command != "ssh" || args[len(args)-1] != shellJoin([]string{"docker", "buildx", "imagetools", "inspect", "--raw", "private/image:latest"}) {
+		if command != "ssh" || args[len(args)-1] != "PATH='/usr/bin' "+shellJoin([]string{"docker", "buildx", "imagetools", "inspect", "--raw", "private/image:latest"}) {
 			t.Fatalf("未使用 SSH CLI: %s %v", command, args)
 		}
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
 		return []byte(`{"mediaType":"application/vnd.oci.image.index.v1+json","manifests":[{"platform":{"os":"linux","architecture":"amd64"}}]}`), nil
-	}}
+	})}
 	actual, err := s.resolveImagePullPlatforms(context.Background(), source, "docker", "private/image:latest", ImagePullOptions{})
 	if err != nil || !reflect.DeepEqual(actual, []string{"linux/amd64"}) || calls != 1 {
 		t.Fatalf("解析结果不正确: %v, %v", actual, err)
@@ -294,4 +294,44 @@ func TestResolveCLIPullPlatformsLiveRequests(t *testing.T) {
 		t.Fatalf("产生不必要的请求: root=%d child=%d blob=%d", rootReads.Load(), childReads.Load(), blobReads.Load())
 	}
 	t.Logf("真实 Buildx 请求: 顶层索引 GET=%d，子 manifest GET=%d，配置/层 GET=%d", rootReads.Load(), childReads.Load(), blobReads.Load())
+}
+
+func TestImagePullExecutionSourceSelectsLocalOnRelay(t *testing.T) {
+	s := &ImageService{}
+	src, cli, relay := s.imagePullExecutionSource(ImageSource{Kind: "ssh"}, "remote-docker", ImagePullOptions{Relay: true})
+	if !relay || src.Kind != "local" || cli != dockerCommandName {
+		t.Fatalf("本机中转应改在本机 Docker 上执行: relay=%v kind=%s cli=%s", relay, src.Kind, cli)
+	}
+	src, cli, relay = s.imagePullExecutionSource(ImageSource{Kind: "ssh"}, "remote-docker", ImagePullOptions{})
+	if relay || src.Kind != "ssh" || cli != "remote-docker" {
+		t.Fatalf("未选中转时应沿用 SSH 来源: relay=%v kind=%s cli=%s", relay, src.Kind, cli)
+	}
+	src, cli, relay = s.imagePullExecutionSource(ImageSource{Kind: "local"}, "docker", ImagePullOptions{Relay: true})
+	if relay || src.Kind != "local" || cli != "docker" {
+		t.Fatalf("非 SSH 来源不应触发中转: relay=%v kind=%s cli=%s", relay, src.Kind, cli)
+	}
+}
+
+func TestRelayImageToTargetStreamsSaveToLoad(t *testing.T) {
+	dir := t.TempDir()
+	savePath := filepath.Join(dir, "docker-save")
+	loadPath := filepath.Join(dir, "docker-load")
+	capturePath := filepath.Join(dir, "loaded")
+	saveScript := "#!/bin/sh\n[ \"$1\" = image ] && [ \"$2\" = save ] && printf 'SAVED:%s' \"$3\"\n"
+	loadScript := "#!/bin/sh\n[ \"$1\" = image ] && [ \"$2\" = load ] && cat > " + shellQuote(capturePath) + "\n"
+	if err := os.WriteFile(savePath, []byte(saveScript), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(loadPath, []byte(loadScript), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	s := &ImageService{}
+	if err := s.relayImageToTarget(context.Background(), "unused", "myimage:latest",
+		ImageSource{Kind: "local"}, savePath, ImageSource{Kind: "local"}, loadPath); err != nil {
+		t.Fatalf("中转失败: %v", err)
+	}
+	data, err := os.ReadFile(capturePath)
+	if err != nil || string(data) != "SAVED:myimage:latest" {
+		t.Fatalf("load 未收到 save 的完整输出: %q, %v", data, err)
+	}
 }

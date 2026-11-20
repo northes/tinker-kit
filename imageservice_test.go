@@ -225,10 +225,10 @@ func TestImageSourceConnectionTestsDraftWithoutPersistence(t *testing.T) {
 	config := &ConfigService{cfg: normalizeConfig(defaultConfig())}
 	service := NewImageService(config)
 	defer service.shutdown()
-	wantConnect := shellQuote("sh") + " " + shellQuote("-c") + " " + shellQuote("uname -m && exec 'docker' '--version'")
-	wantDaemon := shellQuote("sh") + " " + shellQuote("-c") + " " + shellQuote("uname -m && exec "+shellJoin(append([]string{"docker"}, imageDaemonProbeArgs...)))
+	wantConnect := shellQuote("sh") + " " + shellQuote("-c") + " " + shellQuote("uname -m && PATH='/usr/bin' exec 'docker' '--version'")
+	wantDaemon := shellQuote("sh") + " " + shellQuote("-c") + " " + shellQuote("uname -m && PATH='/usr/bin' exec "+shellJoin(append([]string{"docker"}, imageDaemonProbeArgs...)))
 	var commands []string
-	service.runner = func(_ context.Context, name string, args ...string) ([]byte, error) {
+	service.runner = withRemoteEnvProbe(func(_ context.Context, name string, args ...string) ([]byte, error) {
 		if name != "ssh" || len(args) != 7 {
 			t.Fatalf("SSH 连接测试命令为 %q %#v", name, args)
 		}
@@ -237,7 +237,7 @@ func TestImageSourceConnectionTestsDraftWithoutPersistence(t *testing.T) {
 			return []byte("aarch64\n27.0.0\n"), nil
 		}
 		return []byte("aarch64\nDocker version 27.0.0\n"), nil
-	}
+	})
 
 	if err := service.TestImageSourceConnection(ImageSource{ID: "ssh:connection-test", Kind: "ssh", SSHHost: "dev-box"}); err != nil {
 		t.Fatalf("SSH 草稿连接测试失败: %v", err)

@@ -35,13 +35,13 @@ func TestSSHArchitectureProbeUsesSingleConnectionAndPropagatesErrors(t *testing.
 		{output: "Docker version 29.0.0\n", fail: true},
 	} {
 		calls := 0
-		s := &ImageService{runner: func(_ context.Context, command string, args ...string) ([]byte, error) {
+		s := &ImageService{runner: withRemoteEnvProbe(func(_ context.Context, command string, args ...string) ([]byte, error) {
 			calls++
 			if command != "ssh" {
 				t.Fatalf("没有复用 SSH 执行入口: %s", command)
 			}
 			return []byte(scenario.output), nil
-		}}
+		})}
 		status, err := s.probeSourceConnection(context.Background(), ImageSource{Kind: "ssh", SSHHost: "test-host"}, "docker")
 		if calls != 1 {
 			t.Fatalf("架构探测产生 %d 次远程连接", calls)

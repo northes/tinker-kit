@@ -116,6 +116,7 @@ export type ImageOperationDialogState =
       platforms: string[];
       platformStatus: 'idle' | 'loading' | 'success' | 'error';
       platformError: string;
+      relay: boolean;
     }
   | null;
 

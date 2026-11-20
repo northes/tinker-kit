@@ -179,6 +179,29 @@ type ImagePullOptions struct {
 	Username string `json:"username"`
 	Password string `json:"password"`
 	Platform string `json:"platform"`
+	// Relay 为 true 时，SSH 来源改为在本机拉取并流式传输到目标（本机中转）。
+	Relay bool `json:"relay"`
+}
+
+// localPullSource 返回本机 Docker 的来源与 CLI 路径，用于「本机中转」。
+func (s *ImageService) localPullSource() (ImageSource, string) {
+	cliPath := dockerCommandName
+	if s != nil && s.config != nil {
+		if value := strings.TrimSpace(s.config.Get().DockerCLIPath); value != "" {
+			cliPath = value
+		}
+	}
+	return ImageSource{Kind: "local"}, cliPath
+}
+
+// imagePullExecutionSource 返回实际执行 pull 与架构解析的来源：本机中转时用本机 Docker，
+// 其余沿用传入来源。relay 为 true 表示走本机中转。
+func (s *ImageService) imagePullExecutionSource(source ImageSource, cliPath string, options ImagePullOptions) (ImageSource, string, bool) {
+	if options.Relay && source.Kind == "ssh" {
+		local, localCLI := s.localPullSource()
+		return local, localCLI, true
+	}
+	return source, cliPath, false
 }
 
 func (s *ImageService) pullOrigin(reference name.Reference, target ImageSource, options ImagePullOptions) ImageSource {
@@ -189,7 +212,8 @@ func (s *ImageService) pullOrigin(reference name.Reference, target ImageSource, 
 	return origin
 }
 
-// ResolveImagePullPlatforms 仅由显式操作调用；SSH 使用远端 CLI 的认证配置。
+// ResolveImagePullPlatforms 仅由显式操作调用；SSH 使用远端 CLI 的认证配置，
+// 本机中转时改在本机 Docker 上解析。
 func (s *ImageService) ResolveImagePullPlatforms(ctx context.Context, sourceID, image string, options ImagePullOptions) (result []string, err error) {
 	defer func() {
 		if errors.Is(ctx.Err(), context.Canceled) {
@@ -200,7 +224,8 @@ func (s *ImageService) ResolveImagePullPlatforms(ctx context.Context, sourceID, 
 	if err != nil {
 		return nil, err
 	}
-	return s.resolveImagePullPlatforms(ctx, source, cliPath, image, options)
+	pullSource, pullCLIPath, _ := s.imagePullExecutionSource(source, cliPath, options)
+	return s.resolveImagePullPlatforms(ctx, pullSource, pullCLIPath, image, options)
 }
 
 func (s *ImageService) resolveImagePullPlatforms(ctx context.Context, source ImageSource, cliPath, image string, options ImagePullOptions) ([]string, error) {

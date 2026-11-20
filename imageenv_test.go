@@ -121,6 +121,19 @@ func cachedImageService(source ImageSource, env remoteCommandEnv) *ImageService 
 	return service
 }
 
+// fakeRemoteEnvProbeOutput 模拟登录 shell 的 PATH 探测结果：docker 位于 /usr/bin。
+const fakeRemoteEnvProbeOutput = "__TK_PATH__ /usr/bin\n__TK_CWD__ /home/dev\n__TK_CMD__ docker /usr/bin/docker\n"
+
+// withRemoteEnvProbe 让登录 PATH 探测直接成功，测试只观察连接与 docker 探测本身。
+func withRemoteEnvProbe(run imageCommandRunner) imageCommandRunner {
+	return func(ctx context.Context, name string, args ...string) ([]byte, error) {
+		if name == "ssh" && len(args) > 0 && strings.Contains(args[len(args)-1], "'-lc'") {
+			return []byte(fakeRemoteEnvProbeOutput), nil
+		}
+		return run(ctx, name, args...)
+	}
+}
+
 func TestImageSSHCommandLineUsesProbedPath(t *testing.T) {
 	source := ImageSource{ID: "ssh:a", Kind: "ssh", SSHHost: "box", SSHUsername: "dev"}
 	service := cachedImageService(source, remoteCommandEnv{path: "/usr/local/bin:/usr/bin", commands: map[string]bool{"docker": true}})
@@ -133,6 +146,29 @@ func TestImageSSHCommandLineUsesProbedPath(t *testing.T) {
 	}
 	if want := "PATH='/usr/local/bin:/usr/bin' 'docker' 'image' 'ls'"; line != want {
 		t.Fatalf("命令串 = %q, 期望 %q", line, want)
+	}
+}
+
+// 无保存凭据的来源（依赖 ssh-agent 或 ~/.ssh/config）同样要探测登录 PATH，不能直接退回裸 docker。
+func TestImageSSHCommandLineProbesPathWithoutSavedCredentials(t *testing.T) {
+	source := ImageSource{ID: "ssh:agent", Kind: "ssh", SSHHost: "box", SSHUsername: "dev"}
+	var probes int
+	service := &ImageService{runner: func(_ context.Context, name string, args ...string) ([]byte, error) {
+		if name != "ssh" {
+			t.Fatalf("无凭据来源应经系统 ssh 探测: %s %#v", name, args)
+		}
+		probes++
+		return []byte("__TK_PATH__ /opt/bin:/usr/bin\n__TK_CWD__ /home/dev\n__TK_CMD__ docker /opt/bin/docker\n"), nil
+	}}
+	line, label, err := service.imageSSHCommandLine(context.Background(), source, []string{"images"})
+	if err != nil {
+		t.Fatalf("解析命令失败: %v", err)
+	}
+	if want := "PATH='/opt/bin:/usr/bin' 'docker' 'images'"; line != want || label != "docker" {
+		t.Fatalf("命令串 = %q (%q), 期望 %q", line, label, want)
+	}
+	if probes != 1 {
+		t.Fatalf("应探测一次登录 PATH: %d", probes)
 	}
 }
 
@@ -232,7 +268,8 @@ func TestImageSSHCommandLineUsesAbsoluteDockerPathWithSudoPassword(t *testing.T)
 				t.Fatalf("系统 SSH 的 load 应生成 askpass 命令: %s %#v, %v", name, args, err)
 			}
 			remote := args[len(args)-1]
-			if !strings.HasPrefix(remote, "/bin/sh -c ") || !strings.Contains(remote, "sudo -A -- '"+tc.wantPath+"' 'image' 'load'") {
+			// 固定脚本通过 "$@" 接收独立 argv，Docker 参数作为 sh 的位置参数传入。
+			if !strings.HasPrefix(remote, "/bin/sh -c ") || !strings.Contains(remote, `sudo -A -- "$@"`) || !strings.HasSuffix(remote, " sh '"+tc.wantPath+"' 'image' 'load'") {
 				t.Fatalf("系统 SSH 的 load 应使用 askpass 包装: %s %#v", name, args)
 			}
 			probe, _, err := service.sshArchitectureProbeCommand(ctx, source, imageConnectProbeArgs)
@@ -314,7 +351,7 @@ func TestStreamDockerLoadSendsSudoPasswordAndArchiveToSystemSSH(t *testing.T) {
 			t.Fatalf("系统 SSH 应执行 ssh: %s %#v", name, args)
 		}
 		remote := args[len(args)-1]
-		if !strings.HasPrefix(remote, "/bin/sh -c ") || !strings.Contains(remote, "sudo -A -- '/usr/bin/docker' 'image' 'load'") {
+		if !strings.HasPrefix(remote, "/bin/sh -c ") || !strings.Contains(remote, `sudo -A -- "$@"`) || !strings.HasSuffix(remote, " sh '/usr/bin/docker' 'image' 'load'") {
 			t.Fatalf("系统 SSH 应执行 askpass 包装后的 load: %s %#v", name, args)
 		}
 		// 用 cat 接收并保存 ssh 子进程本应收到的完整字节流。
@@ -359,7 +396,7 @@ func TestImageDockerStdinPrefixesSudoPassword(t *testing.T) {
 
 // runAskpassScenario 生成 imageSSHInputLine 的真实 shell 命令，并在 PATH 里放假的
 // sudo/docker 执行它。返回 docker 收到的 stdin、是否执行过 docker、退出错误和残留目录。
-func runAskpassScenario(t *testing.T, mode, password, payload string) (dockerStdin string, dockerRan bool, runErr error, residue []string) {
+func runAskpassScenario(t *testing.T, mode, password, payload string) (dockerStdin string, dockerRan bool, runErr error, residue []string, sudoArgv, dockerArgv string) {
 	t.Helper()
 	dir := t.TempDir()
 	bin := filepath.Join(dir, "bin")
@@ -413,9 +450,11 @@ esac
 exec "$@"
 `
 	const dockerScript = `#!/bin/sh
-printf 'docker argv:'
-for a in "$@"; do printf ' <%s>' "$a"; done
-printf '\n' >> "$FAKE_DOCKER_LOG"
+{
+  printf 'docker argv:'
+  for a in "$@"; do printf ' <%s>' "$a"; done
+  printf '\n'
+} >> "$FAKE_DOCKER_LOG"
 cat > "$FAKE_DOCKER_STDIN"
 printf 'docker ran\n' >> "$FAKE_DOCKER_LOG"
 `
@@ -457,8 +496,12 @@ printf 'docker ran\n' >> "$FAKE_DOCKER_LOG"
 	if data, err := os.ReadFile(dockerStdinPath); err == nil {
 		dockerStdin = string(data)
 	}
+	if logData, err := os.ReadFile(sudoLog); err == nil {
+		sudoArgv = firstLine(string(logData))
+	}
 	if logData, err := os.ReadFile(dockerLog); err == nil {
 		dockerRan = strings.Contains(string(logData), "docker ran")
+		dockerArgv = firstLine(string(logData))
 	}
 	entries, err := os.ReadDir(tmp)
 	if err != nil {
@@ -469,7 +512,12 @@ printf 'docker ran\n' >> "$FAKE_DOCKER_LOG"
 			residue = append(residue, entry.Name())
 		}
 	}
-	return dockerStdin, dockerRan, runErr, residue
+	return dockerStdin, dockerRan, runErr, residue, sudoArgv, dockerArgv
+}
+
+func firstLine(s string) string {
+	line, _, _ := strings.Cut(s, "\n")
+	return line
 }
 
 func TestImageSSHInputAskpassKeepsDockerInput(t *testing.T) {
@@ -486,7 +534,7 @@ func TestImageSSHInputAskpassKeepsDockerInput(t *testing.T) {
 		{name: "认证失败再请求", mode: "fail", wantOK: false, wantRun: false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			dockerStdin, dockerRan, err, residue := runAskpassScenario(t, tc.mode, password, payload)
+			dockerStdin, dockerRan, err, residue, sudoArgv, dockerArgv := runAskpassScenario(t, tc.mode, password, payload)
 			if tc.wantOK && err != nil {
 				t.Fatalf("命令应成功: %v", err)
 			}
@@ -495,6 +543,12 @@ func TestImageSSHInputAskpassKeepsDockerInput(t *testing.T) {
 			}
 			if dockerRan != tc.wantRun {
 				t.Fatalf("docker 执行状态 = %v, 期望 %v", dockerRan, tc.wantRun)
+			}
+			if sudoArgv != "sudo argv: <-A> <--> <docker> <image> <load>" {
+				t.Fatalf("sudo 应只拿到 -A -- 与原样 docker argv: %q", sudoArgv)
+			}
+			if tc.wantRun && dockerArgv != "docker argv: <image> <load>" {
+				t.Fatalf("docker argv 应原样保留: %q", dockerArgv)
 			}
 			if tc.wantRun && dockerStdin != payload {
 				t.Fatal("docker 只应收到原始数据，不能混入密码行")
@@ -576,7 +630,7 @@ func TestTestImageSourceConnectionRejectsInvalidDockerCommandWithoutSSH(t *testi
 func TestTestImageSourceConnectionStepsReportsDaemonSocketDenied(t *testing.T) {
 	config := &ConfigService{cfg: normalizeConfig(defaultConfig())}
 	var lines []string
-	service := &ImageService{config: config, runner: func(_ context.Context, _ string, args ...string) ([]byte, error) {
+	service := &ImageService{config: config, runner: withRemoteEnvProbe(func(_ context.Context, _ string, args ...string) ([]byte, error) {
 		line := args[len(args)-1]
 		lines = append(lines, line)
 		if strings.Contains(line, "'info'") {
@@ -587,7 +641,7 @@ func TestTestImageSourceConnectionStepsReportsDaemonSocketDenied(t *testing.T) {
 			)
 		}
 		return []byte("aarch64\nDocker version 27.0.0, build deadbeef\n"), nil
-	}}
+	})}
 	steps := service.TestImageSourceConnectionSteps(context.Background(), ImageSource{ID: "ssh:draft", Kind: "ssh", SSHHost: "dev-box"})
 	if len(steps) != 2 || steps[0].Key != imageConnectionStepConnect || steps[0].Error != "" {
 		t.Fatalf("第一步应通过: %#v", steps)
