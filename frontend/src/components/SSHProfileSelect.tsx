@@ -106,6 +106,7 @@ export function SSHProfileSelect({
           className="min-w-0 flex-1"
           disabled={disabledState}
           placeholder={placeholderText}
+          aria-label={placeholderText}
           triggerLabel={placeholderText}
           onBlur={() => setInputValue(selectedLabel)}
         />
