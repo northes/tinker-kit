@@ -41,8 +41,10 @@ export function TaskMeasureReadout({
   const { t, i18n } = useTranslation();
   const percent = taskMeasurePercent(measure, status);
   const measureText =
-    measure.unit === 'bytes' && measure.total > 0
-      ? `${formatTaskBytes(measure.current)} / ${formatTaskBytes(measure.total)}`
+    measure.unit === 'bytes'
+      ? measure.total > 0
+        ? `${formatTaskBytes(measure.current)} / ${formatTaskBytes(measure.total)}`
+        : formatTaskBytes(measure.current)
       : measure.unit === 'files' && measure.total > 0
         ? t('taskCenter.filesProgress', { done: measure.current, total: measure.total })
         : measure.unit === 'count' && measure.total > 0
@@ -61,7 +63,7 @@ export function TaskMeasureReadout({
       : `${percent.toLocaleString(i18n.resolvedLanguage, { maximumFractionDigits: 1 })}%`;
 
   return (
-    <div className="mt-2 grid min-w-0 grid-cols-[minmax(0,1fr)_4rem] items-center gap-x-2 gap-y-1 font-mono text-[10px] tabular-nums text-muted-foreground sm:grid-cols-[10rem_3.5rem_5.5rem_5.5rem]">
+    <div className="mt-2 grid min-w-0 grid-cols-[minmax(0,1fr)_4rem] items-center gap-x-2 gap-y-1 font-mono text-xs leading-5 tabular-nums text-muted-foreground sm:grid-cols-[10rem_3.5rem_5.5rem_5.5rem]">
       <span
         className="min-w-0 whitespace-normal sm:whitespace-nowrap"
         title={measureText}

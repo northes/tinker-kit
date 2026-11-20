@@ -318,7 +318,14 @@ func runSSHCommandWritersLine(ctx context.Context, client *ssh.Client, label, co
 		return userError("errors.image.sshSessionFailed")
 	}
 	defer session.Close()
-	session.Stdin = stdin
+	var input io.WriteCloser
+	if stdin != nil {
+		input, err = session.StdinPipe()
+		if err != nil {
+			return err
+		}
+		defer input.Close()
+	}
 	session.Stdout = stdout
 	session.Stderr = stderr
 	if err := session.Start(commandLine); err != nil {
@@ -326,14 +333,48 @@ func runSSHCommandWritersLine(ctx context.Context, client *ssh.Client, label, co
 	}
 	wait := make(chan error, 1)
 	go func() { wait <- session.Wait() }()
-	select {
-	case err := <-wait:
-		if err != nil {
-			return userErrorParamsCause("errors.image.remoteCommandFailed", map[string]any{"command": label}, err)
+	waitCommand := func() error {
+		select {
+		case err := <-wait:
+			return err
+		case <-ctx.Done():
+			_ = client.Close()
+			<-wait
+			return ctx.Err()
 		}
-		return nil
-	case <-ctx.Done():
-		_ = client.Close()
+	}
+	if stdin != nil {
+		err = waitWithCommandInput(stdin, input, waitCommand)
+	} else {
+		err = waitCommand()
+	}
+	if ctx.Err() != nil {
 		return ctx.Err()
 	}
+	if err != nil {
+		return userErrorParamsCause("errors.image.remoteCommandFailed", map[string]any{"command": label}, err)
+	}
+	return nil
+}
+
+// waitWithCommandInput 独立复制 stdin，让进程/会话的退出不依赖输入 EOF。
+// 所有可能阻塞的生产者必须提供 io.Closer；退出时关闭输入并等待复制协程收尾。
+func waitWithCommandInput(src io.Reader, input io.WriteCloser, wait func() error) error {
+	done := make(chan error, 1)
+	go func() {
+		_, err := io.Copy(input, src)
+		_ = input.Close()
+		done <- err
+	}()
+	err := wait()
+	// Wait 已关闭进程管道或 SSH 通道，写端会被解除阻塞；只关闭生产者。
+	// SSH CloseWrite 不能与 Write 并发，输入写端始终只由复制协程关闭。
+	if closer, ok := src.(io.Closer); ok {
+		_ = closer.Close()
+	}
+	copyErr := <-done
+	if err != nil {
+		return err
+	}
+	return copyErr
 }

@@ -137,9 +137,11 @@ function imageName(task: ImageTask) {
 
 function taskTitle(task: UnifiedTask, t: (key: string) => string) {
   const operation =
-    task.tool === 'image-manager'
-      ? t(`imageManagerTool.taskStage${task.kind[0]?.toUpperCase()}${task.kind.slice(1)}`)
-      : t(`sshFilesTool.${task.kind}`);
+    task.tool === 'image-manager' && task.stage === 'transferring'
+      ? t('imageManagerTool.taskTransferring')
+      : task.tool === 'image-manager'
+        ? t(`imageManagerTool.taskStage${task.kind[0]?.toUpperCase()}${task.kind.slice(1)}`)
+        : t(`sshFilesTool.${task.kind}`);
   return task.name ? `${operation} · ${task.name}` : operation;
 }
 

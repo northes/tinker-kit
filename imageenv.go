@@ -116,7 +116,17 @@ func imageDockerStdin(source ImageSource, stdin io.Reader) io.Reader {
 	if stdin == nil {
 		return passwordLine
 	}
-	return io.MultiReader(passwordLine, stdin)
+	input := io.MultiReader(passwordLine, stdin)
+	if closer, ok := stdin.(io.Closer); ok {
+		return imageDockerInput{Reader: input, Closer: closer}
+	}
+	return input
+}
+
+// 保留原输入的关闭能力，确保 load 提前退出时密码前缀不妨碍取消镜像管道。
+type imageDockerInput struct {
+	io.Reader
+	io.Closer
 }
 
 // imageRemoteEnvCacheKey 用连接身份与命令前缀标识一次 PATH 解析。

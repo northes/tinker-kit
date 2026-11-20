@@ -1164,11 +1164,29 @@ func (s *ImageService) runImagePull(ctx context.Context, taskID, imageRef string
 		})
 	}
 	if err == nil && relay {
-		s.updateTask(taskID, func(task *imageTaskState) { task.Stage = "transferring" })
-		err = s.relayImageToTarget(ctx, taskID, imageRef, pullSource, pullCLIPath, source, cliPath)
+		s.updateTask(taskID, func(task *imageTaskState) {
+			task.Stage = "transferring"
+			task.ProgressUnit = "bytes"
+			task.Completed = 0
+			task.Total = 0
+			task.Bytes = 0
+		})
+		// 默认 save 只导出本机存储中存在的平台，必须显式要求完整列表；
+		// CLI/daemon 不支持或缺任一平台时应失败，不能把部分归档当成全部架构。
+		var savePlatforms []string
+		if options.Platform == "all" {
+			if len(platforms) == 0 {
+				err = userErrorParams("errors.imageExport.pullPlatformUnavailable", map[string]any{"platform": "all"})
+			} else {
+				savePlatforms = platforms
+			}
+		}
+		if err == nil {
+			err = s.relayImageToTarget(ctx, taskID, imageRef, pullSource, pullCLIPath, source, cliPath, savePlatforms...)
+		}
 	}
 	switch {
-	case errors.Is(err, context.Canceled):
+	case ctx.Err() != nil || errors.Is(err, context.Canceled):
 		s.updateTask(taskID, func(task *imageTaskState) {
 			task.Status = imageTaskCanceled
 			task.Stage = "canceled"
@@ -1311,7 +1329,7 @@ func (s *ImageService) streamProgress(taskID, stage string) func(int64) {
 	return func(n int64) {
 		mu.Lock()
 		pending += n
-		if !last.IsZero() && time.Since(last) < 150*time.Millisecond {
+		if n > 0 && !last.IsZero() && time.Since(last) < 150*time.Millisecond {
 			mu.Unlock()
 			return
 		}
@@ -1340,6 +1358,13 @@ func (r *progressReader) Read(p []byte) (int, error) {
 	return n, err
 }
 
+func (r *progressReader) Close() error {
+	if closer, ok := r.reader.(io.Closer); ok {
+		return closer.Close()
+	}
+	return nil
+}
+
 // streamDockerLoad 把本地 tar 经 stdin 交给 docker image load（本地或 SSH 远端）。
 func (s *ImageService) streamDockerLoad(ctx context.Context, source ImageSource, cliPath string, src io.Reader) error {
 	args := []string{"image", "load"}
@@ -1351,10 +1376,17 @@ func (s *ImageService) streamDockerLoad(ctx context.Context, source ImageSource,
 		return err
 	}
 	cmd := execCommandContext(ctx, name, commandArgs...)
-	cmd.Stdin = imageDockerStdin(source, src)
+	stdin, err := cmd.StdinPipe()
+	if err != nil {
+		return err
+	}
+	defer stdin.Close()
 	stderr := &limitedBuffer{limit: maxImageCommandOutput}
 	cmd.Stderr = stderr
-	if err := cmd.Run(); err != nil {
+	if err := cmd.Start(); err != nil {
+		return err
+	}
+	if err := waitWithCommandInput(imageDockerStdin(source, src), stdin, cmd.Wait); err != nil {
 		if stderr.Len() > 0 {
 			return userErrorParams("errors.imageExport.importImageFailed", map[string]any{"detail": strings.TrimSpace(stderr.String())})
 		}
@@ -1365,30 +1397,47 @@ func (s *ImageService) streamDockerLoad(ctx context.Context, source ImageSource,
 
 // relayImageToTarget 把本机已拉取的镜像经 docker save | docker load 流式送到目标，
 // 全程不落中间 tar 文件。save 的 stderr 单独收集，只有 stdout 进入目标的 stdin。
-func (s *ImageService) relayImageToTarget(ctx context.Context, taskID, imageRef string, localSource ImageSource, localCLIPath string, target ImageSource, targetCLIPath string) error {
+func (s *ImageService) relayImageToTarget(ctx context.Context, taskID, imageRef string, localSource ImageSource, localCLIPath string, target ImageSource, targetCLIPath string, platforms ...string) error {
 	reader, writer := io.Pipe()
 	saveCtx, cancelSave := context.WithCancel(ctx)
-	saveDone := make(chan error, 1)
+	defer cancelSave()
+	// SSH 的 stdin 复制也可能正阻塞在读端；取消时先解锁它，随后关闭会话。
+	stopCancel := context.AfterFunc(ctx, func() { _ = reader.CloseWithError(ctx.Err()) })
+	defer stopCancel()
+	type saveResult struct {
+		err      error
+		canceled bool
+	}
+	saveDone := make(chan saveResult, 1)
+	args := []string{"image", "save"}
+	if len(platforms) > 0 {
+		args = append(args, "--platform", strings.Join(platforms, ","))
+	}
+	args = append(args, imageRef)
 	go func() {
-		err := s.streamDockerCommand(saveCtx, localSource, localCLIPath, []string{"image", "save", imageRef}, writer)
+		err := s.streamDockerCommand(saveCtx, localSource, localCLIPath, args, writer)
+		result := saveResult{err: err, canceled: saveCtx.Err() != nil}
 		_ = writer.CloseWithError(err)
-		saveDone <- err
+		saveDone <- result
 	}()
-	loadErr := s.streamDockerLoad(ctx, target, targetCLIPath, &progressReader{reader: reader, onRead: s.streamProgress(taskID, "transferring")})
-	// 关闭读端并取消 save 侧，确保 load 先结束时 save 不会一直阻塞在 pipe 上或残留进程。
+	progress := s.streamProgress(taskID, "transferring")
+	defer progress(0) // 冲刷最后一个节流窗口内的真实字节，成功、失败和取消都保留。
+	loadErr := s.streamDockerLoad(ctx, target, targetCLIPath, &progressReader{reader: reader, onRead: progress})
+	// load 先结束时同时解除 pipe 背压并终止 save，然后等待进程和 goroutine 回收。
 	_ = reader.CloseWithError(loadErr)
 	cancelSave()
-	saveErr := <-saveDone
-	if loadErr != nil {
-		// load 先失败时该错误会经 pipe 传回 save 侧（二者为同一错误），以目标 docker load
-		// 的 stderr 为准；否则 save 独立失败，返回本机 docker save 的 stderr。
-		if saveErr != nil && !errors.Is(saveErr, loadErr) {
-			return saveErr
+	result := <-saveDone
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+	if result.err != nil && !result.canceled && !errors.Is(result.err, io.ErrClosedPipe) && !errors.Is(result.err, loadErr) {
+		if len(platforms) > 0 {
+			return userErrorParamsCause("errors.imageExport.relayPlatformsFailed", map[string]any{"platforms": strings.Join(platforms, ", ")}, result.err)
 		}
+		return result.err
+	}
+	if loadErr != nil {
 		return loadErr
 	}
-	if saveErr != nil {
-		return saveErr
-	}
-	return nil
+	return result.err
 }

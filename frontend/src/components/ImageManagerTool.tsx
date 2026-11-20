@@ -170,6 +170,9 @@ function imageBatchLimit() {
 
 const REGISTRY_TRANSPORTS = ['tls', 'tlsSkipVerify', 'tlsCustomCA', 'plaintext'] as const;
 
+// 仅记住本次运行中每个 SSH 来源的拉取位置，不进入持久化配置。
+const sshPullRelayMemory = new Map<string, boolean>();
+
 const REGISTRY_TRANSPORT_LABELS = {
   tls: 'imageManagerTool.registryTransportTLS',
   tlsSkipVerify: 'imageManagerTool.registryTransportSkipVerify',
@@ -940,7 +943,7 @@ export default function ImageManagerTool({
       platforms: [],
       platformStatus: 'idle',
       platformError: '',
-      relay: false,
+      relay: isSSHSource && (sshPullRelayMemory.get(source.id) ?? false),
     });
   };
 
@@ -991,10 +994,19 @@ export default function ImageManagerTool({
   const updatePullRelay = (relay: boolean) => {
     pullRevision.current++;
     pullPlatformRequest.current?.cancel();
+    pullPlatformRequest.current = null;
+    sshPullRelayMemory.set(source.id, relay);
     setOperationError('');
     setOperationDialog((current) =>
       current?.type === 'pull-image'
-        ? { ...current, relay, platforms: [], platformStatus: 'idle', platformError: '' }
+        ? {
+            ...current,
+            relay,
+            platform: 'current',
+            platforms: [],
+            platformStatus: 'idle',
+            platformError: '',
+          }
         : current,
     );
   };
