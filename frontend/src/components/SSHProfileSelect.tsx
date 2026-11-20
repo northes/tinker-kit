@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { GearSix } from '@phosphor-icons/react';
 import type { SSHProfile } from '../../bindings/tinkerkit/models';
+import { normalizeSourceSearch } from '@/lib/source-search';
 import { cn } from '@/lib/utils';
 import { emptyProfile, useSSHProfiles } from './SSHProfileManagerDialog';
 import { Button } from './ui/button';
@@ -31,17 +32,12 @@ function profileAddress(profile: SSHProfile) {
   return `${profile.username ? `${profile.username}@` : ''}${host}:${profile.port || 22}`;
 }
 
-// 搜索时忽略空格、下划线和连字符，便于用 gxprod 找到 gx_prod、gx-prod 等别名。
-function normalizeProfileSearch(value: string) {
-  return value.toLowerCase().replace(/[\s_-]+/g, '');
-}
-
 // 过滤条件：配置名称、user@host:port、本机别名，忽略大小写与常见分隔符。
 function matchesProfile(profile: SSHProfile, query: string) {
-  const needle = normalizeProfileSearch(query.trim());
+  const needle = normalizeSourceSearch(query.trim());
   if (!needle) return true;
   return [profile.name, profileAddress(profile), profile.originAlias].some((field) =>
-    normalizeProfileSearch(field).includes(needle),
+    normalizeSourceSearch(field).includes(needle),
   );
 }
 

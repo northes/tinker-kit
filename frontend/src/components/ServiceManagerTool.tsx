@@ -4,7 +4,6 @@ import {
   CaretDownIcon,
   Cube,
   DesktopTower,
-  GearSix,
   ListBullets,
   Queue,
   Trash,
@@ -45,7 +44,6 @@ import {
   composeGroupContainers,
   isLogLimitFailure,
   LOCAL_TARGET,
-  MANAGE_TARGETS_VALUE,
   monitorResourceKey,
   PICKED_SELECTION,
   pickedMemberKey,
@@ -78,6 +76,7 @@ import {
 } from './shared';
 import { SSHProfileFormField } from './SSHProfileFormField';
 import { useSSHProfiles } from './SSHProfileManagerDialog';
+import { SourceCombobox } from './SourceCombobox';
 import { TargetHostManagerDialog, upsertManagerItem } from './TargetHostManagerDialog';
 import { Badge } from './ui/badge';
 import { Button } from './ui/button';
@@ -104,15 +103,6 @@ import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from './ui/resizable';
 import { ScrollArea } from './ui/scroll-area';
-import {
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectSeparator,
-  SelectTrigger,
-  SelectValue,
-} from './ui/select';
 import { toast } from './ui/toast';
 
 // 本次运行内最近一次选中的目标：新建的容器与服务标签沿用同一个目标，含「本机」。
@@ -947,44 +937,19 @@ export default function ServiceManagerTool({
                 labelId={targetLabelId}
                 className="max-[700px]:w-full"
               >
-                <Select
+                <SourceCombobox
+                  label={t('serviceManagerTool.target')}
+                  labelId={targetLabelId}
+                  className={toolHeaderControlClassName}
                   disabled={view === 'picked'}
                   items={targets.map((item) => ({
                     value: item.id,
                     label: targetLabel(item, t),
                   }))}
                   value={targetID}
-                  onValueChange={(value) => {
-                    if (value === MANAGE_TARGETS_VALUE) {
-                      openManage();
-                      return;
-                    }
-                    selectTarget(value);
-                  }}
-                >
-                  <SelectTrigger
-                    aria-labelledby={targetLabelId}
-                    className={toolHeaderControlClassName}
-                  >
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectGroup>
-                      {targets.map((item) => (
-                        <SelectItem key={item.id} value={item.id}>
-                          {targetLabel(item, t)}
-                        </SelectItem>
-                      ))}
-                      {targets.length > 0 ? <SelectSeparator /> : null}
-                      <SelectItem value={MANAGE_TARGETS_VALUE}>
-                        <span className="flex items-center gap-2">
-                          <GearSix size={14} weight="regular" />
-                          {t('serviceManagerTool.manageTargets')}
-                        </span>
-                      </SelectItem>
-                    </SelectGroup>
-                  </SelectContent>
-                </Select>
+                  onValueChange={selectTarget}
+                  manage={{ label: t('serviceManagerTool.manageTargets'), onClick: openManage }}
+                />
                 {selectedTargetMissing ? (
                   <Badge variant="destructive">{t('serviceManagerTool.sshProfileMissing')}</Badge>
                 ) : null}

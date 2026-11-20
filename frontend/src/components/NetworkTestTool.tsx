@@ -52,6 +52,7 @@ import { Switch } from './ui/switch';
 import { toast } from './ui/toast';
 import { Textarea } from './ui/textarea';
 import { Badge } from './ui/badge';
+import { SourceCombobox } from './SourceCombobox';
 import { TargetHostManagerDialog, upsertManagerItem } from './TargetHostManagerDialog';
 import { SSHProfileFormField } from './SSHProfileFormField';
 import { useSSHProfiles } from './SSHProfileManagerDialog';
@@ -61,7 +62,6 @@ import {
   SelectContent,
   SelectGroup,
   SelectItem,
-  SelectSeparator,
   SelectTrigger,
   SelectValue,
 } from './ui/select';
@@ -164,7 +164,6 @@ const stageOrder = [
   'tls-probe',
 ];
 const NO_PROXY = '__network-test-no-proxy__';
-const MANAGE_NETWORK_SOURCES = '__manage-network-test-sources__';
 const AUTOMATIC_INTERFACE = '__network-test-automatic-interface__';
 const HTTP_METHOD_PRESETS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'];
 
@@ -449,13 +448,11 @@ export default function NetworkTestTool({
     [profiles, t],
   );
   const sourceItems = useMemo(
-    () => [
-      ...networkTestSources.map((source) => ({
+    () =>
+      networkTestSources.map((source) => ({
         value: source.id,
         label: sourceDisplayName(source),
       })),
-      { value: MANAGE_NETWORK_SOURCES, label: t('networkTestTool.source.manage') },
-    ],
     [networkTestSources, sourceDisplayName],
   );
   // 高级选项全部展示、不按协议过滤：字段是否生效只影响校验，不影响可见性。
@@ -788,44 +785,21 @@ export default function NetworkTestTool({
                   label={t('networkTestTool.source.label')}
                   labelId="network-test-source-label"
                 >
-                  <Select
+                  <SourceCombobox
+                    label={t('networkTestTool.source.label')}
+                    labelId="network-test-source-label"
+                    className={toolHeaderControlClassName}
+                    disabled={running}
+                    items={sourceItems}
                     value={effectiveSourceID}
                     onValueChange={(value) => {
-                      if (value === MANAGE_NETWORK_SOURCES) {
-                        openSourceManager();
-                        return;
-                      }
                       if (value) {
                         networkTestSourceMemory.remember(value);
                         setSourceID(value);
                       }
                     }}
-                    items={sourceItems}
-                  >
-                    <SelectTrigger
-                      disabled={running}
-                      aria-labelledby="network-test-source-label"
-                      className={toolHeaderControlClassName}
-                    >
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectGroup>
-                        {networkTestSources.map((source) => (
-                          <SelectItem key={source.id} value={source.id}>
-                            {sourceDisplayName(source)}
-                          </SelectItem>
-                        ))}
-                      </SelectGroup>
-                      <SelectSeparator />
-                      <SelectGroup>
-                        <SelectItem value={MANAGE_NETWORK_SOURCES}>
-                          <GearSix weight="regular" />
-                          {t('networkTestTool.source.manage')}
-                        </SelectItem>
-                      </SelectGroup>
-                    </SelectContent>
-                  </Select>
+                    manage={{ label: t('networkTestTool.source.manage'), onClick: openSourceManager }}
+                  />
                   {selectedSourceProfileMissing ? (
                     <p className="m-0 text-[10px] leading-relaxed text-destructive">
                       {t('networkTestTool.source.profileMissing')}

@@ -5,7 +5,6 @@ import {
   CloudArrowDown,
   Copy,
   DownloadSimple,
-  GearSix,
   IdentificationCard,
   ListDashes,
   Package,
@@ -83,7 +82,6 @@ import {
   isNamedImageRow,
   LOCAL_SOURCE,
   LOCAL_SOURCE_ID,
-  MANAGE_SOURCES_VALUE,
   renameFormHasInput,
   resolveContentViewState,
   resolveSources,
@@ -124,6 +122,7 @@ import {
 } from './shared';
 import { SSHProfileFormField } from './SSHProfileFormField';
 import { useSSHProfiles } from './SSHProfileManagerDialog';
+import { SourceCombobox } from './SourceCombobox';
 import { TargetHostManagerDialog, upsertManagerItem } from './TargetHostManagerDialog';
 import { openTaskCenter } from './TaskCenter';
 import { Badge } from './ui/badge';
@@ -153,7 +152,6 @@ import {
   SelectContent,
   SelectGroup,
   SelectItem,
-  SelectSeparator,
   SelectTrigger,
   SelectValue,
 } from './ui/select';
@@ -1351,46 +1349,23 @@ export default function ImageManagerTool({
                 labelId={sourceLabelId}
                 className="max-[700px]:w-full"
               >
-                <Select
+                <SourceCombobox
+                  label={t('imageManagerTool.source')}
+                  labelId={sourceLabelId}
+                  className={toolHeaderControlClassName}
                   items={sources.map((item) => ({
                     value: item.id,
                     label: sourceDisplayName(item, t, profiles),
                   }))}
                   value={source.id}
                   onValueChange={(value) => {
-                    if (value === MANAGE_SOURCES_VALUE) {
-                      openManage();
-                      return;
-                    }
                     if (value) {
                       imagesSourceMemory.remember(value);
                       setPickedSourceId(value);
                     }
                   }}
-                >
-                  <SelectTrigger
-                    aria-labelledby={sourceLabelId}
-                    className={toolHeaderControlClassName}
-                  >
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectGroup>
-                      {sources.map((item) => (
-                        <SelectItem key={item.id} value={item.id}>
-                          {sourceDisplayName(item, t, profiles)}
-                        </SelectItem>
-                      ))}
-                      {sources.length > 0 ? <SelectSeparator /> : null}
-                      <SelectItem value={MANAGE_SOURCES_VALUE}>
-                        <span className="flex items-center gap-2">
-                          <GearSix size={14} weight="regular" />
-                          {t('imageManagerTool.manageSources')}
-                        </span>
-                      </SelectItem>
-                    </SelectGroup>
-                  </SelectContent>
-                </Select>
+                  manage={{ label: t('imageManagerTool.manageSources'), onClick: openManage }}
+                />
                 {sourceProfileMissing ? (
                   <Badge variant="destructive">{t('imageManagerTool.sshProfileMissing')}</Badge>
                 ) : null}

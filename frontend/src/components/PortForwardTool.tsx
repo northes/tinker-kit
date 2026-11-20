@@ -47,6 +47,7 @@ import { createLastSourceMemory } from '../lib/last-source';
 import { useSSHProfiles } from './SSHProfileManagerDialog';
 import { SSHProfileFormField } from './SSHProfileFormField';
 import { ConfirmDialog } from './ConfirmDialog';
+import { SourceCombobox } from './SourceCombobox';
 import { TargetHostManagerDialog, upsertManagerItem } from './TargetHostManagerDialog';
 import {
   ToolActionButton,
@@ -80,7 +81,6 @@ import {
   SelectContent,
   SelectGroup,
   SelectItem,
-  SelectSeparator,
   SelectTrigger,
   SelectValue,
 } from './ui/select';
@@ -105,8 +105,6 @@ const initialForward: PortForwardRequest = {
   targetHost: '127.0.0.1',
   targetPort: 80,
 };
-
-const MANAGE_SOURCES_VALUE = '__manage-port-sources__';
 
 // 本次运行内最近一次用过的转发来源：「新建转发」表单默认沿用同一个来源。
 // 只活在内存里，不写 localStorage，也不跨重启恢复。
@@ -872,40 +870,19 @@ export default function PortForwardTool({ active }: { active: boolean }) {
             </div>
             <div>
               <Label htmlFor="forward-source">{t('portTool.source')}</Label>
-              <Select
+              <SourceCombobox
+                id="forward-source"
+                label={t('portTool.source')}
+                className="mt-1 w-full"
                 items={forwardSourceOptions}
                 value={form.sourceID || null}
                 onValueChange={(value) => {
-                  // 底部「管理」是动作，不是主机，不能写进 sourceID。
-                  if (value === MANAGE_SOURCES_VALUE) {
-                    openSourceManager();
-                    return;
-                  }
-                  setForm((current) => ({ ...current, sourceID: value || '' }));
+                  setForm((current) => ({ ...current, sourceID: value }));
                   // 表单里改过的来源就是下次新建转发的默认来源。
                   forwardSourceMemory.remember(value);
                 }}
-              >
-                <SelectTrigger id="forward-source" className="mt-1 w-full">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectGroup>
-                    {forwardSourceOptions.map((option) => (
-                      <SelectItem key={option.value} value={option.value}>
-                        {option.label}
-                      </SelectItem>
-                    ))}
-                    {forwardSourceOptions.length > 0 ? <SelectSeparator /> : null}
-                    <SelectItem value={MANAGE_SOURCES_VALUE}>
-                      <span className="flex items-center gap-2">
-                        <GearSix size={14} weight="regular" />
-                        {t('portTool.manageSources')}
-                      </span>
-                    </SelectItem>
-                  </SelectGroup>
-                </SelectContent>
-              </Select>
+                manage={{ label: t('portTool.manageSources'), onClick: openSourceManager }}
+              />
             </div>
             <div>
               <Label htmlFor="forward-direction">{t('portTool.direction')}</Label>

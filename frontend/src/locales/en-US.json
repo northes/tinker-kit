@@ -1703,6 +1703,7 @@
   "common": {
     "close": "Close",
     "loading": "Loading",
+    "noMatches": "No matches",
     "cancel": "Cancel",
     "retry": "Retry",
     "canceledHint": "The connection stopped; reload to try again.",

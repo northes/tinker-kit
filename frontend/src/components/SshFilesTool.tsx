@@ -17,7 +17,6 @@ import {
   Folder,
   FolderSimplePlus,
   Funnel,
-  GearSix,
   HardDrives,
   ListDashes,
   MagnifyingGlass,
@@ -89,7 +88,6 @@ import {
   isArchivePath,
   isEditableTextFile,
   isRemotePathNotFound,
-  MANAGE_SOURCES_VALUE,
   normalizeRemotePath,
   remoteFileIcon,
   remoteParent,
@@ -109,6 +107,7 @@ import { CreateEntryDialog, type CreateEntryKind } from './ssh-files/CreateEntry
 import { useRemoteFileBrowser } from './ssh-files/useRemoteFileBrowser';
 import { SSHProfileFormField } from './SSHProfileFormField';
 import { useSSHProfiles } from './SSHProfileManagerDialog';
+import { SourceCombobox } from './SourceCombobox';
 import { TargetHostManagerDialog, upsertManagerItem } from './TargetHostManagerDialog';
 import { openTaskCenter } from './TaskCenter';
 import { Badge } from './ui/badge';
@@ -137,15 +136,6 @@ import {
 import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { ScrollArea } from './ui/scroll-area';
-import {
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectSeparator,
-  SelectTrigger,
-  SelectValue,
-} from './ui/select';
 import { Spinner } from './ui/spinner';
 import { Switch } from './ui/switch';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
@@ -1290,22 +1280,6 @@ export default function SshFilesTool({ active, locate = null }: Props) {
       ),
     [tasks],
   );
-  const sourceOptions = (
-    <SelectGroup>
-      {sources.map((item) => (
-        <SelectItem key={item.id} value={item.id}>
-          {item.name}
-        </SelectItem>
-      ))}
-      {sources.length > 0 ? <SelectSeparator /> : null}
-      <SelectItem value={MANAGE_SOURCES_VALUE}>
-        <span className="flex items-center gap-2">
-          <GearSix size={14} weight="regular" />
-          {t('sshFilesTool.manage')}
-        </span>
-      </SelectItem>
-    </SelectGroup>
-  );
   const isLoading = loadingSources || loading || searching;
   const hasSearchResults = searchActive && entries.length > 0;
   // 与下面渲染 Table 的分支保持同一条件：加载态、空态、错误态都不出现滚动遮罩。
@@ -1383,35 +1357,26 @@ export default function SshFilesTool({ active, locate = null }: Props) {
               labelId="ssh-file-source-label"
               className="max-[700px]:w-full"
             >
-              <Select
+              <SourceCombobox
+                label={t('sshFilesTool.source')}
+                labelId="ssh-file-source-label"
+                className={toolHeaderControlClassName}
+                placeholder={t('sshFilesTool.noSource')}
+                disabled={isLoading}
                 items={sources.map((item) => ({ value: item.id, label: item.name }))}
                 value={sourceID || null}
-                disabled={isLoading}
                 onValueChange={(value) => {
-                  if (value === MANAGE_SOURCES_VALUE) {
-                    setManageOpen(true);
-                    return;
-                  }
-                  if (value !== null) {
-                    resetSearchState();
-                    setEntries([]);
-                    setSelected([]);
-                    setError('');
-                    setLoading(true);
-                    setPathEditing(false);
-                    setSourceID(value);
-                    setCurrentPath('');
-                  }
+                  resetSearchState();
+                  setEntries([]);
+                  setSelected([]);
+                  setError('');
+                  setLoading(true);
+                  setPathEditing(false);
+                  setSourceID(value);
+                  setCurrentPath('');
                 }}
-              >
-                <SelectTrigger
-                  aria-labelledby="ssh-file-source-label"
-                  className={toolHeaderControlClassName}
-                >
-                  <SelectValue placeholder={t('sshFilesTool.noSource')} />
-                </SelectTrigger>
-                <SelectContent>{sourceOptions}</SelectContent>
-              </Select>
+                manage={{ label: t('sshFilesTool.manage'), onClick: () => setManageOpen(true) }}
+              />
               {source && !sourceUsable ? (
                 <Badge variant="destructive">{t('sshFilesTool.sshProfileMissing')}</Badge>
               ) : null}

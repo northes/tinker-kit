@@ -1703,6 +1703,7 @@
   "common": {
     "close": "关闭",
     "loading": "加载中",
+    "noMatches": "没有匹配项",
     "cancel": "取消",
     "retry": "重试",
     "canceledHint": "连接已中断，可重新加载当前内容。",

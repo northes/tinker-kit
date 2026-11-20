@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { ArrowsClockwise, GearSix, X } from '@phosphor-icons/react';
+import { ArrowsClockwise, X } from '@phosphor-icons/react';
 import { useTranslation } from 'react-i18next';
 import {
   GetColumnWidths,
@@ -16,6 +16,7 @@ import { isLocalSource, sourceLabel } from '../lib/local-source';
 import { createLastSourceMemory } from '../lib/last-source';
 import { useSSHProfiles } from './SSHProfileManagerDialog';
 import { SSHProfileFormField } from './SSHProfileFormField';
+import { SourceCombobox } from './SourceCombobox';
 import { TargetHostManagerDialog, upsertManagerItem } from './TargetHostManagerDialog';
 import {
   ToolCanceledState,
@@ -33,15 +34,6 @@ import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { ScrollArea } from './ui/scroll-area';
-import {
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectSeparator,
-  SelectTrigger,
-  SelectValue,
-} from './ui/select';
 import { Table, TableBody, TableCell, TableHeader, TableRow } from './ui/table';
 import {
   FilterMenu,
@@ -52,8 +44,6 @@ import {
   resolveColumnWidths,
   type SortDirection,
 } from './port-list-chrome';
-
-const MANAGE_SOURCES_VALUE = '__manage-port-sources__';
 
 // 本次运行内最近一次选中的来源：新建的端口占用标签沿用同一个来源。
 // 只活在内存里，不写 localStorage，也不跨重启恢复。
@@ -372,43 +362,20 @@ export default function PortTool({ active }: { active: boolean }) {
               labelId={sourceLabelId}
               className="max-[700px]:w-full"
             >
-              <Select
+              <SourceCombobox
+                id="port-source"
+                label={t('portTool.source')}
+                labelId={sourceLabelId}
+                className={toolHeaderControlClassName}
                 items={sourceOptions}
                 value={source}
                 onValueChange={(value) => {
-                  if (value === MANAGE_SOURCES_VALUE) {
-                    openSourceManager();
-                    return;
-                  }
                   setSource(value || 'local');
                   portsSourceMemory.remember(value);
                   setUserFilter('all');
                 }}
-              >
-                <SelectTrigger
-                  id="port-source"
-                  aria-labelledby={sourceLabelId}
-                  className={toolHeaderControlClassName}
-                >
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectGroup>
-                    {sourceOptions.map((option) => (
-                      <SelectItem key={option.value} value={option.value}>
-                        {option.label}
-                      </SelectItem>
-                    ))}
-                    {sourceOptions.length > 0 ? <SelectSeparator /> : null}
-                    <SelectItem value={MANAGE_SOURCES_VALUE}>
-                      <span className="flex items-center gap-2">
-                        <GearSix size={14} weight="regular" />
-                        {t('portTool.manageSources')}
-                      </span>
-                    </SelectItem>
-                  </SelectGroup>
-                </SelectContent>
-              </Select>
+                manage={{ label: t('portTool.manageSources'), onClick: openSourceManager }}
+              />
             </ToolHeaderField>
             <SearchField
               id="port-search"
