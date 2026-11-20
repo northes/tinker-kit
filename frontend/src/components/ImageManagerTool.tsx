@@ -301,17 +301,12 @@ export default function ImageManagerTool({
   const sourceLabelId = useId();
   const sources = useMemo(() => resolveSources(settings.imageSources), [settings.imageSources]);
   const cliPath = settings.dockerCLIPath ?? '';
-  // 默认加载来源列表的首项；用户在本工具内选过、且该来源仍存在时保留该选择；
-  // 新标签则先看本工具上次选中的来源（仍存在才行）。
-  const [pickedSourceId, setPickedSourceId] = useState<string | null>(null);
-  const source = useMemo(() => {
-    const ids = sources.map((item) => item.id);
-    const preferred =
-      pickedSourceId && ids.includes(pickedSourceId)
-        ? pickedSourceId
-        : imagesSourceMemory.resolve(ids, sources[0]?.id ?? LOCAL_SOURCE_ID);
-    return sources.find((item) => item.id === preferred) ?? sources[0] ?? LOCAL_SOURCE;
-  }, [sources, pickedSourceId]);
+  // 默认加载来源列表的首项；用户在本工具内选过、且该来源仍存在时保留该选择。
+  // 新标签在挂载时取一次本工具上次选中的来源，之后不随其它标签的选择变化。
+  const [pickedSourceId, setPickedSourceId] = useState<string | null>(
+    () => imagesSourceMemory.current() || null,
+  );
+  const source = sources.find((item) => item.id === pickedSourceId) ?? sources[0] ?? LOCAL_SOURCE;
   const tabHostName = useMemo(() => sourceTabHostName(source, profiles), [source, profiles]);
   useWorkspaceTabTitle(tabHostName);
   const sourceProfileMissing = sourceMissingSSHProfile(source, profiles);

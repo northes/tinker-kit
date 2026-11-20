@@ -25,7 +25,7 @@ import { formatBackendError } from '../lib/backend-error';
 import { sendSystemNotification } from '../lib/task-notification-feedback';
 import { useWorkspaceTabTitle } from '../app/workspace-tab-title';
 import { isLocalSource, sourceLabel } from '../lib/local-source';
-import { createLastSourceMemory } from '../lib/last-source';
+import { createLastSourceMemory, resolveLastSource } from '../lib/last-source';
 import {
   automaticTarget,
   detectTargetProtocol,
@@ -289,8 +289,10 @@ export default function NetworkTestTool({
   const [protocolSelection, setProtocolSelection] = useState<ProtocolSelection>('auto');
   const [target, setTarget] = useState('');
   const [networkTestSources, setNetworkTestSources] = useState(defaultNetworkTestSources);
-  // 发起端只活在当前标签。null 表示还没选，展示时取已加载来源的首项，不写入设置。
+  // 发起端只活在当前标签。null 表示还没选，展示时取本次运行内本工具上次选中的来源，不写入设置。
+  // 记忆在挂载时取一次快照：已打开的标签不因其它标签的选择而换发起端。
   const [sourceID, setSourceID] = useState<string | null>(null);
+  const [rememberedSourceID] = useState(() => networkTestSourceMemory.current());
   const [sourceManagerOpen, setSourceManagerOpen] = useState(false);
   const [savingSources, setSavingSources] = useState(false);
   const [requestSettingsOpen, setRequestSettingsOpen] = useState(false);
@@ -421,7 +423,8 @@ export default function NetworkTestTool({
   const effectiveSourceID =
     sourceID && networkTestSources.some((source) => source.id === sourceID)
       ? sourceID
-      : networkTestSourceMemory.resolve(
+      : resolveLastSource(
+          rememberedSourceID,
           networkTestSources.map((source) => source.id),
           networkTestSources[0]?.id ?? 'local',
         );
