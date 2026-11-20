@@ -51,3 +51,7 @@
 ## 待定问题
 
 无。
+
+## 变更记录
+
+- 2026-11-20：评审发现 NetworkTestTool 与 SshFilesTool 的 label id 写死，同一工具多标签可能导致 `aria-labelledby` 串到另一个实例；选定改成 `useId`。保留检查阶段对共享 combobox 空态播报的修复，并接受来源输入框 Enter 不提交外层表单；浮层宽度 P2 暂不处理，留待界面实测。
