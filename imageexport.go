@@ -707,19 +707,25 @@ func (s *ImageService) exportDockerTar(ctx context.Context, taskID string, sourc
 }
 
 func (s *ImageService) streamDockerCommand(ctx context.Context, source ImageSource, cliPath string, args []string, dst io.Writer) error {
+	stderr := &limitedBuffer{limit: maxImageCommandOutput}
 	if source.Kind == "ssh" && hasSSHCredentials(source) {
-		return s.runImageSSHStream(ctx, source, dst, args...)
+		// sudo 的提示和警告写到 stderr，不能混进 stdout 上的镜像 tar。
+		err := s.runImageSSHStream(ctx, source, dst, stderr, args...)
+		if err != nil && ctx.Err() == nil && stderr.Len() > 0 {
+			return userErrorParams("errors.imageExport.dockerExportFailed", map[string]any{"detail": stderr.String()})
+		}
+		return err
 	}
-	name, commandArgs, err := buildImageInvocation(source, cliPath, args)
+	name, commandArgs, err := s.buildImageInvocation(ctx, source, cliPath, args)
 	if err != nil {
 		return err
 	}
 	cmd := execCommandContext(ctx, name, commandArgs...)
+	cmd.Stdin = imageDockerStdin(source, nil)
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		return err
 	}
-	stderr := &limitedBuffer{limit: maxImageCommandOutput}
 	cmd.Stderr = stderr
 	if err := cmd.Start(); err != nil {
 		return err
@@ -1060,13 +1066,14 @@ func (s *ImageService) streamDockerPull(ctx context.Context, source ImageSource,
 	}
 	args = append(args, imageRef)
 	if source.Kind == "ssh" && hasSSHCredentials(source) {
-		return s.runImageSSHStream(ctx, source, writer, args...)
+		return s.runImageSSHStream(ctx, source, writer, writer, args...)
 	}
-	name, commandArgs, err := buildImageInvocation(source, cliPath, args)
+	name, commandArgs, err := s.buildImageInvocation(ctx, source, cliPath, args)
 	if err != nil {
 		return err
 	}
 	cmd := execCommandContext(ctx, name, commandArgs...)
+	cmd.Stdin = imageDockerStdin(source, nil)
 	cmd.Stdout = writer
 	cmd.Stderr = writer
 	if err := cmd.Run(); err != nil {
@@ -1327,12 +1334,12 @@ func (s *ImageService) streamDockerLoad(ctx context.Context, source ImageSource,
 	if source.Kind == "ssh" && hasSSHCredentials(source) {
 		return s.runImageSSHInput(ctx, source, src, args...)
 	}
-	name, commandArgs, err := buildImageInvocation(source, cliPath, args)
+	name, commandArgs, err := s.buildImageInputInvocation(ctx, source, cliPath, args)
 	if err != nil {
 		return err
 	}
 	cmd := execCommandContext(ctx, name, commandArgs...)
-	cmd.Stdin = src
+	cmd.Stdin = imageDockerStdin(source, src)
 	stderr := &limitedBuffer{limit: maxImageCommandOutput}
 	cmd.Stderr = stderr
 	if err := cmd.Run(); err != nil {

@@ -183,25 +183,21 @@ func (s *ImageService) inspectDockerIndex(ctx context.Context, source ImageSourc
 	stdout := &limitedBuffer{limit: maxImageCommandOutput}
 	stderr := &limitedBuffer{limit: maxImageCommandOutput}
 	args := []string{"system", "dial-stdio"}
+	stdin := imageDockerStdin(source, strings.NewReader(request))
 	var err error
 	if source.Kind == "ssh" && hasSSHCredentials(source) {
-		line, label, lineErr := s.imageSSHCommandLine(ctx, source, args)
+		line, label, lineErr := s.imageSSHInputLine(ctx, source, args)
 		if lineErr != nil {
 			return item, lineErr
 		}
-		client, dialErr := dialAuthenticatedSSH(ctx, source, s.sshLanguage())
-		if dialErr != nil {
-			return item, dialErr
-		}
-		defer client.Close()
-		err = runSSHCommandWritersLine(ctx, client, label, line, strings.NewReader(request), stdout, stderr)
+		err = runAuthenticatedSSHWritersLine(ctx, source, label, s.sshLanguage(), line, stdin, stdout, stderr)
 	} else {
-		name, commandArgs, buildErr := buildImageInvocation(source, cliPath, args)
+		name, commandArgs, buildErr := s.buildImageInputInvocation(ctx, source, cliPath, args)
 		if buildErr != nil {
 			return item, buildErr
 		}
 		cmd := execCommandContext(ctx, name, commandArgs...)
-		cmd.Stdin, cmd.Stdout, cmd.Stderr = strings.NewReader(request), stdout, stderr
+		cmd.Stdin, cmd.Stdout, cmd.Stderr = stdin, stdout, stderr
 		err = cmd.Run()
 	}
 	if ctx.Err() != nil {

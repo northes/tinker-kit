@@ -2300,9 +2300,14 @@ export default function ImageManagerTool({
         itemName={(item) => sourceDisplayName(item, t, profiles)}
         activeKey={source.id}
         itemDisabled={isLocalSource}
-        createDraft={() =>
-          ({ id: '', name: '', kind: 'ssh', sshProfileID: '', dockerCommand: '' }) as SourceDraft
-        }
+        createDraft={() => ({
+          id: '',
+          name: '',
+          kind: 'ssh',
+          sshProfileID: '',
+          dockerCommand: '',
+          sudoPassword: '',
+        })}
         toDraft={(item) => ({ ...(item as ManagedImageSource) }) as SourceDraft}
         commitDraft={async (draft, previous) => {
           const kind = draft.kind as 'ssh' | 'registry';
@@ -2369,7 +2374,13 @@ export default function ImageManagerTool({
                   size="sm"
                   variant={draft.kind === 'registry' ? 'secondary' : 'ghost'}
                   onClick={() =>
-                    setDraft({ ...draft, kind: 'registry', sshProfileID: '', dockerCommand: '' })
+                    setDraft({
+                      ...draft,
+                      kind: 'registry',
+                      sshProfileID: '',
+                      dockerCommand: '',
+                      sudoPassword: '',
+                    })
                   }
                 >
                   {t('imageManagerTool.kindRegistry')}
@@ -2401,12 +2412,33 @@ export default function ImageManagerTool({
                   />
                 </div>
                 <div className="grid gap-1.5">
-                  <Label htmlFor="target-host-docker-command">{t('imageManagerTool.dockerCommand')}</Label>
+                  <Label htmlFor="target-host-docker-command">
+                    {t('imageManagerTool.dockerCommand')}
+                  </Label>
                   <Input
                     id="target-host-docker-command"
+                    aria-describedby="target-host-docker-command-help"
                     value={draft.dockerCommand ?? ''}
                     placeholder={t('imageManagerTool.dockerCommandPlaceholder')}
                     onChange={(event) => setDraft({ ...draft, dockerCommand: event.target.value })}
+                  />
+                  <div
+                    id="target-host-docker-command-help"
+                    className="grid gap-1 text-xs leading-5 text-muted-foreground"
+                  >
+                    <p>{t('imageManagerTool.dockerCommandHelp')}</p>
+                    <p>{t('imageManagerTool.dockerCommandSudoHelp')}</p>
+                  </div>
+                </div>
+                <div className="grid gap-1.5">
+                  <Label htmlFor="target-host-sudo-password">
+                    {t('imageManagerTool.sudoPassword')}
+                  </Label>
+                  <Input
+                    id="target-host-sudo-password"
+                    type="password"
+                    value={draft.sudoPassword ?? ''}
+                    onChange={(event) => setDraft({ ...draft, sudoPassword: event.target.value })}
                   />
                 </div>
               </>

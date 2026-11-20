@@ -137,8 +137,8 @@ export function SaveBase64File(path: string, data: string): $CancellablePromise<
 }
 
 /**
- * SaveImageSources 只持久化镜像管理拥有的设置。SSH 来源在原子写入时必须引用现有
- * 全局 SSH 配置，凭据本身不会经过此接口。
+ * SaveImageSources 只持久化镜像管理拥有的设置，包括来源自己的 sudo 密码。
+ * SSH 来源在原子写入时必须引用现有全局 SSH 配置，SSH 登录凭据仍由该配置管理。
  */
 export function SaveImageSources(dockerCLIPath: string, imageSources: $models.ImageSource[] | null): $CancellablePromise<void> {
     return $Call.ByID(2466718879, dockerCLIPath, imageSources);

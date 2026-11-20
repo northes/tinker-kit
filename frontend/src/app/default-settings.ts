@@ -83,6 +83,7 @@ export const defaultSettings: Settings = {
       kind: 'local',
       sshProfileID: '',
       dockerCommand: '',
+      sudoPassword: '',
       registryURL: '',
       registryUsername: '',
       registryPassword: '',

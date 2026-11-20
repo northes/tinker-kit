@@ -26,6 +26,8 @@ export const IMAGE_TASK_RETENTION_MS = 24 * 60 * 60 * 1000;
 export type ManagedImageSource = Omit<
   ImageSource,
   | 'sshProfileID'
+  | 'dockerCommand'
+  | 'sudoPassword'
   | 'registryURL'
   | 'registryUsername'
   | 'registryPassword'
@@ -35,6 +37,7 @@ export type ManagedImageSource = Omit<
 > & {
   sshProfileID?: string;
   dockerCommand?: string;
+  sudoPassword?: string;
   registryURL?: string;
   registryUsername?: string;
   registryPassword?: string;
@@ -228,7 +231,8 @@ export function bindingSource(source: ManagedImageSource): ImageSource {
     name: source.name.trim(),
     kind: source.kind.trim(),
     sshProfileID: ssh ? (source.sshProfileID?.trim() ?? '') : '',
-    dockerCommand: ssh ? (source.dockerCommand?.trim() ?? '') : '',
+    dockerCommand: ssh ? (source.dockerCommand ?? '') : '',
+    sudoPassword: ssh ? (source.sudoPassword ?? '') : '',
     registryURL: normalizedRegistryURL,
     registryUsername: registry ? (source.registryUsername?.trim() ?? '') : '',
     registryPassword: registry ? (source.registryPassword ?? '') : '',

@@ -1,8 +1,13 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"io"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -196,6 +201,340 @@ func TestImageSSHInputKeepsStdinAndPrefix(t *testing.T) {
 	}
 	if strings.Contains(line, "-S") {
 		t.Fatalf("应用不应插入 sudo -S: %q", line)
+	}
+}
+
+func TestImageSSHCommandLineUsesAbsoluteDockerPathWithSudoPassword(t *testing.T) {
+	source := ImageSource{Kind: "ssh", SSHHost: "box", SudoPassword: " dummy password "}
+	for _, tc := range []struct {
+		probePath string
+		wantPath  string
+	}{
+		{probePath: "/opt/docker bin/docker", wantPath: "/opt/docker bin/docker"},
+		{probePath: "./bin/docker", wantPath: "/home/dev/./bin/docker"},
+	} {
+		t.Run(tc.probePath, func(t *testing.T) {
+			env, err := parseRemoteEnvProbe("__TK_PATH__ /opt/docker bin:/usr/bin\n__TK_CWD__ /home/dev\n__TK_CMD__ docker " + tc.probePath + "\n")
+			if err != nil {
+				t.Fatal(err)
+			}
+			service := cachedImageService(source, env)
+			ctx := context.Background()
+			// 普通调用继续 sudo -S。
+			name, args, err := service.buildImageInvocation(ctx, source, "ignored", []string{"image", "ls"})
+			wantLine := "'sudo' '-S' '-p' '' '" + tc.wantPath + "' 'image' 'ls'"
+			if err != nil || name != "ssh" || len(args) == 0 || args[len(args)-1] != wantLine {
+				t.Fatalf("系统 SSH 应使用绝对路径和 sudo 前缀: %s %#v, %v", name, args, err)
+			}
+			// 需要数据输入的调用走 askpass。
+			name, args, err = service.buildImageInputInvocation(ctx, source, "ignored", []string{"image", "load"})
+			if err != nil || name != "ssh" || len(args) == 0 {
+				t.Fatalf("系统 SSH 的 load 应生成 askpass 命令: %s %#v, %v", name, args, err)
+			}
+			remote := args[len(args)-1]
+			if !strings.HasPrefix(remote, "/bin/sh -c ") || !strings.Contains(remote, "sudo -A -- '"+tc.wantPath+"' 'image' 'load'") {
+				t.Fatalf("系统 SSH 的 load 应使用 askpass 包装: %s %#v", name, args)
+			}
+			probe, _, err := service.sshArchitectureProbeCommand(ctx, source, imageConnectProbeArgs)
+			wantProbe := "uname -m && exec 'sudo' '-S' '-p' '' '" + tc.wantPath + "' '--version'"
+			if err != nil || probe != wantProbe {
+				t.Fatalf("探测命令应使用绝对路径和 sudo 前缀: %q, %v", probe, err)
+			}
+		})
+	}
+	service := cachedImageService(source, remoteCommandEnv{path: "/usr/bin", commands: map[string]bool{"docker": false}})
+	if _, _, err := service.imageSSHCommandLine(context.Background(), source, []string{"images"}); localizedErrorKey(err) != "errors.service.remoteCommandMissing" {
+		t.Fatalf("找不到 docker 时应在执行 sudo 前报错: %v", err)
+	}
+}
+
+func TestImageSourceRejectsDockerCommandSudoConflictBeforeSSH(t *testing.T) {
+	cfg := defaultConfig()
+	cfg.SSHProfiles = []SSHProfile{{ID: "p", Name: "Test", Origin: "manual", Host: "box", Port: 22, Username: "dev"}}
+	config := &ConfigService{cfg: normalizeConfig(cfg), path: filepath.Join(t.TempDir(), "config.json")}
+	service := &ImageService{config: config, runner: func(context.Context, string, ...string) ([]byte, error) {
+		t.Fatal("校验失败时不应发起 SSH")
+		return nil, nil
+	}}
+	for _, prefix := range []string{"sudo -n /usr/bin/docker", "/usr/bin/sudo -n /usr/bin/docker", "env /usr/bin/sudo docker"} {
+		source := ImageSource{ID: "ssh:draft", Kind: "ssh", SSHProfileID: "p", DockerCommand: prefix, SudoPassword: "dummy password"}
+		const conflictKey = "errors.config.dockerCommandSudoConflict"
+		if err := config.SaveImageSources("", []ImageSource{source}); localizedErrorKey(errors.Unwrap(err)) != conflictKey {
+			t.Fatalf("保存前应拒绝 %q 和 sudo 密码同时存在: %v", prefix, err)
+		}
+		if err := service.TestImageSourceConnection(source); localizedErrorKey(err) != conflictKey {
+			t.Fatalf("测试连接前应拒绝 %q 和 sudo 密码同时存在: %v", prefix, err)
+		}
+	}
+	if _, err := os.Stat(config.path); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("校验失败时不应写入配置文件: %v", err)
+	}
+}
+
+func TestNormalizeImageSourceSudoPassword(t *testing.T) {
+	for _, source := range []ImageSource{
+		{ID: "local", Kind: "local", SudoPassword: "dummy password"},
+		{ID: "registry:1", Kind: "registry", RegistryURL: "https://registry.example", SudoPassword: "dummy password"},
+	} {
+		got, err := normalizeImageSource(source, map[string]bool{}, nil, nil)
+		if err != nil || got.SudoPassword != "" {
+			t.Fatalf("%s 来源应清空 sudo 密码: %v", source.Kind, err)
+		}
+	}
+	source := ImageSource{ID: "ssh:1", Kind: "ssh", SSHProfileID: "p", SudoPassword: " \t dummy password "}
+	got, err := normalizeImageSource(source, map[string]bool{}, nil, nil)
+	if err != nil || got.SudoPassword != source.SudoPassword {
+		t.Fatalf("SSH 来源应保留密码的首尾空白: %v", err)
+	}
+	for _, invalid := range []string{"\n", "\r", "\x1b", "\u0080", strings.Repeat("a", 4097)} {
+		source.SudoPassword = invalid
+		_, err := normalizeImageSource(source, map[string]bool{}, nil, nil)
+		if localizedErrorKey(err) != "errors.config.sudoPasswordInvalid" {
+			t.Fatalf("应拒绝包含换行或非空白控制字符以及超长的密码: %v", err)
+		}
+	}
+}
+
+func TestImageSourceFingerprintTracksSudoPassword(t *testing.T) {
+	source := ImageSource{Kind: "ssh", SSHHost: "box", SudoPassword: "dummy password"}
+	before := imageSourceFingerprint(source, "docker")
+	source.SudoPassword += " "
+	if before == imageSourceFingerprint(source, "docker") {
+		t.Fatal("修改密码的首尾空白也应改变来源指纹")
+	}
+}
+
+func TestStreamDockerLoadSendsSudoPasswordAndArchiveToSystemSSH(t *testing.T) {
+	source := ImageSource{Kind: "ssh", SSHHost: "box", DockerCommand: "/usr/bin/docker", SudoPassword: " dummy password "}
+	var stdin bytes.Buffer
+	previous := execCommandContext
+	t.Cleanup(func() { execCommandContext = previous })
+	execCommandContext = func(ctx context.Context, name string, args ...string) *exec.Cmd {
+		if name != "ssh" || len(args) == 0 {
+			t.Fatalf("系统 SSH 应执行 ssh: %s %#v", name, args)
+		}
+		remote := args[len(args)-1]
+		if !strings.HasPrefix(remote, "/bin/sh -c ") || !strings.Contains(remote, "sudo -A -- '/usr/bin/docker' 'image' 'load'") {
+			t.Fatalf("系统 SSH 应执行 askpass 包装后的 load: %s %#v", name, args)
+		}
+		// 用 cat 接收并保存 ssh 子进程本应收到的完整字节流。
+		cmd := exec.CommandContext(ctx, "cat")
+		cmd.Stdout = &stdin
+		return cmd
+	}
+	const archive = "\x00\xffimage\nbytes"
+	service := &ImageService{}
+	if err := service.streamDockerLoad(context.Background(), source, "docker", strings.NewReader(archive)); err != nil {
+		t.Fatal(err)
+	}
+	if stdin.String() != source.SudoPassword+"\n"+archive {
+		t.Fatal("ssh stdin 应依次接收原始密码行与完整镜像数据")
+	}
+}
+
+func TestImageDockerStdinPrefixesSudoPassword(t *testing.T) {
+	source := ImageSource{Kind: "ssh", SudoPassword: " dummy password "}
+	const archive = "\x00\xffimage\nbytes"
+	for _, tc := range []struct {
+		name  string
+		input io.Reader
+		want  string
+	}{
+		{name: "load", input: strings.NewReader(archive), want: source.SudoPassword + "\n" + archive},
+		{name: "output only", want: source.SudoPassword + "\n"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := io.ReadAll(imageDockerStdin(source, tc.input))
+			if err != nil || string(got) != tc.want {
+				t.Fatalf("stdin 应完整保留密码行和原始数据: %v", err)
+			}
+		})
+	}
+	source.SudoPassword = ""
+	input := strings.NewReader(archive)
+	if imageDockerStdin(source, input) != input || imageDockerStdin(source, nil) != nil {
+		t.Fatal("无密码时应原样保留 stdin")
+	}
+}
+
+// runAskpassScenario 生成 imageSSHInputLine 的真实 shell 命令，并在 PATH 里放假的
+// sudo/docker 执行它。返回 docker 收到的 stdin、是否执行过 docker、退出错误和残留目录。
+func runAskpassScenario(t *testing.T, mode, password, payload string) (dockerStdin string, dockerRan bool, runErr error, residue []string) {
+	t.Helper()
+	dir := t.TempDir()
+	bin := filepath.Join(dir, "bin")
+	tmp := filepath.Join(dir, "tmp")
+	if err := os.MkdirAll(bin, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(tmp, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	sudoLog := filepath.Join(dir, "sudo.log")
+	dockerLog := filepath.Join(dir, "docker.log")
+	dockerStdinPath := filepath.Join(dir, "docker.stdin")
+
+	// 假 sudo 只解析 -A/--，其余原样交给 docker；模式由环境变量决定。
+	const sudoScript = `#!/bin/sh
+mode=${FAKE_SUDO_MODE:-require}
+{
+  printf 'sudo argv:'
+  for a in "$@"; do printf ' <%s>' "$a"; done
+  printf '\n'
+} >> "$FAKE_SUDO_LOG"
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -A|--) shift ;;
+    *) break ;;
+  esac
+done
+case "$mode" in
+  skip)
+    printf 'mode=skip\n' >> "$FAKE_SUDO_LOG"
+    ;;
+  require)
+    pw=$("$SUDO_ASKPASS")
+    if [ "$pw" = "$FAKE_SUDO_EXPECT_PW" ]; then
+      printf 'auth ok\n' >> "$FAKE_SUDO_LOG"
+    else
+      pw2=$("$SUDO_ASKPASS")
+      printf 'auth retry: [%s]\n' "$pw2" >> "$FAKE_SUDO_LOG"
+      exit 1
+    fi
+    ;;
+  fail)
+    pw=$("$SUDO_ASKPASS")
+    printf 'auth fail: [%s]\n' "$pw" >> "$FAKE_SUDO_LOG"
+    pw2=$("$SUDO_ASKPASS")
+    printf 'auth fail retry: [%s]\n' "$pw2" >> "$FAKE_SUDO_LOG"
+    exit 1
+    ;;
+esac
+exec "$@"
+`
+	const dockerScript = `#!/bin/sh
+printf 'docker argv:'
+for a in "$@"; do printf ' <%s>' "$a"; done
+printf '\n' >> "$FAKE_DOCKER_LOG"
+cat > "$FAKE_DOCKER_STDIN"
+printf 'docker ran\n' >> "$FAKE_DOCKER_LOG"
+`
+	if err := os.WriteFile(filepath.Join(bin, "sudo"), []byte(sudoScript), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(bin, "docker"), []byte(dockerScript), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	source := ImageSource{Kind: "ssh", DockerCommand: "docker", SudoPassword: password}
+	service := &ImageService{}
+	line, _, err := service.imageSSHInputLine(context.Background(), source, []string{"image", "load"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(line, "/bin/sh -c ") || !strings.Contains(line, "sudo -A --") {
+		t.Fatalf("输入路径应走 askpass 包装: %q", line)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "sh", "-c", line)
+	cmd.Env = append(os.Environ(),
+		"PATH="+bin+":"+os.Getenv("PATH"),
+		"TMPDIR="+tmp,
+		"FAKE_SUDO_MODE="+mode,
+		"FAKE_SUDO_EXPECT_PW="+password,
+		"FAKE_SUDO_LOG="+sudoLog,
+		"FAKE_DOCKER_LOG="+dockerLog,
+		"FAKE_DOCKER_STDIN="+dockerStdinPath,
+	)
+	cmd.Stdin = strings.NewReader(password + "\n" + payload)
+	runErr = cmd.Run()
+	if ctx.Err() == context.DeadlineExceeded {
+		t.Fatal("askpass 包装超时未退出")
+	}
+
+	if data, err := os.ReadFile(dockerStdinPath); err == nil {
+		dockerStdin = string(data)
+	}
+	if logData, err := os.ReadFile(dockerLog); err == nil {
+		dockerRan = strings.Contains(string(logData), "docker ran")
+	}
+	entries, err := os.ReadDir(tmp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range entries {
+		if strings.HasPrefix(entry.Name(), ".tk.") {
+			residue = append(residue, entry.Name())
+		}
+	}
+	return dockerStdin, dockerRan, runErr, residue
+}
+
+func TestImageSSHInputAskpassKeepsDockerInput(t *testing.T) {
+	const password = " p@ss\\ word "
+	const payload = "\x00\xffimage\nbytes"
+	for _, tc := range []struct {
+		name    string
+		mode    string
+		wantOK  bool
+		wantRun bool
+	}{
+		{name: "要求密码", mode: "require", wantOK: true, wantRun: true},
+		{name: "免密或缓存命中", mode: "skip", wantOK: true, wantRun: true},
+		{name: "认证失败再请求", mode: "fail", wantOK: false, wantRun: false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dockerStdin, dockerRan, err, residue := runAskpassScenario(t, tc.mode, password, payload)
+			if tc.wantOK && err != nil {
+				t.Fatalf("命令应成功: %v", err)
+			}
+			if !tc.wantOK && err == nil {
+				t.Fatal("认证失败时命令应失败")
+			}
+			if dockerRan != tc.wantRun {
+				t.Fatalf("docker 执行状态 = %v, 期望 %v", dockerRan, tc.wantRun)
+			}
+			if tc.wantRun && dockerStdin != payload {
+				t.Fatal("docker 只应收到原始数据，不能混入密码行")
+			}
+			if len(residue) != 0 {
+				t.Fatalf("不应残留远端助手或 FIFO: %v", residue)
+			}
+		})
+	}
+}
+
+func TestImageSSHInputLineUsesAskpassForBothInputPaths(t *testing.T) {
+	source := ImageSource{Kind: "ssh", DockerCommand: "docker", SudoPassword: "secret-pw-123"}
+	service := &ImageService{}
+	for _, args := range [][]string{{"image", "load"}, {"system", "dial-stdio"}} {
+		line, label, err := service.imageSSHInputLine(context.Background(), source, args)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if label != "docker" {
+			t.Fatalf("错误信息命令名应为 docker: %q", label)
+		}
+		if !strings.HasPrefix(line, "/bin/sh -c ") || !strings.Contains(line, "sudo -A --") {
+			t.Fatalf("输入路径应使用 askpass 包装: %q", line)
+		}
+		if strings.Contains(line, "-S") {
+			t.Fatalf("askpass 路径不应出现 sudo -S: %q", line)
+		}
+		if strings.Contains(line, source.SudoPassword) {
+			t.Fatal("密码不应进入命令串")
+		}
+	}
+	noPassword := source
+	noPassword.SudoPassword = ""
+	line, _, err := service.imageSSHInputLine(context.Background(), noPassword, []string{"image", "load"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(line, "sudo -A") || strings.Contains(line, "askpass") {
+		t.Fatalf("无密码时不应使用 askpass: %q", line)
 	}
 }
 

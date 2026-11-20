@@ -77,12 +77,16 @@ func runAuthenticatedSSHCombinedLine(
 	commandLine string,
 	dst io.Writer,
 ) error {
+	return runAuthenticatedSSHWritersLine(ctx, source, label, language, commandLine, nil, dst, dst)
+}
+
+func runAuthenticatedSSHWritersLine(ctx context.Context, source ImageSource, label, language, commandLine string, stdin io.Reader, stdout, stderr io.Writer) error {
 	client, err := dialAuthenticatedSSH(ctx, source, language)
 	if err != nil {
 		return err
 	}
 	defer client.Close()
-	return runSSHCommandWritersLine(ctx, client, label, commandLine, nil, dst, dst)
+	return runSSHCommandWritersLine(ctx, client, label, commandLine, stdin, stdout, stderr)
 }
 
 func dialAuthenticatedSSH(ctx context.Context, source ImageSource, language string) (*ssh.Client, error) {
@@ -191,16 +195,11 @@ func runAuthenticatedSSHCombined(
 	return runSSHCommandToWriters(ctx, client, cliPath, nil, dst, dst, dockerArgs...)
 }
 
-// runAuthenticatedSSHInput 把本地数据经 stdin 送给远端命令，用于在 SSH 来源上 docker load。
+// runAuthenticatedSSHInputLine 把本地数据经 stdin 送给远端命令，用于在 SSH 来源上 docker load。
 func runAuthenticatedSSHInputLine(ctx context.Context, source ImageSource, label, language string, src io.Reader, commandLine string) error {
-	client, err := dialAuthenticatedSSH(ctx, source, language)
-	if err != nil {
-		return err
-	}
-	defer client.Close()
 	stderr := &limitedBuffer{limit: maxImageCommandOutput}
-	if err := runSSHCommandWritersLine(ctx, client, label, commandLine, src, io.Discard, stderr); err != nil {
-		if stderr.Len() > 0 {
+	if err := runAuthenticatedSSHWritersLine(ctx, source, label, language, commandLine, src, io.Discard, stderr); err != nil {
+		if ctx.Err() == nil && stderr.Len() > 0 {
 			return userErrorCause("errors.image.importFailed", errors.New(strings.TrimSpace(stderr.String())))
 		}
 		return err
@@ -228,21 +227,24 @@ func runSSHCommand(ctx context.Context, client *ssh.Client, cliPath string, dock
 	return runSSHCommandLine(ctx, client, remoteCommandLabel(cliPath), shellJoin(append([]string{cliPath}, dockerArgs...)))
 }
 
-// runSSHCommandLine 执行一条已由调用方安全拼接的远程命令；label 只用于错误信息。
 // runAuthenticatedSSHLineCapture 执行命令行并同时返回 stdout 与 stderr。
 // 探测类命令即使退出码为 0 也可能只把线索写在 stderr，调用方需要保留它。
-func runAuthenticatedSSHLineCapture(ctx context.Context, source ImageSource, label, language, commandLine string) (stdout, stderr []byte, err error) {
-	client, dialErr := dialAuthenticatedSSH(ctx, source, language)
-	if dialErr != nil {
-		return nil, nil, dialErr
-	}
-	defer client.Close()
+func runAuthenticatedSSHLineCapture(ctx context.Context, source ImageSource, label, language, commandLine string, stdin io.Reader) (stdout, stderr []byte, err error) {
 	out := &limitedBuffer{limit: maxImageCommandOutput}
 	errOut := &limitedBuffer{limit: maxImageCommandOutput}
-	err = runSSHCommandWritersLine(ctx, client, label, commandLine, nil, out, errOut)
+	err = runAuthenticatedSSHWritersLine(ctx, source, label, language, commandLine, stdin, out, errOut)
+	if ctx.Err() != nil {
+		return nil, nil, ctx.Err()
+	}
+	if localizedErrorKey(err) == "errors.image.remoteCommandFailed" {
+		if detail := strings.TrimSpace(errOut.String()); detail != "" {
+			err = userErrorParamsCause("errors.image.remoteCommandFailed", map[string]any{"command": label}, errors.New(detail))
+		}
+	}
 	return out.Bytes(), errOut.Bytes(), err
 }
 
+// runSSHCommandLine 执行一条已由调用方安全拼接的远程命令；label 只用于错误信息。
 func runSSHCommandLine(ctx context.Context, client *ssh.Client, label, commandLine string) ([]byte, error) {
 	session, err := client.NewSession()
 	if err != nil {

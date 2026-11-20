@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"io"
+	"path"
 	"strconv"
 	"strings"
 	"time"
@@ -79,13 +80,43 @@ func normalizeDockerCommand(raw string) (string, error) {
 	return strings.Join(fields, " "), nil
 }
 
-// parseDockerCommandPrefix 把已保存的命令前缀拆成 argv；空串返回 nil。
-func parseDockerCommandPrefix(raw string) ([]string, error) {
-	normalized, err := normalizeDockerCommand(raw)
-	if err != nil || normalized == "" {
+// imageSSHCommandPrefix 校验 Docker 命令和 sudo 密码，并返回自定义 argv 前缀。
+func imageSSHCommandPrefix(source ImageSource) ([]string, error) {
+	command, err := normalizeDockerCommand(source.DockerCommand)
+	if err != nil {
 		return nil, err
 	}
-	return strings.Fields(normalized), nil
+	prefix := strings.Fields(command)
+	password := source.SudoPassword
+	if password == "" {
+		return prefix, nil
+	}
+	if len(password) > 4096 {
+		return nil, userError("errors.config.sudoPasswordInvalid")
+	}
+	for _, r := range password {
+		if r == '\n' || r == '\r' || (unicode.IsControl(r) && !unicode.IsSpace(r)) {
+			return nil, userError("errors.config.sudoPasswordInvalid")
+		}
+	}
+	for _, token := range prefix {
+		if path.Base(token) == "sudo" {
+			return nil, userError("errors.config.dockerCommandSudoConflict")
+		}
+	}
+	return prefix, nil
+}
+
+// imageDockerStdin 将 sudo 密码行放在原有输入前，镜像数据仍然流式传输。
+func imageDockerStdin(source ImageSource, stdin io.Reader) io.Reader {
+	if source.Kind != "ssh" || source.SudoPassword == "" {
+		return stdin
+	}
+	passwordLine := strings.NewReader(source.SudoPassword + "\n")
+	if stdin == nil {
+		return passwordLine
+	}
+	return io.MultiReader(passwordLine, stdin)
 }
 
 // imageRemoteEnvCacheKey 用连接身份与命令前缀标识一次 PATH 解析。
@@ -125,9 +156,26 @@ func (s *ImageService) imageRemoteCommandEnv(ctx context.Context, source ImageSo
 	if ok && time.Since(cached.resolvedAt) < imageRemoteEnvTTL {
 		return cached, true
 	}
+	authenticated := hasSSHCredentials(source)
+	if !authenticated && source.SudoPassword == "" {
+		return remoteCommandEnv{}, false
+	}
 	probeCtx, cancel := context.WithTimeout(ctx, imageRemoteEnvProbeTimeout)
 	defer cancel()
-	env, err := probeRemoteCommandEnv(probeCtx, source, []string{dockerCommandName}, s.sshLanguage())
+	// 记录登录 shell 的目录，便于把 PATH 里的相对可执行路径转换成绝对路径。
+	script := buildRemoteEnvProbeScript([]string{dockerCommandName}) + `printf '__TK_CWD__ %s\n' "$PWD"`
+	env, err := probeRemoteCommandEnvWithRunner(probeCtx, script, func(ctx context.Context, shell string, args ...string) ([]byte, error) {
+		if authenticated {
+			return runAuthenticatedSSH(ctx, source, shell, s.sshLanguage(), args...)
+		}
+		// 系统 ssh 的登录 PATH 探测不运行 Docker，不接收 sudo 密码。
+		name, sshArgs, err := buildImageCommand(source, shell, args...)
+		if err != nil {
+			return nil, err
+		}
+		out, _, err := s.runImageCommand(ctx, nil, name, sshArgs...)
+		return out, err
+	})
 	if err != nil {
 		return remoteCommandEnv{}, false
 	}
@@ -142,10 +190,23 @@ func (s *ImageService) imageRemoteCommandEnv(ctx context.Context, source ImageSo
 }
 
 // buildImageInvocation 构造一条 docker 调用的本机或系统 ssh 命令。
-// SSH 来源在前缀非空时按 argv 前缀拼接，前缀留空时仍是裸 docker。
-func buildImageInvocation(source ImageSource, cliPath string, args []string) (string, []string, error) {
+func (s *ImageService) buildImageInvocation(ctx context.Context, source ImageSource, cliPath string, args []string) (string, []string, error) {
 	if source.Kind == "ssh" {
-		remote, _, err := imageSSHSystemCommandLine(source, args)
+		remote, _, err := s.imageSSHCommandLine(ctx, source, args)
+		if err != nil {
+			return "", nil, err
+		}
+		return buildImageCommandLine(source, remote)
+	}
+	return buildImageCommand(source, cliPath, args...)
+}
+
+// buildImageInputInvocation 构造需要数据输入的 docker 调用（本机或系统 ssh）。
+// SSH 填了 sudo 密码时用远端 askpass 助手把密码与数据分开，避免 sudo 免密或缓存命中
+// 时密码行污染 Docker 的 stdin。
+func (s *ImageService) buildImageInputInvocation(ctx context.Context, source ImageSource, cliPath string, args []string) (string, []string, error) {
+	if source.Kind == "ssh" {
+		remote, _, err := s.imageSSHInputLine(ctx, source, args)
 		if err != nil {
 			return "", nil, err
 		}
@@ -160,59 +221,129 @@ func hasSSHCredentials(source ImageSource) bool {
 	return source.SSHPassword != "" || source.SSHPrivateKey != "" || source.SSHPrivateKeyPath != ""
 }
 
-// imageSSHSystemProbeCommand 构建系统 ssh 路径上的架构 + docker 探测脚本。
-// 该路径没有登录 PATH 探测，前缀留空时直接探测裸 docker。
-func imageSSHSystemProbeCommand(source ImageSource, dockerArgs []string) (script string, label string, err error) {
+// imageSSHCommandLine 返回 SSH Docker 调用的远端命令和错误信息里的命令名。
+func (s *ImageService) imageSSHCommandLine(ctx context.Context, source ImageSource, dockerArgs []string) (string, string, error) {
+	return s.imageSSHLine(ctx, source, dockerArgs, false)
+}
+
+// imageSSHDockerArgv 校验并解析 SSH 来源的一次 Docker 调用：返回不带 sudo 的完整 argv
+// （命令前缀或登录 PATH 解析出的 docker 路径）、错误信息标签，以及需要前置的远端 PATH。
+func (s *ImageService) imageSSHDockerArgv(ctx context.Context, source ImageSource, dockerArgs []string) (argv []string, label, remotePath string, err error) {
 	prefix, err := imageSSHCommandPrefix(source)
+	if err != nil {
+		return nil, "", "", err
+	}
+	if len(prefix) == 0 {
+		cli := dockerCommandName
+		if env, ok := s.imageRemoteCommandEnv(ctx, source); ok {
+			if found, checked := env.commands[dockerCommandName]; checked && !found {
+				return nil, "", "", imageRemoteDockerMissing()
+			}
+			if source.SudoPassword == "" {
+				remotePath = env.path
+			} else {
+				// sudo 会重置 PATH，必须传登录 PATH 解析出的可执行文件路径。
+				cli = env.commandPaths[dockerCommandName]
+				if !path.IsAbs(cli) && strings.Contains(cli, "/") && path.IsAbs(env.cwd) {
+					cli = strings.TrimRight(env.cwd, "/") + "/" + cli
+				}
+				if !path.IsAbs(cli) {
+					return nil, "", "", imageRemoteDockerMissing()
+				}
+			}
+		}
+		// 探测过程失败时仍按默认命令名尝试执行。
+		prefix = []string{cli}
+	}
+	return append(prefix, dockerArgs...), remoteCommandLabel(prefix[0]), remotePath, nil
+}
+
+func (s *ImageService) imageSSHLine(ctx context.Context, source ImageSource, dockerArgs []string, probeArchitecture bool) (string, string, error) {
+	argv, label, remotePath, err := s.imageSSHDockerArgv(ctx, source, dockerArgs)
 	if err != nil {
 		return "", "", err
 	}
-	if len(prefix) > 0 {
-		return "uname -m && exec " + shellJoin(append(prefix, dockerArgs...)), remoteCommandLabel(prefix[0]), nil
+	if source.SudoPassword != "" {
+		argv = append([]string{"sudo", "-S", "-p", ""}, argv...)
 	}
-	return "uname -m && exec " + shellJoin(append([]string{dockerCommandName}, dockerArgs...)), dockerCommandName, nil
+	var line strings.Builder
+	if probeArchitecture {
+		line.WriteString("uname -m && ")
+	}
+	if remotePath != "" {
+		line.WriteString("PATH=" + shellQuote(remotePath) + " ")
+	}
+	if probeArchitecture {
+		line.WriteString("exec ")
+	}
+	line.WriteString(shellJoin(argv))
+	return line.String(), label, nil
 }
 
-// imageSSHCommandPrefix 返回来源自带的命令前缀；空表示需要走登录 PATH。
-func imageSSHCommandPrefix(source ImageSource) ([]string, error) {
-	return parseDockerCommandPrefix(source.DockerCommand)
+// sudoAskpassScript 是远端 askpass 包装的固定 /bin/sh 脚本：从 stdin 首行读取 sudo 密码，
+// 通过私有目录里的 FIFO 交给一次性 askpass 助手，其余 fd 0 原样传给 sudo -A。
+// Docker argv 作为位置参数传入，不拼进脚本正文；密码只留在内存与 FIFO，不进入 argv、
+// 环境变量、磁盘文件或 stderr。
+const sudoAskpassScript = `d=
+writer=
+cleanup() {
+  if [ -n "$writer" ]; then
+    kill "$writer" 2>/dev/null || true
+    wait "$writer" 2>/dev/null || true
+  fi
+  if [ -n "$d" ]; then
+    rm -rf "$d"
+  fi
+}
+trap cleanup 0
+trap 'exit 130' HUP INT TERM
+d=$(mktemp -d "${TMPDIR:-/tmp}/.tk.XXXXXX") || exit 125
+umask 077
+fifo=$d/pass
+helper=$d/askpass
+mkfifo "$fifo" || exit 125
+cat > "$helper" <<'ASKPASS'
+#!/bin/sh
+case "$0" in
+  */*) d=${0%/*} ;;
+  *) d=. ;;
+esac
+mkdir "$d/claimed" 2>/dev/null || exit 1
+IFS= read -r line < "$d/pass" || exit 1
+printf '%s\n' "$line"
+ASKPASS
+chmod 700 "$helper"
+IFS= read -r pw || pw=
+( printf '%s\n' "$pw" > "$fifo" ) 2>/dev/null &
+writer=$!
+SUDO_ASKPASS="$helper" sudo -A -- "$@"
+rc=$?
+kill "$writer" 2>/dev/null || true
+wait "$writer" 2>/dev/null || true
+writer=
+exit "$rc"
+`
+
+// sudoAskpassLine 把解析好的 Docker argv 包进固定的 /bin/sh -c 远端 askpass 入口。
+func sudoAskpassLine(dockerArgv []string) string {
+	return "/bin/sh -c " + shellQuote(sudoAskpassScript) + " sh " + shellJoin(dockerArgv)
 }
 
-// imageSSHCommandLine 返回 SSH 来源上一条 docker 调用的远端命令串与错误信息里的命令名。
-// 前缀非空时直接把它当作 argv 前置，不套登录 PATH；前缀留空时使用探测到的 PATH，
-// 探测成功但 PATH 里没有 docker 时直接报未找到，不再执行一次必然失败的 exec。
-func (s *ImageService) imageSSHCommandLine(ctx context.Context, source ImageSource, dockerArgs []string) (line string, label string, err error) {
-	prefix, err := imageSSHCommandPrefix(source)
+// imageSSHInputLine 构造需要数据输入的 SSH Docker 调用（docker load 与 dial-stdio）。
+// 填了 sudo 密码时走 askpass 通道；无密码时与普通调用一致。
+func (s *ImageService) imageSSHInputLine(ctx context.Context, source ImageSource, dockerArgs []string) (string, string, error) {
+	if source.SudoPassword == "" {
+		return s.imageSSHLine(ctx, source, dockerArgs, false)
+	}
+	argv, label, _, err := s.imageSSHDockerArgv(ctx, source, dockerArgs)
 	if err != nil {
 		return "", "", err
 	}
-	if len(prefix) > 0 {
-		return shellJoin(append(prefix, dockerArgs...)), remoteCommandLabel(prefix[0]), nil
-	}
-	env, ok := s.imageRemoteCommandEnv(ctx, source)
-	if !ok {
-		return shellJoin(append([]string{dockerCommandName}, dockerArgs...)), dockerCommandName, nil
-	}
-	if found, checked := env.commands[dockerCommandName]; checked && !found {
-		return "", "", userErrorParams("errors.service.remoteCommandMissing", map[string]any{"command": dockerCommandName})
-	}
-	if env.path == "" {
-		return shellJoin(append([]string{dockerCommandName}, dockerArgs...)), dockerCommandName, nil
-	}
-	return "PATH=" + shellQuote(env.path) + " " + shellJoin(append([]string{dockerCommandName}, dockerArgs...)), dockerCommandName, nil
+	return sudoAskpassLine(argv), label, nil
 }
 
-// imageSSHSystemCommandLine 用于没有保存凭据、改由系统 ssh 执行的来源。
-// 这条路径没有可用的登录 shell 探测，只按来源的命令前缀拼 argv；留空即裸 docker。
-func imageSSHSystemCommandLine(source ImageSource, dockerArgs []string) (string, string, error) {
-	prefix, err := imageSSHCommandPrefix(source)
-	if err != nil {
-		return "", "", err
-	}
-	if len(prefix) > 0 {
-		return shellJoin(append(prefix, dockerArgs...)), remoteCommandLabel(prefix[0]), nil
-	}
-	return shellJoin(append([]string{dockerCommandName}, dockerArgs...)), dockerCommandName, nil
+func imageRemoteDockerMissing() error {
+	return userErrorParams("errors.service.remoteCommandMissing", map[string]any{"command": dockerCommandName})
 }
 
 func (s *ImageService) runImageSSH(ctx context.Context, source ImageSource, dockerArgs ...string) ([]byte, error) {
@@ -220,49 +351,30 @@ func (s *ImageService) runImageSSH(ctx context.Context, source ImageSource, dock
 	if err != nil {
 		return nil, err
 	}
-	return runAuthenticatedSSHLine(ctx, source, label, s.sshLanguage(), line)
+	out, _, err := runAuthenticatedSSHLineCapture(ctx, source, label, s.sshLanguage(), line, imageDockerStdin(source, nil))
+	return out, err
 }
 
-func (s *ImageService) runImageSSHStream(ctx context.Context, source ImageSource, dst io.Writer, dockerArgs ...string) error {
+func (s *ImageService) runImageSSHStream(ctx context.Context, source ImageSource, stdout, stderr io.Writer, dockerArgs ...string) error {
 	line, label, err := s.imageSSHCommandLine(ctx, source, dockerArgs)
 	if err != nil {
 		return err
 	}
-	return runAuthenticatedSSHCombinedLine(ctx, source, label, s.sshLanguage(), line, dst)
+	return runAuthenticatedSSHWritersLine(ctx, source, label, s.sshLanguage(), line, imageDockerStdin(source, nil), stdout, stderr)
 }
 
-// runImageSSHInput 把本地数据经 stdin 交给远端命令；stdin 始终由远端会话转交，
-// 应用不插入 sudo -S，也不自行消费密码输入。
+// runImageSSHInput 把 sudo 密码行（如有）与本地数据一起流式送入远端 stdin。
 func (s *ImageService) runImageSSHInput(ctx context.Context, source ImageSource, src io.Reader, dockerArgs ...string) error {
-	line, label, err := s.imageSSHCommandLine(ctx, source, dockerArgs)
+	line, label, err := s.imageSSHInputLine(ctx, source, dockerArgs)
 	if err != nil {
 		return err
 	}
-	return runAuthenticatedSSHInputLine(ctx, source, label, s.sshLanguage(), src, line)
+	return runAuthenticatedSSHInputLine(ctx, source, label, s.sshLanguage(), imageDockerStdin(source, src), line)
 }
 
 // sshArchitectureProbeCommand 构建 SSH 来源的架构 + docker 探测命令：
 // 先取 uname -m，再 exec 给定的 docker 参数（连接探测用 info，测试连接第一步用 --version）。
 // 前缀留空且已确认找不到 docker 时不生成命令。
 func (s *ImageService) sshArchitectureProbeCommand(ctx context.Context, source ImageSource, dockerArgs []string) (line string, label string, err error) {
-	prefix, err := imageSSHCommandPrefix(source)
-	if err != nil {
-		return "", "", err
-	}
-	if len(prefix) > 0 {
-		return "uname -m && exec " + shellJoin(append(prefix, dockerArgs...)), remoteCommandLabel(prefix[0]), nil
-	}
-	bare := "uname -m && exec " + shellJoin(append([]string{dockerCommandName}, dockerArgs...))
-	env, ok := s.imageRemoteCommandEnv(ctx, source)
-	if !ok {
-		// 探测本身失败：退回与服务管理一致的裸 docker 探测。
-		return bare, dockerCommandName, nil
-	}
-	if found, checked := env.commands[dockerCommandName]; checked && !found {
-		return "", "", userErrorParams("errors.service.remoteCommandMissing", map[string]any{"command": dockerCommandName})
-	}
-	if env.path == "" {
-		return bare, dockerCommandName, nil
-	}
-	return "uname -m && PATH=" + shellQuote(env.path) + " exec " + shellJoin(append([]string{dockerCommandName}, dockerArgs...)), dockerCommandName, nil
+	return s.imageSSHLine(ctx, source, dockerArgs, true)
 }

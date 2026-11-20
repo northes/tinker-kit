@@ -135,12 +135,13 @@ type TextGeneratorSource struct {
 }
 
 type ImageSource struct {
-	ID                string `json:"id"`
-	Name              string `json:"name"`
-	Kind              string `json:"kind"`
-	SSHProfileID      string `json:"sshProfileID"`
+	ID           string `json:"id"`
+	Name         string `json:"name"`
+	Kind         string `json:"kind"`
+	SSHProfileID string `json:"sshProfileID"`
 	// DockerCommand 是 SSH 来源上远端 docker 的可选命令前缀；留空则探测登录 shell PATH。
 	DockerCommand     string `json:"dockerCommand"`
+	SudoPassword      string `json:"sudoPassword"`
 	SSHHost           string `json:"-"`
 	SSHPort           int    `json:"-"`
 	SSHUsername       string `json:"-"`
@@ -450,6 +451,7 @@ func normalizeImageSource(
 		source.RegistryCAPath = ""
 		source.RegistryCAPEM = ""
 		source.DockerCommand = ""
+		source.SudoPassword = ""
 		if hasLocal != nil {
 			*hasLocal = true
 		}
@@ -463,6 +465,11 @@ func normalizeImageSource(
 		if seen[source.ID] {
 			return ImageSource{}, userErrorParams("errors.config.imageSourceIDDuplicate", map[string]any{"id": source.ID})
 		}
+		prefix, err := imageSSHCommandPrefix(source)
+		if err != nil {
+			return ImageSource{}, err
+		}
+		source.DockerCommand = strings.Join(prefix, " ")
 		if source.SSHProfileID != "" {
 			if !validConfigValue(source.SSHProfileID, 128) {
 				return ImageSource{}, userError("errors.config.sshProfileIDInvalid")
@@ -490,11 +497,6 @@ func normalizeImageSource(
 			source.RegistryTransport = ""
 			source.RegistryCAPath = ""
 			source.RegistryCAPEM = ""
-			command, err := normalizeDockerCommand(source.DockerCommand)
-			if err != nil {
-				return ImageSource{}, err
-			}
-			source.DockerCommand = command
 			break
 		}
 		// SSH 来源必须引用 SSHProfiles；未绑定配置的来源不保留。
@@ -537,11 +539,6 @@ func normalizeImageSource(
 		source.RegistryTransport = ""
 		source.RegistryCAPath = ""
 		source.RegistryCAPEM = ""
-		command, err := normalizeDockerCommand(source.DockerCommand)
-		if err != nil {
-			return ImageSource{}, err
-		}
-		source.DockerCommand = command
 	case "registry":
 		if source.ID == localImageSourceID {
 			return ImageSource{}, userError("errors.config.registryImageSourceIDForbiddenLocal")
@@ -598,6 +595,7 @@ func normalizeImageSource(
 		source.SSHKeyPassphrase = ""
 		source.SSHProfileID = ""
 		source.DockerCommand = ""
+		source.SudoPassword = ""
 	default:
 		return ImageSource{}, userErrorParams("errors.config.imageSourceKindUnknown", map[string]any{"kind": source.Kind})
 	}
@@ -1412,8 +1410,8 @@ func (s *ConfigService) Save(cfg Config) error {
 	return nil
 }
 
-// SaveImageSources 只持久化镜像管理拥有的设置。SSH 来源在原子写入时必须引用现有
-// 全局 SSH 配置，凭据本身不会经过此接口。
+// SaveImageSources 只持久化镜像管理拥有的设置，包括来源自己的 sudo 密码。
+// SSH 来源在原子写入时必须引用现有全局 SSH 配置，SSH 登录凭据仍由该配置管理。
 func (s *ConfigService) SaveImageSources(dockerCLIPath string, imageSources []ImageSource) error {
 	imageSources = append([]ImageSource(nil), imageSources...)
 	return s.updateConfigAllowDanglingRefs(func(cfg *Config) error {

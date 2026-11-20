@@ -7,9 +7,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"math"
 	"net/http"
-	"os/exec"
 	"runtime"
 	"strconv"
 	"strings"
@@ -331,22 +331,26 @@ func (s *ImageService) emitEvent(name string, data any) {
 	}
 }
 
-func runImageCommand(ctx context.Context, name string, args ...string) ([]byte, error) {
-	command := exec.CommandContext(ctx, name, args...)
+func (s *ImageService) runImageCommand(ctx context.Context, stdin io.Reader, name string, args ...string) ([]byte, string, error) {
+	if s.runner != nil && stdin == nil {
+		out, err := s.runner(ctx, name, args...)
+		return out, "", err
+	}
+	command := execCommandContext(ctx, name, args...)
+	command.Stdin = stdin
 	stdout := &limitedBuffer{limit: maxImageCommandOutput}
 	stderr := &limitedBuffer{limit: maxImageCommandOutput}
 	command.Stdout = stdout
 	command.Stderr = stderr
-	if err := command.Run(); err != nil {
-		if ctx.Err() != nil {
-			return stdout.Bytes(), ctx.Err()
-		}
-		if message := strings.TrimSpace(stderr.String()); message != "" {
-			return stdout.Bytes(), fmt.Errorf("%w: %s", err, message)
-		}
-		return stdout.Bytes(), err
+	err := command.Run()
+	stderrText := stderr.String()
+	if ctx.Err() != nil {
+		return stdout.Bytes(), stderrText, ctx.Err()
 	}
-	return stdout.Bytes(), nil
+	if detail := strings.TrimSpace(stderrText); err != nil && detail != "" {
+		err = fmt.Errorf("%w: %s", err, detail)
+	}
+	return stdout.Bytes(), stderrText, err
 }
 
 type limitedBuffer struct {
@@ -450,6 +454,7 @@ func imageSourceFingerprint(source ImageSource, cliPath string) string {
 		KeyPassphrase string `json:"keyPassphrase"`
 		Jump          string `json:"jump"`
 		DockerCommand string `json:"dockerCommand,omitempty"`
+		SudoPassword  string `json:"sudoPassword,omitempty"`
 		Transport     string `json:"transport,omitempty"`
 		CAPath        string `json:"caPath,omitempty"`
 		CAPEM         string `json:"caPEM,omitempty"`
@@ -469,6 +474,7 @@ func imageSourceFingerprint(source ImageSource, cliPath string) string {
 		value.Password, value.KeyPath = source.SSHPassword, source.SSHPrivateKeyPath
 		value.PrivateKey, value.KeyPassphrase = source.SSHPrivateKey, source.SSHKeyPassphrase
 		value.DockerCommand = source.DockerCommand
+		value.SudoPassword = source.SudoPassword
 		jumps := make([]string, 0, len(source.SSHJump))
 		for _, jump := range source.SSHJump {
 			jumps = append(jumps, fmt.Sprintf("%s@%s:%d", jump.Username, jump.Host, jump.Port))
@@ -522,12 +528,16 @@ func buildImageCommand(source ImageSource, cliPath string, dockerArgs ...string)
 	return buildImageCommandLine(source, shellJoin(append([]string{cliPath}, dockerArgs...)))
 }
 
-// buildImageCommandLine 用已拼接好的远端命令构造系统 ssh 调用，用于来源自带命令前缀的 SSH 路径。
+// buildImageCommandLine 用已拼接好的远端命令构造系统 ssh 调用。
 func buildImageCommandLine(source ImageSource, remoteCommand string) (string, []string, error) {
 	if source.Kind != "ssh" || !validSSHHost(source.SSHHost) {
 		return "", nil, userError("errors.image.sourceInvalid")
 	}
 	sshArgs := []string{"-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=yes"}
+	if source.SudoPassword != "" {
+		// 即使本机 SSH 配置请求终端，也只通过非 PTY 会话传输密码和镜像数据。
+		sshArgs = append(sshArgs, "-T")
+	}
 	if source.SSHPort > 0 && source.SSHPort != 22 {
 		sshArgs = append(sshArgs, "-p", strconv.Itoa(source.SSHPort))
 	}
@@ -559,15 +569,12 @@ func (s *ImageService) runDockerSnapshotContext(ctx context.Context, source Imag
 	if source.Kind == "ssh" && hasSSHCredentials(source) {
 		return s.runImageSSH(ctx, source, args...)
 	}
-	name, commandArgs, err := buildImageInvocation(source, cliPath, args)
+	name, commandArgs, err := s.buildImageInvocation(ctx, source, cliPath, args)
 	if err != nil {
 		return nil, err
 	}
-	runner := s.runner
-	if runner == nil {
-		runner = runImageCommand
-	}
-	return runner(ctx, name, commandArgs...)
+	out, _, err := s.runImageCommand(ctx, imageDockerStdin(source, nil), name, commandArgs...)
+	return out, err
 }
 
 func (s *ImageService) sshLanguage() string {
@@ -762,29 +769,20 @@ func (s *ImageService) runSourceProbe(ctx context.Context, source ImageSource, c
 		out, err := s.runDockerSnapshotContext(ctx, source, cliPath, dockerArgs)
 		return out, "", err
 	}
+	line, label, err := s.sshArchitectureProbeCommand(ctx, source, dockerArgs)
+	if err != nil {
+		return nil, "", err
+	}
+	stdin := imageDockerStdin(source, nil)
 	if hasSSHCredentials(source) {
-		line, label, err := s.sshArchitectureProbeCommand(ctx, source, dockerArgs)
-		if err != nil {
-			return nil, "", err
-		}
-		out, stderrOut, captureErr := runAuthenticatedSSHLineCapture(ctx, source, label, s.sshLanguage(), line)
+		out, stderrOut, captureErr := runAuthenticatedSSHLineCapture(ctx, source, label, s.sshLanguage(), line, stdin)
 		return out, string(stderrOut), captureErr
 	}
-	// 没有保存凭据时走系统 ssh：这条路径没有登录 PATH 探测，只按来源命令前缀拼接。
-	script, _, err := imageSSHSystemProbeCommand(source, dockerArgs)
+	name, commandArgs, err := buildImageCommand(source, "sh", "-c", line)
 	if err != nil {
 		return nil, "", err
 	}
-	name, commandArgs, err := buildImageCommand(source, "sh", "-c", script)
-	if err != nil {
-		return nil, "", err
-	}
-	runner := s.runner
-	if runner == nil {
-		runner = runImageCommand
-	}
-	out, err := runner(ctx, name, commandArgs...)
-	return out, "", err
+	return s.runImageCommand(ctx, stdin, name, commandArgs...)
 }
 
 // splitImageProbeOutput 拆分探测输出：SSH 首行是 uname -m，其余部分是 docker 输出；

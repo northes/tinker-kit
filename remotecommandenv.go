@@ -9,19 +9,29 @@ import (
 
 // remoteCommandEnv 是远端登录 shell 解析出的执行环境：登录 PATH 与命令可解析状态。
 type remoteCommandEnv struct {
-	path       string
-	commands   map[string]bool
-	resolvedAt time.Time
+	path         string
+	cwd          string
+	commands     map[string]bool
+	commandPaths map[string]string
+	resolvedAt   time.Time
 }
 
 // probeRemoteCommandEnv 通过远端登录 shell 解析 PATH：先取登录 shell 的 PATH，
 // 再补上版本管理器与常见安装目录，最后逐条确认目标命令是否存在。
 // 命令列表与错误语言由调用方决定：服务管理查整套命令，镜像管理只查 docker。
 func probeRemoteCommandEnv(ctx context.Context, source ImageSource, commandNames []string, language string) (remoteCommandEnv, error) {
-	script := buildRemoteEnvProbeScript(commandNames)
+	return probeRemoteCommandEnvWithRunner(ctx, buildRemoteEnvProbeScript(commandNames), func(ctx context.Context, shell string, args ...string) ([]byte, error) {
+		return runAuthenticatedSSH(ctx, source, shell, language, args...)
+	})
+}
+
+func probeRemoteCommandEnvWithRunner(ctx context.Context, script string, run func(context.Context, string, ...string) ([]byte, error)) (remoteCommandEnv, error) {
 	var lastErr error
 	for _, sh := range []string{"bash", "zsh", "sh"} {
-		out, err := runAuthenticatedSSH(ctx, source, sh, language, "-lc", script)
+		if err := ctx.Err(); err != nil {
+			return remoteCommandEnv{}, err
+		}
+		out, err := run(ctx, sh, "-lc", script)
 		if err != nil {
 			lastErr = err
 			continue
@@ -57,17 +67,22 @@ func buildRemoteEnvProbeScript(commands []string) string {
 }
 
 func parseRemoteEnvProbe(out string) (remoteCommandEnv, error) {
-	env := remoteCommandEnv{commands: map[string]bool{}}
+	env := remoteCommandEnv{commands: map[string]bool{}, commandPaths: map[string]string{}}
 	for _, line := range strings.Split(out, "\n") {
 		line = strings.TrimSpace(line)
 		if rest, ok := strings.CutPrefix(line, "__TK_PATH__ "); ok {
 			env.path = strings.TrimSpace(rest)
 			continue
 		}
+		if rest, ok := strings.CutPrefix(line, "__TK_CWD__ "); ok {
+			env.cwd = rest
+			continue
+		}
 		if rest, ok := strings.CutPrefix(line, "__TK_CMD__ "); ok {
 			name, path, _ := strings.Cut(rest, " ")
 			if name != "" {
-				env.commands[name] = strings.TrimSpace(path) != ""
+				env.commandPaths[name] = strings.TrimSpace(path)
+				env.commands[name] = env.commandPaths[name] != ""
 			}
 		}
 	}
