@@ -25,6 +25,7 @@ import { formatBackendError } from '../lib/backend-error';
 import { sendSystemNotification } from '../lib/task-notification-feedback';
 import { useWorkspaceTabTitle } from '../app/workspace-tab-title';
 import { isLocalSource, sourceLabel } from '../lib/local-source';
+import { createLastSourceMemory } from '../lib/last-source';
 import {
   automaticTarget,
   detectTargetProtocol,
@@ -166,6 +167,10 @@ const NO_PROXY = '__network-test-no-proxy__';
 const MANAGE_NETWORK_SOURCES = '__manage-network-test-sources__';
 const AUTOMATIC_INTERFACE = '__network-test-automatic-interface__';
 const HTTP_METHOD_PRESETS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'];
+
+// 本次运行内最近一次选中的来源：新建的网络测试标签沿用同一个来源。
+// 只活在内存里，不写 localStorage，也不跨重启恢复。
+const networkTestSourceMemory = createLastSourceMemory();
 
 function validIntegerInput(value: string, min: number, max: number) {
   const trimmed = value.trim();
@@ -411,11 +416,15 @@ export default function NetworkTestTool({
   );
   const detectedProtocol = detectTargetProtocol(target);
   const effectiveProtocol = protocolSelection === 'auto' ? detectedProtocol : protocolSelection;
-  // 未选择时跟随列表首项；不要先写死 local，否则来源加载完成会覆盖用户已经做出的选择。
+  // 未选择时跟随本工具上次选中的来源（仍在列表里才行），否则跟随列表首项；
+  // 不要先写死 local，否则来源加载完成会覆盖用户已经做出的选择。
   const effectiveSourceID =
     sourceID && networkTestSources.some((source) => source.id === sourceID)
       ? sourceID
-      : (networkTestSources[0]?.id ?? 'local');
+      : networkTestSourceMemory.resolve(
+          networkTestSources.map((source) => source.id),
+          networkTestSources[0]?.id ?? 'local',
+        );
   const selectedSource =
     networkTestSources.find((source) => source.id === effectiveSourceID) ??
     defaultNetworkTestSources[0];
@@ -783,7 +792,10 @@ export default function NetworkTestTool({
                         openSourceManager();
                         return;
                       }
-                      if (value) setSourceID(value);
+                      if (value) {
+                        networkTestSourceMemory.remember(value);
+                        setSourceID(value);
+                      }
                     }}
                     items={sourceItems}
                   >

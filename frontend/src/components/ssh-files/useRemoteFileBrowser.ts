@@ -8,6 +8,7 @@ import {
   SearchRemoteFiles,
 } from '../../../bindings/tinkerkit/fileservice';
 import type { RemoteFileEntry, SSHProfile } from '../../../bindings/tinkerkit/models';
+import { createLastSourceMemory } from '../../lib/last-source';
 import {
   DIRECTORY_CACHE_TTL_MS,
   directoryListingKey,
@@ -27,7 +28,7 @@ import {
 
 // 本次运行内最近一次连上的来源：新建的文件管理标签沿用同一个连接。
 // 只活在内存里，标签和其中的选择不跨重启恢复。
-let lastConnectedSourceID = '';
+const filesSourceMemory = createLastSourceMemory();
 
 // 目录浏览、搜索与来源加载共用修订号和取消边界，缓存同时供目录树使用。
 export function useRemoteFileBrowser({
@@ -45,7 +46,7 @@ export function useRemoteFileBrowser({
   const sourceIDRef = useRef(sourceID);
   sourceIDRef.current = sourceID;
   useEffect(() => {
-    if (sourceID) lastConnectedSourceID = sourceID;
+    filesSourceMemory.remember(sourceID);
   }, [sourceID]);
   const setTrackedSourceID = (value: SetStateAction<string>) => {
     if (typeof value === 'function') {
@@ -174,9 +175,10 @@ export function useRemoteFileBrowser({
       setSources(nextSources ?? []);
       setSourceID((current) => {
         if (nextSources?.some((item) => item.id === current)) return current;
-        if (nextSources?.some((item) => item.id === lastConnectedSourceID))
-          return lastConnectedSourceID;
-        return nextSources?.[0]?.id || '';
+        return filesSourceMemory.resolve(
+          (nextSources ?? []).map((item) => item.id),
+          nextSources?.[0]?.id || '',
+        );
       });
       sourcesLoadedRef.current = true;
     } catch (reason) {

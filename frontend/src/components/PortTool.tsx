@@ -13,6 +13,7 @@ import type { PortColumnWidths, PortEntry, PortSource } from '../../bindings/tin
 import { useWorkspaceTabTitle } from '../app/workspace-tab-title';
 import { formatBackendError } from '../lib/backend-error';
 import { isLocalSource, sourceLabel } from '../lib/local-source';
+import { createLastSourceMemory } from '../lib/last-source';
 import { useSSHProfiles } from './SSHProfileManagerDialog';
 import { SSHProfileFormField } from './SSHProfileFormField';
 import { TargetHostManagerDialog, upsertManagerItem } from './TargetHostManagerDialog';
@@ -53,6 +54,10 @@ import {
 } from './port-list-chrome';
 
 const MANAGE_SOURCES_VALUE = '__manage-port-sources__';
+
+// 本次运行内最近一次选中的来源：新建的端口占用标签沿用同一个来源。
+// 只活在内存里，不写 localStorage，也不跨重启恢复。
+const portsSourceMemory = createLastSourceMemory();
 
 const PORT_COLUMNS = [
   'port',
@@ -153,10 +158,16 @@ export default function PortTool({ active }: { active: boolean }) {
       setSources(next);
       const initialLoad = !sourcesLoadedRef.current;
       sourcesLoadedRef.current = true;
-      // 默认加载来源列表首项；当前来源仍存在时保持不变，来源被移除后回退到首项。
+      // 首次加载先看本工具上次选中的来源（仍在列表里才行），否则来源列表首项；
+      // 之后当前来源仍存在时保持不变，来源被移除后回退到首项。
       const fallback = next[0]?.id ?? 'local';
+      const ids = next.map((item) => item.id);
       setSource((current) =>
-        initialLoad ? fallback : next.some((item) => item.id === current) ? current : fallback,
+        initialLoad
+          ? portsSourceMemory.resolve(ids, fallback)
+          : ids.includes(current)
+            ? current
+            : fallback,
       );
     } catch (cause) {
       setError(formatBackendError(cause));
@@ -370,6 +381,7 @@ export default function PortTool({ active }: { active: boolean }) {
                     return;
                   }
                   setSource(value || 'local');
+                  portsSourceMemory.remember(value);
                   setUserFilter('all');
                 }}
               >

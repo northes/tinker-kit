@@ -43,6 +43,7 @@ import type {
 } from '../../bindings/tinkerkit/models';
 import { useWorkspaceTabTitle } from '../app/workspace-tab-title';
 import { formatBackendError } from '../lib/backend-error';
+import { createLastSourceMemory } from '../lib/last-source';
 import { imageTaskMeasure, taskMeasurePercent } from '../lib/task-format';
 import { sendSystemNotification } from '../lib/task-notification-feedback';
 import { imageArchitectures } from '../lib/image-architectures';
@@ -277,6 +278,10 @@ function RegistryTransportFields({
   );
 }
 
+// 本次运行内最近一次选中的来源：新建的镜像管理标签沿用同一个来源，含「本机」。
+// 只活在内存里，不写 localStorage，也不跨重启恢复。
+const imagesSourceMemory = createLastSourceMemory();
+
 export default function ImageManagerTool({
   active,
   settings,
@@ -296,9 +301,17 @@ export default function ImageManagerTool({
   const sourceLabelId = useId();
   const sources = useMemo(() => resolveSources(settings.imageSources), [settings.imageSources]);
   const cliPath = settings.dockerCLIPath ?? '';
-  // 默认加载来源列表的首项；仅当用户在本工具内手动选择过且该来源仍存在时才保留选择。
+  // 默认加载来源列表的首项；用户在本工具内选过、且该来源仍存在时保留该选择；
+  // 新标签则先看本工具上次选中的来源（仍存在才行）。
   const [pickedSourceId, setPickedSourceId] = useState<string | null>(null);
-  const source = sources.find((item) => item.id === pickedSourceId) ?? sources[0] ?? LOCAL_SOURCE;
+  const source = useMemo(() => {
+    const ids = sources.map((item) => item.id);
+    const preferred =
+      pickedSourceId && ids.includes(pickedSourceId)
+        ? pickedSourceId
+        : imagesSourceMemory.resolve(ids, sources[0]?.id ?? LOCAL_SOURCE_ID);
+    return sources.find((item) => item.id === preferred) ?? sources[0] ?? LOCAL_SOURCE;
+  }, [sources, pickedSourceId]);
   const tabHostName = useMemo(() => sourceTabHostName(source, profiles), [source, profiles]);
   useWorkspaceTabTitle(tabHostName);
   const sourceProfileMissing = sourceMissingSSHProfile(source, profiles);
@@ -1355,6 +1368,7 @@ export default function ImageManagerTool({
                       return;
                     }
                     if (value) {
+                      imagesSourceMemory.remember(value);
                       setPickedSourceId(value);
                     }
                   }}

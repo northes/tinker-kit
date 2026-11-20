@@ -43,6 +43,7 @@ import {
 import type { PortForward, PortForwardRequest, PortSource } from '../../bindings/tinkerkit/models';
 import { formatBackendError } from '../lib/backend-error';
 import { isLocalSource, sourceLabel } from '../lib/local-source';
+import { createLastSourceMemory } from '../lib/last-source';
 import { useSSHProfiles } from './SSHProfileManagerDialog';
 import { SSHProfileFormField } from './SSHProfileFormField';
 import { ConfirmDialog } from './ConfirmDialog';
@@ -106,6 +107,10 @@ const initialForward: PortForwardRequest = {
 };
 
 const MANAGE_SOURCES_VALUE = '__manage-port-sources__';
+
+// 本次运行内最近一次用过的转发来源：「新建转发」表单默认沿用同一个来源。
+// 只活在内存里，不写 localStorage，也不跨重启恢复。
+const forwardSourceMemory = createLastSourceMemory();
 
 // 拖动列宽的把手宽度，固定不参与列宽持久化。
 const FORWARD_HANDLE_COLUMN_WIDTH = 40;
@@ -391,6 +396,7 @@ export default function PortForwardTool({ active }: { active: boolean }) {
     setFormError('');
     try {
       const saved = editingId ? await UpdateForward(editingId, form) : await AddForward(form);
+      forwardSourceMemory.remember(form.sourceID);
       setDialog(false);
       setEditingId(null);
       await refreshForwards();
@@ -470,7 +476,11 @@ export default function PortForwardTool({ active }: { active: boolean }) {
   });
   const newForwardRequest = (): PortForwardRequest => ({
     ...initialForward,
-    sourceID: forwardSourceOptions[0]?.value ?? '',
+    // 来源默认取本工具上次用过的那个（仍在选项里才行），否则回退到选项首项。
+    sourceID: forwardSourceMemory.resolve(
+      forwardSourceOptions.map((option) => option.value),
+      forwardSourceOptions[0]?.value ?? '',
+    ),
   });
   const openSourceManager = () => setManageOpen(true);
 
@@ -872,6 +882,8 @@ export default function PortForwardTool({ active }: { active: boolean }) {
                     return;
                   }
                   setForm((current) => ({ ...current, sourceID: value || '' }));
+                  // 表单里改过的来源就是下次新建转发的默认来源。
+                  forwardSourceMemory.remember(value);
                 }}
               >
                 <SelectTrigger id="forward-source" className="mt-1 w-full">

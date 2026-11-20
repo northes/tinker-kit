@@ -38,6 +38,7 @@ import { formatBackendError } from '../lib/backend-error';
 import { sendSystemNotification } from '../lib/task-notification-feedback';
 import { useWorkspaceTabTitle } from '../app/workspace-tab-title';
 import { isLocalSource, sourceLabel } from '../lib/local-source';
+import { createLastSourceMemory } from '../lib/last-source';
 import { ConfirmDialog } from './ConfirmDialog';
 import { LogFilterHistory } from '../../bindings/tinkerkit/configservice';
 import {
@@ -113,6 +114,10 @@ import {
   SelectValue,
 } from './ui/select';
 import { toast } from './ui/toast';
+
+// 本次运行内最近一次选中的目标：新建的容器与服务标签沿用同一个目标，含「本机」。
+// 只活在内存里，不写 localStorage，也不跨重启恢复。多选「已挑选」成员不纳入记忆。
+const serviceTargetMemory = createLastSourceMemory();
 
 export default function ServiceManagerTool({
   active,
@@ -247,20 +252,26 @@ export default function ServiceManagerTool({
     media.addEventListener('change', update);
     return () => media.removeEventListener('change', update);
   }, []);
-  // 浏览位置与监控会话独立；首次加载默认选中列表中的第一个目标，
-  // 之后保留当前目标，目标被移除时回退到第一个可用的目标。
+  // 浏览位置与监控会话独立；首次加载先看本工具上次查看的目标（仍在列表里才行），
+  // 否则默认选中列表中的第一个目标；之后保留当前目标，目标被移除时回退到第一个可用的目标。
   const syncTargets = (next: ServiceTarget[]) => {
     setTargets(next);
     const current = targetIDRef.current;
     if (targetInitialized.current && next.some((item) => item.id === current)) return;
-    targetInitialized.current = true;
     const fallback = next[0]?.id ?? 'local';
-    if (fallback === current) return;
+    const nextTarget = targetInitialized.current
+      ? fallback
+      : serviceTargetMemory.resolve(
+          next.map((item) => item.id),
+          fallback,
+        );
+    targetInitialized.current = true;
+    if (nextTarget === current) return;
     cancelInventory(current);
     inventoryLoadVersion.current++;
     setSelection(null);
     setInventory(null);
-    setTargetID(fallback);
+    setTargetID(nextTarget);
   };
 
   const load = async (nextTarget = targetID, refreshDetails = false) => {
@@ -500,6 +511,7 @@ export default function ServiceManagerTool({
   const selectTarget = (next: string | null) => {
     if (!next || next === targetID) return;
     targetInitialized.current = true;
+    serviceTargetMemory.remember(next);
     cancelInventory(targetID);
     inventoryLoadVersion.current++;
     setSelection(null);

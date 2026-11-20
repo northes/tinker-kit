@@ -50,6 +50,11 @@ tasks:
     cmds:
       - node --experimental-strip-types --test frontend/src/lib/local-source.test.mjs
 
+  test:last-source:
+    summary: Checks the in-memory last-source memory used by new tabs
+    cmds:
+      - node --experimental-strip-types --test frontend/src/lib/last-source.test.mjs
+
   test:image-tasks:
     summary: Checks image task snapshot ordering
     cmds:
