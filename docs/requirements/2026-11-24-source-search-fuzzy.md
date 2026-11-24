@@ -41,3 +41,7 @@
 ## 待定问题
 
 - 无。
+
+## 变更记录
+
+- 2026-11-24：实现与检查完成。检查确认无 P0/P1，评审快照为 `.impeccable/critique/2026-11-24T07-26-43Z__frontend-src-components-sourcecombobox-tsx.md`；遗留一条 P3（连续命中与按顺序命中在界面上没有视觉区分），按非目标不处理。
