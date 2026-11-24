@@ -51,8 +51,9 @@ type Config struct {
 	NtpServers              []string              `json:"ntpServers"`
 	NetworkTestSettings     NetworkTestSettings   `json:"networkTestSettings"`
 	NetworkTestSources      []NetworkTestSource   `json:"networkTestSources"`
-	JsonAutoFormatOnFill    bool                  `json:"jsonAutoFormatOnFill"`
-	TextAlwaysShowSearch    bool                  `json:"textAlwaysShowSearch"`
+	JsonAutoFormatOnFill       bool `json:"jsonAutoFormatOnFill"`
+	JsonFlattenKeyValueColumns bool `json:"jsonFlattenKeyValueColumns"`
+	TextAlwaysShowSearch       bool `json:"textAlwaysShowSearch"`
 	TextGeneratorSources    []TextGeneratorSource `json:"textGeneratorSources"`
 	DockerCLIPath           string                `json:"dockerCLIPath"`
 	ImageSources            []ImageSource         `json:"imageSources"`
@@ -242,7 +243,7 @@ func insertPortForwardsToolAfterPorts(tools []SidebarToolConfig) []SidebarToolCo
 }
 
 func defaultConfig() Config {
-	return Config{TrayMatchEnabled: true, TrayMatchTools: []string{"json", "time", "text", "base64", "diff", "jwt", "url"}, AutoCheckUpdates: true, TaskConcurrency: 4, TaskChunkConcurrency: 4, TaskNotificationMode: "unfocused", Language: "zh-CN", TabCloseActivation: "recent", TabCloseButton: "always", ShowTabIcons: false, TabWidthMode: "fixed", TabWidth: 128, SidebarTools: defaultSidebarTools(), ThemeMode: "dark", LightTheme: "default-light", DarkTheme: "default-dark", WindowOpacity: defaultWindowOpacity, WindowBlur: true, DiffClipboardTargetMode: "alternate", CodeEditorFontSize: 16, TimeResultOrder: []string{"local", "dateTime", "dateOnly", "timeOnly", "zonedIso8601", "rfc3339", "utc", "compact", "underscore", "unixSeconds", "unixMilliseconds", "unixNanoseconds"}, TimeWeekStart: "monday", NtpServers: defaultNtpServers(), NetworkTestSettings: defaultNetworkTestSettings(), NetworkTestSources: defaultNetworkTestSources(), JsonAutoFormatOnFill: true, ImageSources: defaultImageSources(), SSHProfiles: []SSHProfile{}, FileSources: []FileSource{}, ServiceTargets: defaultServiceTargets(), ServiceLogHighlight: true, ServiceLogCollapseLines: defaultServiceLogCollapseLines, PortSources: defaultPortSources(), PortForwardSources: defaultPortSources(), PortForwards: []PortForwardConfig{}, PortColumnWidths: PortColumnWidths{Ports: map[string][]int{}}}
+	return Config{TrayMatchEnabled: true, TrayMatchTools: []string{"json", "time", "text", "base64", "diff", "jwt", "url"}, AutoCheckUpdates: true, TaskConcurrency: 4, TaskChunkConcurrency: 4, TaskNotificationMode: "unfocused", Language: "zh-CN", TabCloseActivation: "recent", TabCloseButton: "always", ShowTabIcons: false, TabWidthMode: "fixed", TabWidth: 128, SidebarTools: defaultSidebarTools(), ThemeMode: "dark", LightTheme: "default-light", DarkTheme: "default-dark", WindowOpacity: defaultWindowOpacity, WindowBlur: true, DiffClipboardTargetMode: "alternate", CodeEditorFontSize: 16, TimeResultOrder: []string{"local", "dateTime", "dateOnly", "timeOnly", "zonedIso8601", "rfc3339", "utc", "compact", "underscore", "unixSeconds", "unixMilliseconds", "unixNanoseconds"}, TimeWeekStart: "monday", NtpServers: defaultNtpServers(), NetworkTestSettings: defaultNetworkTestSettings(), NetworkTestSources: defaultNetworkTestSources(), JsonAutoFormatOnFill: true, JsonFlattenKeyValueColumns: true, ImageSources: defaultImageSources(), SSHProfiles: []SSHProfile{}, FileSources: []FileSource{}, ServiceTargets: defaultServiceTargets(), ServiceLogHighlight: true, ServiceLogCollapseLines: defaultServiceLogCollapseLines, PortSources: defaultPortSources(), PortForwardSources: defaultPortSources(), PortForwards: []PortForwardConfig{}, PortColumnWidths: PortColumnWidths{Ports: map[string][]int{}}}
 }
 
 func normalizeThemeID(theme string, defaultID string) string {

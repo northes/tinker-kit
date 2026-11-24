@@ -66,6 +66,7 @@ export interface Config {
     "networkTestSettings": NetworkTestSettings;
     "networkTestSources": NetworkTestSource[] | null;
     "jsonAutoFormatOnFill": boolean;
+    "jsonFlattenKeyValueColumns": boolean;
     "textAlwaysShowSearch": boolean;
     "textGeneratorSources": TextGeneratorSource[] | null;
     "dockerCLIPath": string;

@@ -14,12 +14,23 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '.
 import { ScrollArea } from './ui/scroll-area';
 import { Button } from './ui/button';
 import { createJsonTableExpansion, jsonTableChildPath } from '../lib/json-table-expansion';
+import {
+  getJsonTableCellValue,
+  jsonTableNumericColumnKeys,
+  planJsonTableColumns,
+  type JsonTableColumnPlan,
+} from '../lib/json-table-pivot';
 import { formatJsonTimeValue, type JsonTimeFormat } from '../lib/json-time-format';
 
 type Props = { value: unknown; t: (key: string) => string };
 type ValueProps = Props & { path: string };
 const ExpansionContext = createContext<ReturnType<typeof createJsonTableExpansion> | null>(null);
 const TimeFormatContext = createContext<JsonTimeFormat>('none');
+const FlattenKeyValueContext = createContext(false);
+
+function columnPlanId(column: JsonTableColumnPlan): string {
+  return column.kind === 'field' ? column.field : column.header;
+}
 const isContainer = (value: unknown): value is Record<string, unknown> | unknown[] =>
   value !== null && typeof value === 'object';
 
@@ -197,25 +208,15 @@ function ObjectArray({
   path,
   stickyHeader = true,
 }: ValueProps & { value: Record<string, unknown>[]; stickyHeader?: boolean }) {
-  const keys = useMemo(() => [...new Set(value.flatMap((row) => Object.keys(row)))], [value]);
-  const numericKeys = useMemo(() => {
-    const numeric = new Set<string>();
-    for (const key of keys) {
-      let seenNumber = false;
-      let allNumeric = true;
-      for (const row of value) {
-        const item = row[key];
-        if (item === undefined || item === null) continue;
-        if (typeof item === 'number') seenNumber = true;
-        else {
-          allNumeric = false;
-          break;
-        }
-      }
-      if (seenNumber && allNumeric) numeric.add(key);
-    }
-    return numeric;
-  }, [keys, value]);
+  const flattenKeyValueColumns = useContext(FlattenKeyValueContext);
+  const columnPlan = useMemo(
+    () => planJsonTableColumns(value, flattenKeyValueColumns),
+    [value, flattenKeyValueColumns],
+  );
+  const numericKeys = useMemo(
+    () => jsonTableNumericColumnKeys(value, columnPlan),
+    [value, columnPlan],
+  );
   const columns = useMemo<ColumnDef<Record<string, unknown>>[]>(
     () => [
       {
@@ -226,21 +227,27 @@ function ObjectArray({
         enableSorting: false,
         enableHiding: false,
       },
-      ...keys.map((key) => ({
-        accessorKey: key,
-        header: key,
-        cell: ({ row }) => (
-          <ValueCell
-            value={row.original[key]}
-            t={t}
-            path={jsonTableChildPath(jsonTableChildPath(path, row.index), key)}
-            numeric={numericKeys.has(key)}
-            fieldKey={key}
-          />
-        ),
-      })),
+      ...columnPlan.map((plan) => {
+        const columnId = columnPlanId(plan);
+        const fieldKey = plan.kind === 'field' ? plan.field : plan.fieldKey;
+        const cellPathKey = plan.kind === 'field' ? plan.field : plan.arrayField;
+        return {
+          id: columnId,
+          accessorKey: plan.kind === 'field' ? plan.field : columnId,
+          header: plan.kind === 'field' ? plan.field : plan.header,
+          cell: ({ row }) => (
+            <ValueCell
+              value={getJsonTableCellValue(row.original, plan)}
+              t={t}
+              path={jsonTableChildPath(jsonTableChildPath(path, row.index), cellPathKey)}
+              numeric={numericKeys.has(columnId)}
+              fieldKey={fieldKey}
+            />
+          ),
+        };
+      }),
     ],
-    [keys, numericKeys, path, t],
+    [columnPlan, numericKeys, path, t],
   );
   const table = useReactTable({ data: value, columns, getCoreRowModel: getCoreRowModel() });
   const tableView = (
@@ -251,7 +258,11 @@ function ObjectArray({
             {group.headers.map((header) => (
               <TableHead
                 key={header.id}
-                className={numericKeys.has(header.column.id) ? 'is-numeric' : undefined}
+                className={
+                  header.column.id !== '__rowIndex' && numericKeys.has(header.column.id)
+                    ? 'is-numeric'
+                    : undefined
+                }
               >
                 {flexRender(header.column.columnDef.header, header.getContext())}
               </TableHead>
@@ -330,14 +341,21 @@ export function JsonTablePreview({
   t,
   active,
   timeFormat,
-}: Props & { active: boolean; timeFormat: JsonTimeFormat }) {
+  flattenKeyValueColumns = false,
+}: Props & {
+  active: boolean;
+  timeFormat: JsonTimeFormat;
+  flattenKeyValueColumns?: boolean;
+}) {
   const [expansion] = useState(createJsonTableExpansion);
   // 只保留轻量展开记录，隐藏和等待检测时不构建表格及其行模型。
   if (!active) return null;
   return (
     <ExpansionContext.Provider value={expansion}>
       <TimeFormatContext.Provider value={timeFormat}>
-        <TableValue value={value} t={t} />
+        <FlattenKeyValueContext.Provider value={flattenKeyValueColumns}>
+          <TableValue value={value} t={t} />
+        </FlattenKeyValueContext.Provider>
       </TimeFormatContext.Provider>
     </ExpansionContext.Provider>
   );

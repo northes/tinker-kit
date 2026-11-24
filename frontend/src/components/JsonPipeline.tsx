@@ -706,12 +706,14 @@ export function PipelineOutputPane({
   foldExt,
   active,
   timeFormat,
+  flattenKeyValueColumns,
 }: {
   evaluation: PipelineEvaluation;
   theme: Extension;
   foldExt: Extension;
   active: boolean;
   timeFormat: JsonTimeFormat;
+  flattenKeyValueColumns: boolean;
 }) {
   const { t } = useTranslation();
   const [outputTableMode, setOutputTableMode] = useState(false);
@@ -830,6 +832,7 @@ export function PipelineOutputPane({
                 t={t}
                 active={active && outputTableMode}
                 timeFormat={timeFormat}
+                flattenKeyValueColumns={flattenKeyValueColumns}
               />
             ) : (
               <div className="json-table-scroll">

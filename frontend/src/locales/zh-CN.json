@@ -173,6 +173,8 @@
     "repairFailedDesc": "仍无法将内容解析为 JSON",
     "repairPrompt": "内容不是有效的 JSON，是否尝试修复？",
     "autoFormatOnFill": "填入后自动格式化",
+    "flattenKeyValueColumns": "展平键值列",
+    "flattenKeyValueColumnsHint": "仅影响表格预览；对象数组里、恰好两个标量键的数组会摊成列。",
     "displaySettings": "显示设置",
     "formatTime": "格式化时间",
     "formatTimeHint": "仅影响表格预览，不改动原始 JSON；ISO 8601 使用 UTC",

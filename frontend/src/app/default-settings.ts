@@ -71,6 +71,7 @@ export const defaultSettings: Settings = {
   },
   networkTestSources: [{ id: 'local', name: '本机', kind: 'local', sshProfileID: '' }],
   jsonAutoFormatOnFill: true,
+  jsonFlattenKeyValueColumns: true,
   textAlwaysShowSearch: false,
   textGeneratorSources: [],
   dockerCLIPath: '',

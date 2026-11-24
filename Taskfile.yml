@@ -98,7 +98,7 @@ tasks:
   test:json-preview:
     summary: Checks JSON preview and expansion state across tool switches
     cmds:
-      - node --experimental-strip-types --test frontend/src/components/JsonTool.test.mjs frontend/src/lib/json-table-expansion.test.mjs frontend/src/lib/json-time-format.test.mjs
+      - node --experimental-strip-types --test frontend/src/components/JsonTool.test.mjs frontend/src/lib/json-table-expansion.test.mjs frontend/src/lib/json-table-pivot.test.mjs frontend/src/lib/json-time-format.test.mjs
 
   format:go:files:
     summary: Formats selected Go files

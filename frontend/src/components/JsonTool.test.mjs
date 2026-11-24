@@ -101,6 +101,7 @@ function tablePreviewElement(expression, active, status) {
   const context = {
     React: { createElement },
     JsonTablePreview,
+    flattenKeyValueColumns: true,
     inputTableMode: true,
     resultTableMode: true,
     timeFormat: 'none',
@@ -138,6 +139,7 @@ test('切走和等待重新检测时，输入及结果表格的展开状态宿�
       const element = tablePreviewElement(expression, active, status);
       assert.ok(element, `active=${active}, status=${status}`);
       assert.equal(element.props.active, active && status === 'ok');
+      assert.equal(element.props.flattenKeyValueColumns, true);
     }
   }
 });
@@ -154,7 +156,7 @@ test('实际预览和单元格函数在隐藏、等待检测及数据重解析�
     .filter(
       (node) =>
         ts.isFunctionDeclaration(node) &&
-        ['ValueCell', 'ContainerCell', 'JsonTablePreview', 'scalar', 'stopToggle'].includes(
+        ['ValueCell', 'ContainerCell', 'JsonTablePreview', 'scalar', 'stopToggle', 'leafValueTitle'].includes(
           node.name?.text,
         ),
     )
@@ -169,11 +171,17 @@ test('实际预览和单元格函数在隐藏、等待检测及数据重解析�
     isContainer: (value) => value !== null && typeof value === 'object',
     // 仅替换 Hook 调度；执行的状态归属、快照读取和点击逻辑均来自实际组件。
     useState: (initialize) => [(state ??= initialize())],
-    useContext: (ctx) => (ctx === context.TimeFormatContext ? currentTimeFormat : state),
+    flattenKeyValueColumns: true,
+    useContext: (ctx) => {
+      if (ctx === context.TimeFormatContext) return currentTimeFormat;
+      if (ctx === context.FlattenKeyValueContext) return context.flattenKeyValueColumns;
+      return state;
+    },
     useCallback: (callback) => callback,
     useSyncExternalStore: (_subscribe, getSnapshot) => getSnapshot(),
     ExpansionContext: { Provider: 'provider' },
     TimeFormatContext: { Provider: 'time-format' },
+    FlattenKeyValueContext: { Provider: 'flatten' },
     TableCell: 'td',
     TableValue: 'table-value',
     NestedValue: 'nested-value',
@@ -207,7 +215,8 @@ test('实际预览和单元格函数在隐藏、等待检测及数据重解析�
   currentTimeFormat = 'iso';
   const timestamp = 1704164645123;
   const timeCell = ValueCell({ value: timestamp, t: props.t, path: '/time', fieldKey: 'time' });
-  assert.equal(timeCell.props.children, '2024-01-02T03:04:05.123Z');
+  // ValueCell 把格式化后的时间包在 json-table-leaf-text 里
+  assert.equal(timeCell.props.children.props.children, '2024-01-02T03:04:05.123Z');
   assert.equal(timeCell.props.title, String(timestamp));
   const plainCell = ValueCell({ value: timestamp, t: props.t, path: '/id', fieldKey: 'id' });
   assert.equal(plainCell.props.children.props.children, String(timestamp));

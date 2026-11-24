@@ -407,6 +407,8 @@ export default function JsonTool({
   theme,
   autoFormatOnFill,
   onAutoFormatOnFillChange,
+  flattenKeyValueColumns,
+  onFlattenKeyValueColumnsChange,
   pending,
   clearPending,
 }: {
@@ -414,6 +416,8 @@ export default function JsonTool({
   theme: string;
   autoFormatOnFill: boolean;
   onAutoFormatOnFillChange: (value: boolean) => void;
+  flattenKeyValueColumns: boolean;
+  onFlattenKeyValueColumnsChange: (value: boolean) => void;
   pending: PendingAction | null;
   clearPending: () => void;
 }) {
@@ -1351,6 +1355,7 @@ export default function JsonTool({
                                 t={t}
                                 active={active && inputInspection.status === 'ok'}
                                 timeFormat={timeFormat}
+                                flattenKeyValueColumns={flattenKeyValueColumns}
                               />
                             ) : null
                           }
@@ -1391,6 +1396,7 @@ export default function JsonTool({
                           foldExt={foldExt}
                           active={active && pipelineMode}
                           timeFormat={timeFormat}
+                          flattenKeyValueColumns={flattenKeyValueColumns}
                         />
                       </div>
                     </ResizablePanel>
@@ -1568,6 +1574,7 @@ export default function JsonTool({
                                   t={t}
                                   active={active && schema && resultInspection.status === 'ok'}
                                   timeFormat={timeFormat}
+                                  flattenKeyValueColumns={flattenKeyValueColumns}
                                 />
                               </div>
                             )}
@@ -1674,6 +1681,18 @@ export default function JsonTool({
               <span>{t('jsonTool.autoFormatOnFill')}</span>
               <Checkbox checked={autoFormatOnFill} onCheckedChange={onAutoFormatOnFillChange} />
             </Label>
+            <div className="flex flex-col gap-2">
+              <Label className="flex items-center justify-between gap-4">
+                <span>{t('jsonTool.flattenKeyValueColumns')}</span>
+                <Checkbox
+                  checked={flattenKeyValueColumns}
+                  onCheckedChange={onFlattenKeyValueColumnsChange}
+                />
+              </Label>
+              <p className="text-xs leading-5 text-muted-foreground">
+                {t('jsonTool.flattenKeyValueColumnsHint')}
+              </p>
+            </div>
             <Label className="flex items-center justify-between gap-4">
               <span>{t('jsonTool.showInvisibleChars')}</span>
               <Checkbox checked={showInvisibleChars} onCheckedChange={setShowInvisibleChars} />

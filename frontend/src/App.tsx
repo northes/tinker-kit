@@ -1081,6 +1081,10 @@ function AppShell() {
             onAutoFormatOnFillChange={(jsonAutoFormatOnFill) =>
               setSettings((current) => ({ ...current, jsonAutoFormatOnFill }))
             }
+            flattenKeyValueColumns={settings.jsonFlattenKeyValueColumns !== false}
+            onFlattenKeyValueColumnsChange={(jsonFlattenKeyValueColumns) =>
+              setSettings((current) => ({ ...current, jsonFlattenKeyValueColumns }))
+            }
             pending={pending}
             clearPending={clearDelivered}
           />

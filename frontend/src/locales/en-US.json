@@ -173,6 +173,8 @@
     "repairFailedDesc": "The content still can't be parsed as JSON",
     "repairPrompt": "The content is not valid JSON. Try to repair it?",
     "autoFormatOnFill": "Auto-format after fill",
+    "flattenKeyValueColumns": "Flatten key-value columns",
+    "flattenKeyValueColumnsHint": "Applies only to table preview. In object arrays, arrays whose elements are objects with exactly two scalar keys are flattened into columns.",
     "displaySettings": "Display settings",
     "formatTime": "Format time",
     "formatTimeHint": "Only changes table previews, not the original JSON; ISO 8601 uses UTC",
