@@ -1,6 +1,7 @@
 import { GearSix } from '@phosphor-icons/react';
 import { useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { selectAllOnFocus } from '@/lib/select-all-on-focus';
 import { normalizeSourceSearch } from '@/lib/source-search';
 import { Button } from './ui/button';
 import {
@@ -107,6 +108,9 @@ export function SourceCombobox({
         disabled={disabled}
         placeholder={placeholder}
         triggerLabel={label}
+        onFocus={selectAllOnFocus}
+        onMouseDown={selectAllOnFocus}
+        onMouseUp={selectAllOnFocus}
         onBlur={(event) => {
           if (!manageButtonRef.current || event.relatedTarget !== manageButtonRef.current) {
             setDraft(null);

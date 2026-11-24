@@ -42,6 +42,7 @@ import {
 } from '../../bindings/tinkerkit/portservice';
 import type { PortForward, PortForwardRequest, PortSource } from '../../bindings/tinkerkit/models';
 import { formatBackendError } from '../lib/backend-error';
+import { selectAllOnFocus } from '../lib/select-all-on-focus';
 import { isLocalSource, sourceLabel } from '../lib/local-source';
 import { createLastSourceMemory } from '../lib/last-source';
 import { useSSHProfiles } from './SSHProfileManagerDialog';
@@ -921,6 +922,9 @@ export default function PortForwardTool({ active }: { active: boolean }) {
                   className="mt-1"
                   required
                   value={form.listenHost}
+                  onFocus={selectAllOnFocus}
+                  onMouseDown={selectAllOnFocus}
+                  onMouseUp={selectAllOnFocus}
                   onChange={(event) =>
                     setForm((current) => ({ ...current, listenHost: event.target.value }))
                   }
@@ -962,6 +966,9 @@ export default function PortForwardTool({ active }: { active: boolean }) {
                   className="mt-1"
                   required
                   value={form.targetHost}
+                  onFocus={selectAllOnFocus}
+                  onMouseDown={selectAllOnFocus}
+                  onMouseUp={selectAllOnFocus}
                   onChange={(event) =>
                     setForm((current) => ({ ...current, targetHost: event.target.value }))
                   }

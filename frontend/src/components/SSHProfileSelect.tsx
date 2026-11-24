@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { GearSix } from '@phosphor-icons/react';
 import type { SSHProfile } from '../../bindings/tinkerkit/models';
+import { selectAllOnFocus } from '@/lib/select-all-on-focus';
 import { normalizeSourceSearch } from '@/lib/source-search';
 import { cn } from '@/lib/utils';
 import { emptyProfile, useSSHProfiles } from './SSHProfileManagerDialog';
@@ -109,6 +110,9 @@ export function SSHProfileSelect({
           placeholder={placeholderText}
           aria-label={placeholderText}
           triggerLabel={placeholderText}
+          onFocus={selectAllOnFocus}
+          onMouseDown={selectAllOnFocus}
+          onMouseUp={selectAllOnFocus}
           onBlur={() => setInputValue(selectedLabel)}
         />
         <ComboboxContent>

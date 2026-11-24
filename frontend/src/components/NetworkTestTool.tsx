@@ -22,6 +22,7 @@ import {
   SaveNetworkTestSources,
 } from '../../bindings/tinkerkit/configservice';
 import { formatBackendError } from '../lib/backend-error';
+import { selectAllOnFocus } from '../lib/select-all-on-focus';
 import { sendSystemNotification } from '../lib/task-notification-feedback';
 import { useWorkspaceTabTitle } from '../app/workspace-tab-title';
 import { isLocalSource, sourceLabel } from '../lib/local-source';
@@ -819,6 +820,9 @@ export default function NetworkTestTool({
                     ref={targetRef}
                     value={target}
                     onChange={(event) => setTarget(event.target.value)}
+                    onFocus={selectAllOnFocus}
+                    onMouseDown={selectAllOnFocus}
+                    onMouseUp={selectAllOnFocus}
                     onKeyDown={submitOnEnter}
                     disabled={running}
                     placeholder={t(
