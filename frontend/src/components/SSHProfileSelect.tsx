@@ -1,9 +1,9 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { GearSix } from '@phosphor-icons/react';
 import type { SSHProfile } from '../../bindings/tinkerkit/models';
 import { selectAllOnFocus } from '@/lib/select-all-on-focus';
-import { normalizeSourceSearch } from '@/lib/source-search';
+import { bestSourceSearchRank, orderBySourceSearch } from '@/lib/source-search';
 import { cn } from '@/lib/utils';
 import { emptyProfile, useSSHProfiles } from './SSHProfileManagerDialog';
 import { Button } from './ui/button';
@@ -33,13 +33,13 @@ function profileAddress(profile: SSHProfile) {
   return `${profile.username ? `${profile.username}@` : ''}${host}:${profile.port || 22}`;
 }
 
-// 过滤条件：配置名称、user@host:port、本机别名，忽略大小写与常见分隔符。
+// 过滤字段：配置名称、user@host:port、本机别名。
+function profileSearchFields(profile: SSHProfile) {
+  return [profile.name, profileAddress(profile), profile.originAlias];
+}
+
 function matchesProfile(profile: SSHProfile, query: string) {
-  const needle = normalizeSourceSearch(query.trim());
-  if (!needle) return true;
-  return [profile.name, profileAddress(profile), profile.originAlias].some((field) =>
-    normalizeSourceSearch(field).includes(needle),
-  );
+  return bestSourceSearchRank(profileSearchFields(profile), query) !== null;
 }
 
 export function SSHProfileSelect({
@@ -69,9 +69,28 @@ export function SSHProfileSelect({
   const selectedLabel = value ? (profilesByID.get(value)?.name ?? '') : '';
   // 输入框内容只是过滤文本：选中项变化时同步为配置名称，没有选中则为空。
   const [inputValue, setInputValue] = useState(selectedLabel);
+  const [open, setOpen] = useState(false);
+  // 打开时输入框里是已选名称，不算筛选；用户改过文字后才按查询排序。
+  const [queryEdited, setQueryEdited] = useState(false);
   useEffect(() => {
     setInputValue(selectedLabel);
   }, [selectedLabel]);
+  const rankedItems = useMemo(
+    () =>
+      orderBySourceSearch(
+        items,
+        queryEdited ? inputValue : '',
+        (profileID) => {
+          const profile = profilesByID.get(profileID);
+          return profile ? profileSearchFields(profile) : [];
+        },
+        // 「配置已失效」仍参与匹配，命中时留在列表末尾，不跟普通结果抢位置。
+        missing ? (profileID) => profileID === value : undefined,
+      ),
+    [items, queryEdited, inputValue, profilesByID, missing, value],
+  );
+  const rankedWhileOpenRef = useRef(rankedItems);
+  if (open) rankedWhileOpenRef.current = rankedItems;
   const disabledState = disabled || empty;
   const placeholderText = empty ? t('sshProfiles.empty') : (placeholder ?? t('sshProfiles.title'));
 
@@ -86,6 +105,11 @@ export function SSHProfileSelect({
           onValueChange(next ?? '');
         }}
         inputValue={inputValue}
+        onOpenChange={(next, details) => {
+          setOpen(next);
+          // 输入文字把列表打开时，同一次事件已经开始筛选，不能把这次输入清掉。
+          if (next && details.reason !== 'input-change') setQueryEdited(false);
+        }}
         onInputValueChange={(next, details) => {
           // 浮层关闭时 Base UI 把 Esc 当“清空选中值”，这里只当取消过滤：保留已选配置，
           // 并让 Esc 继续传给外层弹窗（关闭列表后再按 Esc 可退出弹窗）。
@@ -95,12 +119,14 @@ export function SSHProfileSelect({
             return;
           }
           setInputValue(next);
+          if (details.reason === 'input-change') setQueryEdited(true);
         }}
         itemToStringLabel={(profileID) => profilesByID.get(profileID)?.name ?? ''}
         filter={(profileID, query) => {
           const profile = profilesByID.get(profileID);
           return profile ? matchesProfile(profile, query) : false;
         }}
+        filteredItems={open ? rankedItems : rankedWhileOpenRef.current}
         disabled={disabledState}
       >
         <ComboboxInput

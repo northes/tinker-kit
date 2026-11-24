@@ -1,8 +1,8 @@
 import { GearSix } from '@phosphor-icons/react';
-import { useRef, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { selectAllOnFocus } from '@/lib/select-all-on-focus';
-import { normalizeSourceSearch } from '@/lib/source-search';
+import { bestSourceSearchRank, orderBySourceSearch } from '@/lib/source-search';
 import { Button } from './ui/button';
 import {
   Combobox,
@@ -28,8 +28,12 @@ type SourceComboboxProps = {
   className?: string;
 };
 
+function sourceFields(item: SourceOption) {
+  return [item.label];
+}
+
 function matchesSource(item: SourceOption, query: string) {
-  return normalizeSourceSearch(item.label).includes(normalizeSourceSearch(query));
+  return bestSourceSearchRank(sourceFields(item), query) !== null;
 }
 
 export function SourceCombobox({
@@ -50,6 +54,15 @@ export function SourceCombobox({
   const inputRef = useRef<HTMLInputElement>(null);
   const manageButtonRef = useRef<HTMLButtonElement>(null);
   const selected = items.find((item) => item.value === value) ?? null;
+  // draft 为空表示还没输入筛选，列表保持原顺序。输入后连续子串排在按顺序命中之前。
+  const rankedItems = useMemo(
+    () => orderBySourceSearch(items, draft ?? '', sourceFields),
+    [items, draft],
+  );
+  // 关闭时会清掉 draft。冻住打开期间的排序，避免退出动画闪回全量列表。
+  // 重新打开且尚未输入时仍传原顺序；Base UI 在选中标签未改前会忽略这份外部列表。
+  const rankedWhileOpenRef = useRef(rankedItems);
+  if (open) rankedWhileOpenRef.current = rankedItems;
 
   function closePopup() {
     setOpen(false);
@@ -86,6 +99,7 @@ export function SourceCombobox({
         }
       }}
       filter={matchesSource}
+      filteredItems={open ? rankedItems : rankedWhileOpenRef.current}
       open={open}
       onOpenChange={(next, details) => {
         if (next) {
