@@ -529,32 +529,7 @@ export default function TextTool({
     <Reveal index={0} fill active={active}>
       <ToolLayout>
         <ToolLayoutContent className="grid grid-rows-[minmax(0,1fr)_auto] gap-3">
-          <div
-            className="flex min-h-0 min-w-0 flex-col gap-2 font-mono text-[10px] font-medium uppercase tracking-[.04em] text-muted-foreground"
-            {...fileDrop.dropProps}
-          >
-            <span className="flex min-w-0 items-center justify-between gap-2">
-              <span>{t('textTool.input')}</span>
-              <span className="flex min-w-0 items-center gap-3">
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="h-7 flex-none gap-1.5 px-2 text-[11px]"
-                  onClick={() => void fileDrop.pick()}
-                >
-                  <UploadSimple data-icon="inline-start" weight="regular" />
-                  {t('textTool.openFile')}
-                </Button>
-                <Label className="min-w-0 gap-1.5 text-[11px] font-normal normal-case tracking-normal text-muted-foreground">
-                  <Checkbox
-                    checked={alwaysShowSearch}
-                    onCheckedChange={(checked) => onAlwaysShowSearchChange(checked === true)}
-                  />
-                  <span>{t('textTool.alwaysShowSearch')}</span>
-                </Label>
-              </span>
-            </span>
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col" {...fileDrop.dropProps}>
             <div ref={paneRef} className="relative flex min-h-0 min-w-0 flex-1">
               <CodeMirror
                 className={editorSurfaceClass}
@@ -634,9 +609,30 @@ export default function TextTool({
           </div>
         </ToolLayoutContent>
         <ToolLayoutFooter>
-          <ToolActionBar
-            label={t('textTool.actions')}
-            actions={[
+          <div className="flex items-center justify-between gap-3 pt-3">
+            <div className="flex min-w-0 flex-none items-center gap-3">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-7 flex-none gap-1.5 px-2 text-[11px]"
+                onClick={() => void fileDrop.pick()}
+              >
+                <UploadSimple data-icon="inline-start" weight="regular" />
+                {t('textTool.openFile')}
+              </Button>
+              <Label className="min-w-0 gap-1.5 text-[11px] font-normal text-muted-foreground">
+                <Checkbox
+                  checked={alwaysShowSearch}
+                  onCheckedChange={(checked) => onAlwaysShowSearchChange(checked === true)}
+                />
+                <span>{t('textTool.alwaysShowSearch')}</span>
+              </Label>
+            </div>
+            <ToolActionBar
+              className="mt-0 ml-auto shrink-0"
+              label={t('textTool.actions')}
+              actions={[
               {
                 key: 'clear',
                 label: t('textTool.clear'),
@@ -701,7 +697,8 @@ export default function TextTool({
                 onPress: copy,
               },
             ]}
-          />
+            />
+          </div>
         </ToolLayoutFooter>
         {affixOpen ? (
           <AffixDialog
