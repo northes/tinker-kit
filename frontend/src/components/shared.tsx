@@ -36,7 +36,9 @@ export { parseJsonLoose, stripJsonComments, stripTrailingCommas } from '../lib/j
 
 export type ToolId =
   | 'json'
-  | 'time'
+  | 'time-convert'
+  | 'date-calculator'
+  | 'real-time'
   | 'text'
   | 'text-generator'
   | 'base64'

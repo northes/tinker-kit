@@ -254,7 +254,7 @@ func TestNormalizeConfigFavoritePaths(t *testing.T) {
 }
 
 func TestNormalizeConfigTrayMatchTools(t *testing.T) {
-	defaultTools := []string{"json", "time", "text", "base64", "diff", "jwt", "url"}
+	defaultTools := []string{"json", "time-convert", "text", "base64", "diff", "jwt", "url"}
 	tests := []struct {
 		name string
 		in   []string

@@ -204,6 +204,10 @@ const JsonTool = lazy(() => import('./components/JsonTool'));
 
 const TimeTool = lazy(() => import('./components/TimeTool'));
 
+const DateCalculatorTool = lazy(() => import('./components/DateCalculatorTool'));
+
+const RealTimeTool = lazy(() => import('./components/RealTimeTool'));
+
 const TextTool = lazy(() => import('./components/TextTool'));
 
 const TextGeneratorTool = lazy(() => import('./components/TextGeneratorTool'));
@@ -1119,13 +1123,13 @@ function AppShell() {
     );
     const trayTools = new Set(
       (
-        currentSettings.trayMatchTools ?? ['json', 'time', 'text', 'base64', 'diff', 'jwt', 'url']
+        currentSettings.trayMatchTools ?? ['json', 'time-convert', 'text', 'base64', 'diff', 'jwt', 'url']
       ).filter((id) => enabledSidebarTools.has(id)),
     );
     let tool: ToolId | null = null;
     let mode: string | undefined;
     const parsedTime = parseTimeInput(s);
-    if (parsedTime && trayTools.has('time')) tool = 'time';
+    if (parsedTime && trayTools.has('time-convert')) tool = 'time-convert';
     else if (trayTools.has('url') && parseSupportedUrl(s)) tool = 'url';
     else if (trayTools.has('jwt') && detectJwt(s)) tool = 'jwt';
     else {
@@ -1182,25 +1186,33 @@ function AppShell() {
             clearPending={clearDelivered}
           />
         );
-      case 'time':
+      case 'time-convert':
         return (
           <TimeTool
             active={active}
             resultOrder={settings.timeResultOrder ?? []}
             hiddenResults={settings.hiddenTimeResults ?? []}
             weekStart={settings.timeWeekStart === 'sunday' ? 'sunday' : 'monday'}
-            ntpServers={settings.ntpServers ?? []}
             onSaveResults={(timeResultOrder, hiddenTimeResults) =>
               setSettings((current) => ({ ...current, timeResultOrder, hiddenTimeResults }))
             }
             onWeekStartChange={(timeWeekStart) =>
               setSettings((current) => ({ ...current, timeWeekStart }))
             }
+            pending={pending}
+            clearDelivered={clearDelivered}
+          />
+        );
+      case 'date-calculator':
+        return <DateCalculatorTool active={active} />;
+      case 'real-time':
+        return (
+          <RealTimeTool
+            active={active}
+            ntpServers={settings.ntpServers ?? []}
             onNtpServersChange={(ntpServers) =>
               setSettings((current) => ({ ...current, ntpServers }))
             }
-            pending={pending}
-            clearPending={clearDelivered}
           />
         );
       case 'text':

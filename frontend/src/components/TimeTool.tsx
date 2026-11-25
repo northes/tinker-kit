@@ -48,17 +48,13 @@ import {
   Reveal,
   ToolLayoutContent,
   ToolLayout,
-  ToolLayoutTabs,
   undoRedoKey,
   useFocusOnActivate,
   useHistory,
   type PendingAction,
 } from './shared';
-import DateCalculator from './DateCalculator';
 import DateTimePickerPopover from './DateTimePickerPopover';
-import RealTimePanel from './RealTimePanel';
 import { TimezonePickerDialog } from './TimezonePickerDialog';
-import { TabsContent } from './ui/tabs';
 import {
   TIME_RESULT_IDS,
   formatTimeInZone,
@@ -74,7 +70,6 @@ import { toast } from './ui/toast';
 
 const resultIds = TIME_RESULT_IDS;
 type TimeResultId = TimeResultIdType;
-type TimeToolMode = 'convert' | 'dateCalculator' | 'realTime';
 const timePresetGroups: Array<{ primary: TimePreset; options: TimePreset[] }> = [
   { primary: 'now', options: ['yesterday', 'tomorrow'] },
   { primary: 'sevenDaysAgo', options: [] },
@@ -225,10 +220,8 @@ export default function TimeTool({
   resultOrder,
   hiddenResults,
   weekStart,
-  ntpServers,
   onSaveResults,
   onWeekStartChange,
-  onNtpServersChange,
   pending,
   clearPending,
 }: {
@@ -236,10 +229,8 @@ export default function TimeTool({
   resultOrder: string[];
   hiddenResults: string[];
   weekStart: TimeWeekStart;
-  ntpServers: string[];
   onSaveResults: (order: string[], hidden: string[]) => void;
   onWeekStartChange: (weekStart: TimeWeekStart) => void;
-  onNtpServersChange: (ntpServers: string[]) => void;
   pending: PendingAction | null;
   clearPending: () => void;
 }) {
@@ -249,7 +240,6 @@ export default function TimeTool({
   const zones = useMemo(() => getTimeZoneOptions(i18n.language), [i18n.language]);
   const consumed = useRef<PendingAction | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
-  const [mode, setMode] = useState<TimeToolMode>('convert');
   const [zonePickerOpen, setZonePickerOpen] = useState(false);
   const [editing, setEditing] = useState(false);
   const [draftOrder, setDraftOrder] = useState<TimeResultId[]>(() => normalizeOrder(resultOrder));
@@ -305,11 +295,9 @@ export default function TimeTool({
     setInput(timestamp, { isolate: true });
   };
   useEffect(() => {
-    if (!pending || pending.tool !== 'time' || consumed.current === pending) return;
+    if (!pending || pending.tool !== 'time-convert' || consumed.current === pending) return;
     consumed.current = pending;
     clearPending();
-    // 输入框与时区都属于转换页；剪贴板匹配等来源填入数据时若停留在其它 tab，用户看不到结果。
-    setMode('convert');
     if (pending.action === 'refresh') {
       applyTimePreset('now');
       return;
@@ -366,20 +354,7 @@ export default function TimeTool({
     <Reveal index={0} fill active={active}>
       <ToolLayout>
         <ToolLayoutContent>
-          <ToolLayoutTabs
-            value={mode}
-            onValueChange={(value) => {
-              if (value === 'convert' || value === 'dateCalculator' || value === 'realTime')
-                setMode(value);
-            }}
-            items={[
-              { value: 'convert', label: t('timeTool.modes.convert') },
-              { value: 'dateCalculator', label: t('timeTool.modes.dateCalculator') },
-              { value: 'realTime', label: t('timeTool.modes.realTime') },
-            ]}
-          >
-            <TabsContent value="convert" keepMounted className="min-h-0 overflow-hidden">
-              <div className="grid h-full min-h-0 grid-rows-[auto_auto_auto_minmax(0,1fr)] px-1.5">
+          <div className="grid h-full min-h-0 grid-rows-[auto_auto_auto_minmax(0,1fr)] px-1.5">
                 {/* 解析时区是低频设置，压缩为输入行右侧的附属控件，不再单独占一行。 */}
                 <div className="grid grid-cols-[minmax(0,1fr)_auto] items-end gap-2">
                   <Label className="flex flex-col items-stretch gap-2 font-mono text-[10px] font-medium uppercase tracking-[.04em] text-muted-foreground">
@@ -599,31 +574,18 @@ export default function TimeTool({
                   </div>
                 )}
               </div>
-              <TimezonePickerDialog
-                open={zonePickerOpen}
-                onOpenChange={setZonePickerOpen}
-                zones={zones}
-                selectedIds={[]}
-                currentId={timeZone}
-                title={t('timeTool.timezone')}
-                onSelect={(zone) => {
-                  setTimeZone(zone);
-                  setZonePickerOpen(false);
-                }}
-              />
-            </TabsContent>
-            <TabsContent value="dateCalculator" keepMounted className="min-h-0 min-w-0">
-              <ScrollArea
-                className="h-full [padding-inline-end:var(--overlay-scrollbar-size)]"
-                options={{ overflow: { x: 'hidden' } }}
-              >
-                <DateCalculator />
-              </ScrollArea>
-            </TabsContent>
-            <TabsContent value="realTime" keepMounted className="min-h-0 overflow-hidden">
-              <RealTimePanel ntpServers={ntpServers} onNtpServersChange={onNtpServersChange} />
-            </TabsContent>
-          </ToolLayoutTabs>
+          <TimezonePickerDialog
+            open={zonePickerOpen}
+            onOpenChange={setZonePickerOpen}
+            zones={zones}
+            selectedIds={[]}
+            currentId={timeZone}
+            title={t('timeTool.timezone')}
+            onSelect={(zone) => {
+              setTimeZone(zone);
+              setZonePickerOpen(false);
+            }}
+          />
         </ToolLayoutContent>
       </ToolLayout>
     </Reveal>

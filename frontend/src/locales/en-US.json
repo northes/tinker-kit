@@ -71,9 +71,17 @@
       "name": "JSON Workspace",
       "description": "Format, minify and inspect paths"
     },
-    "time": {
-      "name": "Time Tools",
-      "description": "Convert times, calculate dates, and view real time"
+    "time-convert": {
+      "name": "Time Converter",
+      "description": "Convert timestamps and dates"
+    },
+    "date-calculator": {
+      "name": "Date Calculator",
+      "description": "Add, subtract, and compare dates"
+    },
+    "real-time": {
+      "name": "Real Time",
+      "description": "View real time from NTP"
     },
     "text": {
       "name": "Text Tool",
@@ -138,7 +146,9 @@
     "toggleLanguage": "Toggle language (current: {{current}})",
     "toggleFontSize": "Toggle font size (current: {{current}})",
     "openJson": "JSON Workspace",
-    "openTime": "Time Tools",
+    "openTimeConvert": "Time Converter",
+    "openDateCalculator": "Date Calculator",
+    "openRealTime": "Real Time",
     "openText": "Text Tool",
     "openTextGenerator": "Text Generator",
     "openBase64": "Base64",
@@ -440,11 +450,6 @@
       "ntpReset": "Reset to defaults",
       "ntpRemove": "Remove server {{index}}",
       "ntpInvalid": "\"{{server}}\" is not a valid host or host:port"
-    },
-    "modes": {
-      "convert": "Convert",
-      "dateCalculator": "Date calculator",
-      "realTime": "Real time"
     },
     "input": "Input",
     "placeholder": "Timestamp or date",

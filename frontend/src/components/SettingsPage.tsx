@@ -101,7 +101,7 @@ import {
 // Keep in sync with Go config normalization and the frontend's initial settings.
 const TRAY_MATCHABLE_TOOLS: readonly ToolId[] = [
   'json',
-  'time',
+  'time-convert',
   'text',
   'base64',
   'diff',

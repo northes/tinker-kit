@@ -136,7 +136,7 @@ func TestGetSSHConfigHostsAllowsConfigWithoutConcreteAliases(t *testing.T) {
 
 func TestNormalizeConfigImageSourcesAndSidebar(t *testing.T) {
 	cfg := Config{
-		SidebarTools: []SidebarToolConfig{{ID: "time", Enabled: false}, {ID: "time", Enabled: true}, {ID: "unknown", Enabled: true}},
+		SidebarTools: []SidebarToolConfig{{ID: "json", Enabled: false}, {ID: "time", Enabled: true}, {ID: "unknown", Enabled: true}},
 		ImageSources: []ImageSource{
 			{ID: "remote", Name: "远端", Kind: "ssh", SSHHost: "dev-box"},
 			{ID: "remote", Name: "重复", Kind: "ssh", SSHHost: "other"},
@@ -154,12 +154,15 @@ func TestNormalizeConfigImageSourcesAndSidebar(t *testing.T) {
 	if local.ID != "local" || local.Kind != "local" || local.SSHHost != "" || local.Name != "本机" {
 		t.Fatalf("本地来源未规范化为唯一标准来源: %#v", local)
 	}
-	if len(got.SidebarTools) != 1 || got.SidebarTools[0].ID != "time" {
-		t.Fatalf("侧栏工具列表不应自动补入其他工具: %#v", got.SidebarTools)
+	if len(got.SidebarTools) != len(defaultSidebarToolIDs) {
+		t.Fatalf("侧栏工具列表应补齐默认工具: %#v", got.SidebarTools)
+	}
+	if got.SidebarTools[0].ID != "json" || got.SidebarTools[0].Enabled {
+		t.Fatalf("用户关闭的工具应保持停用: %#v", got.SidebarTools[0])
 	}
 	for _, tool := range got.SidebarTools {
-		if tool.ID == "time" && tool.Enabled {
-			t.Fatal("规范化不应重置用户手动关闭的工具")
+		if tool.ID == "time" {
+			t.Fatal("未知工具 id time 应被丢弃")
 		}
 	}
 }

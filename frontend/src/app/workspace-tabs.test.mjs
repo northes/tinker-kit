@@ -32,7 +32,7 @@ const commands = [
   { id: 'settings:quit', settingsAction: 'quit' },
   { id: 'open:json', page: 'json' },
   { id: 'open:text', page: 'text' },
-  { id: 'open:time', page: 'time' },
+  { id: 'open:time-convert', page: 'time-convert' },
   { id: 'json:format', tool: 'json', action: 'format' },
   { id: 'json:schema:copy', tool: 'json', context: 'json.schema' },
   { id: 'text:copy', tool: 'text' },
@@ -111,7 +111,7 @@ test('新标签加在末尾并成为当前，点已有标签只切换', () => {
 test('关掉非当前标签不改变当前，关掉当前才按规则重选', () => {
   let state = openToolTab(emptyWorkspace(), 'json').state;
   state = openToolTab(state, 'text').state;
-  state = openToolTab(state, 'time').state;
+  state = openToolTab(state, 'jwt').state;
   const [json, text, time] = state.tabs;
   const closedOther = closeTab(state, json.id, 'previous');
   assert.equal(closedOther.activeId, time.id);
@@ -137,7 +137,7 @@ test('关掉非当前标签不改变当前，关掉当前才按规则重选', ()
 test('最近使用按单调激活序号，而不是打开顺序', () => {
   let state = openToolTab(emptyWorkspace(), 'json').state;
   state = openToolTab(state, 'text').state;
-  state = openToolTab(state, 'time').state;
+  state = openToolTab(state, 'jwt').state;
   state = activateTab(state, state.tabs[0].id);
   const closed = closeTab(state, state.tabs[0].id, 'recent');
   assert.equal(closed.activeId, state.tabs[2].id);
@@ -263,7 +263,7 @@ test('空白标签转成工具时按该工具已开标签计序号，不沿用�
 test('固定的标签排到最前，组内相对顺序不变', () => {
   let state = openToolTab(emptyWorkspace(), 'json').state;
   state = openToolTab(state, 'text').state;
-  state = openToolTab(state, 'time').state;
+  state = openToolTab(state, 'jwt').state;
   const [json, text, time] = state.tabs;
   state = toggleTabPin(state, time.id);
   assert.deepEqual(
@@ -288,7 +288,7 @@ test('固定的标签排到最前，组内相对顺序不变', () => {
   const opened = openToolTab(state, 'base64');
   assert.deepEqual(
     opened.state.tabs.map((tab) => tab.toolId),
-    ['json', 'time', 'text', 'base64'],
+    ['json', 'time-convert', 'text', 'base64'],
   );
   assert.equal(toggleTabPin(state, 'missing'), state);
   const unsorted = sortTabsForDisplay([text, { ...json, pinned: true }, time]);
@@ -301,7 +301,7 @@ test('固定的标签排到最前，组内相对顺序不变', () => {
 test('只在同一固定组内调整顺序，跨组取消，新标签仍加在未固定区末尾', () => {
   let state = openToolTab(emptyWorkspace(), 'json').state;
   state = openToolTab(state, 'text').state;
-  state = openToolTab(state, 'time').state;
+  state = openToolTab(state, 'jwt').state;
   state = openToolTab(state, 'base64').state;
   const [json, text, time, base64] = state.tabs;
   state = toggleTabPin(state, json.id);
@@ -354,7 +354,7 @@ test('只在同一固定组内调整顺序，跨组取消，新标签仍加在�
   const opened = openToolTab(swappedUnpinned, 'cron');
   assert.deepEqual(
     opened.state.tabs.map((tab) => tab.toolId),
-    ['json', 'text', 'base64', 'time', 'cron'],
+    ['json', 'text', 'base64', 'jwt', 'cron'],
   );
   const blank = openBlankTab(swappedUnpinned);
   assert.equal(blank.state.tabs.at(-1)?.kind, 'blank');
@@ -402,7 +402,7 @@ test('越过相邻标签后，中线前回摆不会把落点弹回去', () => {
 test('关闭其他标签保留固定和被右键的标签，并激活后者', () => {
   let state = openToolTab(emptyWorkspace(), 'json').state;
   state = openToolTab(state, 'text').state;
-  state = openToolTab(state, 'time').state;
+  state = openToolTab(state, 'jwt').state;
   state = openToolTab(state, 'json').state;
   const [json, text, time, json2] = state.tabs;
   state = toggleTabPin(state, json.id);

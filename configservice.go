@@ -126,7 +126,7 @@ const (
 	maxServiceLogCollapseLines     = 200
 )
 
-var defaultSidebarToolIDs = []string{"json", "time", "text", "base64", "jwt", "url", "qrcode", "image", "diff", "text-generator", "image-manager", "ssh-files", "service-manager", "ports", "port-forwards", "network-test"}
+var defaultSidebarToolIDs = []string{"json", "time-convert", "date-calculator", "real-time", "text", "base64", "jwt", "url", "qrcode", "image", "diff", "text-generator", "image-manager", "ssh-files", "service-manager", "ports", "port-forwards", "network-test"}
 
 type TextGeneratorSource struct {
 	ID      string `json:"id"`
@@ -243,7 +243,7 @@ func insertPortForwardsToolAfterPorts(tools []SidebarToolConfig) []SidebarToolCo
 }
 
 func defaultConfig() Config {
-	return Config{TrayMatchEnabled: true, TrayMatchTools: []string{"json", "time", "text", "base64", "diff", "jwt", "url"}, AutoCheckUpdates: true, TaskConcurrency: 4, TaskChunkConcurrency: 4, TaskNotificationMode: "unfocused", Language: "zh-CN", TabCloseActivation: "recent", TabCloseButton: "always", ShowTabIcons: false, TabWidthMode: "fixed", TabWidth: 128, SidebarTools: defaultSidebarTools(), ThemeMode: "dark", LightTheme: "default-light", DarkTheme: "default-dark", WindowOpacity: defaultWindowOpacity, WindowBlur: true, DiffClipboardTargetMode: "alternate", CodeEditorFontSize: 16, TimeResultOrder: []string{"local", "dateTime", "dateOnly", "timeOnly", "zonedIso8601", "rfc3339", "utc", "compact", "underscore", "unixSeconds", "unixMilliseconds", "unixNanoseconds"}, TimeWeekStart: "monday", NtpServers: defaultNtpServers(), NetworkTestSettings: defaultNetworkTestSettings(), NetworkTestSources: defaultNetworkTestSources(), JsonAutoFormatOnFill: true, JsonFlattenKeyValueColumns: true, ImageSources: defaultImageSources(), SSHProfiles: []SSHProfile{}, FileSources: []FileSource{}, ServiceTargets: defaultServiceTargets(), ServiceLogHighlight: true, ServiceLogCollapseLines: defaultServiceLogCollapseLines, PortSources: defaultPortSources(), PortForwardSources: defaultPortSources(), PortForwards: []PortForwardConfig{}, PortColumnWidths: PortColumnWidths{Ports: map[string][]int{}}}
+	return Config{TrayMatchEnabled: true, TrayMatchTools: []string{"json", "time-convert", "text", "base64", "diff", "jwt", "url"}, AutoCheckUpdates: true, TaskConcurrency: 4, TaskChunkConcurrency: 4, TaskNotificationMode: "unfocused", Language: "zh-CN", TabCloseActivation: "recent", TabCloseButton: "always", ShowTabIcons: false, TabWidthMode: "fixed", TabWidth: 128, SidebarTools: defaultSidebarTools(), ThemeMode: "dark", LightTheme: "default-light", DarkTheme: "default-dark", WindowOpacity: defaultWindowOpacity, WindowBlur: true, DiffClipboardTargetMode: "alternate", CodeEditorFontSize: 16, TimeResultOrder: []string{"local", "dateTime", "dateOnly", "timeOnly", "zonedIso8601", "rfc3339", "utc", "compact", "underscore", "unixSeconds", "unixMilliseconds", "unixNanoseconds"}, TimeWeekStart: "monday", NtpServers: defaultNtpServers(), NetworkTestSettings: defaultNetworkTestSettings(), NetworkTestSources: defaultNetworkTestSources(), JsonAutoFormatOnFill: true, JsonFlattenKeyValueColumns: true, ImageSources: defaultImageSources(), SSHProfiles: []SSHProfile{}, FileSources: []FileSource{}, ServiceTargets: defaultServiceTargets(), ServiceLogHighlight: true, ServiceLogCollapseLines: defaultServiceLogCollapseLines, PortSources: defaultPortSources(), PortForwardSources: defaultPortSources(), PortForwards: []PortForwardConfig{}, PortColumnWidths: PortColumnWidths{Ports: map[string][]int{}}}
 }
 
 func normalizeThemeID(theme string, defaultID string) string {
@@ -844,7 +844,7 @@ func normalizeConfig(cfg Config) Config {
 		}
 		cfg.SidebarTools = tools
 	}
-	trayTools := []string{"json", "time", "text", "base64", "diff", "jwt", "url"}
+	trayTools := []string{"json", "time-convert", "text", "base64", "diff", "jwt", "url"}
 	validTrayTool := make(map[string]bool, len(trayTools))
 	for _, id := range trayTools {
 		validTrayTool[id] = true
@@ -876,7 +876,7 @@ func normalizeConfig(cfg Config) Config {
 			}
 		}
 		if len(matched) == 0 {
-			matched = []string{"json", "time", "text", "base64", "jwt", "url"}
+			matched = []string{"json", "time-convert", "text", "base64", "jwt", "url"}
 		}
 		cfg.TrayMatchTools = matched
 	}

@@ -12,7 +12,7 @@ import { DEFAULT_NTP_SERVERS, TIME_RESULT_IDS } from '../utils/time';
 //   不依赖这里的 name。
 export const defaultSettings: Settings = {
   trayMatchEnabled: true,
-  trayMatchTools: ['json', 'time', 'text', 'base64', 'diff', 'jwt', 'url'],
+  trayMatchTools: ['json', 'time-convert', 'text', 'base64', 'diff', 'jwt', 'url'],
   autoCheckUpdates: true,
   taskConcurrency: 4,
   taskChunkConcurrency: 4,
@@ -25,7 +25,9 @@ export const defaultSettings: Settings = {
   tabWidth: 128,
   sidebarTools: [
     { id: 'json', enabled: true },
-    { id: 'time', enabled: true },
+    { id: 'time-convert', enabled: true },
+    { id: 'date-calculator', enabled: true },
+    { id: 'real-time', enabled: true },
     { id: 'text', enabled: true },
     { id: 'base64', enabled: true },
     { id: 'jwt', enabled: true },

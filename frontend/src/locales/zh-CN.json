@@ -71,9 +71,17 @@
       "name": "JSON 工作区",
       "description": "格式化、压缩并检查路径"
     },
-    "time": {
-      "name": "时间工具",
-      "description": "转换时间、计算日期并查看真实时间"
+    "time-convert": {
+      "name": "时间转换",
+      "description": "转换时间戳与日期"
+    },
+    "date-calculator": {
+      "name": "日期计算",
+      "description": "计算日期差并做日期加减"
+    },
+    "real-time": {
+      "name": "真实时间",
+      "description": "通过 NTP 查看真实时间"
     },
     "text": {
       "name": "文本工具",
@@ -138,7 +146,9 @@
     "toggleLanguage": "切换语言（当前：{{current}}）",
     "toggleFontSize": "切换字体大小（当前：{{current}}）",
     "openJson": "JSON 工作区",
-    "openTime": "时间工具",
+    "openTimeConvert": "时间转换",
+    "openDateCalculator": "日期计算",
+    "openRealTime": "真实时间",
     "openText": "文本工具",
     "openTextGenerator": "文本生成",
     "openBase64": "Base64",
@@ -440,11 +450,6 @@
       "ntpReset": "重置为默认",
       "ntpRemove": "移除服务器 {{index}}",
       "ntpInvalid": "“{{server}}” 不是有效的主机或 host:port"
-    },
-    "modes": {
-      "convert": "时间转换",
-      "dateCalculator": "日期计算",
-      "realTime": "真实时间"
     },
     "input": "输入",
     "placeholder": "时间戳或日期",
