@@ -1200,7 +1200,7 @@ function AppShell() {
               setSettings((current) => ({ ...current, timeWeekStart }))
             }
             pending={pending}
-            clearDelivered={clearDelivered}
+            clearPending={clearDelivered}
           />
         );
       case 'date-calculator':

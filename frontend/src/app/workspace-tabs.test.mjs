@@ -288,7 +288,7 @@ test('固定的标签排到最前，组内相对顺序不变', () => {
   const opened = openToolTab(state, 'base64');
   assert.deepEqual(
     opened.state.tabs.map((tab) => tab.toolId),
-    ['json', 'time-convert', 'text', 'base64'],
+    ['json', 'jwt', 'text', 'base64'],
   );
   assert.equal(toggleTabPin(state, 'missing'), state);
   const unsorted = sortTabsForDisplay([text, { ...json, pinned: true }, time]);
