@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from 'react';
 import { createPortal } from 'react-dom';
 import { minimalSetup } from 'codemirror';
 import { MergeView, type Chunk } from '@codemirror/merge';
@@ -337,6 +337,7 @@ function DiffMerge({
   onAfterChange,
   onCountsChange,
   onPickSource,
+  viewsRef,
 }: {
   before: string;
   after: string;
@@ -352,6 +353,8 @@ function DiffMerge({
   onAfterChange: (value: string) => void;
   onCountsChange: (counts: Counts) => void;
   onPickSource: (side: DiffCompareSide) => void;
+  // 选择器关闭后要把焦点还给对应一侧编辑器，这里只暴露挂载中的视图。
+  viewsRef: RefObject<{ before: EditorView; after: EditorView } | null>;
 }) {
   const host = useRef<HTMLDivElement>(null);
   const mergeRef = useRef<MergeView | null>(null);
@@ -400,6 +403,7 @@ function DiffMerge({
       diffConfig: { scanLimit: 3000, timeout: 1000 },
     });
     mergeRef.current = merge;
+    viewsRef.current = { before: merge.a, after: merge.b };
     setPanes({ before: merge.a, after: merge.b });
     merge.a.contentDOM.setAttribute('aria-label', aLabel);
     merge.b.contentDOM.setAttribute('aria-label', bLabel);
@@ -463,6 +467,7 @@ function DiffMerge({
       rafId = null;
       syncSource = null;
       mergeRef.current = null;
+      viewsRef.current = null;
       merge.destroy();
     };
   }, [theme, languageExtensions, collapseUnchanged, aLabel, bLabel]);
@@ -541,6 +546,7 @@ export default function DiffTool({
   });
   const [sourceQuery, setSourceQuery] = useState('');
   const [collapseUnchanged, setCollapseUnchanged] = useState(false);
+  const paneViewsRef = useRef<{ before: EditorView; after: EditorView } | null>(null);
   const noticeTimer = useRef<number | null>(null);
   const [, setCounts] = useState<Counts>({ deletions: 0, additions: 0 });
   const detectedLanguage = detectLanguage(`${before}\n${after}`);
@@ -641,6 +647,7 @@ export default function DiffTool({
               onAfterChange={setAfter}
               onCountsChange={setCounts}
               onPickSource={openSourcePicker}
+              viewsRef={paneViewsRef}
             />
           </div>
         </ToolLayoutContent>
@@ -687,6 +694,10 @@ export default function DiffTool({
         title={pickerTitle}
         description={pickerTitle}
         className="sm:max-w-lg"
+        // 差异对比已切走时不抢焦点，让新标签自己的聚焦生效。
+        finalFocus={() =>
+          active ? (paneViewsRef.current?.[picker.side]?.contentDOM ?? false) : false
+        }
       >
         <Command
           className="rounded-none! bg-transparent"

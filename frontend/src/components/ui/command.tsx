@@ -129,12 +129,15 @@ function CommandDialog({
   children,
   className,
   showCloseButton = false,
+  finalFocus,
   ...props
 }: Omit<React.ComponentProps<typeof Dialog>, 'children'> & {
   title?: string;
   description?: string;
   className?: string;
   showCloseButton?: boolean;
+  // 没有触发元素的受控弹窗要明确关闭后的落点，否则焦点会还回打开前碰巧聚焦的元素。
+  finalFocus?: React.ComponentProps<typeof DialogContent>['finalFocus'];
   children: React.ReactNode;
 }) {
   return (
@@ -147,6 +150,7 @@ function CommandDialog({
         <DialogContent
           className={cn('top-[12vh] translate-y-0 overflow-hidden rounded-xl! p-0', className)}
           showCloseButton={showCloseButton}
+          finalFocus={finalFocus}
         >
           {children}
         </DialogContent>
