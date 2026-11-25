@@ -5,6 +5,7 @@ import {
   useEffect,
   useRef,
   useState,
+  type KeyboardEvent as ReactKeyboardEvent,
   type PointerEvent as ReactPointerEvent,
   type ReactNode,
   type Ref,
@@ -198,6 +199,7 @@ export function ToolSearchField({
   disabled,
   className = '',
   inputRef,
+  onKeyDown,
   trailingAddon,
 }: {
   id?: string;
@@ -212,6 +214,8 @@ export function ToolSearchField({
   className?: string;
   /** 输入框本身的 ref。同一页面有多份搜索框时用它聚焦自己那一份。 */
   inputRef?: Ref<HTMLInputElement>;
+  /** 在默认回车提交逻辑之前调用；可 preventDefault 以接管方向键等。 */
+  onKeyDown?: (event: ReactKeyboardEvent<HTMLInputElement>) => void;
   /** 搜索框右侧内嵌控件（例如搜索方式菜单）。 */
   trailingAddon?: ReactNode;
 }) {
@@ -239,6 +243,8 @@ export function ToolSearchField({
           }, 0);
         }}
         onKeyDown={(event) => {
+          onKeyDown?.(event);
+          if (event.defaultPrevented) return;
           const native = event.nativeEvent;
           // 组合中的回车（含 keyCode 229，此时 isComposing 可能已经是 false）只上屏。
           if (
