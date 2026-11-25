@@ -32,7 +32,7 @@ function ToastViewport({ className, ...props }: ToastPrimitive.Viewport.Props) {
       data-slot="toast-viewport"
       aria-label={t('toast.region')}
       className={cn(
-        'pointer-events-none fixed inset-x-4 top-4 z-[60] mx-auto w-auto max-w-sm outline-none sm:left-1/2 sm:right-auto sm:w-full sm:-translate-x-1/2',
+        'pointer-events-none fixed inset-x-4 top-[calc(var(--app-titlebar-height)+0.5rem)] z-[60] mx-auto w-auto max-w-sm outline-none sm:left-1/2 sm:right-auto sm:w-full sm:-translate-x-1/2',
         className,
       )}
       {...props}
