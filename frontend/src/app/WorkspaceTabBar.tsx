@@ -317,21 +317,20 @@ function WorkspaceTabItem({
           <>
             <ContextMenuSeparator />
             <ContextMenuGroup>
-              {compareAvailable ? (
-                <ContextMenuSub>
-                  <ContextMenuSubTrigger>{t('workspaceTabs.compare')}</ContextMenuSubTrigger>
-                  <ContextMenuSubContent>
-                    <ContextMenuItem onClick={() => onCompareContent(tab.id, 'before')}>
-                      {t('workspaceTabs.compareToLeft')}
-                    </ContextMenuItem>
-                    <ContextMenuItem onClick={() => onCompareContent(tab.id, 'after')}>
-                      {t('workspaceTabs.compareToRight')}
-                    </ContextMenuItem>
-                  </ContextMenuSubContent>
-                </ContextMenuSub>
-              ) : (
-                <ContextMenuItem disabled>{t('workspaceTabs.compare')}</ContextMenuItem>
-              )}
+              <ContextMenuSub>
+                {/* 无可对比来源时保留二级菜单结构（含右侧箭头），由 Base UI disabled 同时挡住鼠标与键盘展开 */}
+                <ContextMenuSubTrigger disabled={!compareAvailable}>
+                  {t('workspaceTabs.compare')}
+                </ContextMenuSubTrigger>
+                <ContextMenuSubContent>
+                  <ContextMenuItem onClick={() => onCompareContent(tab.id, 'before')}>
+                    {t('workspaceTabs.compareToLeft')}
+                  </ContextMenuItem>
+                  <ContextMenuItem onClick={() => onCompareContent(tab.id, 'after')}>
+                    {t('workspaceTabs.compareToRight')}
+                  </ContextMenuItem>
+                </ContextMenuSubContent>
+              </ContextMenuSub>
             </ContextMenuGroup>
           </>
         ) : null}

@@ -160,6 +160,7 @@ async function mountEditor({ dirty = false } = {}) {
             closed++;
           },
           onSaved() {},
+          onContentChange() {},
         }),
       ),
     );
