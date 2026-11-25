@@ -45,6 +45,11 @@ tasks:
     cmds:
       - node --experimental-strip-types --test frontend/src/lib/diff-compare-source.test.mjs
 
+  test:tray-diff-fill:
+    summary: Checks tray diff clipboard fill target resolution
+    cmds:
+      - node --experimental-strip-types --test frontend/src/lib/tray-diff-fill.test.mjs
+
   test:i18n:
     summary: Checks locale key parity and literal keys used in code
     cmds:

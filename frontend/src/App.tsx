@@ -106,6 +106,11 @@ import { EDITOR_FONT_SIZES } from './settings-options';
 import { resolveTheme, THEME_MODE_OPTIONS } from './theme';
 import { parseTimeInput } from './utils/time';
 import { parseSupportedUrl } from './utils/url';
+import {
+  isDiffTrayFillMode,
+  resolveTrayDiffFillTarget,
+  type DiffTrayFillSide,
+} from './lib/tray-diff-fill';
 
 type SaveWaiter = {
   target: Settings;
@@ -358,6 +363,7 @@ function AppShell() {
       tabHostReportersRef.current.delete(id);
       diffSourceReportersRef.current.delete(id);
       diffSourcesRef.current.delete(id);
+      trayDiffAlternateRef.current.delete(id);
     }
     setTabHostNames((current) => {
       let changed = false;
@@ -393,6 +399,7 @@ function AppShell() {
   const settingsRef = useRef(settings);
   settingsRef.current = settings;
   const nextDiffTarget = useRef<'before' | 'after'>('before');
+  const trayDiffAlternateRef = useRef(new Map<string, DiffTrayFillSide>());
   const settingsReady = useRef(bootSettings !== null);
   const saveInFlight = useRef(false);
   const saveQueued = useRef(false);
@@ -1081,6 +1088,28 @@ function AppShell() {
     if (!currentSettings.trayMatchEnabled) return;
     const s = text.trim();
     if (!s) return;
+    const diffFillMode = currentSettings.diffClipboardTargetMode;
+    const focused = activeTab(workspaceStateRef.current);
+    if (
+      isDiffTrayFillMode(diffFillMode) &&
+      focused?.kind === 'tool' &&
+      focused.toolId === 'diff'
+    ) {
+      const { target, nextByTabId } = resolveTrayDiffFillTarget(
+        diffFillMode,
+        focused.id,
+        trayDiffAlternateRef.current,
+      );
+      if (diffFillMode === 'alternate') {
+        trayDiffAlternateRef.current = nextByTabId;
+      }
+      deliver(focused.id, { tool: 'diff', action: 'fill', input: text, target });
+      toast.add({
+        title: t('toast.trayAutoFilled', { tool: t('tools.diff.name') }),
+        type: 'success',
+      });
+      return;
+    }
     const enabledSidebarTools = new Set(
       resolveSidebarTools(currentSettings.sidebarTools)
         .filter((item) => item.enabled)
