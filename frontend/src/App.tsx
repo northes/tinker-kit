@@ -67,6 +67,7 @@ import {
   tabOrdinalLabel,
   toggleTabPin,
   visiblePaletteCommands,
+  workspaceTabLabel,
   type WorkspaceState,
   type WorkspaceTab,
 } from './app/workspace-tabs';
@@ -93,6 +94,14 @@ import { toast, Toaster } from './components/ui/toast';
 import UpdatePill from './components/UpdatePill';
 import { SUPPORTED_LANGUAGES } from './i18n';
 import { formatBackendError } from './lib/backend-error';
+import {
+  getComparableDiffSource,
+  isDiffCompareSourceAvailable,
+  listDiffCompareSources,
+  type DiffCompareSide,
+  type DiffCompareSource,
+  type DiffCompareSourceReporter,
+} from './lib/diff-compare-source';
 import { EDITOR_FONT_SIZES } from './settings-options';
 import { resolveTheme, THEME_MODE_OPTIONS } from './theme';
 import { parseTimeInput } from './utils/time';
@@ -320,9 +329,36 @@ function AppShell() {
     },
     [reportTabHostName],
   );
-  const forgetTabHostNames = useCallback((ids: readonly string[]) => {
+  const diffSourcesRef = useRef(new Map<string, DiffCompareSource>());
+  const diffSourceReportersRef = useRef(new Map<string, DiffCompareSourceReporter>());
+  const [diffSourceVersion, setDiffSourceVersion] = useState(0);
+  const diffSourceReporterForTab = (tabId: string) => {
+    const cached = diffSourceReportersRef.current.get(tabId);
+    if (cached) return cached;
+    const report: DiffCompareSourceReporter = (source) => {
+      if (!workspaceStateRef.current.tabs.some((tab) => tab.id === tabId)) return;
+      const previous = diffSourcesRef.current.get(tabId);
+      diffSourcesRef.current.set(tabId, source);
+      const available = isDiffCompareSourceAvailable(source);
+      const fileNameChanged =
+        source.toolId === 'ssh-files' &&
+        previous?.toolId === 'ssh-files' &&
+        source.fileName !== previous.fileName;
+      // 文本随时可从 ref 读取，只有候选的可用性或文件名变化才刷新界面。
+      if (available !== isDiffCompareSourceAvailable(previous) || (available && fileNameChanged)) {
+        setDiffSourceVersion((version) => version + 1);
+      }
+    };
+    diffSourceReportersRef.current.set(tabId, report);
+    return report;
+  };
+  const forgetClosedTabData = useCallback((ids: readonly string[]) => {
     if (ids.length === 0) return;
-    for (const id of ids) tabHostReportersRef.current.delete(id);
+    for (const id of ids) {
+      tabHostReportersRef.current.delete(id);
+      diffSourceReportersRef.current.delete(id);
+      diffSourcesRef.current.delete(id);
+    }
     setTabHostNames((current) => {
       let changed = false;
       const next = { ...current };
@@ -478,7 +514,7 @@ function AppShell() {
   };
   const closeWorkspaceTab = (id: string) => {
     commitWorkspace(closeTab(workspaceStateRef.current, id, closeActivation()));
-    forgetTabHostNames([id]);
+    forgetClosedTabData([id]);
     setDelivered((current) => (current?.tabId === id ? null : current));
     setRenameTabId((current) => (current === id ? null : current));
   };
@@ -489,7 +525,7 @@ function AppShell() {
         .map((tab) => tab.id),
     );
     commitWorkspace(closeOtherTabs(workspaceStateRef.current, id, closeActivation()));
-    forgetTabHostNames([...closing]);
+    forgetClosedTabData([...closing]);
     setDelivered((current) => (current && closing.has(current.tabId) ? null : current));
     setRenameTabId((current) => (current && closing.has(current) ? null : current));
   };
@@ -519,7 +555,7 @@ function AppShell() {
       .filter((tab) => tab.toolId === toolId)
       .map((tab) => tab.id);
     commitWorkspace(closeTabs(workspaceStateRef.current, ids, closeActivation()));
-    forgetTabHostNames(ids);
+    forgetClosedTabData(ids);
     setDelivered((current) => (current && ids.includes(current.tabId) ? null : current));
     setRenameTabId((current) => (current && ids.includes(current) ? null : current));
   };
@@ -564,6 +600,16 @@ function AppShell() {
     return () => off();
   }, []);
   const currentTab = activeTab(workspace);
+  const diffCompareActive = currentTab?.kind === 'tool' && currentTab.toolId === 'diff';
+  const diffCandidates = useMemo(() => {
+    if (!diffCompareActive) return [];
+    return listDiffCompareSources(workspace.tabs, diffSourcesRef.current).map(({ tab, fileName }) => {
+      const baseName = workspaceTabBaseName(tab, (key) => t(key), tabHostNames[tab.id]);
+      const name = workspaceTabLabel(tab, baseName);
+      return { id: tab.id, label: fileName ? `${name} — ${fileName}` : name };
+    });
+  }, [diffCompareActive, diffSourceVersion, i18n.language, t, tabHostNames, workspace.tabs]);
+  const diffSourceIds = useMemo(() => new Set(diffCandidates.map(({ id }) => id)), [diffCandidates]);
   const currentToolId = currentTab?.toolId;
   const routePage: Page | null = !currentTab
     ? null
@@ -909,6 +955,21 @@ function AppShell() {
   const deliver = (tabId: string, action: PendingAction) => {
     setDelivered({ tabId, action });
   };
+  const fillActiveDiffFromTab = (
+    sourceId: string,
+    target: DiffCompareSide,
+    diffTabId = workspaceStateRef.current.activeId,
+  ) => {
+    const state = workspaceStateRef.current;
+    const diff = activeTab(state);
+    if (diff?.kind !== 'tool' || diff.toolId !== 'diff' || diff.id !== diffTabId) return false;
+    const tab = state.tabs.find(({ id }) => id === sourceId);
+    if (!tab) return false;
+    const source = getComparableDiffSource(tab, diffSourcesRef.current.get(sourceId));
+    if (!source) return false;
+    deliver(diff.id, { tool: 'diff', action: 'fill', input: source.text, target });
+    return true;
+  };
   const run = (item: IndexedItem) => {
     const toolId = paletteToolId(item);
     if (toolId && !enabledToolSet.has(toolId)) return;
@@ -1085,6 +1146,7 @@ function AppShell() {
             onFlattenKeyValueColumnsChange={(jsonFlattenKeyValueColumns) =>
               setSettings((current) => ({ ...current, jsonFlattenKeyValueColumns }))
             }
+            onCompareSourceChange={diffSourceReporterForTab(tab.id)}
             pending={pending}
             clearPending={clearDelivered}
           />
@@ -1119,6 +1181,7 @@ function AppShell() {
             onAlwaysShowSearchChange={(textAlwaysShowSearch) =>
               setSettings((current) => ({ ...current, textAlwaysShowSearch }))
             }
+            onCompareSourceChange={diffSourceReporterForTab(tab.id)}
             pending={pending}
             clearPending={clearDelivered}
           />
@@ -1146,7 +1209,14 @@ function AppShell() {
         );
       case 'diff':
         return (
-          <DiffTool active={active} theme={theme} pending={pending} clearPending={clearDelivered} />
+          <DiffTool
+            active={active}
+            theme={theme}
+            pending={pending}
+            clearPending={clearDelivered}
+            compareCandidates={diffCandidates}
+            onPickCompareSource={(id, side) => fillActiveDiffFromTab(id, side, tab.id)}
+          />
         );
       case 'jwt':
         return <JwtTool active={active} pending={pending} clearPending={clearDelivered} />;
@@ -1196,6 +1266,7 @@ function AppShell() {
           <SshFilesTool
             active={active}
             locate={sshLocate?.tabId === tab.id ? sshLocate.locate : null}
+            onCompareSourceChange={diffSourceReporterForTab(tab.id)}
           />
         );
       case 'settings':
@@ -1231,6 +1302,8 @@ function AppShell() {
       showIcons={settings.showTabIcons === true}
       fitToContent={settings.tabWidthMode === 'auto'}
       closeButton={parseTabCloseButton(settings.tabCloseButton)}
+      diffSourceIds={diffSourceIds}
+      onCompareContent={fillActiveDiffFromTab}
       onActivate={focusTab}
       onClose={closeWorkspaceTab}
       onCloseOthers={closeOtherWorkspaceTabs}

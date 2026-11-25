@@ -21,9 +21,13 @@ import {
   ContextMenuGroup,
   ContextMenuItem,
   ContextMenuSeparator,
+  ContextMenuSub,
+  ContextMenuSubContent,
+  ContextMenuSubTrigger,
   ContextMenuTrigger,
 } from '../components/ui/context-menu';
 import { ScrollArea } from '../components/ui/scroll-area';
+import { isDiffCompareSourceTab, type DiffCompareSide } from '../lib/diff-compare-source';
 import { cn } from '@/lib/utils';
 import { tools } from './definitions';
 import {
@@ -132,6 +136,8 @@ function WorkspaceTabItem({
   showIcons,
   closeButton,
   canCloseOthers,
+  compareAvailable,
+  onCompareContent,
   registerTab,
   suppressClickRef,
   motion,
@@ -147,6 +153,8 @@ function WorkspaceTabItem({
   showIcons: boolean;
   closeButton: TabCloseButton;
   canCloseOthers: boolean;
+  compareAvailable?: boolean;
+  onCompareContent: (id: string, side: DiffCompareSide) => void;
   registerTab: (id: string, node: HTMLElement | null) => void;
   suppressClickRef: { current: boolean };
   motion: WorkspaceTabStripMotion | null;
@@ -305,6 +313,28 @@ function WorkspaceTabItem({
             {tab.pinned ? t('workspaceTabs.unpin') : t('workspaceTabs.pin')}
           </ContextMenuItem>
         </ContextMenuGroup>
+        {compareAvailable !== undefined ? (
+          <>
+            <ContextMenuSeparator />
+            <ContextMenuGroup>
+              {compareAvailable ? (
+                <ContextMenuSub>
+                  <ContextMenuSubTrigger>{t('workspaceTabs.compare')}</ContextMenuSubTrigger>
+                  <ContextMenuSubContent>
+                    <ContextMenuItem onClick={() => onCompareContent(tab.id, 'before')}>
+                      {t('workspaceTabs.compareToLeft')}
+                    </ContextMenuItem>
+                    <ContextMenuItem onClick={() => onCompareContent(tab.id, 'after')}>
+                      {t('workspaceTabs.compareToRight')}
+                    </ContextMenuItem>
+                  </ContextMenuSubContent>
+                </ContextMenuSub>
+              ) : (
+                <ContextMenuItem disabled>{t('workspaceTabs.compare')}</ContextMenuItem>
+              )}
+            </ContextMenuGroup>
+          </>
+        ) : null}
         {canCloseOthers || canRename ? (
           <>
             <ContextMenuSeparator />
@@ -352,6 +382,8 @@ export function WorkspaceTabBar({
   showIcons,
   fitToContent,
   closeButton,
+  diffSourceIds,
+  onCompareContent,
   onActivate,
   onClose,
   onCloseOthers,
@@ -366,6 +398,8 @@ export function WorkspaceTabBar({
   showIcons: boolean;
   fitToContent: boolean;
   closeButton: TabCloseButton;
+  diffSourceIds: ReadonlySet<string>;
+  onCompareContent: (id: string, side: DiffCompareSide) => void;
   onActivate: (id: string) => void;
   onClose: (id: string) => void;
   onCloseOthers: (id: string) => void;
@@ -375,6 +409,8 @@ export function WorkspaceTabBar({
   onNewTab: () => void;
 }) {
   const { t, i18n } = useTranslation();
+  const currentTab = tabs.find((tab) => tab.id === activeId);
+  const compareActive = currentTab?.kind === 'tool' && currentTab.toolId === 'diff';
   const viewportRef = useRef<HTMLElement | null>(null);
   const listRef = useRef<HTMLDivElement | null>(null);
   const tabRefs = useRef(new Map<string, HTMLElement>());
@@ -789,6 +825,12 @@ export function WorkspaceTabBar({
                   showIcons={showIcons}
                   closeButton={closeButton}
                   canCloseOthers={tabs.some((item) => item.id !== tab.id && !item.pinned)}
+                  compareAvailable={
+                    compareActive && isDiffCompareSourceTab(tab)
+                      ? diffSourceIds.has(tab.id)
+                      : undefined
+                  }
+                  onCompareContent={onCompareContent}
                   registerTab={registerTab}
                   suppressClickRef={suppressClickRef}
                   motion={tabMotion}

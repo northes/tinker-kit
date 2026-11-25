@@ -25,6 +25,7 @@ import {
 import CodeMirror from '@uiw/react-codemirror';
 import { EditorView } from '@codemirror/view';
 import { closeSearchPanel, openSearchPanel } from '@codemirror/search';
+import type { DiffCompareSourceReporter } from '../lib/diff-compare-source';
 import { quietEditorTheme } from './codeMirrorTheme';
 import {
   type PendingAction,
@@ -343,6 +344,7 @@ export default function TextTool({
   active,
   alwaysShowSearch,
   onAlwaysShowSearchChange,
+  onCompareSourceChange,
   pending,
   clearPending,
 }: {
@@ -350,11 +352,15 @@ export default function TextTool({
   theme: string;
   alwaysShowSearch: boolean;
   onAlwaysShowSearchChange: (value: boolean) => void;
+  onCompareSourceChange: DiffCompareSourceReporter;
   pending: PendingAction | null;
   clearPending: () => void;
 }) {
   const { t } = useTranslation();
   const [value, setValue] = useState('');
+  useLayoutEffect(() => {
+    onCompareSourceChange({ toolId: 'text', text: value });
+  }, [value, onCompareSourceChange]);
   const [affixOpen, setAffixOpen] = useState(false);
   const [affixHistory, setAffixHistory] = useState<Record<AffixField, string[]>>({
     prefix: [],

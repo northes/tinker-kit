@@ -43,6 +43,7 @@ import {
 } from '@codemirror/view';
 import { RangeSetBuilder } from '@codemirror/state';
 import { SaveText } from '../../bindings/tinkerkit/fileservice';
+import type { DiffCompareSourceReporter } from '../lib/diff-compare-source';
 import { JSON_CONVERT_FORMATS, type JsonConvertFormat } from '../lib/json-converter';
 import { JSON_TIME_FORMATS, type JsonTimeFormat } from '../lib/json-time-format';
 import { useDebouncedJsonConversion } from '../hooks/useDebouncedJsonConversion';
@@ -409,6 +410,7 @@ export default function JsonTool({
   onAutoFormatOnFillChange,
   flattenKeyValueColumns,
   onFlattenKeyValueColumnsChange,
+  onCompareSourceChange,
   pending,
   clearPending,
 }: {
@@ -418,6 +420,7 @@ export default function JsonTool({
   onAutoFormatOnFillChange: (value: boolean) => void;
   flattenKeyValueColumns: boolean;
   onFlattenKeyValueColumnsChange: (value: boolean) => void;
+  onCompareSourceChange: DiffCompareSourceReporter;
   pending: PendingAction | null;
   clearPending: () => void;
 }) {
@@ -434,6 +437,9 @@ export default function JsonTool({
   const convertMode = mode === 'convert';
   const [convertFormat, setConvertFormat] = useState<JsonConvertFormat>('yaml');
   const [input, setInput] = useState('');
+  useLayoutEffect(() => {
+    onCompareSourceChange({ toolId: 'json', text: input });
+  }, [input, onCompareSourceChange]);
   const [showInvisibleChars, setShowInvisibleChars] = useState(false);
   const [displaySettingsOpen, setDisplaySettingsOpen] = useState(false);
   const [timeFormat, setTimeFormat] = useState<JsonTimeFormat>('none');

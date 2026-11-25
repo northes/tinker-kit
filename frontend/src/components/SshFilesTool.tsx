@@ -43,6 +43,8 @@ import {
 } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useWorkspaceTabTitle } from '../app/workspace-tab-title';
+import type { DiffCompareSourceReporter } from '../lib/diff-compare-source';
+import type { RemoteTextEditorContent } from './RemoteTextEditorDialog';
 import {
   CalculateRemoteSize,
   CancelFileTask,
@@ -148,6 +150,7 @@ const RemoteTextEditorDialog = lazy(async () => ({
 
 type Props = {
   active: boolean;
+  onCompareSourceChange: DiffCompareSourceReporter;
   locate?: { id: number; sourceID: string; path: string } | null;
 };
 type CreateEntryTarget = {
@@ -159,7 +162,7 @@ type CreateEntryTarget = {
   cacheScope: string;
 };
 
-export default function SshFilesTool({ active, locate = null }: Props) {
+export default function SshFilesTool({ active, locate = null, onCompareSourceChange }: Props) {
   const { t, i18n } = useTranslation();
   const sourceLabelId = useId();
   const { profiles } = useSSHProfiles();
@@ -186,6 +189,19 @@ export default function SshFilesTool({ active, locate = null }: Props) {
   const [operationError, setOperationError] = useState('');
   const [operationRunning, setOperationRunning] = useState(false);
   const [editingFile, setEditingFile] = useState<RemoteFileEntry | null>(null);
+  const editingFileName = editingFile?.name ?? '';
+  const reportEditorContent = useCallback(
+    (content: RemoteTextEditorContent | null) => {
+      onCompareSourceChange({
+        toolId: 'ssh-files',
+        text: content?.text ?? '',
+        editorOpen: content !== null,
+        ready: content?.ready ?? false,
+        fileName: editingFileName,
+      });
+    },
+    [editingFileName, onCompareSourceChange],
+  );
   const [treeExpanded, setTreeExpanded] = useState<string[]>([]);
   const [treeLoading, setTreeLoading] = useState<string[]>([]);
   const [treeErrors, setTreeErrors] = useState<Record<string, string>>({});
@@ -2852,6 +2868,7 @@ export default function SshFilesTool({ active, locate = null }: Props) {
             name={editingFile.name}
             onClose={() => setEditingFile(null)}
             onSaved={refreshAfterTextSave}
+            onContentChange={reportEditorContent}
           />
         </Suspense>
       ) : null}

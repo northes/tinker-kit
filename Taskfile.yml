@@ -40,6 +40,11 @@ tasks:
     cmds:
       - node --experimental-strip-types --test frontend/src/app/workspace-tabs.test.mjs
 
+  test:diff-compare-source:
+    summary: Checks diff source availability and workspace tab order
+    cmds:
+      - node --experimental-strip-types --test frontend/src/lib/diff-compare-source.test.mjs
+
   test:i18n:
     summary: Checks locale key parity and literal keys used in code
     cmds:

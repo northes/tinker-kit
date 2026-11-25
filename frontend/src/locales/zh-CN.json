@@ -33,6 +33,9 @@
     "closeTab": "关闭{{name}}",
     "pin": "固定标签",
     "unpin": "取消固定",
+    "compare": "对比内容",
+    "compareToLeft": "放入左边",
+    "compareToRight": "放入右边",
     "closeOtherTabs": "关闭其他标签",
     "rename": "重命名",
     "close": "关闭标签",
@@ -661,6 +664,13 @@
     "title": "差异对比",
     "subtitle": "比较两段文本并定位变化",
     "actions": "差异对比操作",
+    "placeholder": "粘贴文本或从<open>已打开的tab</open>中选择",
+    "pickSourceTitle": {
+      "before": "填入左边",
+      "after": "填入右边"
+    },
+    "pickSourceEmpty": "没有可用于对比的标签",
+    "pickSourceNoMatches": "没有匹配的标签",
     "clear": "清空",
     "swap": "交换内容",
     "clipboardTarget": "托盘识别后填入",

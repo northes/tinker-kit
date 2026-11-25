@@ -1,4 +1,4 @@
-import { useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import CodeMirror from '@uiw/react-codemirror';
@@ -211,18 +211,29 @@ async function formatText(name: string, content: string) {
   return prettier.format(content, { parser, plugins });
 }
 
+export type RemoteTextEditorContent = { text: string; ready: boolean };
+
 type Props = {
   sourceID: string;
   path: string;
   name: string;
   onClose: () => void;
   onSaved: () => void;
+  onContentChange: (content: RemoteTextEditorContent | null) => void;
 };
 
-export function RemoteTextEditorDialog({ sourceID, path, name, onClose, onSaved }: Props) {
+export function RemoteTextEditorDialog({
+  sourceID,
+  path,
+  name,
+  onClose,
+  onSaved,
+  onContentChange,
+}: Props) {
   const { t } = useTranslation();
   const overlayRoot = useContext(ToolSlotOverlayContext);
   const [loading, setLoading] = useState(true);
+  const [readFailed, setReadFailed] = useState(false);
   const [saving, setSaving] = useState(false);
   const [formatting, setFormatting] = useState(false);
   const [liveRefresh, setLiveRefresh] = useState(false);
@@ -240,6 +251,12 @@ export function RemoteTextEditorDialog({ sourceID, path, name, onClose, onSaved 
   const saveRef = useRef(async () => {});
   const followTailRef = useRef(true);
   const autoTailRef = useRef(true);
+  useLayoutEffect(() => {
+    return () => onContentChange(null);
+  }, [onContentChange]);
+  useLayoutEffect(() => {
+    onContentChange({ text: content, ready: !loading && !readFailed });
+  }, [content, loading, readFailed, onContentChange]);
   const dirty = content !== savedContent;
   const formatSupported = Boolean(prettierParsers[extension(name)]);
   const formatTooLarge =
@@ -301,6 +318,7 @@ export function RemoteTextEditorDialog({ sourceID, path, name, onClose, onSaved 
         setSavedContent(file.content);
         setRevision(file.revision);
         setTruncated(file.truncated);
+        setReadFailed(false);
         setError('');
         if (tailLines > 0 && followTailRef.current) setTailScroll((value) => value + 1);
       })
@@ -321,6 +339,7 @@ export function RemoteTextEditorDialog({ sourceID, path, name, onClose, onSaved 
         setSavedContent('');
         setRevision('');
         setTruncated(false);
+        setReadFailed(true);
         setError(formatBackendError(reason));
       })
       .finally(() => {
@@ -347,15 +366,18 @@ export function RemoteTextEditorDialog({ sourceID, path, name, onClose, onSaved 
         setSavedContent(file.content);
         setRevision(file.revision);
         setTruncated(file.truncated);
+        setReadFailed(false);
         setError('');
         if (followTailRef.current) setTailScroll((value) => value + 1);
       } catch (reason) {
         if (!active) return;
         if (tailLines === 0 && backendErrorKey(reason) === 'errors.sshFile.textTooLarge') {
           followTailRef.current = true;
+          setLoading(true);
           setTailLines(defaultTailLines);
           return;
         }
+        setReadFailed(true);
         setError(formatBackendError(reason));
       } finally {
         if (active) timer = setTimeout(() => void refresh(), 1500);
@@ -520,6 +542,7 @@ export function RemoteTextEditorDialog({ sourceID, path, name, onClose, onSaved 
                 if (!Number.isInteger(next) || next === tailLines) return;
                 autoTailRef.current = false;
                 followTailRef.current = true;
+                setLoading(true);
                 setTailLines(next);
               }}
             >

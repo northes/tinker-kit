@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { minimalSetup } from 'codemirror';
 import { MergeView, type Chunk } from '@codemirror/merge';
 import { RangeSetBuilder, type Extension } from '@codemirror/state';
@@ -13,7 +14,18 @@ import { StreamLanguage } from '@codemirror/language';
 import { json } from '@codemirror/lang-json';
 import { quietEditorTheme } from './codeMirrorTheme';
 import { ArrowsLeftRight, Trash } from '@phosphor-icons/react';
-import { useTranslation } from 'react-i18next';
+import { Trans, useTranslation } from 'react-i18next';
+import type { DiffCompareCandidate, DiffCompareSide } from '../lib/diff-compare-source';
+import { rankSourceSearch } from '../lib/source-search';
+import {
+  Command,
+  CommandDialog,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from './ui/command';
 import { Label } from './ui/label';
 import { Switch } from './ui/switch';
 import {
@@ -243,6 +255,73 @@ function detectLanguage(value: string) {
   if (/^---\s*$|^(?:[\w.-]+|"[^"]+"):\s*(?:[^{}\[\n].*)?$|^\s*-\s+\w+/m.test(source)) return 'YAML';
   return 'Plain Text';
 }
+function DiffPanePlaceholder({
+  view,
+  value,
+  onPick,
+}: {
+  view: EditorView;
+  value: string;
+  onPick: () => void;
+}) {
+  const pane = view.dom.parentElement;
+  const [position, setPosition] = useState<{ left: number; top: number } | null>(null);
+  useLayoutEffect(() => {
+    if (!pane) return;
+    let frame = 0;
+    const measure = () => {
+      const coords = view.coordsAtPos(0);
+      if (!coords) {
+        setPosition(null);
+        return;
+      }
+      const box = pane.getBoundingClientRect();
+      const left = coords.left - box.left - pane.clientLeft;
+      const top = coords.top - box.top - pane.clientTop;
+      setPosition((current) =>
+        current?.left === left && current.top === top ? current : { left, top },
+      );
+    };
+    const scheduleMeasure = () => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(measure);
+    };
+    const observer = new ResizeObserver(scheduleMeasure);
+    observer.observe(pane);
+    observer.observe(view.contentDOM);
+    view.scrollDOM.addEventListener('scroll', scheduleMeasure, { passive: true });
+    scheduleMeasure();
+    return () => {
+      cancelAnimationFrame(frame);
+      observer.disconnect();
+      view.scrollDOM.removeEventListener('scroll', scheduleMeasure);
+    };
+  }, [pane, view, value]);
+
+  if (!pane || !position) return null;
+  return createPortal(
+    <div
+      className="pointer-events-none absolute right-2 z-[1] font-[monospace] text-[length:var(--code-editor-font-size)] leading-[1.4] text-muted-foreground"
+      style={position}
+    >
+      <Trans
+        i18nKey="diffTool.placeholder"
+        components={{
+          open: (
+            <button
+              type="button"
+              aria-haspopup="dialog"
+              className="pointer-events-auto cursor-pointer border-0 bg-transparent p-0 font-[inherit] text-primary underline underline-offset-2 outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+              onClick={onPick}
+            />
+          ),
+        }}
+      />
+    </div>,
+    pane,
+  );
+}
+
 function DiffMerge({
   before,
   after,
@@ -257,12 +336,13 @@ function DiffMerge({
   onBeforeChange,
   onAfterChange,
   onCountsChange,
+  onPickSource,
 }: {
   before: string;
   after: string;
   theme: string;
   languageExtensions: Extension[];
-  lastFilled: 'before' | 'after' | null;
+  lastFilled: DiffCompareSide | null;
   fillLabel: string;
   active: boolean;
   collapseUnchanged: boolean;
@@ -271,9 +351,11 @@ function DiffMerge({
   onBeforeChange: (value: string) => void;
   onAfterChange: (value: string) => void;
   onCountsChange: (counts: Counts) => void;
+  onPickSource: (side: DiffCompareSide) => void;
 }) {
   const host = useRef<HTMLDivElement>(null);
   const mergeRef = useRef<MergeView | null>(null);
+  const [panes, setPanes] = useState<{ before: EditorView; after: EditorView } | null>(null);
   const callbacks = useRef({ onBeforeChange, onAfterChange, onCountsChange });
   callbacks.current = { onBeforeChange, onAfterChange, onCountsChange };
   useEffect(() => {
@@ -318,6 +400,7 @@ function DiffMerge({
       diffConfig: { scanLimit: 3000, timeout: 1000 },
     });
     mergeRef.current = merge;
+    setPanes({ before: merge.a, after: merge.b });
     merge.a.contentDOM.setAttribute('aria-label', aLabel);
     merge.b.contentDOM.setAttribute('aria-label', bLabel);
     const scrollA = merge.a.scrollDOM,
@@ -403,13 +486,30 @@ function DiffMerge({
     return true;
   });
   return (
-    <div className="diff-merge-wrap h-full min-h-0 min-w-0">
+    <div className="relative h-full min-h-0 min-w-0">
       <div
         ref={host}
         className="diff-merge-host h-full min-h-0 min-w-0 overflow-hidden border-0 bg-card [--wails-draggable:no-drag] select-text"
       />
+      {active && panes && before.trim() === '' ? (
+        <DiffPanePlaceholder
+          view={panes.before}
+          value={before}
+          onPick={() => onPickSource('before')}
+        />
+      ) : null}
+      {active && panes && after.trim() === '' ? (
+        <DiffPanePlaceholder
+          view={panes.after}
+          value={after}
+          onPick={() => onPickSource('after')}
+        />
+      ) : null}
       {lastFilled && (
-        <div className={`diff-fill-notice diff-fill-notice--${lastFilled}`} role="status">
+        <div
+          className={`pointer-events-none absolute bottom-3 z-2 rounded-md border border-border bg-popover px-2 py-1 text-xs text-popover-foreground shadow-sm ${lastFilled === 'before' ? 'left-3' : 'right-3'}`}
+          role="status"
+        >
           {fillLabel}
         </div>
       )}
@@ -421,16 +521,25 @@ export default function DiffTool({
   theme,
   pending,
   clearPending,
+  compareCandidates,
+  onPickCompareSource,
 }: {
   active: boolean;
   theme: string;
   pending: PendingAction | null;
   clearPending: () => void;
+  compareCandidates: readonly DiffCompareCandidate[];
+  onPickCompareSource: (id: string, side: DiffCompareSide) => boolean;
 }) {
   const { t } = useTranslation();
   const [before, setBefore] = useState('');
   const [after, setAfter] = useState('');
-  const [lastFilled, setLastFilled] = useState<'before' | 'after' | null>(null);
+  const [lastFilled, setLastFilled] = useState<DiffCompareSide | null>(null);
+  const [picker, setPicker] = useState<{ open: boolean; side: DiffCompareSide }>({
+    open: false,
+    side: 'before',
+  });
+  const [sourceQuery, setSourceQuery] = useState('');
   const [collapseUnchanged, setCollapseUnchanged] = useState(false);
   const noticeTimer = useRef<number | null>(null);
   const [, setCounts] = useState<Counts>({ deletions: 0, additions: 0 });
@@ -499,6 +608,19 @@ export default function DiffTool({
     setBefore(after);
     setAfter(before);
   };
+  useLayoutEffect(() => {
+    if (!active) setPicker((current) => (current.open ? { ...current, open: false } : current));
+  }, [active]);
+  const openSourcePicker = (side: DiffCompareSide) => {
+    setSourceQuery('');
+    setPicker({ open: true, side });
+  };
+  const closeSourcePicker = () => setPicker((current) => ({ ...current, open: false }));
+  const pickerTitle = t(`diffTool.pickSourceTitle.${picker.side}`);
+  // 筛选只隐藏未命中的标签，保留标签栏的顺序。
+  const visibleCandidates = sourceQuery
+    ? compareCandidates.filter(({ label }) => rankSourceSearch(label, sourceQuery) !== null)
+    : compareCandidates;
   return (
     <Reveal index={0} fill active={active}>
       <ToolLayout className="diff-tool-layout [container-type:inline-size]">
@@ -518,6 +640,7 @@ export default function DiffTool({
               onBeforeChange={setBefore}
               onAfterChange={setAfter}
               onCountsChange={setCounts}
+              onPickSource={openSourcePicker}
             />
           </div>
         </ToolLayoutContent>
@@ -556,6 +679,52 @@ export default function DiffTool({
           </div>
         </ToolLayoutFooter>
       </ToolLayout>
+      <CommandDialog
+        open={active && picker.open}
+        onOpenChange={(open) => {
+          if (!open) closeSourcePicker();
+        }}
+        title={pickerTitle}
+        description={pickerTitle}
+        className="sm:max-w-lg"
+      >
+        <Command
+          className="rounded-none! bg-transparent"
+          label={t('palette.searchLabel')}
+          shouldFilter={false}
+        >
+          <div aria-hidden="true" className="px-3 pt-2 pb-1 text-sm font-medium">
+            {pickerTitle}
+          </div>
+          <CommandInput
+            placeholder={t('palette.searchPlaceholder')}
+            value={sourceQuery}
+            onValueChange={setSourceQuery}
+          />
+          <CommandList>
+            <CommandEmpty>
+              {compareCandidates.length === 0
+                ? t('diffTool.pickSourceEmpty')
+                : t('diffTool.pickSourceNoMatches')}
+            </CommandEmpty>
+            <CommandGroup>
+              {visibleCandidates.map(({ id, label }) => (
+                <CommandItem
+                  key={id}
+                  value={id}
+                  onSelect={() => {
+                    if (onPickCompareSource(id, picker.side)) closeSourcePicker();
+                  }}
+                >
+                  <span className="min-w-0 flex-1 truncate" title={label}>
+                    {label}
+                  </span>
+                </CommandItem>
+              ))}
+            </CommandGroup>
+          </CommandList>
+        </Command>
+      </CommandDialog>
     </Reveal>
   );
 }

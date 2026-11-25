@@ -33,6 +33,9 @@
     "closeTab": "Close {{name}}",
     "pin": "Pin tab",
     "unpin": "Unpin",
+    "compare": "Compare content",
+    "compareToLeft": "Put on the left",
+    "compareToRight": "Put on the right",
     "closeOtherTabs": "Close other tabs",
     "rename": "Rename",
     "close": "Close tab",
@@ -661,6 +664,13 @@
     "title": "Diff Compare",
     "subtitle": "Compare two texts and locate changes",
     "actions": "Diff compare actions",
+    "placeholder": "Paste text or choose from <open>open tabs</open>",
+    "pickSourceTitle": {
+      "before": "Fill left side",
+      "after": "Fill right side"
+    },
+    "pickSourceEmpty": "No tabs have content to compare",
+    "pickSourceNoMatches": "No matching tabs",
     "before": "Original",
     "after": "Modified",
     "clear": "Clear",
