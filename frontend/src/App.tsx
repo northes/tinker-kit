@@ -1105,7 +1105,9 @@ function AppShell() {
       }
       deliver(focused.id, { tool: 'diff', action: 'fill', input: text, target });
       toast.add({
-        title: t('toast.trayAutoFilled', { tool: t('tools.diff.name') }),
+        title: t('toast.trayAutoFilledDiffSide', {
+          side: t(`diffTool.toastSide.${target}`),
+        }),
         type: 'success',
       });
       return;

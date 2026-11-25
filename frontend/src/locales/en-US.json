@@ -686,6 +686,10 @@
       "before": "Filled original",
       "after": "Filled modified"
     },
+    "toastSide": {
+      "before": "left",
+      "after": "right"
+    },
     "collapseUnchanged": "Collapse unchanged lines"
   },
   "jwtTool": {
@@ -1709,6 +1713,7 @@
     "region": "Notifications",
     "close": "Close notification",
     "trayAutoFilled": "Filled {{tool}} with clipboard contents",
+    "trayAutoFilledDiffSide": "Filled diff ({{side}}) from clipboard",
     "clipboardEmpty": "Clipboard is empty",
     "clipboardEmptyDesc": "Copy some content before running this command",
     "copied": "Copied {{value}}",

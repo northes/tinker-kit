@@ -684,6 +684,10 @@
       "before": "已填入原始内容",
       "after": "已填入修改后"
     },
+    "toastSide": {
+      "before": "左侧",
+      "after": "右侧"
+    },
     "collapseUnchanged": "折叠相同行",
     "before": "原文",
     "after": "修改后"
@@ -1709,6 +1713,7 @@
     "region": "通知",
     "close": "关闭通知",
     "trayAutoFilled": "已将剪贴板内容填入{{tool}}",
+    "trayAutoFilledDiffSide": "已将剪贴板内容填入差异对比（{{side}}）",
     "clipboardEmpty": "剪贴板内容为空",
     "clipboardEmptyDesc": "请先复制内容后再执行该命令",
     "copied": "已复制 {{value}}",
