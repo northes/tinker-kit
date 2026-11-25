@@ -39,12 +39,12 @@ const singleLine = EditorState.transactionFilter.of((transaction) => {
   return { changes };
 });
 
+// 内容内边距与行左缩进放在样式表的 .log-filter-cm 里：CodeMirror 反向挂载各
+// theme 模块，组件自带的 theme 会被共享主题的同名规则覆盖。
 const compactTheme = EditorView.theme({
   '&': { height: '100%', borderRadius: 'inherit' },
   '&.cm-focused': { outline: 'none' },
   '.cm-scroller': { overflow: 'hidden', borderRadius: 'inherit' },
-  '.cm-content': { padding: '5px 0', minHeight: '0' },
-  '.cm-line': { padding: '0 10px' },
 });
 const basicSetup = {
   lineNumbers: false,
@@ -147,6 +147,7 @@ export function LogFilterInput({
   return (
     <div className="h-full min-w-0 [--code-editor-font-size:14px]" onClick={onClick}>
       <CodeMirror
+        className="log-filter-cm"
         ref={editorRef}
         value={value}
         height="30px"

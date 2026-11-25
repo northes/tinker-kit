@@ -8,6 +8,17 @@
 .cm-editor {
   text-transform: none;
 }
+/* 单行日志过滤输入框：一行文本加上下各 5px，在 30px 的编辑区内垂直居中。
+   内边距必须写在样式表里：CodeMirror 按扩展顺序反向挂载 theme 模块，组件自带
+   theme 的同名规则会被共享主题（codeMirrorTheme 的 padding: 0）覆盖，
+   表现为文字贴着输入框顶部。 */
+.log-filter-cm .cm-content {
+  min-height: 0;
+  padding: 5px 0;
+}
+.log-filter-cm .cm-line {
+  padding: 0 10px;
+}
 .cm-editor,
 .cm-editor .cm-scroller {
   background: var(--card) !important;
