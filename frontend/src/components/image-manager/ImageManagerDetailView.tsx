@@ -282,7 +282,7 @@ export function ImageManagerDetailView({
               <section aria-labelledby="image-detail-metadata" className="mt-3">
                 <h3
                   id="image-detail-metadata"
-                  className="m-0 text-[12px] font-semibold text-foreground"
+                  className="m-0 px-3 text-[12px] font-semibold text-foreground"
                 >
                   {t('imageManagerTool.detailMetadata')}
                 </h3>
@@ -290,7 +290,7 @@ export function ImageManagerDetailView({
                   {renderDetailRows(detailMetadataRows)}
                 </dl>
                 <dl className="divide-y divide-border">
-                  <div className="grid grid-cols-1 gap-1 py-2.5 sm:grid-cols-[7rem_minmax(0,1fr)] sm:gap-4">
+                  <div className="grid grid-cols-1 gap-1 px-3 py-2.5 sm:grid-cols-[7rem_minmax(0,1fr)] sm:gap-4">
                     <dt className="text-[10px] font-medium text-muted-foreground">
                       {t('imageManagerTool.detailLabels')}
                     </dt>
@@ -321,12 +321,12 @@ export function ImageManagerDetailView({
               <section aria-labelledby="image-detail-layers" className="mt-6">
                 <h3
                   id="image-detail-layers"
-                  className="m-0 text-[12px] font-semibold text-foreground"
+                  className="m-0 px-3 text-[12px] font-semibold text-foreground"
                 >
                   {t('imageManagerTool.detailLayers')}
                 </h3>
                 {detailLayers.length === 0 ? (
-                  <p className="mt-2 text-[12px] text-muted-foreground">
+                  <p className="mt-2 px-3 text-[12px] text-muted-foreground">
                     {t('imageManagerTool.layersEmpty')}
                   </p>
                 ) : (
@@ -378,7 +378,7 @@ export function ImageManagerDetailView({
               <section aria-labelledby="image-detail-runtime" className="mt-6">
                 <h3
                   id="image-detail-runtime"
-                  className="m-0 text-[12px] font-semibold text-foreground"
+                  className="m-0 px-3 text-[12px] font-semibold text-foreground"
                 >
                   {t('imageManagerTool.detailRuntime')}
                 </h3>
@@ -388,7 +388,7 @@ export function ImageManagerDetailView({
               <section aria-labelledby="image-detail-raw-manifest" className="mt-6 pb-6">
                 <h3
                   id="image-detail-raw-manifest"
-                  className="m-0 text-[12px] font-semibold text-foreground"
+                  className="m-0 px-3 text-[12px] font-semibold text-foreground"
                 >
                   {t('imageManagerTool.detailRawManifest')}
                 </h3>
@@ -400,7 +400,7 @@ export function ImageManagerDetailView({
                     {rawManifest}
                   </ScrollArea>
                 ) : (
-                  <p className="mt-2 text-[12px] text-muted-foreground">
+                  <p className="mt-2 px-3 text-[12px] text-muted-foreground">
                     {t('imageManagerTool.rawManifestEmpty')}
                   </p>
                 )}

@@ -511,7 +511,7 @@ export default function TimeTool({
                     />
                   </div>
                 </div>
-                <div className="mt-3.5 flex min-h-[39px] items-center justify-between gap-3 px-1 py-1.5">
+                <div className="mt-3.5 flex min-h-[39px] items-center justify-between gap-3 px-3 py-1.5">
                   <span className="text-[10px] text-muted-foreground">
                     {editing ? t('timeTool.editHint') : ''}
                   </span>
