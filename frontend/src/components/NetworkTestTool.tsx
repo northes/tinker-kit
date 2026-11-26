@@ -872,7 +872,8 @@ export default function NetworkTestTool({
             <div className="flex h-full min-h-0 flex-col">
               {stages.length ? (
                 <div className="flex min-h-0 flex-1 flex-col">
-                  <div className="grid shrink-0 grid-cols-[150px_minmax(0,1fr)_88px] gap-3 py-2 text-[10px] font-medium text-muted-foreground max-[700px]:grid-cols-[112px_minmax(0,1fr)_74px]">
+                  {/* 行内容会注入 4px 的 p-1，右侧另预留 8px 滚动条空间；叠加行内 12px 后，表头左右需为 16px/24px。 */}
+                  <div className="grid shrink-0 grid-cols-[150px_minmax(0,1fr)_88px] gap-3 pl-4 pr-6 py-2 text-[10px] font-medium text-muted-foreground max-[700px]:grid-cols-[112px_minmax(0,1fr)_74px]">
                     <span>{t('networkTestTool.waterfall.stage')}</span>
                     <span>{t('networkTestTool.waterfall.timeline')}</span>
                     <span className="text-right">{t('networkTestTool.waterfall.duration')}</span>
@@ -994,7 +995,7 @@ export default function NetworkTestTool({
                         return (
                           <div
                             key={stage.id}
-                            className={`grid grid-cols-[150px_minmax(0,1fr)_88px] gap-3 py-2.5 text-xs max-[700px]:grid-cols-[112px_minmax(0,1fr)_74px] ${index % 2 === 1 ? 'bg-muted/30 rounded-md' : ''}`}
+                            className={`grid grid-cols-[150px_minmax(0,1fr)_88px] gap-3 px-3 py-2.5 text-xs max-[700px]:grid-cols-[112px_minmax(0,1fr)_74px] ${index % 2 === 1 ? 'bg-muted/30 rounded-md' : ''}`}
                           >
                             <div className="min-w-0">
                               <div className="truncate font-medium">

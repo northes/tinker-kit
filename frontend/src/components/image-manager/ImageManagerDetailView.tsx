@@ -236,7 +236,7 @@ export function ImageManagerDetailView({
       return (
         <div
           key={row.key}
-          className={`grid grid-cols-1 gap-1 px-1 py-2.5 sm:grid-cols-[7rem_minmax(0,1fr)] sm:gap-4 ${index % 2 === 1 ? 'rounded-md bg-muted/30' : ''}`}
+          className={`grid grid-cols-1 gap-1 px-3 py-2.5 sm:grid-cols-[7rem_minmax(0,1fr)] sm:gap-4 ${index % 2 === 1 ? 'rounded-md bg-muted/30' : ''}`}
         >
           <dt className="text-[10px] font-medium text-muted-foreground">{row.label}</dt>
           <dd

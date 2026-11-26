@@ -70,7 +70,7 @@
 }
 .json-table-layer > .json-table-preview,
 .json-table-layer > .json-table-scroll {
-  padding-inline: 10px;
+  padding-inline: 8px;
   padding-block: 8px 10px;
 }
 /* 嵌套子表跟外层一起滚，不单独滚动，也不加边缘渐变。 */

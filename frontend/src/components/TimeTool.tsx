@@ -161,7 +161,7 @@ function TimeResultRow({
       ref={sortable.setNodeRef}
       style={style}
       data-time-result-id={id}
-      className={`grid min-h-11 items-center px-1 ${editing ? 'grid-cols-[30px_128px_minmax(0,1fr)_34px] select-none' : 'grid-cols-[128px_minmax(0,1fr)]'} ${hidden ? 'opacity-40' : ''} ${sortable.isDragging ? 'bg-accent' : index % 2 === 1 ? 'bg-muted/30 rounded-md' : ''}`}
+      className={`grid min-h-11 items-center px-3 ${editing ? 'grid-cols-[30px_128px_minmax(0,1fr)_34px] select-none' : 'grid-cols-[128px_minmax(0,1fr)]'} ${hidden ? 'opacity-40' : ''} ${sortable.isDragging ? 'bg-accent' : index % 2 === 1 ? 'bg-muted/30 rounded-md' : ''}`}
     >
       {editing && (
         <Button
@@ -176,10 +176,10 @@ function TimeResultRow({
           <DotsSixVertical size={16} weight="regular" />
         </Button>
       )}
-      <span className="pl-3 text-[10px] text-muted-foreground">{label}</span>
+      <span className="text-[10px] text-muted-foreground">{label}</span>
       {editing ? (
         // 编辑态只做排序与显隐，复制入口关闭，避免拖拽时误触。
-        <div className="flex min-h-9 min-w-0 items-center px-3">
+        <div className="flex min-h-9 min-w-0 items-center">
           <code className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-[13px] text-foreground">
             {value}
           </code>
@@ -187,7 +187,7 @@ function TimeResultRow({
       ) : (
         <Button
           variant="ghost"
-          className="min-h-9 min-w-0 justify-start gap-2.5 rounded-lg px-3 text-muted-foreground"
+          className="min-h-9 min-w-0 justify-start gap-2.5 rounded-lg px-0 text-muted-foreground"
           onClick={onCopy}
         >
           <code className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-[13px] text-foreground">

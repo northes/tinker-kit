@@ -55,7 +55,7 @@ function UrlPart({
   const labelId = `${id}-label`;
   return (
     <div
-      className={`grid grid-cols-[104px_minmax(0,1fr)_32px] items-center gap-3 px-0.5 py-[13px] ${
+      className={`grid grid-cols-[104px_minmax(0,1fr)_32px] items-center gap-3 px-3 py-[13px] ${
         index % 2 === 1 ? 'bg-muted/30 rounded-md' : ''
       }`}
     >
@@ -296,7 +296,7 @@ export default function UrlTool({
                   ) : null}
                   {editResults || parts.params.length > 0 ? (
                     <div
-                      className={`grid grid-cols-[104px_minmax(0,1fr)_32px] items-start gap-3 px-0.5 py-[13px] ${
+                      className={`grid grid-cols-[104px_minmax(0,1fr)_32px] items-start gap-3 px-3 py-[13px] ${
                         rowIndex++ % 2 === 1 ? 'bg-muted/30 rounded-md' : ''
                       }`}
                     >

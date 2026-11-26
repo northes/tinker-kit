@@ -84,7 +84,7 @@ function ToolOrderRow({
           {t('sidebar.moveToolUp', { name })}. {t('sidebar.moveToolDown', { name })}
         </span>
       </Button>
-      <div className="flex min-w-0 flex-1 items-center gap-2 px-1 text-xs text-foreground">
+      <div className="flex min-w-0 flex-1 items-center gap-2 px-3 text-xs text-foreground">
         <tool.icon size={16} weight="regular" aria-hidden="true" />
         <span className="min-w-0 truncate">{name}</span>
       </div>

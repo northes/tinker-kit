@@ -1523,7 +1523,7 @@ export default function ServiceManagerTool({
                   key={container.id}
                   htmlFor={`pick-container-${container.id}`}
                   className={cn(
-                    'cursor-pointer gap-2 rounded-md py-2 font-normal hover:bg-accent',
+                    'cursor-pointer gap-2 rounded-md px-3 py-2 font-normal hover:bg-accent',
                     index % 2 === 1 && 'bg-muted/30',
                   )}
                 >

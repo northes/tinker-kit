@@ -687,7 +687,7 @@ function SSHKnownHostsDialog({
                         <li
                           key={entry.id}
                           className={cn(
-                            'flex min-w-0 items-start gap-3 rounded-md px-2 py-2.5 hover:bg-accent max-[560px]:flex-col',
+                            'flex min-w-0 items-start gap-3 rounded-md px-3 py-2.5 hover:bg-accent max-[560px]:flex-col',
                             index % 2 === 1 && 'bg-muted/30',
                           )}
                         >
