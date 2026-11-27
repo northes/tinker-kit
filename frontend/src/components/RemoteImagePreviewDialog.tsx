@@ -109,7 +109,14 @@ export function RemoteImagePreviewDialog({
     natural.w > 0 && natural.h > 0 && viewport.w > 0 && viewport.h > 0
       ? Math.min(1, viewport.w / natural.w, viewport.h / natural.h)
       : 1;
-  const canPan = decoded && scale > fit * 1.001;
+  const displayW = natural.w * scale;
+  const displayH = natural.h * scale;
+  // 只有放大后图像超出视口才允许拖拽，缩到适应窗口或整图仍在视口内时禁止平移。
+  const canPan =
+    decoded &&
+    viewport.w > 0 &&
+    viewport.h > 0 &&
+    (displayW > viewport.w + 0.5 || displayH > viewport.h + 0.5);
   const viewRef = useRef({
     scale,
     panX: pan.x,
@@ -246,9 +253,13 @@ export function RemoteImagePreviewDialog({
       const offsetX = event.clientX - rect.left - rect.width / 2;
       const offsetY = event.clientY - rect.top - rect.height / 2;
       const ratio = nextScale / current.scale;
+      // 指针锚定缩放：视口中心为原点，保持光标下的图像点不动（与 translate+scale 层叠一致）。
       let panX = offsetX * (1 - ratio) + current.panX * ratio;
       let panY = offsetY * (1 - ratio) + current.panY * ratio;
-      if (nextScale <= current.fit * 1.001) {
+      const nextDisplayW = current.naturalW * nextScale;
+      const nextDisplayH = current.naturalH * nextScale;
+      const overflows = nextDisplayW > current.viewW + 0.5 || nextDisplayH > current.viewH + 0.5;
+      if (!overflows || nextScale <= current.fit * 1.001) {
         panX = 0;
         panY = 0;
       } else {
@@ -267,7 +278,7 @@ export function RemoteImagePreviewDialog({
       viewRef.current = { ...current, scale: nextScale, panX, panY };
       setScale(nextScale);
       setPan({ x: panX, y: panY });
-      setMode('custom');
+      setMode(!overflows || nextScale <= current.fit * 1.001 ? 'fit' : 'custom');
     };
     node.addEventListener('wheel', onWheel, { passive: false });
     return () => node.removeEventListener('wheel', onWheel);
@@ -286,7 +297,10 @@ export function RemoteImagePreviewDialog({
   };
 
   const onPointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
-    if (!canPan || event.button !== 0) return;
+    const cur = viewRef.current;
+    const draggingAllowed =
+      cur.naturalW * cur.scale > cur.viewW + 0.5 || cur.naturalH * cur.scale > cur.viewH + 0.5;
+    if (!draggingAllowed || event.button !== 0) return;
     event.currentTarget.setPointerCapture(event.pointerId);
     dragRef.current = {
       pointerId: event.pointerId,
@@ -405,11 +419,12 @@ export function RemoteImagePreviewDialog({
                   src={dataURL}
                   alt={name}
                   draggable={false}
-                  className={`absolute top-1/2 left-1/2 max-w-none select-none ${decoded ? '' : 'invisible'}`}
+                  className={`absolute top-1/2 left-1/2 max-w-none origin-center select-none ${decoded ? '' : 'invisible'}`}
                   style={{
                     width: natural.w || undefined,
                     height: natural.h || undefined,
                     transform: `translate(calc(-50% + ${pan.x}px), calc(-50% + ${pan.y}px)) scale(${scale})`,
+                    transformOrigin: 'center center',
                   }}
                   onLoad={(event) => settleImage(event.currentTarget)}
                   onError={() => {
