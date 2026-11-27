@@ -41,13 +41,10 @@
 - `TinkerKit.dev` 实例写入真实配置目录 `TinkerKit`：不要留下脏配置、历史记录或工具状态；操作结束时说明改变了哪些持久化状态，以及如何还原。
 - 权限缺失用 `agent-desktop permissions` 判断，`--guide` 需要用户在系统设置里确认，此时停下来告知用户，不要反复重试。
 
-## 发版流程
+## 发版
 
-- 版本号用 SemVer annotated tag（`v<major>.<minor>.<patch>`），打在 `main` 的最新提交上；只依据「最近一个本地 tag → `HEAD`」的实际变更判断级别：用户可感知的新能力抬 minor，仅修复抬 patch，破坏兼容或需手动迁移抬 major。不要在发版时顺手改版本判定之外的代码。
-- 打 tag 前先确认工作区干净、`HEAD` 已包含本次要发布的全部提交；`git rev-parse <tag>^{commit}` 必须等于 `HEAD`。已被推送的 tag 不移动、不删除、不重建，判错就补一个更高的版本。
-- 推送到全部远程统一用 `wails3 task gp`（`Taskfile.yml` 的 `gp`：origin 和 github 各推一次分支与 tags）。不要自己拼 `git push` 组合。
-- `gp` 报 github `main` 被拒（`fetch first`）时，通常是 github 侧有本地的 Homebrew cask chore 提交。先 `git fetch github`，确认差异只有 `Casks/` 更新后再 `git merge github/main`，然后重跑一次 `wails3 task gp`；不要用 `--force` 覆盖对方提交。
-- `Casks/tinker-kit.rb` 的 `version` 与 `sha256` 只能在 GitHub 已存在对应 tag 的 Release 资产后更新；没有资产时保持上一版，不要提前改版本号留下不可安装的 cask。
+- 用户说「发版」或使用 `/skill:release`（部分环境可简写 `/release`）时，加载 `.agents/skills/release/SKILL.md` 并按其中步骤执行；版本判定遵循用户级 `version-tag` skill。
+- 推送远程仅通过 `wails3 task gp`；细则（merge github cask、cask 与 Release 门禁）以 release skill 为准，不在此重复。
 
 ## 工程质量
 
