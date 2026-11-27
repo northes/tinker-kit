@@ -374,8 +374,11 @@ func TestImportSSHProfilesFromLocalCreatesAndUpdatesOnce(t *testing.T) {
 	if err != nil {
 		t.Fatalf("再次导入失败: %v", err)
 	}
-	if again.Created != 0 || again.Updated != 2 || len(again.Profiles) != 4 || writes != 2 {
-		t.Fatalf("再次导入应只更新已有本机配置: created=%d updated=%d len=%d writes=%d", again.Created, again.Updated, len(again.Profiles), writes)
+	if again.Created != 0 || again.Updated != 0 || len(again.Profiles) != 4 || writes != 2 {
+		t.Fatalf("内容一致时再次导入不应计入更新: created=%d updated=%d len=%d writes=%d", again.Created, again.Updated, len(again.Profiles), writes)
+	}
+	if got := sshProfileByID(t, again.Profiles, "imported-prod"); got != gotProd {
+		t.Fatalf("内容一致时不应改写配置: %#v", got)
 	}
 }
 

@@ -418,6 +418,9 @@ func (s *ConfigService) ImportSSHProfilesFromLocal() (SSHProfileImportResult, er
 				if applyErr != nil {
 					return applyErr
 				}
+				if sameSSHConfigProfileContent(profiles[index], applied) {
+					continue
+				}
 				profiles[index] = applied
 				updated++
 			}
@@ -438,6 +441,14 @@ func sshConfigProfileIndexes(profiles []SSHProfile, alias string) []int {
 		}
 	}
 	return indexes
+}
+
+// sameSSHConfigProfileContent 判断本机解析结果与应用内配置是否只差同步时间戳。
+// 内容一致时既不算更新也不重新写盘，避免每次导入都把「更新」计数刷满。
+func sameSSHConfigProfileContent(current, applied SSHProfile) bool {
+	current.OriginUpdatedAt = ""
+	applied.OriginUpdatedAt = ""
+	return current == applied
 }
 
 func applyResolvedSSHConfigProfile(current, resolved SSHProfile) (SSHProfile, error) {
