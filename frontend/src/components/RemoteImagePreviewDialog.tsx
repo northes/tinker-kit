@@ -1,7 +1,7 @@
 import { useContext, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
-import * as fileService from '../../bindings/tinkerkit/fileservice';
+import { ReadRemoteImageFile } from '../../bindings/tinkerkit/fileservice';
 import { ToolSlotOverlayContext } from '../app/tool-slot';
 import { formatBytes } from './ssh-files/model';
 import { Button } from './ui/button';
@@ -9,32 +9,9 @@ import { Spinner } from './ui/spinner';
 import { toast } from './ui/toast';
 import { formatBackendError } from '../lib/backend-error';
 
-// 与本地 LocalFile / 计划中的 ReadRemoteImageFile 对齐。bindings 尚未生成时用这份类型。
-type RemoteImageFile = {
-  dataURL: string;
-  mimeType: string;
-  size: number;
-  name?: string;
-};
-
-type RemoteImageRead = Promise<RemoteImageFile> & {
-  cancel: () => void | Promise<void>;
-};
-
 const minZoomFactor = 0.25;
 const maxZoomFactor = 8;
 const zoomWheelGain = 0.0015;
-
-// bindings 里还没有 ReadRemoteImageFile 时不应让整页编译失败，因此按可选成员取用；
-// Go 侧导出并重新生成 bindings 后，可直接换成具名导入。
-function readRemoteImageFile(sourceID: string, remotePath: string): RemoteImageRead | undefined {
-  const reader = (
-    fileService as typeof fileService & {
-      ReadRemoteImageFile?: (sourceID: string, remotePath: string) => RemoteImageRead;
-    }
-  ).ReadRemoteImageFile;
-  return reader ? reader(sourceID, remotePath) : undefined;
-}
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
@@ -134,7 +111,7 @@ export function RemoteImagePreviewDialog({
 
   useLayoutEffect(() => {
     let active = true;
-    let request: RemoteImageRead | undefined;
+    let request: ReturnType<typeof ReadRemoteImageFile> | undefined;
     setLoading(true);
     setError('');
     setDecodeFailed(false);
@@ -145,12 +122,7 @@ export function RemoteImagePreviewDialog({
 
     const read = async () => {
       if (!active) return;
-      request = readRemoteImageFile(sourceID, path);
-      if (!request) {
-        setError(t('sshFilesTool.imageReadUnavailable'));
-        setLoading(false);
-        return;
-      }
+      request = ReadRemoteImageFile(sourceID, path);
       try {
         const file = await request;
         if (!active) return;
