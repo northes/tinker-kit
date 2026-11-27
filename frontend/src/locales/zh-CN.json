@@ -1942,6 +1942,7 @@
     "targetPath": "目标路径",
     "startUpload": "开始上传",
     "copyPath": "复制路径",
+    "openWithEditor": "用编辑器打开",
     "pathCopied": "路径已复制",
     "copyPathFailed": "复制路径失败",
     "createFile": "新建文件",

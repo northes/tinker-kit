@@ -1942,6 +1942,7 @@
     "targetPath": "Target path",
     "startUpload": "Start upload",
     "copyPath": "Copy path",
+    "openWithEditor": "Open with editor",
     "pathCopied": "Path copied",
     "copyPathFailed": "Could not copy path",
     "createFile": "New file",

@@ -1,4 +1,12 @@
-import { useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import {
+  useContext,
+  useEffect,
+  useEffectEvent,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import CodeMirror from '@uiw/react-codemirror';
@@ -217,6 +225,7 @@ type Props = {
   sourceID: string;
   path: string;
   name: string;
+  onProbeResult?: (errorKey: string | null) => boolean;
   onClose: () => void;
   onSaved: () => void;
   onContentChange: (content: RemoteTextEditorContent | null) => void;
@@ -226,6 +235,7 @@ export function RemoteTextEditorDialog({
   sourceID,
   path,
   name,
+  onProbeResult,
   onClose,
   onSaved,
   onContentChange,
@@ -251,12 +261,17 @@ export function RemoteTextEditorDialog({
   const saveRef = useRef(async () => {});
   const followTailRef = useRef(true);
   const autoTailRef = useRef(true);
+  const probing = onProbeResult !== undefined;
+  const finishProbe = useEffectEvent(
+    (errorKey: string | null) => onProbeResult?.(errorKey) ?? false,
+  );
   useLayoutEffect(() => {
+    if (probing) return;
     return () => onContentChange(null);
-  }, [onContentChange]);
+  }, [probing, onContentChange]);
   useLayoutEffect(() => {
-    onContentChange({ text: content, ready: !loading && !readFailed });
-  }, [content, loading, readFailed, onContentChange]);
+    if (!probing) onContentChange({ text: content, ready: !loading && !readFailed });
+  }, [probing, content, loading, readFailed, onContentChange]);
   const dirty = content !== savedContent;
   const formatSupported = Boolean(prettierParsers[extension(name)]);
   const formatTooLarge =
@@ -306,13 +321,16 @@ export function RemoteTextEditorDialog({
     [name],
   );
 
-  useEffect(() => {
-    const request = ReadRemoteTextFile(sourceID, path, tailLines);
+  useLayoutEffect(() => {
     let active = true;
-    let handedOff = false;
+    let request: ReturnType<typeof ReadRemoteTextFile> | undefined;
     setLoading(true);
-    void request
-      .then((file) => {
+
+    const read = async () => {
+      if (!active) return;
+      try {
+        request = ReadRemoteTextFile(sourceID, path, tailLines);
+        const file = await request;
         if (!active) return;
         setContent(file.content);
         setSavedContent(file.content);
@@ -321,16 +339,14 @@ export function RemoteTextEditorDialog({
         setReadFailed(false);
         setError('');
         if (tailLines > 0 && followTailRef.current) setTailScroll((value) => value + 1);
-      })
-      .catch((reason) => {
+        setLoading(false);
+        finishProbe(null);
+      } catch (reason) {
         if (!active) return;
-        if (
-          autoTailRef.current &&
-          tailLines === 0 &&
-          backendErrorKey(reason) === 'errors.sshFile.textTooLarge'
-        ) {
+        const errorKey = backendErrorKey(reason);
+        if (finishProbe(errorKey)) return;
+        if (autoTailRef.current && tailLines === 0 && errorKey === 'errors.sshFile.textTooLarge') {
           autoTailRef.current = false;
-          handedOff = true;
           followTailRef.current = true;
           setTailLines(defaultTailLines);
           return;
@@ -341,13 +357,14 @@ export function RemoteTextEditorDialog({
         setTruncated(false);
         setReadFailed(true);
         setError(formatBackendError(reason));
-      })
-      .finally(() => {
-        if (active && !handedOff) setLoading(false);
-      });
+        setLoading(false);
+      }
+    };
+    // 在本轮同步清理结束后发请求，避免 Strict Mode 重放 effect 时读两次。
+    queueMicrotask(() => void read());
     return () => {
       active = false;
-      void request.cancel();
+      void request?.cancel();
     };
   }, [sourceID, path, tailLines]);
 
@@ -468,6 +485,8 @@ export function RemoteTextEditorDialog({
       setFormatting(false);
     }
   };
+
+  if (probing) return null;
 
   const editor = (
     <section

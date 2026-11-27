@@ -14,6 +14,7 @@ import {
   File,
   FileArchive,
   FilePlus,
+  FileText,
   Folder,
   FolderSimplePlus,
   Funnel,
@@ -153,6 +154,12 @@ type Props = {
   onCompareSourceChange: DiffCompareSourceReporter;
   locate?: { id: number; sourceID: string; path: string } | null;
 };
+type TextProbeFallback = 'download' | 'favorite';
+
+type EditingFile = Pick<RemoteFileEntry, 'path' | 'name'> & {
+  probe?: { fallback: TextProbeFallback; viewKey: string };
+};
+
 type CreateEntryTarget = {
   kind: CreateEntryKind;
   sourceID: string;
@@ -188,7 +195,7 @@ export default function SshFilesTool({ active, locate = null, onCompareSourceCha
   const [deletePaths, setDeletePaths] = useState<string[] | null>(null);
   const [operationError, setOperationError] = useState('');
   const [operationRunning, setOperationRunning] = useState(false);
-  const [editingFile, setEditingFile] = useState<RemoteFileEntry | null>(null);
+  const [editingFile, setEditingFile] = useState<EditingFile | null>(null);
   const editingFileName = editingFile?.name ?? '';
   const reportEditorContent = useCallback(
     (content: RemoteTextEditorContent | null) => {
@@ -296,6 +303,11 @@ export default function SshFilesTool({ active, locate = null, onCompareSourceCha
     currentPath,
     showHidden,
   );
+
+  const probeViewKey = `${creationViewKeyRef.current}\0${searchRevision}`;
+  if (editingFile?.probe && editingFile.probe.viewKey !== probeViewKey) {
+    setEditingFile(null);
+  }
 
   const applyTaskSnapshot = useCallback((snapshot: FileTaskSnapshot) => {
     if (snapshot.revision < taskRevisionRef.current) return;
@@ -548,6 +560,17 @@ export default function SshFilesTool({ active, locate = null, onCompareSourceCha
     [sourceID, activeSourceProfileID, profileListingKey],
   );
 
+  const openTextEditor = (entry: RemoteFileEntry, fallback?: TextProbeFallback) => {
+    setEditingFile({
+      path: entry.path,
+      name: entry.name,
+      probe:
+        fallback && !isEditableTextFile(entry.path)
+          ? { fallback, viewKey: probeViewKey }
+          : undefined,
+    });
+  };
+
   const openFavorite = async (path: string) => {
     if (!sourceUsable) return;
     favoriteRequestRef.current?.cancel();
@@ -557,7 +580,7 @@ export default function SshFilesTool({ active, locate = null, onCompareSourceCha
       const entry = await request;
       if (favoriteRequestRef.current !== request) return;
       if (entry.isDir) navigate(path, 'favorite');
-      else if (!entry.isSymlink && isEditableTextFile(entry.path)) setEditingFile(entry);
+      else if (!entry.isSymlink) openTextEditor(entry, 'favorite');
       else toast.add({ title: t('sshFilesTool.favoriteFileNotEditable'), type: 'error' });
     } catch (reason) {
       if (favoriteRequestRef.current !== request) return;
@@ -1205,6 +1228,22 @@ export default function SshFilesTool({ active, locate = null, onCompareSourceCha
     }
   };
 
+  const finishTextProbe = (errorKey: string | null) => {
+    if (!editingFile?.probe) return false;
+    if (
+      errorKey === 'errors.sshFile.textInvalidEncoding' ||
+      errorKey === 'errors.sshFile.textTooLarge' ||
+      errorKey === 'errors.sshFile.textNotRegular'
+    ) {
+      setEditingFile(null);
+      if (editingFile.probe.fallback === 'download') void downloadSelected([editingFile.path]);
+      else toast.add({ title: t('sshFilesTool.favoriteFileNotEditable'), type: 'error' });
+      return true;
+    }
+    setEditingFile({ ...editingFile, probe: undefined });
+    return false;
+  };
+
   const saveManagedSources = async (next: ManagedFileSource[]) => {
     setSavingManage(true);
     try {
@@ -1845,8 +1884,9 @@ export default function SshFilesTool({ active, locate = null, onCompareSourceCha
                       const operationPaths = operationPathsFor(entry.path);
                       const archiveSelection = operationPaths.every(isArchivePath);
                       const parentPath = searchActive ? remoteParent(entry.path) : '';
-                      const canFavoriteEntry =
-                        entry.isDir || (!entry.isSymlink && isEditableTextFile(entry.path));
+                      const canFavoriteEntry = entry.isDir || !entry.isSymlink;
+                      const canOpenInEditor = !entry.isDir && !entry.isSymlink;
+                      const probingEntry = !!editingFile?.probe && editingFile.path === entry.path;
                       const isEntryFavorite = favoritePaths.includes(entry.path);
                       const EntryIcon = entry.isDir ? Folder : remoteFileIcon(entry.path);
                       return (
@@ -1889,19 +1929,21 @@ export default function SshFilesTool({ active, locate = null, onCompareSourceCha
                                   type="button"
                                   className="flex w-full min-w-0 max-w-full items-center gap-2 text-left text-foreground outline-none hover:underline focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
                                   title={entry.path}
-                                  onClick={() =>
-                                    entry.isDir
-                                      ? navigate(entry.path)
-                                      : isEditableTextFile(entry.path) && !entry.isSymlink
-                                        ? setEditingFile(entry)
-                                        : void downloadSelected([entry.path])
-                                  }
+                                  onClick={() => {
+                                    if (entry.isDir) navigate(entry.path);
+                                    else if (canOpenInEditor) openTextEditor(entry, 'download');
+                                    else void downloadSelected([entry.path]);
+                                  }}
                                 >
-                                  <EntryIcon
-                                    size={16}
-                                    weight="regular"
-                                    className="shrink-0 text-muted-foreground"
-                                  />
+                                  {probingEntry ? (
+                                    <Spinner className="shrink-0 text-muted-foreground" />
+                                  ) : (
+                                    <EntryIcon
+                                      size={16}
+                                      weight="regular"
+                                      className="shrink-0 text-muted-foreground"
+                                    />
+                                  )}
                                   <span className="min-w-0 truncate">{entry.name}</span>
                                   {isEntryFavorite ? (
                                     <Star
@@ -1998,6 +2040,12 @@ export default function SshFilesTool({ active, locate = null, onCompareSourceCha
                             </ContextMenuGroup>
                             <ContextMenuSeparator />
                             <ContextMenuGroup>
+                              {canOpenInEditor ? (
+                                <ContextMenuItem onClick={() => openTextEditor(entry)}>
+                                  <FileText size={14} weight="regular" aria-hidden="true" />
+                                  {t('sshFilesTool.openWithEditor')}
+                                </ContextMenuItem>
+                              ) : null}
                               <ContextMenuItem
                                 disabled={operationRunning}
                                 onClick={() => requestFileOperation('copy', operationPaths)}
@@ -2866,6 +2914,7 @@ export default function SshFilesTool({ active, locate = null, onCompareSourceCha
             sourceID={sourceID}
             path={editingFile.path}
             name={editingFile.name}
+            onProbeResult={editingFile.probe ? finishTextProbe : undefined}
             onClose={() => setEditingFile(null)}
             onSaved={refreshAfterTextSave}
             onContentChange={reportEditorContent}

@@ -114,7 +114,7 @@ function loadModule(file) {
       );
     if (id.endsWith('/ui/toast')) return { toast: { add() {} } };
     if (id.endsWith('/lib/backend-error'))
-      return { formatBackendError: String, backendErrorKey: () => null };
+      return { formatBackendError: String, backendErrorKey: (reason) => reason?.key ?? null };
     if (id.endsWith('/ui/scroll-area'))
       return {
         ScrollArea: forwardRef(({ children, className }, ref) =>
@@ -239,6 +239,122 @@ const openDialogs = () => [...document.querySelectorAll('[role="dialog"][data-op
 const editorPanel = () => document.querySelector('[data-slot="remote-text-editor"]');
 const discardDialog = () =>
   openDialogs().find((node) => node.textContent.includes('sshFilesTool.discardTextTitle'));
+
+test('真实 DOM：首次读取决定是否显示嗅探编辑器，显式打开保持加载和 tail 行为', async (suite) => {
+  const oversized = Object.assign(new Error('文件超限'), { key: 'errors.sshFile.textTooLarge' });
+  const invalidEncoding = Object.assign(new Error('无效编码'), {
+    key: 'errors.sshFile.textInvalidEncoding',
+  });
+  const connectionFailure = new Error('连接中断');
+  const scenarios = [
+    { name: '文本直接使用嗅探结果', probe: true, text: 'remote text' },
+    { name: '连接错误显示在编辑器', probe: true, failure: connectionFailure },
+    { name: '超限嗅探可由文件列表回退', probe: true, failure: oversized, handled: true },
+    { name: '卸载后忽略已取消嗅探的结果', probe: true, failure: oversized, abandon: true },
+    { name: '显式打开显示无效编码错误', probe: false, failure: invalidEncoding },
+    { name: '显式打开超限文件转为 tail', probe: false, failure: oversized, tail: true },
+  ];
+
+  for (const { name, probe, text, failure, handled, abandon, tail } of scenarios) {
+    await suite.test(name, async () => {
+      const originalRead = services.ReadRemoteTextFile;
+      const pendingReads = [];
+      let cancellations = 0;
+      services.ReadRemoteTextFile = (sourceID, path, tailLines) => {
+        const { promise, resolve, reject } = Promise.withResolvers();
+        pendingReads.push({ args: [sourceID, path, tailLines], resolve, reject });
+        return Object.assign(promise, {
+          cancel: () => {
+            cancellations++;
+            return Promise.resolve();
+          },
+        });
+      };
+      const host = document.createElement('div');
+      document.body.append(host);
+      const root = createRoot(host);
+      const probeResults = [];
+      const contentReports = [];
+      const onContentChange = (content) => contentReports.push(content);
+      function EditorHost() {
+        const [probing, setProbing] = React.useState(probe);
+        const [open, setOpen] = React.useState(true);
+        if (!open) return null;
+        return createElement(RemoteTextEditorDialog, {
+          sourceID: 'source',
+          path: '/myconfig',
+          name: 'myconfig',
+          onClose: () => setOpen(false),
+          onSaved() {},
+          onContentChange,
+          onProbeResult: probing
+            ? (errorKey) => {
+                probeResults.push(errorKey);
+                if (handled) setOpen(false);
+                else setProbing(false);
+                return Boolean(handled);
+              }
+            : undefined,
+        });
+      }
+
+      try {
+        await act(async () =>
+          root.render(createElement(React.StrictMode, null, createElement(EditorHost))),
+        );
+        assert.deepEqual(
+          pendingReads.map((read) => read.args),
+          [['source', '/myconfig', 0]],
+        );
+        assert.equal(Boolean(editorPanel()), !probe);
+        if (probe) assert.deepEqual(contentReports, []);
+        else assert.ok(editorPanel().querySelector('[data-slot="spinner"]'));
+
+        if (abandon) {
+          await act(async () => root.render(null));
+          assert.equal(cancellations, 1);
+        }
+        await act(async () => {
+          if (failure) pendingReads[0].reject(failure);
+          else pendingReads[0].resolve({ content: text, revision: 'original', truncated: false });
+        });
+        assert.deepEqual(probeResults, probe && !abandon ? [failure?.key ?? null] : []);
+
+        if (tail) {
+          assert.deepEqual(
+            pendingReads.map((read) => read.args),
+            [
+              ['source', '/myconfig', 0],
+              ['source', '/myconfig', 500],
+            ],
+          );
+          await act(async () => {
+            pendingReads[1].resolve({ content: 'tail', revision: 'original', truncated: true });
+          });
+          assert.equal(editorPanel().querySelector('.cm-content').textContent, 'tail');
+        } else {
+          assert.equal(pendingReads.length, 1);
+          if (handled || abandon) {
+            assert.equal(editorPanel(), null);
+            assert.deepEqual(contentReports, []);
+          } else if (failure) {
+            assert.equal(
+              editorPanel().querySelector('[role="alert"]').textContent,
+              String(failure),
+            );
+          } else {
+            assert.equal(editorPanel().querySelector('.cm-content').textContent, text);
+            assert.deepEqual(contentReports.at(-1), { text, ready: true });
+          }
+        }
+      } finally {
+        await act(async () => root.unmount());
+        host.remove();
+        services.ReadRemoteTextFile = originalRead;
+      }
+    });
+  }
+});
 
 test('真实 DOM：补全打开时 Esc 仅关闭补全，干净和未保存文件都保留编辑器', async () => {
   for (const dirty of [false, true]) {
