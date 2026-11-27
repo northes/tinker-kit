@@ -16,7 +16,6 @@ import {
   verticalListSortingStrategy,
   arrayMove,
 } from '@dnd-kit/sortable';
-import { CSS } from '@dnd-kit/utilities';
 import { DotsSixVertical, PencilSimple, Plus, Trash } from '@phosphor-icons/react';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from './ui/dialog';
 import { ScrollArea } from './ui/scroll-area';
@@ -50,13 +49,18 @@ function SortableManagerItem({
     transition,
     isDragging,
   } = useSortable({ id });
+  // 纵向列表排序只允许垂直位移：dnd-kit 的 transform 会带上指针的 x 偏移，
+  // 直接透传会让被拖动项横向移出容器，被弹窗裁掉右侧内容。
   return (
     <div
       ref={(node) => {
         setNodeRef(node);
         itemRef?.(node);
       }}
-      style={{ transform: CSS.Transform.toString(transform), transition }}
+      style={{
+        transform: transform ? `translate3d(0, ${Math.round(transform.y)}px, 0)` : undefined,
+        transition,
+      }}
       aria-current={active ? 'true' : undefined}
       className={`flex min-w-0 items-center gap-2 rounded-lg border px-3 py-2.5 ${active ? 'border-primary/30 bg-primary/20' : 'border-border bg-card'} ${disabled ? 'opacity-75' : ''} ${isDragging ? 'z-10 shadow-md' : ''}`}
     >
