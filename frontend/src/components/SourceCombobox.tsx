@@ -136,8 +136,19 @@ export function SourceCombobox({
             return;
           }
           if (event.key === 'Enter') {
-            // 避免隐式提交外层表单，选项确认仍由 Combobox 处理。
+            // 避免隐式提交外层表单。
             event.preventDefault();
+            // 浮层打开且过滤后只剩一台时直接选中；已是当前值只关浮层，避免重复 onValueChange。
+            if (open && rankedItems.length === 1) {
+              const item = rankedItems[0]!;
+              if (item.value !== value) {
+                onValueChange(item.value);
+              }
+              closePopup();
+              event.preventBaseUIHandler();
+              return;
+            }
+            // 0 台或多台时仍由高亮项确认，无高亮时 Base UI 只关浮层。
           }
           if (open && event.key === 'Tab' && !event.shiftKey && manageButtonRef.current) {
             // 管理按钮位于 Portal 内，按 Tab 从输入框进入固定动作行。
