@@ -304,7 +304,9 @@ export default function SshFilesTool({ active, locate = null, onCompareSourceCha
     showHidden,
   );
 
-  const probeViewKey = `${creationViewKeyRef.current}\0${searchRevision}`;
+  // 嗅探只在列表本身换掉（来源、目录、显示隐藏文件、配置）时作废；搜索刷新和后台任务刷新
+  // 都不该静默吞掉用户已经点击的文件。
+  const probeViewKey = creationViewKeyRef.current;
   if (editingFile?.probe && editingFile.probe.viewKey !== probeViewKey) {
     setEditingFile(null);
   }
@@ -561,6 +563,17 @@ export default function SshFilesTool({ active, locate = null, onCompareSourceCha
   );
 
   const openTextEditor = (entry: RemoteFileEntry, fallback?: TextProbeFallback) => {
+    if (editingFile?.path === entry.path) {
+      // 同一文件已经在编辑器里：普通点击保持现状（读取 effect 依赖没变，重新挂嗅探会卡在空弹窗）。
+      // 显式打开则把在途嗅探升级为显式打开，直接显示编辑器与它自己的错误。
+      if (editingFile.probe && fallback === undefined) {
+        setEditingFile({ ...editingFile, probe: undefined });
+      }
+      return;
+    }
+    // 列表或右键打开一律优先于尚未返回的收藏预查询，避免晚到的收藏结果顶掉刚打开的文件。
+    favoriteRequestRef.current?.cancel();
+    favoriteRequestRef.current = null;
     setEditingFile({
       path: entry.path,
       name: entry.name,
@@ -1217,12 +1230,13 @@ export default function SshFilesTool({ active, locate = null, onCompareSourceCha
     }
   };
 
-  const downloadSelected = async (paths: string[]) => {
+  const downloadSelected = async (paths: string[], options?: { keepSelection?: boolean }) => {
     if (!sourceUsable) return;
     try {
       const snapshot = await StartFileDownload(sourceID, paths);
       applyTaskSnapshot(snapshot);
-      setSelected([]);
+      // 嗅探回退下载是用户单击后异步到达的，不能顺手清掉他这期间勾选的其它文件。
+      if (!options?.keepSelection) setSelected([]);
     } catch (reason) {
       setError(errorMessage(reason));
     }
@@ -1236,7 +1250,8 @@ export default function SshFilesTool({ active, locate = null, onCompareSourceCha
       errorKey === 'errors.sshFile.textNotRegular'
     ) {
       setEditingFile(null);
-      if (editingFile.probe.fallback === 'download') void downloadSelected([editingFile.path]);
+      if (editingFile.probe.fallback === 'download')
+        void downloadSelected([editingFile.path], { keepSelection: true });
       else toast.add({ title: t('sshFilesTool.favoriteFileNotEditable'), type: 'error' });
       return true;
     }
