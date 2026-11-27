@@ -107,6 +107,14 @@ export function ReadImageFile(path: string): $CancellablePromise<string> {
 }
 
 /**
+ * ReadRemoteImageFile 通过持久 SFTP 读取远程普通图片文件，返回 data URL 与元数据。
+ * 单个文件上限 10 MiB；取消语义与 ReadRemoteTextFile 一致，不向已关闭的预览弹窗抛错。
+ */
+export function ReadRemoteImageFile(sourceID: string, remotePath: string): $CancellablePromise<$models.RemoteImageFile> {
+    return $Call.ByID(3781617428, sourceID, remotePath);
+}
+
+/**
  * ReadRemoteTextFile 读取远程文本。tailLines 为 0 时读取完整文件；大于 0 时只返回末尾相应行数。
  */
 export function ReadRemoteTextFile(sourceID: string, remotePath: string, tailLines: number): $CancellablePromise<$models.RemoteTextFile> {

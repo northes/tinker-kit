@@ -775,6 +775,16 @@ export interface RemoteFileOperationResult {
     "conflicts"?: string[] | null;
 }
 
+/**
+ * RemoteImageFile 是可直接用于 img 的远程图片内容及元数据。
+ */
+export interface RemoteImageFile {
+    "name": string;
+    "mimeType": string;
+    "size": number;
+    "dataURL": string;
+}
+
 export interface RemoteTextFile {
     "content": string;
     "revision": string;

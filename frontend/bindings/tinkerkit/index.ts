@@ -105,6 +105,7 @@ export type {
     RemoteDirectoryListing,
     RemoteFileEntry,
     RemoteFileOperationResult,
+    RemoteImageFile,
     RemoteTextFile,
     SSHConfigHost,
     SSHConnection,
