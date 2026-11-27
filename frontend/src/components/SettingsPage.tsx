@@ -128,13 +128,19 @@ export type ToolDefinition = {
 type BooleanSettingKey = 'trayMatchEnabled' | 'autoCheckUpdates';
 type ChoiceOption<T extends string | number> = { id: T; label: string };
 type SettingsCategory =
-  'preferences' | 'workspace' | 'tools' | 'automation' | 'connections' | 'data' | 'about';
+  | 'preferences'
+  | 'appearance'
+  | 'trayRecognition'
+  | 'notifications'
+  | 'connections'
+  | 'data'
+  | 'about';
 
 const SETTINGS_CATEGORIES: SettingsCategory[] = [
   'preferences',
-  'workspace',
-  'tools',
-  'automation',
+  'appearance',
+  'trayRecognition',
+  'notifications',
   'connections',
   'data',
   'about',
@@ -216,25 +222,37 @@ function Setting({
     </span>
   ) : null;
   if (isSwitch) {
-    return (
-      <div className={settingRowClass}>
-        {label ? (
+    const control = cloneElement(children as ReactElement<{ id?: string; describedBy?: string }>, {
+      id: controlId,
+      describedBy: switchProps?.describedBy,
+    });
+    if (label) {
+      return (
+        <div className={settingRowClass}>
           <label
             htmlFor={controlId}
             className={cn('min-w-0', switchDisabled ? 'cursor-not-allowed' : 'cursor-pointer')}
           >
             {copy}
           </label>
-        ) : null}
-        {cloneElement(children as ReactElement<{ id?: string; describedBy?: string }>, {
-          id: controlId,
-          describedBy: switchProps?.describedBy,
-        })}
-      </div>
-    );
+          {control}
+        </div>
+      );
+    }
+    if (description) {
+      return (
+        <div className={settingRowClass}>
+          <span className="min-w-0 flex-1 text-xs leading-[1.4] text-muted-foreground">
+            {description}
+          </span>
+          {control}
+        </div>
+      );
+    }
+    return <div className={cn(settingRowClass, 'justify-end')}>{control}</div>;
   }
   return (
-    <div className={settingRowClass}>
+    <div className={cn(settingRowClass, !copy && 'justify-end')}>
       {copy}
       {children}
     </div>
@@ -290,12 +308,15 @@ function ChoiceGroup<T extends string | number>({
       focusIndex(last);
     }
   };
+  const alignControlEnd = hideLabel && !fill;
   return (
     <div
       className={cn(
         settingRowClass,
+        alignControlEnd && 'w-full justify-end',
         fill && 'w-full flex-col items-stretch gap-2',
         'max-[700px]:flex-col max-[700px]:items-start max-[700px]:gap-2',
+        alignControlEnd && 'max-[700px]:justify-start',
       )}
     >
       {!hideLabel ? (
@@ -308,8 +329,8 @@ function ChoiceGroup<T extends string | number>({
         aria-labelledby={hideLabel ? undefined : labelId}
         aria-label={hideLabel ? label : undefined}
         className={cn(
-          'flex min-w-0 flex-none flex-wrap items-center gap-0.5 rounded-lg bg-muted/60 p-0.5',
-          fill && 'w-full',
+          'flex min-w-0 flex-wrap items-center gap-0.5 rounded-lg bg-muted/60 p-0.5',
+          fill ? 'w-full' : 'flex-none',
         )}
       >
         {options.map((option, index) => {
@@ -1243,6 +1264,53 @@ export default function SettingsPage({
         case 'preferences':
           return (
             <>
+              <SettingsGroup divider={false} title={t('settings.language')}>
+                <ChoiceGroup
+                  hideLabel
+                  label={t('settings.language')}
+                  value={settings.language}
+                  options={languageOptions}
+                  onChange={setLanguage}
+                />
+              </SettingsGroup>
+              <SettingsGroup title={t('settings.editor')}>
+                <ChoiceGroup
+                  label={t('settings.editorFontSize')}
+                  value={settings.codeEditorFontSize || 16}
+                  options={fontSizeOptions}
+                  onChange={(size) =>
+                    setSettings((current) => ({
+                      ...current,
+                      codeEditorFontSize: size,
+                    }))
+                  }
+                />
+              </SettingsGroup>
+              <SettingsGroup title={t('settings.autostart')}>
+                <Setting>
+                  <SettingSwitch
+                    selected={autostartEnabled}
+                    onChange={(enabled) => void setAutostart(enabled)}
+                    isDisabled={autostartLoading || autostartSaving}
+                    ariaLabel={t('settings.autostart')}
+                  />
+                </Setting>
+              </SettingsGroup>
+              <SettingsGroup title={t('settings.sidebarTools')}>
+                <ToolOrderList
+                  sidebarTools={resolveSidebarTools(settings.sidebarTools)}
+                  tools={tools}
+                  onChange={(sidebarTools) =>
+                    setSettings((current) => ({ ...current, sidebarTools }))
+                  }
+                  onRequestDisable={requestDisableTool}
+                />
+              </SettingsGroup>
+            </>
+          );
+        case 'appearance':
+          return (
+            <>
               <SettingsGroup divider={false} title={t('settings.appearance')}>
                 <div className="flex flex-col gap-3">
                   <ChoiceGroup
@@ -1254,31 +1322,9 @@ export default function SettingsPage({
                   {hostOS === 'darwin' ? (
                     <WindowAppearanceSettings settings={settings} setSettings={setSettings} />
                   ) : null}
-                  <ChoiceGroup
-                    label={t('settings.language')}
-                    value={settings.language}
-                    options={languageOptions}
-                    onChange={setLanguage}
-                  />
-                  <ChoiceGroup
-                    label={t('settings.editorFontSize')}
-                    value={settings.codeEditorFontSize || 16}
-                    options={fontSizeOptions}
-                    onChange={(size) =>
-                      setSettings((current) => ({
-                        ...current,
-                        codeEditorFontSize: size,
-                      }))
-                    }
-                  />
                 </div>
               </SettingsGroup>
-            </>
-          );
-        case 'workspace':
-          return (
-            <>
-              <SettingsGroup divider={false} title={t('settings.tabs')}>
+              <SettingsGroup title={t('settings.tabs')}>
                 <div className="flex flex-col gap-3">
                   <ChoiceGroup
                     label={t('settings.tabCloseActivation')}
@@ -1348,96 +1394,68 @@ export default function SettingsPage({
               </SettingsGroup>
             </>
           );
-        case 'tools':
+        case 'trayRecognition':
           return (
-            <>
-              <SettingsGroup divider={false} title={t('settings.sidebarTools')}>
-                <ToolOrderList
-                  sidebarTools={resolveSidebarTools(settings.sidebarTools)}
-                  tools={tools}
-                  onChange={(sidebarTools) =>
-                    setSettings((current) => ({ ...current, sidebarTools }))
-                  }
-                  onRequestDisable={requestDisableTool}
-                />
-              </SettingsGroup>
-            </>
-          );
-        case 'automation':
-          return (
-            <>
-              <SettingsGroup divider={false} title={t('settings.automation')}>
-                <div className="flex flex-col gap-3">
-                  <div className="flex flex-col gap-3">
-                    <Setting
-                      label={t('settings.trayRecognition')}
-                      description={t('settings.trayRecognitionEnabledDesc')}
-                    >
-                      <SettingSwitch
-                        selected={settings.trayMatchEnabled}
-                        onChange={(value) => update('trayMatchEnabled', value)}
-                      />
-                    </Setting>
-                    <Setting label={t('settings.autostart')}>
-                      <SettingSwitch
-                        selected={autostartEnabled}
-                        onChange={(enabled) => void setAutostart(enabled)}
-                        isDisabled={autostartLoading || autostartSaving}
-                      />
-                    </Setting>
-                  </div>
-                  {settings.trayMatchEnabled ? (
-                    <div className="flex flex-col gap-3 border-t border-border pt-3">
-                      <strong className={settingLabelClass}>{t('settings.matchableTools')}</strong>
-                      <div className="grid grid-cols-2 gap-x-5 gap-y-2.5 max-[700px]:grid-cols-1">
-                        {matchableTools.map(renderTrayToolSwitch)}
-                      </div>
-                      {lastTrayToolLocked ? (
-                        <p id={trayMatchMinHintId} className={cn('m-0', settingHintClass)}>
-                          {t('settings.matchableToolsMin')}
-                        </p>
-                      ) : null}
-                    </div>
-                  ) : null}
-                </div>
-              </SettingsGroup>
-              <SettingsGroup title={t('settings.taskNotifications')}>
-                <div className="flex flex-col gap-3">
-                  <ChoiceGroup
-                    fill
-                    label={t('settings.notificationTiming')}
-                    value={settings.taskNotificationMode ?? 'unfocused'}
-                    options={(['off', 'always', 'unfocused'] as const).map((id) => ({
-                      id,
-                      label: t(`settings.taskNotificationMode.${id}`),
-                    }))}
-                    onChange={(taskNotificationMode) =>
-                      setSettings((current) => ({ ...current, taskNotificationMode }))
-                    }
+            <SettingsGroup divider={false} title={t('settings.trayRecognition')}>
+              <div className="flex flex-col gap-3">
+                <Setting description={t('settings.trayRecognitionEnabledDesc')}>
+                  <SettingSwitch
+                    selected={settings.trayMatchEnabled}
+                    onChange={(value) => update('trayMatchEnabled', value)}
+                    ariaLabel={t('settings.trayRecognition')}
                   />
-                  <div className="flex items-center justify-between gap-5 pt-3 max-[700px]:flex-col max-[700px]:items-start">
-                    <strong className={settingLabelClass}>{t('settings.testNotifications')}</strong>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      disabled={testingTaskNotification}
-                      onClick={() => void sendTestTaskNotification()}
-                    >
-                      {testingTaskNotification ? (
-                        <Spinner data-icon="inline-start" />
-                      ) : (
-                        <BellRinging data-icon="inline-start" weight="regular" />
-                      )}
-                      {t(
-                        testingTaskNotification
-                          ? 'settings.taskNotificationTesting'
-                          : 'settings.testTaskNotification',
-                      )}
-                    </Button>
+                </Setting>
+                {settings.trayMatchEnabled ? (
+                  <div className="flex flex-col gap-3 border-t border-border pt-3">
+                    <strong className={settingLabelClass}>{t('settings.matchableTools')}</strong>
+                    <div className="grid grid-cols-2 gap-x-5 gap-y-2.5 max-[700px]:grid-cols-1">
+                      {matchableTools.map(renderTrayToolSwitch)}
+                    </div>
+                    {lastTrayToolLocked ? (
+                      <p id={trayMatchMinHintId} className={cn('m-0', settingHintClass)}>
+                        {t('settings.matchableToolsMin')}
+                      </p>
+                    ) : null}
                   </div>
-                </div>
-              </SettingsGroup>
-            </>
+                ) : null}
+              </div>
+            </SettingsGroup>
+          );
+        case 'notifications':
+          return (
+            <SettingsGroup divider={false} title={t('settings.categories.notifications.title')}>
+              <div className="flex flex-col gap-3">
+                <ChoiceGroup
+                  label={t('settings.notificationTiming')}
+                  value={settings.taskNotificationMode ?? 'unfocused'}
+                  options={(['off', 'always', 'unfocused'] as const).map((id) => ({
+                    id,
+                    label: t(`settings.taskNotificationMode.${id}`),
+                  }))}
+                  onChange={(taskNotificationMode) =>
+                    setSettings((current) => ({ ...current, taskNotificationMode }))
+                  }
+                />
+                <Setting label={t('settings.testNotifications')}>
+                  <Button
+                    variant="outline"
+                    disabled={testingTaskNotification}
+                    onClick={() => void sendTestTaskNotification()}
+                  >
+                    {testingTaskNotification ? (
+                      <Spinner data-icon="inline-start" />
+                    ) : (
+                      <BellRinging data-icon="inline-start" weight="regular" />
+                    )}
+                    {t(
+                      testingTaskNotification
+                        ? 'settings.taskNotificationTesting'
+                        : 'settings.testTaskNotification',
+                    )}
+                  </Button>
+                </Setting>
+              </div>
+            </SettingsGroup>
           );
         case 'connections':
           return (
@@ -1547,11 +1565,6 @@ export default function SettingsPage({
           options={{ overflow: { x: 'hidden' } }}
         >
           <div className="min-w-0 max-w-[820px] px-1 pb-4">
-            <div className="max-[700px]:border-b max-[700px]:border-border max-[700px]:pb-3 min-[701px]:sr-only">
-              <h2 className="m-0 text-sm font-semibold text-foreground">
-                {t(`settings.categories.${activeCategory}.title`)}
-              </h2>
-            </div>
             {categoryContent}
           </div>
         </ScrollArea>
