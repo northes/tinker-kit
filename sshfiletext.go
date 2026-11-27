@@ -302,7 +302,7 @@ func (s *FileService) ReadRemoteTextFile(ctx context.Context, sourceID, remotePa
 		result, _, err = readRemoteTextTail(session.sftp, remotePath, tailLines)
 	}
 	if err != nil {
-		s.invalidatePersistentSFTP(sourceID, session)
+		s.dropPersistentSFTPIfLost(sourceID, session, err)
 	}
 	return result, err
 }

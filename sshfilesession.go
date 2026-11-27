@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"os"
 	"os/exec"
 	"strings"
 	"sync"
@@ -113,6 +114,42 @@ func (s *FileService) invalidatePersistentSFTP(sourceID string, session *persist
 	if closeNow {
 		closePersistentSFTPSession(session)
 	}
+}
+
+func (s *FileService) dropPersistentSFTPIfLost(sourceID string, session *persistentSFTPSession, err error) {
+	if sftpSessionLost(err) {
+		s.invalidatePersistentSFTP(sourceID, session)
+	}
+}
+
+// sftpSessionLost 判断错误是否意味着这条常驻 SFTP 会话已经不可复用。
+// 服务端拒绝单个路径（无权限、不存在）会被 pkg/sftp 归一化成 os.ErrPermission、os.ErrNotExist，
+// 普通失败则是 *sftp.StatusError，两者都说明会话仍然健康；把它们当成断链只会让下一次操作
+// 白白重新握手。只有通道被关、连接丢失这类错误才需要换一条连接。
+func sftpSessionLost(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, os.ErrPermission) || errors.Is(err, os.ErrNotExist) {
+		return false
+	}
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return false
+	}
+	// 本地判定（超限、非普通文件等）没有外部错误，会话没被碰过。
+	var localized *localizedError
+	if errors.As(err, &localized) && localized.cause == nil {
+		return false
+	}
+	if errors.Is(err, sftp.ErrSSHFxConnectionLost) || errors.Is(err, sftp.ErrSSHFxNoConnection) {
+		return true
+	}
+	var status *sftp.StatusError
+	if errors.As(err, &status) {
+		code := status.FxCode()
+		return code == sftp.ErrSSHFxConnectionLost || code == sftp.ErrSSHFxNoConnection
+	}
+	return true
 }
 
 func (s *FileService) shutdown() {

@@ -401,12 +401,12 @@ func (s *FileService) ListRemoteFiles(ctx context.Context, sourceID, currentPath
 	s.emitDirectoryLoading(requestID, "loadingDirectory")
 	remotePath, err := resolveRemoteDirectory(session.sftp, currentPath)
 	if err != nil {
-		s.invalidatePersistentSFTP(sourceID, session)
+		s.dropPersistentSFTPIfLost(sourceID, session, err)
 		return RemoteDirectoryListing{}, err
 	}
 	entries, err := session.sftp.ReadDirContext(ctx, remotePath)
 	if err != nil {
-		s.invalidatePersistentSFTP(sourceID, session)
+		s.dropPersistentSFTPIfLost(sourceID, session, err)
 		return RemoteDirectoryListing{}, userErrorCause("errors.sshFile.readRemoteDirectoryFailed", err)
 	}
 	visibleEntries := make([]os.FileInfo, 0, len(entries))
@@ -465,7 +465,7 @@ func (s *FileService) GetRemoteCreationTimes(ctx context.Context, sourceID strin
 	defer s.releasePersistentSFTP(session)
 	createdAt, err := remoteCreationTimes(ctx, conn, session.ssh, remotePaths)
 	if err != nil {
-		s.invalidatePersistentSFTP(sourceID, session)
+		s.dropPersistentSFTPIfLost(sourceID, session, err)
 		return nil, err
 	}
 	for index, remotePath := range remotePaths {
