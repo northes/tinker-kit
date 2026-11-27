@@ -1552,20 +1552,20 @@
       "preferences": {
         "title": "常用偏好"
       },
-      "workspace": {
-        "title": "工作区"
+      "appearance": {
+        "title": "外观"
       },
-      "tools": {
-        "title": "工具"
+      "trayRecognition": {
+        "title": "托盘识别"
       },
-      "automation": {
-        "title": "自动化与通知"
+      "notifications": {
+        "title": "通知"
       },
       "connections": {
-        "title": "连接"
+        "title": "SSH"
       },
       "data": {
-        "title": "数据与安全"
+        "title": "配置管理"
       },
       "about": {
         "title": "关于"

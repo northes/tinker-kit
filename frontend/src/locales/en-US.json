@@ -1552,20 +1552,20 @@
       "preferences": {
         "title": "Preferences"
       },
-      "workspace": {
-        "title": "Workspace"
+      "appearance": {
+        "title": "Appearance"
       },
-      "tools": {
-        "title": "Tools"
+      "trayRecognition": {
+        "title": "Tray recognition"
       },
-      "automation": {
-        "title": "Automation & notifications"
+      "notifications": {
+        "title": "Notifications"
       },
       "connections": {
-        "title": "Connections"
+        "title": "SSH"
       },
       "data": {
-        "title": "Data & security"
+        "title": "Configuration"
       },
       "about": {
         "title": "About"
