@@ -19,6 +19,7 @@ import {
   FolderSimplePlus,
   Funnel,
   HardDrives,
+  Image,
   ListDashes,
   MagnifyingGlass,
   PencilSimple,
@@ -91,6 +92,7 @@ import {
   formatRemoteTimestamp,
   isArchivePath,
   isEditableTextFile,
+  isPreviewableImageFile,
   isRemotePathNotFound,
   normalizeRemotePath,
   remoteFileIcon,
@@ -148,6 +150,9 @@ import { toast } from './ui/toast';
 const RemoteTextEditorDialog = lazy(async () => ({
   default: (await import('./RemoteTextEditorDialog')).RemoteTextEditorDialog,
 }));
+const RemoteImagePreviewDialog = lazy(async () => ({
+  default: (await import('./RemoteImagePreviewDialog')).RemoteImagePreviewDialog,
+}));
 
 type Props = {
   active: boolean;
@@ -159,6 +164,7 @@ type TextProbeFallback = 'download' | 'favorite';
 type EditingFile = Pick<RemoteFileEntry, 'path' | 'name'> & {
   probe?: { fallback: TextProbeFallback; viewKey: string };
 };
+type PreviewingImage = Pick<RemoteFileEntry, 'path' | 'name' | 'size'> & { viewKey: string };
 
 type CreateEntryTarget = {
   kind: CreateEntryKind;
@@ -196,6 +202,7 @@ export default function SshFilesTool({ active, locate = null, onCompareSourceCha
   const [operationError, setOperationError] = useState('');
   const [operationRunning, setOperationRunning] = useState(false);
   const [editingFile, setEditingFile] = useState<EditingFile | null>(null);
+  const [previewingImage, setPreviewingImage] = useState<PreviewingImage | null>(null);
   const editingFileName = editingFile?.name ?? '';
   const reportEditorContent = useCallback(
     (content: RemoteTextEditorContent | null) => {
@@ -309,6 +316,10 @@ export default function SshFilesTool({ active, locate = null, onCompareSourceCha
   const probeViewKey = creationViewKeyRef.current;
   if (editingFile?.probe && editingFile.probe.viewKey !== probeViewKey) {
     setEditingFile(null);
+  }
+  // 图片预览同样只在列表本身换掉时作废，搜索和后台刷新不该关掉正在看的图。
+  if (previewingImage && previewingImage.viewKey !== probeViewKey) {
+    setPreviewingImage(null);
   }
 
   const applyTaskSnapshot = useCallback((snapshot: FileTaskSnapshot) => {
@@ -584,6 +595,18 @@ export default function SshFilesTool({ active, locate = null, onCompareSourceCha
     });
   };
 
+  const openImagePreview = (entry: PreviewingImage) => {
+    if (previewingImage?.path === entry.path) return;
+    favoriteRequestRef.current?.cancel();
+    favoriteRequestRef.current = null;
+    setPreviewingImage({
+      path: entry.path,
+      name: entry.name,
+      size: entry.size,
+      viewKey: creationViewKeyRef.current,
+    });
+  };
+
   const openFavorite = async (path: string) => {
     if (!sourceUsable) return;
     favoriteRequestRef.current?.cancel();
@@ -593,6 +616,8 @@ export default function SshFilesTool({ active, locate = null, onCompareSourceCha
       const entry = await request;
       if (favoriteRequestRef.current !== request) return;
       if (entry.isDir) navigate(path, 'favorite');
+      else if (!entry.isSymlink && isPreviewableImageFile(entry.path))
+        openImagePreview(entry);
       else if (!entry.isSymlink) openTextEditor(entry, 'favorite');
       else toast.add({ title: t('sshFilesTool.favoriteFileNotEditable'), type: 'error' });
     } catch (reason) {
@@ -1901,6 +1926,7 @@ export default function SshFilesTool({ active, locate = null, onCompareSourceCha
                       const parentPath = searchActive ? remoteParent(entry.path) : '';
                       const canFavoriteEntry = entry.isDir || !entry.isSymlink;
                       const canOpenInEditor = !entry.isDir && !entry.isSymlink;
+                      const canPreviewImage = canOpenInEditor && isPreviewableImageFile(entry.path);
                       const probingEntry = !!editingFile?.probe && editingFile.path === entry.path;
                       const isEntryFavorite = favoritePaths.includes(entry.path);
                       const EntryIcon = entry.isDir ? Folder : remoteFileIcon(entry.path);
@@ -1946,6 +1972,7 @@ export default function SshFilesTool({ active, locate = null, onCompareSourceCha
                                   title={entry.path}
                                   onClick={() => {
                                     if (entry.isDir) navigate(entry.path);
+                                    else if (canPreviewImage) openImagePreview(entry);
                                     else if (canOpenInEditor) openTextEditor(entry, 'download');
                                     else void downloadSelected([entry.path]);
                                   }}
@@ -2055,6 +2082,12 @@ export default function SshFilesTool({ active, locate = null, onCompareSourceCha
                             </ContextMenuGroup>
                             <ContextMenuSeparator />
                             <ContextMenuGroup>
+                              {canPreviewImage ? (
+                                <ContextMenuItem onClick={() => openImagePreview(entry)}>
+                                  <Image size={14} weight="regular" aria-hidden="true" />
+                                  {t('sshFilesTool.previewImage')}
+                                </ContextMenuItem>
+                              ) : null}
                               {canOpenInEditor ? (
                                 <ContextMenuItem onClick={() => openTextEditor(entry)}>
                                   <FileText size={14} weight="regular" aria-hidden="true" />
@@ -2933,6 +2966,21 @@ export default function SshFilesTool({ active, locate = null, onCompareSourceCha
             onClose={() => setEditingFile(null)}
             onSaved={refreshAfterTextSave}
             onContentChange={reportEditorContent}
+          />
+        </Suspense>
+      ) : null}
+      {previewingImage ? (
+        <Suspense fallback={null}>
+          <RemoteImagePreviewDialog
+            key={`${sourceID}:${previewingImage.path}`}
+            sourceID={sourceID}
+            path={previewingImage.path}
+            name={previewingImage.name}
+            size={previewingImage.size}
+            onClose={() => setPreviewingImage(null)}
+            onDownload={() =>
+              void downloadSelected([previewingImage.path], { keepSelection: true })
+            }
           />
         </Suspense>
       ) : null}

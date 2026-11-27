@@ -129,7 +129,11 @@ const imageFileExtensions = new Set([
   'jif',
   'jfif',
   'jpe',
+  'jpeg',
+  'jpg',
+  'png',
   'raw',
+  'svg',
   'tif',
   'tiff',
   'webp',
@@ -264,13 +268,17 @@ function remoteFileExtension(path: string) {
   return index > 0 ? name.slice(index + 1) : '';
 }
 
+export function isPreviewableImageFile(path: string) {
+  return imageFileExtensions.has(remoteFileExtension(path));
+}
+
 export function remoteFileIcon(path: string): Icon {
   const extension = remoteFileExtension(path);
   if (extension === 'zip') return FileZip;
   const extensionIcon = fileIconsByExtension.get(extension);
   if (extensionIcon) return extensionIcon;
   if (archiveFileExtensions.has(extension)) return FileArchive;
-  if (imageFileExtensions.has(extension)) return FileImage;
+  if (isPreviewableImageFile(path)) return FileImage;
   if (videoFileExtensions.has(extension)) return FileVideo;
   if (audioFileExtensions.has(extension)) return FileAudio;
   if (codeFileExtensions.has(extension)) return FileCode;
