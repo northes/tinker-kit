@@ -171,7 +171,11 @@ export function SSHProfileSelect({
         className="flex-none"
         disabled={disabled}
         aria-label={t('sshProfiles.title')}
-        onClick={() => openManager(value)}
+        onClick={() =>
+          openManager(value, {
+            onManualCreateSaved: (profileID) => onValueChange(profileID),
+          })
+        }
       >
         <GearSix weight="regular" />
       </Button>

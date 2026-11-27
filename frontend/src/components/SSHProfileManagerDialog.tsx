@@ -58,10 +58,15 @@ import { toast } from './ui/toast';
 import { backendErrorKey, formatBackendError } from '../lib/backend-error';
 import { cn } from '@/lib/utils';
 
+export type SSHProfileManagerOpenOptions = {
+  /** 仅在该次打开的管理器中手动新增配置保存成功时调用一次。 */
+  onManualCreateSaved?: (profileID: string) => void;
+};
+
 type SSHProfileContextValue = {
   profiles: SSHProfile[];
   reload: () => Promise<SSHProfile[]>;
-  openManager: (selectedProfileID?: string) => void;
+  openManager: (selectedProfileID?: string, options?: SSHProfileManagerOpenOptions) => void;
 };
 
 const SSHProfileContext = createContext<SSHProfileContextValue | null>(null);
@@ -159,6 +164,7 @@ export function SSHProfileProvider({ children }: { children: ReactNode }) {
   const [profiles, setProfiles] = useState<SSHProfile[]>([]);
   const [managerOpen, setManagerOpen] = useState(false);
   const [selectedProfileID, setSelectedProfileID] = useState('');
+  const managerInvokerCallbackRef = useRef<((profileID: string) => void) | null>(null);
 
   const reload = useCallback(async () => {
     const next = (await GetSSHProfiles()) ?? [];
@@ -176,10 +182,14 @@ export function SSHProfileProvider({ children }: { children: ReactNode }) {
     return () => window.removeEventListener('tinkerkit:config-replaced', refresh);
   }, [reload]);
 
-  const openManager = useCallback((profileID = '') => {
-    setSelectedProfileID(profileID);
-    setManagerOpen(true);
-  }, []);
+  const openManager = useCallback(
+    (profileID = '', options?: SSHProfileManagerOpenOptions) => {
+      managerInvokerCallbackRef.current = options?.onManualCreateSaved ?? null;
+      setSelectedProfileID(profileID);
+      setManagerOpen(true);
+    },
+    [],
+  );
 
   return (
     <SSHProfileContext.Provider value={{ profiles, reload, openManager }}>
@@ -189,7 +199,15 @@ export function SSHProfileProvider({ children }: { children: ReactNode }) {
         selectedProfileID={selectedProfileID}
         profiles={profiles}
         onProfilesChange={setProfiles}
-        onOpenChange={setManagerOpen}
+        onOpenChange={(nextOpen) => {
+          if (!nextOpen) managerInvokerCallbackRef.current = null;
+          setManagerOpen(nextOpen);
+        }}
+        onManualCreateSaved={(profileID) => {
+          const notify = managerInvokerCallbackRef.current;
+          managerInvokerCallbackRef.current = null;
+          notify?.(profileID);
+        }}
       />
     </SSHProfileContext.Provider>
   );
@@ -201,12 +219,14 @@ function SSHProfileManagerDialog({
   profiles,
   onProfilesChange,
   onOpenChange,
+  onManualCreateSaved,
 }: {
   open: boolean;
   selectedProfileID: string;
   profiles: SSHProfile[];
   onProfilesChange: (profiles: SSHProfile[]) => void;
   onOpenChange: (open: boolean) => void;
+  onManualCreateSaved?: (profileID: string) => void;
 }) {
   const { t } = useTranslation();
   const [view, setView] = useState<'list' | 'form'>('list');
@@ -378,6 +398,7 @@ function SSHProfileManagerDialog({
   };
 
   const save = async () => {
+    const manualCreate = !draft.id;
     setBusy(true);
     setFormError('');
     try {
@@ -396,6 +417,7 @@ function SSHProfileManagerDialog({
           ? profiles.map((item) => (item.id === saved.id ? saved : item))
           : [...profiles, saved],
       );
+      if (manualCreate) onManualCreateSaved?.(saved.id);
       setDraft(saved);
       formBaselineRef.current = { ...saved };
       setView('list');
