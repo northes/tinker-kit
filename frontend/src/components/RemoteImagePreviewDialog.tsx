@@ -26,8 +26,9 @@ function clampPan(
   viewW: number,
   viewH: number,
 ) {
-  const maxX = Math.max(0, (naturalW * scale - viewW) / 2);
-  const maxY = Math.max(0, (naturalH * scale - viewH) / 2);
+  // 双向取绝对差：放大时不允许把图像边缘拖进视口，缩小时不允许把整图拖出视口。
+  const maxX = Math.abs(naturalW * scale - viewW) / 2;
+  const maxY = Math.abs(naturalH * scale - viewH) / 2;
   return {
     x: clamp(panX, -maxX, maxX),
     y: clamp(panY, -maxY, maxY),
@@ -109,14 +110,8 @@ export function RemoteImagePreviewDialog({
     natural.w > 0 && natural.h > 0 && viewport.w > 0 && viewport.h > 0
       ? Math.min(1, viewport.w / natural.w, viewport.h / natural.h)
       : 1;
-  const displayW = natural.w * scale;
-  const displayH = natural.h * scale;
-  // 只有放大后图像超出视口才允许拖拽，缩到适应窗口或整图仍在视口内时禁止平移。
-  const canPan =
-    decoded &&
-    viewport.w > 0 &&
-    viewport.h > 0 &&
-    (displayW > viewport.w + 0.5 || displayH > viewport.h + 0.5);
+  // 任意缩放比例都允许拖拽：缩小时可在视口内移动，放大时用于查看局部。
+  const canPan = decoded;
   const viewRef = useRef({
     scale,
     panX: pan.x,
@@ -256,29 +251,22 @@ export function RemoteImagePreviewDialog({
       // 指针锚定缩放：视口中心为原点，保持光标下的图像点不动（与 translate+scale 层叠一致）。
       let panX = offsetX * (1 - ratio) + current.panX * ratio;
       let panY = offsetY * (1 - ratio) + current.panY * ratio;
-      const nextDisplayW = current.naturalW * nextScale;
-      const nextDisplayH = current.naturalH * nextScale;
-      const overflows = nextDisplayW > current.viewW + 0.5 || nextDisplayH > current.viewH + 0.5;
-      if (!overflows || nextScale <= current.fit * 1.001) {
-        panX = 0;
-        panY = 0;
-      } else {
-        const clamped = clampPan(
-          panX,
-          panY,
-          nextScale,
-          current.naturalW,
-          current.naturalH,
-          current.viewW,
-          current.viewH,
-        );
-        panX = clamped.x;
-        panY = clamped.y;
-      }
+      const clamped = clampPan(
+        panX,
+        panY,
+        nextScale,
+        current.naturalW,
+        current.naturalH,
+        current.viewW,
+        current.viewH,
+      );
+      panX = clamped.x;
+      panY = clamped.y;
       viewRef.current = { ...current, scale: nextScale, panX, panY };
       setScale(nextScale);
       setPan({ x: panX, y: panY });
-      setMode(!overflows || nextScale <= current.fit * 1.001 ? 'fit' : 'custom');
+      // 滚轮缩放不再隐式重置模式：fit 只由按钮恢复，避免缩回时悄悄清掉平移。
+      setMode('custom');
     };
     node.addEventListener('wheel', onWheel, { passive: false });
     return () => node.removeEventListener('wheel', onWheel);
@@ -297,10 +285,7 @@ export function RemoteImagePreviewDialog({
   };
 
   const onPointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
-    const cur = viewRef.current;
-    const draggingAllowed =
-      cur.naturalW * cur.scale > cur.viewW + 0.5 || cur.naturalH * cur.scale > cur.viewH + 0.5;
-    if (!draggingAllowed || event.button !== 0) return;
+    if (!decoded || event.button !== 0) return;
     event.currentTarget.setPointerCapture(event.pointerId);
     dragRef.current = {
       pointerId: event.pointerId,
