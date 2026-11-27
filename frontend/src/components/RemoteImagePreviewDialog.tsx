@@ -35,6 +35,11 @@ function clampPan(
   };
 }
 
+// 居中与平移、缩放合成一条 transform：拖动时直接写 DOM 与 React 渲染共用同一字符串，避免重渲染时跳位。
+function panTransform(panX: number, panY: number, scale: number) {
+  return `translate3d(calc(-50% + ${panX}px), calc(-50% + ${panY}px), 0) scale(${scale})`;
+}
+
 // data URL 还原成 Blob，保留原始 MIME，供剪贴板优先写入原图字节。
 function dataURLToBlob(dataURL: string): Blob | null {
   const match = /^data:([^;,]*)(;base64)?,/i.exec(dataURL);
@@ -92,6 +97,9 @@ export function RemoteImagePreviewDialog({
     panX: number;
     panY: number;
   } | null>(null);
+  // 交互（拖动/滚轮）期间的实时视图状态：transform 直接写 DOM，React state 每帧末同步一次。
+  const liveRef = useRef<{ scale: number; panX: number; panY: number } | null>(null);
+  const commitFrameRef = useRef(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [decodeFailed, setDecodeFailed] = useState(false);
@@ -147,6 +155,7 @@ export function RemoteImagePreviewDialog({
     setDataURL('');
     setMode('fit');
     setPan({ x: 0, y: 0 });
+    liveRef.current = null;
 
     const read = async () => {
       if (!active) return;
@@ -215,21 +224,39 @@ export function RemoteImagePreviewDialog({
 
   // 窗口尺寸变化后立即把平移量收回新边界，不必等下一次滚轮或拖拽。
   useLayoutEffect(() => {
-    if (!decoded || mode === 'fit') return;
+    if (!decoded) return;
     if (!natural.w || !natural.h || !viewport.w || !viewport.h) return;
-    setPan((current) => {
-      const next = clampPan(
-        current.x,
-        current.y,
-        scale,
-        natural.w,
-        natural.h,
-        viewport.w,
-        viewport.h,
-      );
-      return next.x === current.x && next.y === current.y ? current : next;
+    const clamped = clampPan(pan.x, pan.y, scale, natural.w, natural.h, viewport.w, viewport.h);
+    if (clamped.x === pan.x && clamped.y === pan.y) return;
+    setPan(clamped);
+    // 交互进行中同步实时值，避免下一帧又被旧位置盖回去。
+    if (liveRef.current) liveRef.current = { scale, panX: clamped.x, panY: clamped.y };
+  }, [decoded, pan.x, pan.y, scale, natural.w, natural.h, viewport.w, viewport.h]);
+
+  // 交互热路径直接改 img 的 transform，避开每次 pointermove/wheel 都重渲染整个对话框。
+  const paint = (nextScale: number, panX: number, panY: number) => {
+    const img = imageRef.current;
+    if (!img) return;
+    img.style.transform = panTransform(panX, panY, nextScale);
+  };
+
+  const commitLive = () => {
+    const live = liveRef.current;
+    if (!live) return;
+    setScale((current) => (current === live.scale ? current : live.scale));
+    setPan((current) =>
+      current.x === live.panX && current.y === live.panY ? current : { x: live.panX, y: live.panY },
+    );
+  };
+
+  // 同一帧内的多次交互只提交一次 state，保证百分比文案与按钮状态跟着走而不拖慢手势。
+  const scheduleCommit = () => {
+    if (commitFrameRef.current) return;
+    commitFrameRef.current = requestAnimationFrame(() => {
+      commitFrameRef.current = 0;
+      commitLive();
     });
-  }, [decoded, mode, scale, natural.w, natural.h, viewport.w, viewport.h]);
+  };
 
   useEffect(() => {
     const node = viewportRef.current;
@@ -263,30 +290,49 @@ export function RemoteImagePreviewDialog({
       panX = clamped.x;
       panY = clamped.y;
       viewRef.current = { ...current, scale: nextScale, panX, panY };
-      setScale(nextScale);
-      setPan({ x: panX, y: panY });
+      liveRef.current = { scale: nextScale, panX, panY };
+      paint(nextScale, panX, panY);
       // 滚轮缩放不再隐式重置模式：fit 只由按钮恢复，避免缩回时悄悄清掉平移。
       setMode('custom');
+      scheduleCommit();
     };
     node.addEventListener('wheel', onWheel, { passive: false });
     return () => node.removeEventListener('wheel', onWheel);
   }, [decoded]);
 
   const showFit = () => {
+    liveRef.current = null;
     setMode('fit');
     setScale(fit);
     setPan({ x: 0, y: 0 });
   };
 
   const showActual = () => {
+    liveRef.current = null;
     setMode('actual');
     setScale(1);
     setPan({ x: 0, y: 0 });
   };
 
+  // 交互中若因其它原因重渲染（模式切换、视口尺寸变化），把 DOM 上的实时位置盖回去，避免回跳。
+  useLayoutEffect(() => {
+    const live = liveRef.current;
+    if (live) paint(live.scale, live.panX, live.panY);
+  });
+
+  useEffect(
+    () => () => {
+      if (commitFrameRef.current) cancelAnimationFrame(commitFrameRef.current);
+    },
+    [],
+  );
+
   const onPointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
     if (!decoded || event.button !== 0) return;
     event.currentTarget.setPointerCapture(event.pointerId);
+    const img = imageRef.current;
+    if (img) img.style.willChange = 'transform';
+    liveRef.current = { scale: viewRef.current.scale, panX: pan.x, panY: pan.y };
     dragRef.current = {
       pointerId: event.pointerId,
       x: event.clientX,
@@ -299,22 +345,37 @@ export function RemoteImagePreviewDialog({
   const onPointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
     const drag = dragRef.current;
     if (!drag || drag.pointerId !== event.pointerId) return;
-    setPan(
-      clampPan(
-        drag.panX + event.clientX - drag.x,
-        drag.panY + event.clientY - drag.y,
-        scale,
-        natural.w,
-        natural.h,
-        viewport.w,
-        viewport.h,
-      ),
+    const current = viewRef.current;
+    const next = clampPan(
+      drag.panX + event.clientX - drag.x,
+      drag.panY + event.clientY - drag.y,
+      current.scale,
+      current.naturalW,
+      current.naturalH,
+      current.viewW,
+      current.viewH,
     );
+    // 同步给 viewRef：拖动中途滚轮缩放时能读到最新位置。
+    current.panX = next.x;
+    current.panY = next.y;
+    liveRef.current = { scale: current.scale, panX: next.x, panY: next.y };
+    // 直接写 transform：样式写入不触发布局，同一帧内的多次移动由浏览器自行合并。
+    // 平移不改变百分比，所以拖动全程不提交 state，等到抬手再对齐一次。
+    paint(current.scale, next.x, next.y);
   };
 
   const endDrag = (event: React.PointerEvent<HTMLDivElement>) => {
     if (dragRef.current?.pointerId !== event.pointerId) return;
     dragRef.current = null;
+    if (commitFrameRef.current) {
+      cancelAnimationFrame(commitFrameRef.current);
+      commitFrameRef.current = 0;
+    }
+    const img = imageRef.current;
+    if (img) img.style.willChange = '';
+    // 抬手时一次性对齐 state：transform 字符串不变，不会出现视觉跳变。
+    commitLive();
+    liveRef.current = null;
   };
 
   const rasterizeToPNG = (img: HTMLImageElement) =>
@@ -408,7 +469,7 @@ export function RemoteImagePreviewDialog({
                   style={{
                     width: natural.w || undefined,
                     height: natural.h || undefined,
-                    transform: `translate(calc(-50% + ${pan.x}px), calc(-50% + ${pan.y}px)) scale(${scale})`,
+                    transform: panTransform(pan.x, pan.y, scale),
                     transformOrigin: 'center center',
                   }}
                   onLoad={(event) => settleImage(event.currentTarget)}
