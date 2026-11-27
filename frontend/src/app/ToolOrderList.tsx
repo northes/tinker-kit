@@ -14,7 +14,6 @@ import {
   useSortable,
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable';
-import { CSS } from '@dnd-kit/utilities';
 import { DotsSixVertical, Eye, EyeClosed } from '@phosphor-icons/react';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -47,7 +46,8 @@ function ToolOrderRow({
     <div
       ref={setNodeRef}
       style={{
-        transform: CSS.Transform.toString(transform),
+        // 纵向排序只允许垂直位移，避免拖动时跟着指针横向漂出列表。
+        transform: transform ? `translate3d(0, ${Math.round(transform.y)}px, 0)` : undefined,
         transition,
         zIndex: isDragging ? 20 : undefined,
       }}
