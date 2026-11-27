@@ -36,6 +36,7 @@ import {
   lazy,
   Suspense,
   useCallback,
+  useContext,
   useEffect,
   useId,
   useLayoutEffect,
@@ -43,7 +44,9 @@ import {
   useRef,
   useState,
 } from 'react';
+import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
+import { ToolSlotOverlayContext } from '../app/tool-slot';
 import { useWorkspaceTabTitle } from '../app/workspace-tab-title';
 import type { DiffCompareSourceReporter } from '../lib/diff-compare-source';
 import type { RemoteTextEditorContent } from './RemoteTextEditorDialog';
@@ -154,6 +157,44 @@ const RemoteImagePreviewDialog = lazy(async () => ({
   default: (await import('./RemoteImagePreviewDialog')).RemoteImagePreviewDialog,
 }));
 
+// 懒加载分块拉取期间的占位壳层：与真实预览保持同一固定高度、模糊遮罩与 portal，避免弹窗区域突然空一块。
+function RemoteImagePreviewShell({
+  path,
+  name,
+  onClose,
+}: {
+  path: string;
+  name: string;
+  onClose: () => void;
+}) {
+  const { t } = useTranslation();
+  const overlayRoot = useContext(ToolSlotOverlayContext);
+  const shell = (
+    <section className="pointer-events-auto absolute inset-0 z-20 flex min-h-0 items-center justify-center overflow-hidden p-4">
+      <div
+        aria-hidden="true"
+        className="absolute inset-0 cursor-default bg-black/10 supports-backdrop-filter:backdrop-blur-xs"
+        onClick={onClose}
+      />
+      <div
+        role="dialog"
+        aria-label={t('sshFilesTool.imagePreviewTitle', { name })}
+        className="relative grid h-[min(72vh,720px)] min-h-0 max-h-full w-[min(960px,calc(100%-2rem))] grid-rows-[minmax(0,1fr)_auto] gap-y-2 overflow-hidden rounded-xl border border-border bg-popover pb-4 shadow-md ring-1 ring-foreground/10 animate-in fade-in-0 zoom-in-95 duration-100"
+      >
+        <div className="min-h-0 min-w-0 p-0.5">
+          <div className="flex h-full min-h-0 items-center justify-center overflow-hidden rounded-[calc(var(--radius-xl)-2px)] border border-border bg-card">
+            <Spinner />
+          </div>
+        </div>
+        <p className="min-w-0 truncate px-4 font-mono text-xs text-muted-foreground" title={path}>
+          {path}
+        </p>
+      </div>
+    </section>
+  );
+  return overlayRoot ? createPortal(shell, overlayRoot) : shell;
+}
+
 type Props = {
   active: boolean;
   onCompareSourceChange: DiffCompareSourceReporter;
@@ -164,7 +205,8 @@ type TextProbeFallback = 'download' | 'favorite';
 type EditingFile = Pick<RemoteFileEntry, 'path' | 'name'> & {
   probe?: { fallback: TextProbeFallback; viewKey: string };
 };
-type PreviewingImage = Pick<RemoteFileEntry, 'path' | 'name' | 'size'> & { viewKey: string };
+type PreviewableImage = Pick<RemoteFileEntry, 'path' | 'name' | 'size'>;
+type PreviewingImage = PreviewableImage & { viewKey: string };
 
 type CreateEntryTarget = {
   kind: CreateEntryKind;
@@ -595,7 +637,7 @@ export default function SshFilesTool({ active, locate = null, onCompareSourceCha
     });
   };
 
-  const openImagePreview = (entry: PreviewingImage) => {
+  const openImagePreview = (entry: PreviewableImage) => {
     if (previewingImage?.path === entry.path) return;
     favoriteRequestRef.current?.cancel();
     favoriteRequestRef.current = null;
@@ -616,8 +658,7 @@ export default function SshFilesTool({ active, locate = null, onCompareSourceCha
       const entry = await request;
       if (favoriteRequestRef.current !== request) return;
       if (entry.isDir) navigate(path, 'favorite');
-      else if (!entry.isSymlink && isPreviewableImageFile(entry.path))
-        openImagePreview(entry);
+      else if (!entry.isSymlink && isPreviewableImageFile(entry.path)) openImagePreview(entry);
       else if (!entry.isSymlink) openTextEditor(entry, 'favorite');
       else toast.add({ title: t('sshFilesTool.favoriteFileNotEditable'), type: 'error' });
     } catch (reason) {
@@ -2970,7 +3011,15 @@ export default function SshFilesTool({ active, locate = null, onCompareSourceCha
         </Suspense>
       ) : null}
       {previewingImage ? (
-        <Suspense fallback={null}>
+        <Suspense
+          fallback={
+            <RemoteImagePreviewShell
+              path={previewingImage.path}
+              name={previewingImage.name}
+              onClose={() => setPreviewingImage(null)}
+            />
+          }
+        >
           <RemoteImagePreviewDialog
             key={`${sourceID}:${previewingImage.path}`}
             sourceID={sourceID}

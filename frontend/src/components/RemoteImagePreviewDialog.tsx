@@ -34,6 +34,32 @@ function clampPan(
   };
 }
 
+// data URL 还原成 Blob，保留原始 MIME，供剪贴板优先写入原图字节。
+function dataURLToBlob(dataURL: string): Blob | null {
+  const match = /^data:([^;,]*)(;base64)?,/i.exec(dataURL);
+  if (!match) return null;
+  const mime = match[1] || 'application/octet-stream';
+  const body = dataURL.slice(match[0].length);
+  try {
+    if (match[2]) {
+      const binary = atob(body);
+      const bytes = new Uint8Array(binary.length);
+      for (let index = 0; index < binary.length; index += 1) {
+        bytes[index] = binary.charCodeAt(index);
+      }
+      return new Blob([bytes], { type: mime });
+    }
+    return new Blob([new TextEncoder().encode(decodeURIComponent(body))], { type: mime });
+  } catch {
+    return null;
+  }
+}
+
+function clipboardSupports(type: string) {
+  const supports = (ClipboardItem as unknown as { supports?: (value: string) => boolean }).supports;
+  return typeof supports === 'function' ? supports.call(ClipboardItem, type) : true;
+}
+
 type ZoomMode = 'fit' | 'actual' | 'custom';
 
 type Props = {
@@ -185,6 +211,24 @@ export function RemoteImagePreviewDialog({
     setPan({ x: 0, y: 0 });
   }, [mode, fit, decoded]);
 
+  // 窗口尺寸变化后立即把平移量收回新边界，不必等下一次滚轮或拖拽。
+  useLayoutEffect(() => {
+    if (!decoded || mode === 'fit') return;
+    if (!natural.w || !natural.h || !viewport.w || !viewport.h) return;
+    setPan((current) => {
+      const next = clampPan(
+        current.x,
+        current.y,
+        scale,
+        natural.w,
+        natural.h,
+        viewport.w,
+        viewport.h,
+      );
+      return next.x === current.x && next.y === current.y ? current : next;
+    });
+  }, [decoded, mode, scale, natural.w, natural.h, viewport.w, viewport.h]);
+
   useEffect(() => {
     const node = viewportRef.current;
     if (!node || !decoded) return;
@@ -274,6 +318,20 @@ export function RemoteImagePreviewDialog({
     dragRef.current = null;
   };
 
+  const rasterizeToPNG = (img: HTMLImageElement) =>
+    new Promise<Blob>((resolve, reject) => {
+      const canvas = document.createElement('canvas');
+      canvas.width = img.naturalWidth;
+      canvas.height = img.naturalHeight;
+      const context = canvas.getContext('2d');
+      if (!context || canvas.width === 0 || canvas.height === 0) {
+        reject(new Error('encode'));
+        return;
+      }
+      context.drawImage(img, 0, 0);
+      canvas.toBlob((value) => (value ? resolve(value) : reject(new Error('encode'))), 'image/png');
+    });
+
   const copyImage = async () => {
     const img = imageRef.current;
     if (!img || !decoded || copying || decodeFailed) return;
@@ -282,22 +340,19 @@ export function RemoteImagePreviewDialog({
       if (!navigator.clipboard?.write || typeof ClipboardItem === 'undefined') {
         throw new Error('clipboard unavailable');
       }
-      const blob = await new Promise<Blob>((resolve, reject) => {
-        const canvas = document.createElement('canvas');
-        canvas.width = img.naturalWidth;
-        canvas.height = img.naturalHeight;
-        const context = canvas.getContext('2d');
-        if (!context || canvas.width === 0 || canvas.height === 0) {
-          reject(new Error('encode'));
+      const original = dataURLToBlob(dataURL);
+      // 优先写入原始字节（GIF/WebP 等保持原样），只有剪贴板拒绝该 MIME 时才退回单帧 PNG。
+      if (original && clipboardSupports(original.type)) {
+        try {
+          await navigator.clipboard.write([new ClipboardItem({ [original.type]: original })]);
+          toast.add({ title: t('sshFilesTool.imageCopied'), type: 'success' });
           return;
+        } catch {
+          // 继续走 PNG 回退。
         }
-        context.drawImage(img, 0, 0);
-        canvas.toBlob(
-          (value) => (value ? resolve(value) : reject(new Error('encode'))),
-          'image/png',
-        );
-      });
-      await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+      }
+      const png = original?.type === 'image/png' ? original : await rasterizeToPNG(img);
+      await navigator.clipboard.write([new ClipboardItem({ 'image/png': png })]);
       toast.add({ title: t('sshFilesTool.imageCopied'), type: 'success' });
     } catch {
       toast.add({ title: t('sshFilesTool.imageCopyFailed'), type: 'error' });
@@ -370,11 +425,13 @@ export function RemoteImagePreviewDialog({
               </div>
             ) : null}
             {failure ? (
-              <div
-                className="flex h-full items-center justify-center px-6 text-center text-sm text-destructive"
-                role="alert"
-              >
-                {failure}
+              // 长错误（例如无空格的地址或堆栈）必须换行并可在区域内滚动，不能被 overflow-hidden 截断。
+              <div className="h-full w-full overflow-auto" role="alert">
+                <div className="flex min-h-full items-center justify-center px-6 py-4">
+                  <p className="wrap-anywhere m-0 min-w-0 max-w-full text-center text-sm whitespace-pre-wrap text-destructive">
+                    {failure}
+                  </p>
+                </div>
               </div>
             ) : null}
           </div>
