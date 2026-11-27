@@ -17,7 +17,6 @@ import {
   useSortable,
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable';
-import { CSS } from '@dnd-kit/utilities';
 import {
   CaretDown,
   Clock,
@@ -151,8 +150,11 @@ function TimeResultRow({
 }) {
   const { t } = useTranslation();
   const sortable = useSortable({ id, disabled: !editing });
+  // 纵向列表排序只允许垂直位移：完整 transform 会带上指针的 x 偏移，被拖动项会横向漂出列表。
   const style = {
-    transform: CSS.Transform.toString(sortable.transform),
+    transform: sortable.transform
+      ? `translate3d(0, ${Math.round(sortable.transform.y)}px, 0)`
+      : undefined,
     transition: sortable.transition,
     zIndex: sortable.isDragging ? 1 : undefined,
   };
